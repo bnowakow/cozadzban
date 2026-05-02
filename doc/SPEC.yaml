@@ -103,9 +103,11 @@ x-architecture:
     - name: Bootstrap configuration
       technology: Spring Boot configuration properties
       description: >
-        COZAZJEB_BOOTSTRAP_ADMIN_EMAIL is mandatory in all environments.
-        Missing or empty value fails startup fast.
-        If provided and allowlist is empty, one ADMIN user is seeded.
+        COZAZJEB_BOOTSTRAP_ADMIN_EMAIL is only required when the allowed_user
+        table contains no ADMIN rows. If at least one ADMIN exists, the env var
+        is optional and ignored. If no ADMINs exist and the env var is missing
+        or empty, startup fails fast. If no ADMINs exist and env var is a valid
+        email, one ADMIN row is seeded (or an existing USER is promoted).
 
 # ──────────────────────────────────────────────────────────────
 # DATABASE SPEC  (x-database)
@@ -306,12 +308,12 @@ x-business-rules:
   - id: BR-20
     name: Bootstrap admin user
     description: >
-      On application startup, COZAZJEB_BOOTSTRAP_ADMIN_EMAIL is validated first.
-      If missing, empty, or invalid email format, startup fails fast.
-      If allowed_user table is empty, insert one ADMIN row using normalized
-      email (trim + lowercase).
-      If the email already exists with role USER, promote it to ADMIN.
-      Startup is not allowed without this env var in any environment.
+      On application startup, count ADMIN rows in allowed_user.
+      If at least one ADMIN exists, skip bootstrap entirely (env var ignored).
+      If no ADMIN exists, COZAZJEB_BOOTSTRAP_ADMIN_EMAIL is required:
+        missing, empty, or invalid email format → fail startup fast.
+        valid email → insert one ADMIN row (trim + lowercase);
+        if email already exists with role USER, promote it to ADMIN.
   - id: BR-21
     name: Role-based access control
     description: >
@@ -418,11 +420,11 @@ x-security-policy:
     emailNormalization: trim+lowercase
   bootstrap:
     adminEmailEnvVar: COZAZJEB_BOOTSTRAP_ADMIN_EMAIL
-    seedOnlyWhenAllowlistEmpty: true
+    enforcedOnlyWhenNoAdminsExist: true
+    failFastWhenRequiredButMissingOrEmpty: true
     failFastOnInvalidEmail: true
+    seedAdminRow: true
     promoteExistingUserToAdmin: true
-    requireEnvVarInAllEnvironments: true
-    failStartupWhenMissingOrEmpty: true
   cors:
     allowedOrigins: [https://cozazjeb.pl]
     allowedMethods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
