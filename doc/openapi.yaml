@@ -73,6 +73,20 @@ x-security-policy:
     disabledPaths: [/api/**, /rss]
     enabledForVaadinUi: true
 
+x-problem-types:
+  articleUrlConflict:
+    uri: https://cozazjeb.pl/problems/article-url-conflict
+    status: 409
+    title: Article URL Already Exists
+  allowlistEmailConflict:
+    uri: https://cozazjeb.pl/problems/allowlist-email-conflict
+    status: 409
+    title: Allowlisted Email Already Exists
+  lastAdminRequired:
+    uri: https://cozazjeb.pl/problems/last-admin-required
+    status: 409
+    title: Last Admin Required
+
 tags:
   - name: Articles
     description: CRUD operations for Article resources
@@ -383,6 +397,37 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
 
+    patch:
+      tags: [Security]
+      summary: Update allowlisted user role
+      operationId: updateAllowedUserRole
+      x-required-role: ADMIN
+      security:
+        - googleOidc: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AllowedUserRolePatch'
+      responses:
+        '200':
+          description: Allowed user role updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AllowedUser'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
 components:
 
   securitySchemes:
@@ -509,6 +554,17 @@ components:
           readOnly: true
           example: "2026-05-02T10:00:00Z"
 
+    AllowedUserRolePatch:
+      type: object
+      required: [role]
+      description: Role update payload for allowlisted user
+      properties:
+        role:
+          type: string
+          enum: [USER, ADMIN]
+          description: New role to assign
+          example: ADMIN
+
     ArticlePage:
       type: object
       description: Frozen page response shape for Article
@@ -586,6 +642,8 @@ components:
     ProblemDetail:
       type: object
       description: RFC 9457 / Spring ProblemDetail error response
+      required: [type, title, status, detail]
+      additionalProperties: true
       properties:
         type:
           type: string
@@ -604,6 +662,19 @@ components:
           type: string
           format: uri
           example: /api/articles
+        conflictField:
+          type: string
+          description: Optional field name that caused a conflict
+          example: url
+        existingId:
+          type: integer
+          format: int64
+          description: Optional existing resource identifier for conflict cases
+          example: 42
+        remainingAdmins:
+          type: integer
+          description: Optional count of admins that would remain after operation
+          example: 0
 
   responses:
 
@@ -615,11 +686,41 @@ components:
             $ref: '#/components/schemas/ProblemDetail'
 
     Conflict:
-      description: An article with the same URL already exists
+      description: Conflict with business rules
       content:
         application/problem+json:
           schema:
             $ref: '#/components/schemas/ProblemDetail'
+          examples:
+            articleUrlConflict:
+              summary: Duplicate article URL
+              value:
+                type: https://cozazjeb.pl/problems/article-url-conflict
+                title: Article URL Already Exists
+                status: 409
+                detail: Article with this URL already exists.
+                instance: /api/articles
+                conflictField: url
+                existingId: 42
+            allowlistEmailConflict:
+              summary: Duplicate allowlist email
+              value:
+                type: https://cozazjeb.pl/problems/allowlist-email-conflict
+                title: Allowlisted Email Already Exists
+                status: 409
+                detail: User with this email is already allowlisted.
+                instance: /api/allowed-users
+                conflictField: email
+                existingId: 7
+            lastAdminRequired:
+              summary: Attempt to remove final admin
+              value:
+                type: https://cozazjeb.pl/problems/last-admin-required
+                title: Last Admin Required
+                status: 409
+                detail: Operation would leave the system without an ADMIN user.
+                instance: /api/allowed-users/1
+                remainingAdmins: 0
 
     Unauthorized:
       description: Missing or invalid OAuth2 Bearer token
