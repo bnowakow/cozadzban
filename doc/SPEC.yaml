@@ -18,7 +18,7 @@ openapi: 3.0.3
 x-architecture:
   language: Kotlin
   framework: Spring Boot 4.x
-  javaVersion: 24
+  javaVersion: 21
   buildTool: Gradle (Kotlin DSL)
   components:
     - name: REST API
@@ -27,12 +27,24 @@ x-architecture:
         CRUD endpoints for Article resources plus an RSS feed endpoint.
         Request/response bodies use JSON; errors use application/problem+json
         (RFC 9457 / Spring ProblemDetail).
+    - name: Authentication and authorization
+      technology: Spring Security Resource Server + Google OpenID Connect
+      description: >
+        Google is the selected OAuth/OIDC provider.
+        JWT access tokens are validated using issuer metadata from
+        https://accounts.google.com.
+        Read endpoints are public. Write-inducing endpoints require a valid
+        Bearer token and allowlisted email.
     - name: Database
       technology: PostgreSQL + Spring Data JDBC
       description: >
         All domain data is stored in PostgreSQL.
-        Persistence uses Spring Data JDBC (not JPA/Hibernate).
+        Persistence uses Spring Data JDBC (not JPA/Hibernate) via
+        CrudRepository / NamedParameterJdbcTemplate.
         No DDL is auto-generated; all schema changes go through Flyway.
+        All queries MUST use parameterised statements — raw string
+        concatenation into SQL is forbidden to prevent SQL injection
+        (OWASP A03).
     - name: Schema migrations
       technology: Flyway
       description: >
@@ -42,15 +54,33 @@ x-architecture:
     - name: URL enrichment
       technology: Spring RestClient (spring-boot-starter-restclient)
       description: >
-        On create (POST) and replace (PUT), the server fetches the target URL
-        and extracts title (og:title / <title>), thumbnail (og:image) and lead
-        (og:description / <meta name="description">).
-        If the fetch fails a 422 is returned.
+        On create (POST) and replace (PUT), the server synchronously fetches
+        the target URL and extracts title (og:title / <title>),
+        thumbnail (og:image) and lead (og:description / <meta name="description">).
+        Enrichment is synchronous — the HTTP response is not returned until
+        enrichment completes or fails.
+        Defaults: connect timeout 3 s, read timeout 5 s, no retries.
+        If the fetch returns a non-2xx status, times out, or the URL is
+        unreachable, the server responds with 422.
     - name: RSS feed
       technology: Custom controller returning application/rss+xml
+      rssFieldMapping:
+        rssTitle: article.title
+        rssLink: article.url
+        rssDescription: article.lead
+        rssPubDate: article.createdAt
+        rssGuid: article.id
+      rssChannel:
+        title: Co za zjeb
+        link: https://cozazjeb.pl
+        description: fucked up news
+        language: en
+        generator: cozazjeb.pl
+        lastBuildDateSource: Gradle build metadata
       description: >
         GET /rss returns an RSS 2.0 feed of all articles ordered by createdAt desc.
         GET /rss?lang=<BCP-47> filters to a single language.
+        Language-filtered feed should set RSS channel language to the filter value.
     - name: Vaadin UI
       technology: Vaadin 25 + spring-boot-starter (server-side)
       description: >
@@ -61,6 +91,12 @@ x-architecture:
       description: >
         Distributed tracing via Brave/Zipkin. Actuator endpoints exposed for
         health, metrics and info.
+    - name: Web security defaults
+      technology: Spring Security + CORS
+      description: >
+        CORS allows only origin https://cozazjeb.pl.
+        API is stateless, so CSRF is disabled for /api/** and /rss.
+        CSRF remains enabled for Vaadin UI routes.
 
 # ──────────────────────────────────────────────────────────────
 # DATABASE SPEC  (x-database)
@@ -80,8 +116,8 @@ x-database:
           constraints: PRIMARY KEY
         - name: url
           type: TEXT
-          constraints: NOT NULL
-          description: Full URL of the source page as submitted by the user.
+          constraints: "NOT NULL UNIQUE"
+          description: Full URL of the source page as submitted by the user. Must be globally unique.
         - name: language
           type: VARCHAR(20)
           constraints: NOT NULL
@@ -113,6 +149,25 @@ x-database:
         - name: article_created_at_idx
           columns: [created_at DESC]
           description: Speeds up default sort order for list and RSS endpoints.
+    - name: allowed_user
+      migration: V2__create_allowed_users.sql
+      description: Stores emails permitted to execute write operations.
+      columns:
+        - name: id
+          type: BIGSERIAL
+          constraints: PRIMARY KEY
+        - name: email
+          type: VARCHAR(320)
+          constraints: "NOT NULL UNIQUE"
+          description: Lowercased, trimmed email used for authorization allowlist.
+        - name: created_at
+          type: TIMESTAMPTZ
+          constraints: "NOT NULL DEFAULT now()"
+          description: UTC timestamp of allowlist entry creation.
+      indexes:
+        - name: allowed_user_email_idx
+          columns: [email]
+          description: Supports fast exact email lookups during authorization.
 
 # ──────────────────────────────────────────────────────────────
 # BUSINESS RULES  (x-business-rules)
@@ -156,6 +211,78 @@ x-business-rules:
     description: >
       The RSS feed MUST list articles in descending createdAt order
       (newest first).
+  - id: BR-08
+    name: URL uniqueness
+    description: >
+      The url field MUST be globally unique across all articles regardless
+      of language. Attempting to create an article with a url that already
+      exists MUST return 409 Conflict. A UNIQUE constraint on the url column
+      enforces this at the persistence layer.
+  - id: BR-09
+    name: SQL injection prevention
+    description: >
+      All database access MUST use parameterised queries. Spring Data JDBC
+      repositories fulfil this automatically. Any custom queries using
+      NamedParameterJdbcTemplate MUST use named parameters (:param) and
+      never string concatenation. Raw JdbcTemplate with concatenated SQL
+      is forbidden (OWASP A03).
+  - id: BR-10
+    name: Public read endpoints
+    description: >
+      The following endpoints MUST be publicly accessible without
+      authentication: GET /api/articles, GET /api/articles/{id}, GET /rss.
+  - id: BR-11
+    name: Protected write endpoints
+    description: >
+      The following endpoints MUST require a valid OAuth2 Bearer token issued
+      by Google OIDC: POST /api/articles, PUT /api/articles/{id},
+      PATCH /api/articles/{id}, DELETE /api/articles/{id}.
+      Missing or invalid tokens return 401; insufficient privileges return 403.
+  - id: BR-12
+    name: OAuth token validation rules
+    description: >
+      Accepted token type is OAuth2 Bearer access token (JWT).
+      ID tokens are not accepted for API authorization.
+      Required claim checks: iss=https://accounts.google.com,
+      aud contains configured application client id,
+      exp in the future, sub present, email present,
+      and email_verified=true.
+  - id: BR-13
+    name: Allowlist enforcement
+    description: >
+      For all write operations, normalized token email (trimmed, lowercased)
+      must exist in allowed_user.email.
+      If token is valid but email is not allowlisted, return 403.
+  - id: BR-14
+    name: URL canonicalization defaults
+    description: >
+      URL uniqueness and conflict detection use canonicalized URL value:
+      lowercase scheme and host, remove default ports (:80 for http, :443 for https),
+      remove fragment, preserve path and query, and remove trailing slash only
+      for root path.
+      Canonicalized URL is persisted in article.url.
+  - id: BR-15
+    name: UTC time standard
+    description: >
+      All persisted timestamps are UTC.
+      JSON date-time fields use ISO-8601 UTC.
+      RSS pubDate uses RFC-822 UTC.
+  - id: BR-16
+    name: CORS and CSRF defaults
+    description: >
+      CORS allows only https://cozazjeb.pl.
+      CSRF is disabled for /api/** and /rss.
+      CSRF remains enabled for Vaadin UI routes.
+  - id: BR-17
+    name: Allowlist management API
+    description: >
+      Allowlist is managed using /api/allowed-users endpoints.
+      All these endpoints require valid token and allowlisted email.
+  - id: BR-18
+    name: PATCH media type and semantics
+    description: >
+      PATCH /api/articles/{id} uses JSON Merge Patch
+      (application/merge-patch+json) semantics.
 
 # ──────────────────────────────────────────────────────────────
 # VAADIN UI SPEC  (x-vaadin-ui)
@@ -170,7 +297,8 @@ x-vaadin-ui:
         Paginated, read-only grid listing all articles.
       columns: [id, title, language, url, createdAt]
       features:
-        - Server-side pagination (page size configurable, default 20)
+        - Server-side pagination; default page size 20
+        - Page size selector dropdown with options [10, 20, 40, 60, 80, 100]
         - Sort by any column
         - Click row to open source URL in a new tab
 
@@ -202,6 +330,8 @@ info:
       `url` + `language` on create/replace.
     - `aiSummary` is reserved for a future AI enrichment step; always `null`
       in the current version.
+    - Read endpoints (`GET /api/articles`, `GET /api/articles/{id}`, `GET /rss`)
+      are public. Write endpoints require Google OAuth2/OIDC Bearer tokens.
     - Error responses use `application/problem+json` (RFC 9457 /
       Spring `ProblemDetail`).
   version: 0.0.1-SNAPSHOT
@@ -210,11 +340,37 @@ servers:
   - url: http://localhost:8080
     description: Local development
 
+x-security-policy:
+  provider: google-oidc
+  issuer: https://accounts.google.com
+  acceptedTokenType: access_token_jwt
+  requiredClaims: [iss, aud, exp, sub, email, email_verified]
+  requireEmailVerified: true
+  acceptedAlgorithms: [RS256]
+  requireHttpsIssuerAndJwks: true
+  rejectUnsignedTokens: true
+  clockSkewSeconds: 60
+  denyByDefault: true
+  audienceSource: application-config-client-id
+  allowlist:
+    enabled: true
+    table: allowed_user
+    emailNormalization: trim+lowercase
+  cors:
+    allowedOrigins: [https://cozazjeb.pl]
+    allowedMethods: [GET, POST, PUT, PATCH, DELETE]
+    allowedHeaders: [Authorization, Content-Type]
+  csrf:
+    disabledPaths: [/api/**, /rss]
+    enabledForVaadinUi: true
+
 tags:
   - name: Articles
     description: CRUD operations for Article resources
   - name: RSS
     description: RSS feed endpoints
+  - name: Security
+    description: Allowlist management endpoints
 
 paths:
 
@@ -224,6 +380,7 @@ paths:
       tags: [Articles]
       summary: List articles (paginated)
       operationId: listArticles
+      security: []
       parameters:
         - name: page
           in: query
@@ -258,6 +415,8 @@ paths:
       tags: [Articles]
       summary: Create a new article
       operationId: createArticle
+      security:
+        - googleOidc: []
       description: >
         Accepts a URL and a BCP-47 language tag.
         The server fetches the page at the given URL and automatically
@@ -280,8 +439,14 @@ paths:
                 $ref: '#/components/schemas/Article'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
   /api/articles/{id}:
 
@@ -292,6 +457,7 @@ paths:
       tags: [Articles]
       summary: Get article by ID
       operationId: getArticle
+      security: []
       responses:
         '200':
           description: Article found
@@ -306,6 +472,8 @@ paths:
       tags: [Articles]
       summary: Replace article input fields
       operationId: replaceArticle
+      security:
+        - googleOidc: []
       description: >
         Replaces url and language. The server re-fetches the target page to
         refresh title, thumbnail and lead.
@@ -324,22 +492,30 @@ paths:
                 $ref: '#/components/schemas/Article'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
         '404':
           $ref: '#/components/responses/NotFound'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
     patch:
       tags: [Articles]
       summary: Partially update an article
       operationId: patchArticle
+      security:
+        - googleOidc: []
       description: >
         Updates only the provided fields. If url is changed the server
         re-fetches the page to refresh the enriched fields.
       requestBody:
         required: true
         content:
-          application/json:
+          application/merge-patch+json:
             schema:
               $ref: '#/components/schemas/ArticlePatch'
       responses:
@@ -351,20 +527,32 @@ paths:
                 $ref: '#/components/schemas/Article'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
         '404':
           $ref: '#/components/responses/NotFound'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
     delete:
       tags: [Articles]
       summary: Delete an article
       operationId: deleteArticle
+      security:
+        - googleOidc: []
       responses:
         '204':
           description: Article deleted
         '404':
           $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
   /rss:
 
@@ -372,6 +560,16 @@ paths:
       tags: [RSS]
       summary: RSS 2.0 feed
       operationId: getRssFeed
+      security: []
+      x-rss-channel:
+        title: Co za zjeb
+        link: https://cozazjeb.pl
+        description: fucked up news
+        language:
+          default: en
+          supports: [en, pl]
+        generator: cozazjeb.pl
+        lastBuildDateSource: Gradle build metadata
       description: >
         Returns an RSS 2.0 feed of articles ordered by creation date (newest first).
         Provide the `lang` query parameter to filter to a single BCP-47 language.
@@ -391,7 +589,88 @@ paths:
               schema:
                 type: string
 
+  /api/allowed-users:
+
+    get:
+      tags: [Security]
+      summary: List allowlisted users
+      operationId: listAllowedUsers
+      security:
+        - googleOidc: []
+      responses:
+        '200':
+          description: List of allowlisted users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AllowedUser'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    post:
+      tags: [Security]
+      summary: Add user to allowlist
+      operationId: addAllowedUser
+      security:
+        - googleOidc: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AllowedUserInput'
+      responses:
+        '201':
+          description: User added to allowlist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AllowedUser'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/allowed-users/{email}:
+
+    parameters:
+      - name: email
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Email to remove from allowlist
+
+    delete:
+      tags: [Security]
+      summary: Remove user from allowlist
+      operationId: removeAllowedUser
+      security:
+        - googleOidc: []
+      responses:
+        '204':
+          description: User removed from allowlist
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
 components:
+
+  securitySchemes:
+    googleOidc:
+      type: openIdConnect
+      openIdConnectUrl: https://accounts.google.com/.well-known/openid-configuration
 
   parameters:
     ArticleId:
@@ -422,7 +701,7 @@ components:
 
     ArticlePatch:
       type: object
-      description: Fields that may be partially updated; omitted fields are left unchanged
+      description: JSON Merge Patch document; omitted fields are left unchanged
       properties:
         url:
           type: string
@@ -469,6 +748,34 @@ components:
           type: string
           description: AI-generated summary — future feature, null until implemented
           nullable: true
+        createdAt:
+          type: string
+          format: date-time
+          readOnly: true
+          example: "2026-05-02T10:00:00Z"
+
+    AllowedUserInput:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+          description: Email to add to the write-operation allowlist
+          example: admin@cozazjeb.pl
+
+    AllowedUser:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          readOnly: true
+          example: 1
+        email:
+          type: string
+          format: email
+          example: admin@cozazjeb.pl
         createdAt:
           type: string
           format: date-time
@@ -530,6 +837,27 @@ components:
 
     BadRequest:
       description: Request payload is invalid or malformed
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+
+    Conflict:
+      description: An article with the same URL already exists
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+
+    Unauthorized:
+      description: Missing or invalid OAuth2 Bearer token
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+
+    Forbidden:
+      description: Authenticated but not allowed to perform this operation
       content:
         application/problem+json:
           schema:

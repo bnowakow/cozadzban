@@ -24,6 +24,11 @@ info:
       `url` + `language` on create/replace.
     - `aiSummary` is reserved for a future AI enrichment step; always `null`
       in the current version.
+    - Read endpoints (`GET /api/articles`, `GET /api/articles/{id}`, `GET /rss`)
+      are public. Write endpoints require Google OAuth2/OIDC Bearer tokens.
+    - Write endpoints additionally require the token email to be present in
+      database allowlist (`allowed_user` entity managed via API).
+    - All API timestamps are UTC.
     - Error responses use `application/problem+json` (RFC 9457 /
       Spring `ProblemDetail`).
 
@@ -33,11 +38,37 @@ servers:
   - url: http://localhost:8080
     description: Local development
 
+x-security-policy:
+  provider: google-oidc
+  issuer: https://accounts.google.com
+  acceptedTokenType: access_token_jwt
+  requiredClaims: [iss, aud, exp, sub, email, email_verified]
+  requireEmailVerified: true
+  acceptedAlgorithms: [RS256]
+  requireHttpsIssuerAndJwks: true
+  rejectUnsignedTokens: true
+  clockSkewSeconds: 60
+  denyByDefault: true
+  audienceSource: application-config-client-id
+  allowlist:
+    enabled: true
+    table: allowed_user
+    emailNormalization: trim+lowercase
+  cors:
+    allowedOrigins: [https://cozazjeb.pl]
+    allowedMethods: [GET, POST, PUT, PATCH, DELETE]
+    allowedHeaders: [Authorization, Content-Type]
+  csrf:
+    disabledPaths: [/api/**, /rss]
+    enabledForVaadinUi: true
+
 tags:
   - name: Articles
     description: CRUD operations for Article resources
   - name: RSS
     description: RSS feed endpoints
+  - name: Security
+    description: Allowlist management endpoints
 
 paths:
 
@@ -47,6 +78,7 @@ paths:
       tags: [Articles]
       summary: List articles (paginated)
       operationId: listArticles
+      security: []
       parameters:
         - name: page
           in: query
@@ -81,6 +113,8 @@ paths:
       tags: [Articles]
       summary: Create a new article
       operationId: createArticle
+      security:
+        - googleOidc: []
       description: >
         Accepts a URL and a BCP-47 language tag.
         The server fetches the page at the given URL and automatically
@@ -103,8 +137,14 @@ paths:
                 $ref: '#/components/schemas/Article'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
   /api/articles/{id}:
 
@@ -115,6 +155,7 @@ paths:
       tags: [Articles]
       summary: Get article by ID
       operationId: getArticle
+      security: []
       responses:
         '200':
           description: Article found
@@ -129,6 +170,8 @@ paths:
       tags: [Articles]
       summary: Replace article input fields
       operationId: replaceArticle
+      security:
+        - googleOidc: []
       description: >
         Replaces url and language. The server re-fetches the target page to
         refresh title, thumbnail and lead.
@@ -147,22 +190,30 @@ paths:
                 $ref: '#/components/schemas/Article'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
         '404':
           $ref: '#/components/responses/NotFound'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
     patch:
       tags: [Articles]
       summary: Partially update an article
       operationId: patchArticle
+      security:
+        - googleOidc: []
       description: >
         Updates only the provided fields. If url is changed the server
         re-fetches the page to refresh the enriched fields.
       requestBody:
         required: true
         content:
-          application/json:
+          application/merge-patch+json:
             schema:
               $ref: '#/components/schemas/ArticlePatch'
       responses:
@@ -174,20 +225,32 @@ paths:
                 $ref: '#/components/schemas/Article'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
         '404':
           $ref: '#/components/responses/NotFound'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
     delete:
       tags: [Articles]
       summary: Delete an article
       operationId: deleteArticle
+      security:
+        - googleOidc: []
       responses:
         '204':
           description: Article deleted
         '404':
           $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
   /rss:
 
@@ -195,6 +258,16 @@ paths:
       tags: [RSS]
       summary: RSS 2.0 feed
       operationId: getRssFeed
+      security: []
+      x-rss-channel:
+        title: Co za zjeb
+        link: https://cozazjeb.pl
+        description: fucked up news
+        language:
+          default: en
+          supports: [en, pl]
+        generator: cozazjeb.pl
+        lastBuildDateSource: Gradle build metadata
       description: >
         Returns an RSS 2.0 feed of articles ordered by creation date (newest first).
         Provide the `lang` query parameter to filter to a single BCP-47 language.
@@ -214,7 +287,88 @@ paths:
               schema:
                 type: string
 
+  /api/allowed-users:
+
+    get:
+      tags: [Security]
+      summary: List allowlisted users
+      operationId: listAllowedUsers
+      security:
+        - googleOidc: []
+      responses:
+        '200':
+          description: List of allowlisted users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AllowedUser'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    post:
+      tags: [Security]
+      summary: Add user to allowlist
+      operationId: addAllowedUser
+      security:
+        - googleOidc: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AllowedUserInput'
+      responses:
+        '201':
+          description: User added to allowlist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AllowedUser'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/allowed-users/{email}:
+
+    parameters:
+      - name: email
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Email to remove from allowlist
+
+    delete:
+      tags: [Security]
+      summary: Remove user from allowlist
+      operationId: removeAllowedUser
+      security:
+        - googleOidc: []
+      responses:
+        '204':
+          description: User removed from allowlist
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
 components:
+
+  securitySchemes:
+    googleOidc:
+      type: openIdConnect
+      openIdConnectUrl: https://accounts.google.com/.well-known/openid-configuration
 
   parameters:
     ArticleId:
@@ -245,7 +399,7 @@ components:
 
     ArticlePatch:
       type: object
-      description: Fields that may be partially updated; omitted fields are left unchanged
+      description: JSON Merge Patch document; omitted fields are left unchanged
       properties:
         url:
           type: string
@@ -292,6 +446,34 @@ components:
           type: string
           description: AI-generated summary — future feature, null until implemented
           nullable: true
+        createdAt:
+          type: string
+          format: date-time
+          readOnly: true
+          example: "2026-05-02T10:00:00Z"
+
+    AllowedUserInput:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+          description: Email to add to the write-operation allowlist
+          example: admin@cozazjeb.pl
+
+    AllowedUser:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          readOnly: true
+          example: 1
+        email:
+          type: string
+          format: email
+          example: admin@cozazjeb.pl
         createdAt:
           type: string
           format: date-time
@@ -353,6 +535,27 @@ components:
 
     BadRequest:
       description: Request payload is invalid or malformed
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+
+    Conflict:
+      description: An article with the same URL already exists
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+
+    Unauthorized:
+      description: Missing or invalid OAuth2 Bearer token
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+
+    Forbidden:
+      description: Authenticated but not allowed to perform this operation
       content:
         application/problem+json:
           schema:
