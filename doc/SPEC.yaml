@@ -103,8 +103,9 @@ x-architecture:
     - name: Bootstrap configuration
       technology: Spring Boot configuration properties
       description: >
-        Startup env var COZAZJEB_BOOTSTRAP_ADMIN_EMAIL seeds one ADMIN user
-        if allowlist is empty.
+        In production profile, COZAZJEB_BOOTSTRAP_ADMIN_EMAIL is mandatory.
+        If missing, startup fails fast.
+        If provided and allowlist is empty, one ADMIN user is seeded.
 
 # ──────────────────────────────────────────────────────────────
 # DATABASE SPEC  (x-database)
@@ -310,8 +311,8 @@ x-business-rules:
       If allowed_user table is empty, insert one ADMIN row using normalized
       email (trim + lowercase).
       If the email already exists with role USER, promote it to ADMIN.
-      If allowed_user table is empty and env var is not set,
-      startup is allowed but all write operations remain blocked by allowlist.
+      In production profile, missing env var fails startup.
+      In non-production profiles, startup is allowed without this env var.
   - id: BR-21
     name: Role-based access control
     description: >
@@ -421,8 +422,9 @@ x-security-policy:
     seedOnlyWhenAllowlistEmpty: true
     failFastOnInvalidEmail: true
     promoteExistingUserToAdmin: true
-    allowStartupWithoutBootstrapAdmin: true
-    writesBlockedUntilFirstAdminExists: true
+    requireEnvVarInProduction: true
+    failStartupWhenMissingInProduction: true
+    allowStartupWithoutBootstrapAdminInNonProduction: true
   cors:
     allowedOrigins: [https://cozazjeb.pl]
     allowedMethods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
