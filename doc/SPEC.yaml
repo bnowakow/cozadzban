@@ -307,9 +307,11 @@ x-business-rules:
     description: >
       On application startup, COZAZJEB_BOOTSTRAP_ADMIN_EMAIL is validated first.
       If invalid email format, startup fails fast.
-      If allow_user table is empty, insert one ADMIN row using normalized
+      If allowed_user table is empty, insert one ADMIN row using normalized
       email (trim + lowercase).
       If the email already exists with role USER, promote it to ADMIN.
+      If allowed_user table is empty and env var is not set,
+      startup is allowed but all write operations remain blocked by allowlist.
   - id: BR-21
     name: Role-based access control
     description: >
@@ -419,6 +421,8 @@ x-security-policy:
     seedOnlyWhenAllowlistEmpty: true
     failFastOnInvalidEmail: true
     promoteExistingUserToAdmin: true
+    allowStartupWithoutBootstrapAdmin: true
+    writesBlockedUntilFirstAdminExists: true
   cors:
     allowedOrigins: [https://cozazjeb.pl]
     allowedMethods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
@@ -768,7 +772,7 @@ paths:
               $ref: '#/components/schemas/AllowedUserRolePatch'
       responses:
         '200':
-          description: Allowed user role updated
+          description: Allowed user role updated (or unchanged if same role requested)
           content:
             application/json:
               schema:

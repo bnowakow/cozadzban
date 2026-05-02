@@ -31,6 +31,9 @@ info:
     - Roles: USER can write articles; ADMIN can manage allowlist users.
     - If allowlist is empty and COZAZJEB_BOOTSTRAP_ADMIN_EMAIL is set,
       startup seeds one ADMIN user.
+    - If allowlist is empty and bootstrap env var is not set,
+      startup is allowed, but write operations remain blocked by allowlist
+      until first ADMIN is created another way.
     - All API timestamps are UTC.
     - Error responses use `application/problem+json` (RFC 9457 /
       Spring `ProblemDetail`).
@@ -63,6 +66,8 @@ x-security-policy:
     seedOnlyWhenAllowlistEmpty: true
     failFastOnInvalidEmail: true
     promoteExistingUserToAdmin: true
+    allowStartupWithoutBootstrapAdmin: true
+    writesBlockedUntilFirstAdminExists: true
   cors:
     allowedOrigins: [https://cozazjeb.pl]
     allowedMethods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
@@ -412,7 +417,7 @@ paths:
               $ref: '#/components/schemas/AllowedUserRolePatch'
       responses:
         '200':
-          description: Allowed user role updated
+          description: Allowed user role updated (or unchanged if same role requested)
           content:
             application/json:
               schema:
