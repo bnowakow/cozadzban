@@ -29,10 +29,9 @@ info:
     - Write endpoints additionally require the token email to be present in
       database allowlist (`allowed_user` entity managed via API).
     - Roles: USER can write articles; ADMIN can manage allowlist users.
-    - In production profile, COZAZJEB_BOOTSTRAP_ADMIN_EMAIL is required;
-      if missing, startup fails.
+    - COZAZJEB_BOOTSTRAP_ADMIN_EMAIL is required in all environments;
+      missing or empty value fails startup.
     - If set and allowlist is empty, startup seeds one ADMIN user.
-    - In non-production profiles, startup may proceed without this env var.
     - All API timestamps are UTC.
     - Error responses use `application/problem+json` (RFC 9457 /
       Spring `ProblemDetail`).
@@ -65,9 +64,8 @@ x-security-policy:
     seedOnlyWhenAllowlistEmpty: true
     failFastOnInvalidEmail: true
     promoteExistingUserToAdmin: true
-    requireEnvVarInProduction: true
-    failStartupWhenMissingInProduction: true
-    allowStartupWithoutBootstrapAdminInNonProduction: true
+    requireEnvVarInAllEnvironments: true
+    failStartupWhenMissingOrEmpty: true
   cors:
     allowedOrigins: [https://cozazjeb.pl]
     allowedMethods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
