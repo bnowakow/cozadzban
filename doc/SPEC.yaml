@@ -304,9 +304,11 @@ x-business-rules:
   - id: BR-20
     name: Bootstrap admin user
     description: >
-      On application startup, if allowed_user table is empty and
-      COZAZJEB_BOOTSTRAP_ADMIN_EMAIL is set, insert one allowed_user row with
-      role=ADMIN and normalized email (trim + lowercase).
+      On application startup, COZAZJEB_BOOTSTRAP_ADMIN_EMAIL is validated first.
+      If invalid email format, startup fails fast.
+      If allow_user table is empty, insert one ADMIN row using normalized
+      email (trim + lowercase).
+      If the email already exists with role USER, promote it to ADMIN.
   - id: BR-21
     name: Role-based access control
     description: >
@@ -317,6 +319,19 @@ x-business-rules:
     description: >
       RSS channel lastBuildDate must come from application property
       app.build.timestamp, populated at build time.
+      Output format is RFC-822 in UTC.
+  - id: BR-23
+    name: Minimum admin invariant
+    description: >
+      System must always keep at least one ADMIN user.
+      Deleting the final ADMIN returns 409 Conflict.
+      Any role change that would result in zero ADMIN users returns 409 Conflict.
+  - id: BR-24
+    name: Frozen response contract behavior
+    description: >
+      Response field order is non-contractual and clients must not depend on it.
+      Producers must emit only documented fields for frozen schemas.
+      Consumers should ignore unknown fields for forward compatibility.
 
 # ──────────────────────────────────────────────────────────────
 # VAADIN UI SPEC  (x-vaadin-ui)
@@ -385,7 +400,7 @@ x-security-policy:
   rejectUnsignedTokens: true
   clockSkewSeconds: 60
   denyByDefault: true
-  audienceSource: application-config-client-id
+  audienceSource: spring.security.oauth2.resourceserver.jwt.audiences
   allowlist:
     enabled: true
     table: allowed_user
@@ -394,10 +409,14 @@ x-security-policy:
   bootstrap:
     adminEmailEnvVar: COZAZJEB_BOOTSTRAP_ADMIN_EMAIL
     seedOnlyWhenAllowlistEmpty: true
+    failFastOnInvalidEmail: true
+    promoteExistingUserToAdmin: true
   cors:
     allowedOrigins: [https://cozazjeb.pl]
-    allowedMethods: [GET, POST, PUT, PATCH, DELETE]
+    allowedMethods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
     allowedHeaders: [Authorization, Content-Type]
+    preflightMaxAgeSeconds: 600
+    allowCredentials: false
   csrf:
     disabledPaths: [/api/**, /rss]
     enabledForVaadinUi: true
@@ -609,6 +628,8 @@ paths:
           supports: [en, pl]
         generator: cozazjeb.pl
         lastBuildDateSource: app.build.timestamp property injected at build time
+        lastBuildDateFormat: RFC-822 UTC
+        lastBuildDateFallback: fail-fast when app.build.timestamp is missing
       description: >
         Returns an RSS 2.0 feed of articles ordered by creation date (newest first).
         Provide the `lang` query parameter to filter to a single BCP-47 language.
@@ -701,6 +722,8 @@ paths:
       responses:
         '204':
           description: User removed from allowlist
+        '409':
+          $ref: '#/components/responses/Conflict'
         '404':
           $ref: '#/components/responses/NotFound'
         '401':

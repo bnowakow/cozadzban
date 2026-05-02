@@ -52,7 +52,7 @@ x-security-policy:
   rejectUnsignedTokens: true
   clockSkewSeconds: 60
   denyByDefault: true
-  audienceSource: application-config-client-id
+  audienceSource: spring.security.oauth2.resourceserver.jwt.audiences
   allowlist:
     enabled: true
     table: allowed_user
@@ -61,10 +61,14 @@ x-security-policy:
   bootstrap:
     adminEmailEnvVar: COZAZJEB_BOOTSTRAP_ADMIN_EMAIL
     seedOnlyWhenAllowlistEmpty: true
+    failFastOnInvalidEmail: true
+    promoteExistingUserToAdmin: true
   cors:
     allowedOrigins: [https://cozazjeb.pl]
-    allowedMethods: [GET, POST, PUT, PATCH, DELETE]
+    allowedMethods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
     allowedHeaders: [Authorization, Content-Type]
+    preflightMaxAgeSeconds: 600
+    allowCredentials: false
   csrf:
     disabledPaths: [/api/**, /rss]
     enabledForVaadinUi: true
@@ -276,6 +280,8 @@ paths:
           supports: [en, pl]
         generator: cozazjeb.pl
         lastBuildDateSource: app.build.timestamp property injected at build time
+        lastBuildDateFormat: RFC-822 UTC
+        lastBuildDateFallback: fail-fast when app.build.timestamp is missing
       description: >
         Returns an RSS 2.0 feed of articles ordered by creation date (newest first).
         Provide the `lang` query parameter to filter to a single BCP-47 language.
@@ -368,6 +374,8 @@ paths:
       responses:
         '204':
           description: User removed from allowlist
+        '409':
+          $ref: '#/components/responses/Conflict'
         '404':
           $ref: '#/components/responses/NotFound'
         '401':
