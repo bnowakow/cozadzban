@@ -35,6 +35,9 @@ x-architecture:
         https://accounts.google.com.
         Read endpoints are public. Write-inducing endpoints require a valid
         Bearer token and allowlisted email.
+        Authorization model has two roles: USER and ADMIN.
+        USER can perform article write operations.
+        ADMIN can perform all operations, including allowlist management.
     - name: Database
       technology: PostgreSQL + Spring Data JDBC
       description: >
@@ -76,7 +79,7 @@ x-architecture:
         description: fucked up news
         language: en
         generator: cozazjeb.pl
-        lastBuildDateSource: Gradle build metadata
+        lastBuildDateSource: app.build.timestamp property injected at build time
       description: >
         GET /rss returns an RSS 2.0 feed of all articles ordered by createdAt desc.
         GET /rss?lang=<BCP-47> filters to a single language.
@@ -97,6 +100,11 @@ x-architecture:
         CORS allows only origin https://cozazjeb.pl.
         API is stateless, so CSRF is disabled for /api/** and /rss.
         CSRF remains enabled for Vaadin UI routes.
+    - name: Bootstrap configuration
+      technology: Spring Boot configuration properties
+      description: >
+        Startup env var COZAZJEB_BOOTSTRAP_ADMIN_EMAIL seeds one ADMIN user
+        if allowlist is empty.
 
 # ──────────────────────────────────────────────────────────────
 # DATABASE SPEC  (x-database)
@@ -160,6 +168,10 @@ x-database:
           type: VARCHAR(320)
           constraints: "NOT NULL UNIQUE"
           description: Lowercased, trimmed email used for authorization allowlist.
+        - name: role
+          type: VARCHAR(16)
+          constraints: "NOT NULL"
+          description: Authorization role, one of USER or ADMIN.
         - name: created_at
           type: TIMESTAMPTZ
           constraints: "NOT NULL DEFAULT now()"
@@ -277,12 +289,34 @@ x-business-rules:
     name: Allowlist management API
     description: >
       Allowlist is managed using /api/allowed-users endpoints.
-      All these endpoints require valid token and allowlisted email.
+      All these endpoints require valid token, allowlisted email,
+      and ADMIN role.
   - id: BR-18
     name: PATCH media type and semantics
     description: >
       PATCH /api/articles/{id} uses JSON Merge Patch
       (application/merge-patch+json) semantics.
+  - id: BR-19
+    name: PATCH null handling
+    description: >
+      For PATCH /api/articles/{id}, null value for required fields
+      (url, language) is invalid and returns 400 Bad Request.
+  - id: BR-20
+    name: Bootstrap admin user
+    description: >
+      On application startup, if allowed_user table is empty and
+      COZAZJEB_BOOTSTRAP_ADMIN_EMAIL is set, insert one allowed_user row with
+      role=ADMIN and normalized email (trim + lowercase).
+  - id: BR-21
+    name: Role-based access control
+    description: >
+      USER can read and perform article writes.
+      ADMIN can perform all USER actions and manage allowlist users.
+  - id: BR-22
+    name: Build timestamp source
+    description: >
+      RSS channel lastBuildDate must come from application property
+      app.build.timestamp, populated at build time.
 
 # ──────────────────────────────────────────────────────────────
 # VAADIN UI SPEC  (x-vaadin-ui)
@@ -355,7 +389,11 @@ x-security-policy:
   allowlist:
     enabled: true
     table: allowed_user
+    roleColumn: role
     emailNormalization: trim+lowercase
+  bootstrap:
+    adminEmailEnvVar: COZAZJEB_BOOTSTRAP_ADMIN_EMAIL
+    seedOnlyWhenAllowlistEmpty: true
   cors:
     allowedOrigins: [https://cozazjeb.pl]
     allowedMethods: [GET, POST, PUT, PATCH, DELETE]
@@ -512,6 +550,7 @@ paths:
       description: >
         Updates only the provided fields. If url is changed the server
         re-fetches the page to refresh the enriched fields.
+        Null for url or language is invalid and returns 400.
       requestBody:
         required: true
         content:
@@ -569,7 +608,7 @@ paths:
           default: en
           supports: [en, pl]
         generator: cozazjeb.pl
-        lastBuildDateSource: Gradle build metadata
+        lastBuildDateSource: app.build.timestamp property injected at build time
       description: >
         Returns an RSS 2.0 feed of articles ordered by creation date (newest first).
         Provide the `lang` query parameter to filter to a single BCP-47 language.
@@ -595,6 +634,7 @@ paths:
       tags: [Security]
       summary: List allowlisted users
       operationId: listAllowedUsers
+      x-required-role: ADMIN
       security:
         - googleOidc: []
       responses:
@@ -615,6 +655,7 @@ paths:
       tags: [Security]
       summary: Add user to allowlist
       operationId: addAllowedUser
+      x-required-role: ADMIN
       security:
         - googleOidc: []
       requestBody:
@@ -642,17 +683,19 @@ paths:
   /api/allowed-users/{email}:
 
     parameters:
-      - name: email
+      - name: id
         in: path
         required: true
         schema:
-          type: string
-        description: Email to remove from allowlist
+          type: integer
+          format: int64
+        description: Allowed user identifier to remove
 
     delete:
       tags: [Security]
       summary: Remove user from allowlist
       operationId: removeAllowedUser
+      x-required-role: ADMIN
       security:
         - googleOidc: []
       responses:
@@ -756,13 +799,18 @@ components:
 
     AllowedUserInput:
       type: object
-      required: [email]
+      required: [email, role]
       properties:
         email:
           type: string
           format: email
           description: Email to add to the write-operation allowlist
           example: admin@cozazjeb.pl
+        role:
+          type: string
+          enum: [USER, ADMIN]
+          description: Authorization role assigned to this user
+          example: USER
 
     AllowedUser:
       type: object
@@ -776,6 +824,10 @@ components:
           type: string
           format: email
           example: admin@cozazjeb.pl
+        role:
+          type: string
+          enum: [USER, ADMIN]
+          example: USER
         createdAt:
           type: string
           format: date-time
@@ -784,12 +836,14 @@ components:
 
     ArticlePage:
       type: object
-      description: Spring Page wrapper for Article
+      description: Frozen page response shape for Article
       properties:
         content:
           type: array
           items:
             $ref: '#/components/schemas/Article'
+        pageable:
+          $ref: '#/components/schemas/Pageable'
         totalElements:
           type: integer
           format: int64
@@ -804,10 +858,53 @@ components:
           type: integer
           description: Current zero-based page number
           example: 0
+        numberOfElements:
+          type: integer
+          example: 20
+        sort:
+          $ref: '#/components/schemas/Sort'
         first:
           type: boolean
           example: true
         last:
+          type: boolean
+          example: false
+        empty:
+          type: boolean
+          example: false
+
+    Pageable:
+      type: object
+      properties:
+        pageNumber:
+          type: integer
+          example: 0
+        pageSize:
+          type: integer
+          example: 20
+        offset:
+          type: integer
+          format: int64
+          example: 0
+        paged:
+          type: boolean
+          example: true
+        unpaged:
+          type: boolean
+          example: false
+        sort:
+          $ref: '#/components/schemas/Sort'
+
+    Sort:
+      type: object
+      properties:
+        sorted:
+          type: boolean
+          example: true
+        unsorted:
+          type: boolean
+          example: false
+        empty:
           type: boolean
           example: false
 

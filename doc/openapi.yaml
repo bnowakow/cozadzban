@@ -28,6 +28,9 @@ info:
       are public. Write endpoints require Google OAuth2/OIDC Bearer tokens.
     - Write endpoints additionally require the token email to be present in
       database allowlist (`allowed_user` entity managed via API).
+    - Roles: USER can write articles; ADMIN can manage allowlist users.
+    - If allowlist is empty and COZAZJEB_BOOTSTRAP_ADMIN_EMAIL is set,
+      startup seeds one ADMIN user.
     - All API timestamps are UTC.
     - Error responses use `application/problem+json` (RFC 9457 /
       Spring `ProblemDetail`).
@@ -53,7 +56,11 @@ x-security-policy:
   allowlist:
     enabled: true
     table: allowed_user
+    roleColumn: role
     emailNormalization: trim+lowercase
+  bootstrap:
+    adminEmailEnvVar: COZAZJEB_BOOTSTRAP_ADMIN_EMAIL
+    seedOnlyWhenAllowlistEmpty: true
   cors:
     allowedOrigins: [https://cozazjeb.pl]
     allowedMethods: [GET, POST, PUT, PATCH, DELETE]
@@ -210,6 +217,7 @@ paths:
       description: >
         Updates only the provided fields. If url is changed the server
         re-fetches the page to refresh the enriched fields.
+        Null for url or language is invalid and returns 400.
       requestBody:
         required: true
         content:
@@ -267,7 +275,7 @@ paths:
           default: en
           supports: [en, pl]
         generator: cozazjeb.pl
-        lastBuildDateSource: Gradle build metadata
+        lastBuildDateSource: app.build.timestamp property injected at build time
       description: >
         Returns an RSS 2.0 feed of articles ordered by creation date (newest first).
         Provide the `lang` query parameter to filter to a single BCP-47 language.
@@ -293,6 +301,7 @@ paths:
       tags: [Security]
       summary: List allowlisted users
       operationId: listAllowedUsers
+      x-required-role: ADMIN
       security:
         - googleOidc: []
       responses:
@@ -313,6 +322,7 @@ paths:
       tags: [Security]
       summary: Add user to allowlist
       operationId: addAllowedUser
+      x-required-role: ADMIN
       security:
         - googleOidc: []
       requestBody:
@@ -337,20 +347,22 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
 
-  /api/allowed-users/{email}:
+  /api/allowed-users/{id}:
 
     parameters:
-      - name: email
+      - name: id
         in: path
         required: true
         schema:
-          type: string
-        description: Email to remove from allowlist
+          type: integer
+          format: int64
+        description: Allowed user identifier to remove
 
     delete:
       tags: [Security]
       summary: Remove user from allowlist
       operationId: removeAllowedUser
+      x-required-role: ADMIN
       security:
         - googleOidc: []
       responses:
@@ -454,13 +466,18 @@ components:
 
     AllowedUserInput:
       type: object
-      required: [email]
+      required: [email, role]
       properties:
         email:
           type: string
           format: email
           description: Email to add to the write-operation allowlist
           example: admin@cozazjeb.pl
+        role:
+          type: string
+          enum: [USER, ADMIN]
+          description: Authorization role assigned to this user
+          example: USER
 
     AllowedUser:
       type: object
@@ -474,6 +491,10 @@ components:
           type: string
           format: email
           example: admin@cozazjeb.pl
+        role:
+          type: string
+          enum: [USER, ADMIN]
+          example: USER
         createdAt:
           type: string
           format: date-time
@@ -482,12 +503,14 @@ components:
 
     ArticlePage:
       type: object
-      description: Spring Page wrapper for Article
+      description: Frozen page response shape for Article
       properties:
         content:
           type: array
           items:
             $ref: '#/components/schemas/Article'
+        pageable:
+          $ref: '#/components/schemas/Pageable'
         totalElements:
           type: integer
           format: int64
@@ -502,10 +525,53 @@ components:
           type: integer
           description: Current zero-based page number
           example: 0
+        numberOfElements:
+          type: integer
+          example: 20
+        sort:
+          $ref: '#/components/schemas/Sort'
         first:
           type: boolean
           example: true
         last:
+          type: boolean
+          example: false
+        empty:
+          type: boolean
+          example: false
+
+    Pageable:
+      type: object
+      properties:
+        pageNumber:
+          type: integer
+          example: 0
+        pageSize:
+          type: integer
+          example: 20
+        offset:
+          type: integer
+          format: int64
+          example: 0
+        paged:
+          type: boolean
+          example: true
+        unpaged:
+          type: boolean
+          example: false
+        sort:
+          $ref: '#/components/schemas/Sort'
+
+    Sort:
+      type: object
+      properties:
+        sorted:
+          type: boolean
+          example: true
+        unsorted:
+          type: boolean
+          example: false
+        empty:
           type: boolean
           example: false
 
