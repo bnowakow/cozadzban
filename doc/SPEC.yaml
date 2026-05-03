@@ -57,9 +57,10 @@ x-architecture:
     - name: URL enrichment
       technology: Spring RestClient (spring-boot-starter-restclient)
       description: >
-        On create (POST) and replace (PUT), the server synchronously fetches
-        the target URL and extracts title (og:title / <title>),
-        thumbnail (og:image) and lead (og:description / <meta name="description">).
+        On create (POST), replace (PUT) and partial update (PATCH when url is
+        changed), the server synchronously fetches the target URL and extracts
+        title (og:title / <title>), thumbnail (og:image) and lead
+        (og:description / <meta name="description">).
         Enrichment is synchronous and atomic — if the fetch fails no DB write occurs.
         Defaults: connect timeout 3 s, read timeout 5 s, no retries.
         If the fetch returns a non-2xx status, times out, or the URL is
@@ -427,8 +428,8 @@ info:
 
     ## Implementation notes
     - Language is a free-form BCP-47 string (e.g. `pl`, `en`, `de`).
-    - `title`, `thumbnail` and `lead` are server-fetched; clients only supply
-      `url` + `language` on create/replace.
+    - `title`, `thumbnail` and `lead` are server-fetched; clients supply
+      `url`, `language` and optional `quote` on create/replace.
     - `aiSummary` is reserved for a future AI enrichment step; always `null`
       in the current version.
     - Read endpoints (`GET /api/articles`, `GET /api/articles/{id}`, `GET /rss`)
@@ -619,8 +620,8 @@ paths:
       security:
         - googleOidc: []
       description: >
-        Replaces url and language. The server re-fetches the target page to
-        refresh title, thumbnail and lead.
+        Replaces url, language and optional quote. The server re-fetches the
+        target page to refresh title, thumbnail and lead.
       requestBody:
         required: true
         content:
@@ -654,8 +655,11 @@ paths:
       security:
         - googleOidc: []
       description: >
-        Updates only the provided fields. If url is changed the server
-        re-fetches the page to refresh the enriched fields.
+        Updates only the provided fields. Updatable fields: url, language, quote.
+        Setting quote to null explicitly clears it; omitting quote leaves it unchanged.
+        If url is changed the server re-fetches the page to refresh the enriched
+        fields. Fully atomic — if enrichment fails the server responds with 422
+        and the existing record is left unchanged.
         Null for url or language is invalid and returns 400.
       requestBody:
         required: true
@@ -712,7 +716,7 @@ paths:
         description: fucked up news
         language:
           default: en
-          supports: [en, pl]
+          note: accepts any BCP-47 tag (free-form, no fixed enum)
         generator: cozazjeb.pl
         lastBuildDateSource: app.build.timestamp injected by Gradle as ISO-8601 UTC
         lastBuildDateFormat: RFC-822 UTC (converted by RSS controller from ISO-8601)
@@ -720,7 +724,9 @@ paths:
       parameters:
         - name: lang
           in: query
-          description: BCP-47 language tag filter (e.g. en, pl, de)
+          description: >-
+            BCP-47 language tag filter (e.g. en, pl, de).
+            Accepts any free-form BCP-47 tag — no fixed enum.
           required: false
           schema:
             type: string
