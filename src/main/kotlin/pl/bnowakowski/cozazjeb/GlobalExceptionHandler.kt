@@ -13,6 +13,8 @@ import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
 import pl.bnowakowski.cozazjeb.article.ArticleUrlConflictException
 import pl.bnowakowski.cozazjeb.enrichment.EnrichmentException
+import pl.bnowakowski.cozazjeb.user.AllowlistEmailConflictException
+import pl.bnowakowski.cozazjeb.user.LastAdminRequiredException
 import java.net.URI
 
 @RestControllerAdvice
@@ -71,6 +73,28 @@ class GlobalExceptionHandler {
         )
         pd.type = URI.create("https://cozazjeb.pl/problems/article-url-conflict")
         pd.title = "Article URL Already Exists"
+        return pd
+    }
+
+    @ExceptionHandler(AllowlistEmailConflictException::class)
+    fun handleAllowlistEmailConflict(ex: AllowlistEmailConflictException): ProblemDetail {
+        val pd = ProblemDetail.forStatusAndDetail(
+            HttpStatus.CONFLICT,
+            "User with email '${ex.email}' is already allowlisted",
+        )
+        pd.type = URI.create("https://cozazjeb.pl/problems/allowlist-email-conflict")
+        pd.title = "Allowlisted Email Already Exists"
+        return pd
+    }
+
+    @ExceptionHandler(LastAdminRequiredException::class)
+    fun handleLastAdminRequired(ex: LastAdminRequiredException): ProblemDetail {
+        val pd = ProblemDetail.forStatusAndDetail(
+            HttpStatus.CONFLICT,
+            ex.message ?: "Operation would leave the system without an ADMIN user",
+        )
+        pd.type = URI.create("https://cozazjeb.pl/problems/last-admin-required")
+        pd.title = "Last Admin Required"
         return pd
     }
 
