@@ -4,9 +4,13 @@
 package pl.bnowakowski.cozazjeb.security
 
 import com.vaadin.flow.spring.security.VaadinSecurityConfigurer
+import jakarta.servlet.http.HttpServletResponse
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.core.env.Environment
+import org.springframework.http.HttpStatus
+import org.springframework.http.MediaType
+import org.springframework.http.ProblemDetail
 import org.springframework.http.HttpMethod
 import org.springframework.security.authorization.AuthorizationDecision
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity
@@ -68,11 +72,54 @@ class SecurityConfig(
                 auth.requestMatchers("/rss").denyAll()
                 // Vaadin request matchers are contributed by the configurer above.
             }
+            .exceptionHandling { exceptions ->
+                exceptions.authenticationEntryPoint { _, response, ex ->
+                    writeProblem(
+                        response = response,
+                        status = HttpStatus.UNAUTHORIZED,
+                        title = "Unauthorized",
+                        detail = ex.message ?: "Authentication is required",
+                    )
+                }
+                exceptions.accessDeniedHandler { _, response, ex ->
+                    writeProblem(
+                        response = response,
+                        status = HttpStatus.FORBIDDEN,
+                        title = "Forbidden",
+                        detail = ex.message ?: "Access is denied",
+                    )
+                }
+            }
             .oauth2ResourceServer { oauth2 ->
                 oauth2.jwt { jwt -> jwt.jwtAuthenticationConverter(GoogleJwtAuthenticationConverter()) }
             }
         return http.build()
     }
+
+    private fun writeProblem(
+        response: HttpServletResponse,
+        status: HttpStatus,
+        title: String,
+        detail: String,
+    ) {
+        val pd = ProblemDetail.forStatusAndDetail(status, detail)
+        pd.title = title
+
+        response.status = status.value()
+        response.contentType = MediaType.APPLICATION_PROBLEM_JSON_VALUE
+        response.characterEncoding = Charsets.UTF_8.name()
+        response.writer.write(
+            """{"type":"${pd.type}","title":"${jsonEscape(pd.title ?: title)}","status":${status.value()},"detail":"${jsonEscape(pd.detail ?: detail)}"}"""
+        )
+    }
+
+    private fun jsonEscape(value: String): String =
+        value
+            .replace("\\", "\\\\")
+            .replace("\"", "\\\"")
+            .replace("\n", "\\n")
+            .replace("\r", "\\r")
+            .replace("\t", "\\t")
 
     @Bean
     fun corsConfigurationSource(): CorsConfigurationSource {

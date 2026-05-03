@@ -9,7 +9,10 @@ import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Repository
 import java.time.Instant
 
-interface ArticleRepository : CrudRepository<Article, Long>, ArticleRepositoryCustom
+interface ArticleRepository : CrudRepository<Article, Long>, ArticleRepositoryCustom {
+    fun existsByUrl(url: String): Boolean
+    fun findByUrl(url: String): Article?
+}
 
 interface ArticleRepositoryCustom {
     /**
