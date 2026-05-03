@@ -8,19 +8,28 @@ import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.core.env.Environment
 import org.springframework.http.HttpMethod
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity
-import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter
-import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter
 import org.springframework.security.web.SecurityFilterChain
+import org.springframework.web.cors.CorsConfiguration
+import org.springframework.web.cors.CorsConfigurationSource
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource
 
 @Configuration
 @EnableWebSecurity
+@EnableMethodSecurity
 class SecurityConfig(private val env: Environment) {
 
     @Bean
     fun securityFilterChain(http: HttpSecurity): SecurityFilterChain {
         http
+            .cors { it.configurationSource(corsConfigurationSource()) }
+            .csrf { csrf ->
+                // API and RSS are stateless — no CSRF needed (BR-16)
+                csrf.ignoringRequestMatchers("/api/**", "/rss")
+                // Vaadin UI routes retain CSRF protection
+            }
             .authorizeHttpRequests { auth ->
                 // /actuator/health is always public (load balancer / k8s probes)
                 auth.requestMatchers("/actuator/health").permitAll()
@@ -30,12 +39,16 @@ class SecurityConfig(private val env: Environment) {
                 } else {
                     auth.requestMatchers("/actuator/metrics", "/actuator/info").authenticated()
                 }
-                // Public REST read endpoints
-                auth.requestMatchers(HttpMethod.GET, "/api/articles", "/api/articles/**", "/api/feed").permitAll()
+                // Public REST read endpoints (BR-10)
+                auth.requestMatchers(HttpMethod.GET, "/api/articles", "/api/articles/**", "/rss").permitAll()
                 // Vaadin internal paths handled by the configurer below
+            }
+            .oauth2ResourceServer { oauth2 ->
+                oauth2.jwt { jwt -> jwt.jwtAuthenticationConverter(GoogleJwtAuthenticationConverter()) }
             }
             .with(VaadinSecurityConfigurer.vaadin()) { vaadin ->
                 vaadin
+                    .enableCsrfConfiguration(false) // we configure CSRF ourselves above
                     .enableAuthorizedRequestsConfiguration(true)
                     .enableNavigationAccessControl(true)
             }
@@ -43,13 +56,17 @@ class SecurityConfig(private val env: Environment) {
     }
 
     @Bean
-    fun jwtAuthenticationConverter(): JwtAuthenticationConverter {
-        val grantedAuthoritiesConverter = JwtGrantedAuthoritiesConverter().apply {
-            setAuthoritiesClaimName("roles")
-            setAuthorityPrefix("ROLE_")
+    fun corsConfigurationSource(): CorsConfigurationSource {
+        val config = CorsConfiguration().apply {
+            allowedOrigins = listOf("https://cozazjeb.pl")
+            allowedMethods = listOf("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
+            allowedHeaders = listOf("Authorization", "Content-Type")
+            allowCredentials = false
+            maxAge = 600L
         }
-        return JwtAuthenticationConverter().apply {
-            setJwtGrantedAuthoritiesConverter(grantedAuthoritiesConverter)
+        return UrlBasedCorsConfigurationSource().apply {
+            registerCorsConfiguration("/api/**", config)
+            registerCorsConfiguration("/rss", config)
         }
     }
 }
