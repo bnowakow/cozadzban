@@ -56,8 +56,7 @@ The Vaadin UI is available at **http://localhost:8080/**.
 make help          # List all targets
 make build         # Build without tests
 make test          # Run all tests
-make logs          # Follow Docker logs
-make shell         # Open psql inside the Postgres container
+make docker-logs   # Follow Docker logs
 make dev-down      # Stop and remove containers
 ```
 

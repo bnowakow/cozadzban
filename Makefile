@@ -1,5 +1,5 @@
 
-.PHONY: help dev-up dev-down build run run-local run-prod test clean logs pg-shell-docker shell
+.PHONY: help dev-up dev-down docker-pg-nuke build run run-local run-prod test clean docker-logs docker-pg-shell
 
 -include .env
 
@@ -11,15 +11,15 @@ help:
 	@echo ""
 	@echo "  dev-up          Start local infrastructure from compose.yaml"
 	@echo "  dev-down        Stop and remove local infrastructure containers"
+	@echo "  docker-pg-nuke  Recreate PostgreSQL container and reset docker-data/postgres"
 	@echo "  build           Build the project (skip tests)"
 	@echo "  run             Run Spring Boot with SPRING_PROFILES_ACTIVE from .env"
 	@echo "  run-local       Run Spring Boot with local profile"
 	@echo "  run-prod        Run Spring Boot with prod profile"
 	@echo "  test            Run all tests"
 	@echo "  clean           Clean Gradle build artifacts"
-	@echo "  logs            Show compose logs (follow mode)"
-	@echo "  pg-shell-docker Open PostgreSQL shell inside docker container"
-	@echo "  shell           Alias for pg-shell-docker"
+	@echo "  docker-logs     Show compose logs (follow mode)"
+	@echo "  docker-pg-shell Open PostgreSQL shell inside docker container"
 	@echo ""
 
 # Active Spring profile used by the generic run target.
@@ -38,6 +38,12 @@ dev-up:
 # Stop local development environment
 dev-down:
 	docker compose -f compose.yaml down
+
+# Recreate PostgreSQL container with a fresh data directory
+docker-pg-nuke:
+	$(MAKE) dev-down
+	rm -rf ./docker-data/postgres
+	$(MAKE) dev-up
 
 # Build the project (skip tests)
 build:
@@ -64,10 +70,10 @@ clean:
 	./gradlew clean
 
 # Follow docker-compose logs
-logs:
+docker-logs:
 	docker compose -f compose.yaml logs -f
 
 # Open PostgreSQL shell inside docker container (requires dev-up)
-pg-shell-docker:
+docker-pg-shell:
 	docker compose -f compose.yaml exec postgres psql -U $(POSTGRES_USER) -d $(POSTGRES_DB)
 
