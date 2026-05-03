@@ -60,11 +60,10 @@ x-architecture:
         On create (POST) and replace (PUT), the server synchronously fetches
         the target URL and extracts title (og:title / <title>),
         thumbnail (og:image) and lead (og:description / <meta name="description">).
-        Enrichment is synchronous — the HTTP response is not returned until
-        enrichment completes or fails.
+        Enrichment is synchronous and atomic — if the fetch fails no DB write occurs.
         Defaults: connect timeout 3 s, read timeout 5 s, no retries.
         If the fetch returns a non-2xx status, times out, or the URL is
-        unreachable, the server responds with 422.
+        unreachable, the server responds with 422 and the article is not persisted.
     - name: RSS feed
       technology: Custom controller returning application/rss+xml
       rssFieldMapping:
@@ -79,9 +78,8 @@ x-architecture:
         description: fucked up news
         language: en
         generator: cozazjeb.pl
-        lastBuildDateSource: app.build.timestamp property injected at build time
-      description: >
-        GET /rss returns an RSS 2.0 feed of all articles ordered by createdAt desc.
+        lastBuildDateSource: app.build.timestamp injected by Gradle as ISO-8601 UTC
+        lastBuildDateFormat: RFC-822 UTC (converted by RSS controller from ISO-8601)
         GET /rss?lang=<BCP-47> filters to a single language.
         Language-filtered feed should set RSS channel language to the filter value.
     - name: Vaadin UI
@@ -145,6 +143,10 @@ x-database:
           type: TEXT
           constraints: nullable
           description: Lead text fetched from og:description or <meta name="description">.
+        - name: quote
+          type: TEXT
+          constraints: nullable
+          description: Optional user-provided quote or comment about the article. Not server-fetched.
         - name: ai_summary
           type: TEXT
           constraints: nullable
@@ -193,12 +195,15 @@ x-business-rules:
     description: >
       When a new Article is created (POST /api/articles), the server MUST fetch
       the URL and populate title, thumbnail and lead before persisting.
-      If the HTTP fetch returns a non-2xx status or times out, respond with 422.
+      The operation is fully atomic: if enrichment fails (non-2xx, timeout, or
+      unreachable), the server responds with 422 and no DB write occurs.
   - id: BR-02
     name: URL enrichment on replace
     description: >
       When an Article is replaced (PUT /api/articles/{id}), the server MUST
       re-fetch the new URL to refresh title, thumbnail and lead.
+      The operation is fully atomic: if enrichment fails, the server responds
+      with 422 and the existing article record is left unchanged.
   - id: BR-03
     name: Partial update enrichment
     description: >
@@ -241,6 +246,42 @@ x-business-rules:
       NamedParameterJdbcTemplate MUST use named parameters (:param) and
       never string concatenation. Raw JdbcTemplate with concatenated SQL
       is forbidden (OWASP A03).
+  - id: BR-26
+    name: Sort field allowlist
+    description: >
+      The sort parameter on GET /api/articles MUST be validated against an
+      explicit allowlist before use in SQL ORDER BY: [id, createdAt, language, title].
+      Column names must never be interpolated from raw user input.
+      An unrecognised field returns 400 Bad Request.
+  - id: BR-27
+    name: Quote field semantics
+    description: >
+      quote is user-provided text, optional and nullable.
+      Clients supply it in POST/PUT body alongside url and language.
+      If omitted from POST/PUT, it defaults to null.
+      In PATCH, an explicit null value clears the field; omitting quote leaves
+      it unchanged (standard JSON Merge Patch semantics).
+  - id: BR-28
+    name: Input field length and format constraints
+    description: >
+      url: minLength 1, maxLength 2048, must match ^https?://.+ (http/https only).
+      language: minLength 1, maxLength 20 (matches VARCHAR(20) DB column).
+      quote: minLength 1 when present and non-null, maxLength 2000.
+      Empty string ("") is invalid for any string field and returns 400.
+      Violations return 400 Bad Request with ProblemDetail.
+  - id: BR-29
+    name: Allowlist email and role validation
+    description: >
+      email must be a valid RFC 5321 address, maxLength 254 characters.
+      role must be exactly one of the enum values USER or ADMIN (case-sensitive).
+      Any unrecognised role value returns 400 Bad Request.
+      Empty string for email or role returns 400 Bad Request.
+    description: >
+      quote is user-provided text, optional and nullable.
+      Clients supply it in POST/PUT body alongside url and language.
+      If omitted from POST/PUT, it defaults to null.
+      In PATCH, an explicit null value clears the field; omitting quote leaves
+      it unchanged (standard JSON Merge Patch semantics).
   - id: BR-10
     name: Public read endpoints
     description: >
@@ -301,10 +342,11 @@ x-business-rules:
       PATCH /api/articles/{id} uses JSON Merge Patch
       (application/merge-patch+json) semantics.
   - id: BR-19
-    name: PATCH null handling
+    name: PATCH null and empty-string handling
     description: >
       For PATCH /api/articles/{id}, null value for required fields
       (url, language) is invalid and returns 400 Bad Request.
+      Empty string ("") for any string field is invalid and returns 400.
   - id: BR-20
     name: Bootstrap admin user
     description: >
@@ -323,8 +365,11 @@ x-business-rules:
     name: Build timestamp source
     description: >
       RSS channel lastBuildDate must come from application property
-      app.build.timestamp, populated at build time.
-      Output format is RFC-822 in UTC.
+      app.build.timestamp, injected at build time as ISO-8601 UTC
+      (e.g. 2026-05-02T10:00:00Z) by the Gradle processResources task.
+      The RSS controller parses this ISO-8601 string and reformats it
+      to RFC-822 UTC before emitting the feed.
+      If the property is missing or unparseable, startup fails fast.
   - id: BR-23
     name: Minimum admin invariant
     description: >
@@ -484,9 +529,21 @@ paths:
             maximum: 100
         - name: sort
           in: query
-          description: "Sort expression: field,direction — e.g. createdAt,desc"
+          description: >
+            Sort expression: field,direction — e.g. createdAt,desc.
+            Permitted fields: id, createdAt, language, title.
+            Unknown field returns 400 Bad Request.
           schema:
             type: string
+            enum:
+              - id,asc
+              - id,desc
+              - createdAt,asc
+              - createdAt,desc
+              - language,asc
+              - language,desc
+              - title,asc
+              - title,desc
             example: createdAt,desc
       responses:
         '200':
@@ -495,6 +552,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ArticlePage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
 
     post:
       tags: [Articles]
@@ -655,12 +714,9 @@ paths:
           default: en
           supports: [en, pl]
         generator: cozazjeb.pl
-        lastBuildDateSource: app.build.timestamp property injected at build time
-        lastBuildDateFormat: RFC-822 UTC
-        lastBuildDateFallback: fail-fast when app.build.timestamp is missing
-      description: >
-        Returns an RSS 2.0 feed of articles ordered by creation date (newest first).
-        Provide the `lang` query parameter to filter to a single BCP-47 language.
+        lastBuildDateSource: app.build.timestamp injected by Gradle as ISO-8601 UTC
+        lastBuildDateFormat: RFC-822 UTC (converted by RSS controller from ISO-8601)
+        lastBuildDateFallback: fail-fast when app.build.timestamp is missing or unparseable
       parameters:
         - name: lang
           in: query
@@ -817,12 +873,24 @@ components:
         url:
           type: string
           format: uri
-          description: Full URL of the article page to fetch and store
+          minLength: 1
+          maxLength: 2048
+          pattern: '^https?://.+'
+          description: Full URL of the article page to fetch and store (http/https only)
           example: https://example.com/some-article
         language:
           type: string
+          minLength: 1
+          maxLength: 20
           description: BCP-47 language tag identifying the article's language
           example: pl
+        quote:
+          type: string
+          nullable: true
+          minLength: 1
+          maxLength: 2000
+          description: Optional user-provided quote or comment about the article
+          example: "This perfectly captures the absurdity."
 
     ArticlePatch:
       type: object
@@ -831,11 +899,23 @@ components:
         url:
           type: string
           format: uri
+          minLength: 1
+          maxLength: 2048
+          pattern: '^https?://.+'
           example: https://example.com/updated-article
         language:
           type: string
+          minLength: 1
+          maxLength: 20
           description: BCP-47 language tag
           example: en
+        quote:
+          type: string
+          nullable: true
+          minLength: 1
+          maxLength: 2000
+          description: User-provided quote; null explicitly clears it; empty string is invalid
+          example: "This perfectly captures the absurdity."
 
     Article:
       type: object
@@ -869,6 +949,11 @@ components:
           description: Lead/excerpt fetched from the article page (og:description or similar)
           nullable: true
           example: "A short summary of the article content."
+        quote:
+          type: string
+          description: User-provided quote or comment about the article
+          nullable: true
+          example: "This perfectly captures the absurdity."
         aiSummary:
           type: string
           description: AI-generated summary — future feature, null until implemented
@@ -886,11 +971,14 @@ components:
         email:
           type: string
           format: email
-          description: Email to add to the write-operation allowlist
+          minLength: 1
+          maxLength: 254
+          description: Email to add to the write-operation allowlist (RFC 5321 max 254 chars)
           example: admin@cozazjeb.pl
         role:
           type: string
           enum: [USER, ADMIN]
+          minLength: 1
           description: Authorization role assigned to this user
           example: USER
 
@@ -905,6 +993,7 @@ components:
         email:
           type: string
           format: email
+          maxLength: 254
           example: admin@cozazjeb.pl
         role:
           type: string
@@ -924,6 +1013,7 @@ components:
         role:
           type: string
           enum: [USER, ADMIN]
+          minLength: 1
           description: New role to assign
           example: ADMIN
 

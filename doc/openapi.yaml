@@ -21,7 +21,8 @@ info:
     ## Implementation notes
     - Language is a free-form BCP-47 string (e.g. `pl`, `en`, `de`).
     - `title`, `thumbnail` and `lead` are server-fetched; clients only supply
-      `url` + `language` on create/replace.
+      `url` + `language` on create/replace. Enrichment is atomic — 422 on
+      failure means no DB write occurs and existing records are unchanged.
     - `aiSummary` is reserved for a future AI enrichment step; always `null`
       in the current version.
     - Read endpoints (`GET /api/articles`, `GET /api/articles/{id}`, `GET /rss`)
@@ -126,9 +127,21 @@ paths:
             maximum: 100
         - name: sort
           in: query
-          description: "Sort expression: field,direction — e.g. createdAt,desc"
+          description: >
+            Sort expression: field,direction — e.g. createdAt,desc.
+            Permitted fields: id, createdAt, language, title.
+            Unknown field returns 400 Bad Request.
           schema:
             type: string
+            enum:
+              - id,asc
+              - id,desc
+              - createdAt,asc
+              - createdAt,desc
+              - language,asc
+              - language,desc
+              - title,asc
+              - title,desc
             example: createdAt,desc
       responses:
         '200':
@@ -137,6 +150,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ArticlePage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
 
     post:
       tags: [Articles]
@@ -297,9 +312,9 @@ paths:
           default: en
           supports: [en, pl]
         generator: cozazjeb.pl
-        lastBuildDateSource: app.build.timestamp property injected at build time
-        lastBuildDateFormat: RFC-822 UTC
-        lastBuildDateFallback: fail-fast when app.build.timestamp is missing
+        lastBuildDateSource: app.build.timestamp injected by Gradle as ISO-8601 UTC
+        lastBuildDateFormat: RFC-822 UTC (converted by RSS controller from ISO-8601)
+        lastBuildDateFallback: fail-fast when app.build.timestamp is missing or unparseable
       description: >
         Returns an RSS 2.0 feed of articles ordered by creation date (newest first).
         Provide the `lang` query parameter to filter to a single BCP-47 language.
@@ -459,12 +474,24 @@ components:
         url:
           type: string
           format: uri
-          description: Full URL of the article page to fetch and store
+          minLength: 1
+          maxLength: 2048
+          pattern: '^https?://.+'
+          description: Full URL of the article page to fetch and store (http/https only)
           example: https://example.com/some-article
         language:
           type: string
+          minLength: 1
+          maxLength: 20
           description: BCP-47 language tag identifying the article's language
           example: pl
+        quote:
+          type: string
+          nullable: true
+          minLength: 1
+          maxLength: 2000
+          description: Optional user-provided quote or comment about the article
+          example: "This perfectly captures the absurdity."
 
     ArticlePatch:
       type: object
@@ -473,11 +500,23 @@ components:
         url:
           type: string
           format: uri
+          minLength: 1
+          maxLength: 2048
+          pattern: '^https?://.+'
           example: https://example.com/updated-article
         language:
           type: string
+          minLength: 1
+          maxLength: 20
           description: BCP-47 language tag
           example: en
+        quote:
+          type: string
+          nullable: true
+          minLength: 1
+          maxLength: 2000
+          description: User-provided quote; null explicitly clears it; empty string is invalid
+          example: "This perfectly captures the absurdity."
 
     Article:
       type: object
@@ -511,6 +550,11 @@ components:
           description: Lead/excerpt fetched from the article page (og:description or similar)
           nullable: true
           example: "A short summary of the article content."
+        quote:
+          type: string
+          description: User-provided quote or comment about the article
+          nullable: true
+          example: "This perfectly captures the absurdity."
         aiSummary:
           type: string
           description: AI-generated summary — future feature, null until implemented
@@ -528,11 +572,14 @@ components:
         email:
           type: string
           format: email
-          description: Email to add to the write-operation allowlist
+          minLength: 1
+          maxLength: 254
+          description: Email to add to the write-operation allowlist (RFC 5321 max 254 chars)
           example: admin@cozazjeb.pl
         role:
           type: string
           enum: [USER, ADMIN]
+          minLength: 1
           description: Authorization role assigned to this user
           example: USER
 
@@ -547,6 +594,7 @@ components:
         email:
           type: string
           format: email
+          maxLength: 254
           example: admin@cozazjeb.pl
         role:
           type: string
@@ -566,6 +614,7 @@ components:
         role:
           type: string
           enum: [USER, ADMIN]
+          minLength: 1
           description: New role to assign
           example: ADMIN
 
