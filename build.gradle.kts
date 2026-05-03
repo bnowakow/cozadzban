@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 bnowakowski
+// Copyright (C) 2026 https://bnowakowski.pl
+
+import java.time.Instant
 
 plugins {
 	kotlin("jvm") version "2.2.21"
@@ -33,6 +35,8 @@ dependencies {
 	implementation("org.springframework.boot:spring-boot-starter-jdbc")
 	implementation("org.springframework.boot:spring-boot-starter-restclient")
 	implementation("org.springframework.boot:spring-boot-starter-webmvc")
+	implementation("org.springframework.boot:spring-boot-starter-security")
+	implementation("org.springframework.boot:spring-boot-starter-oauth2-resource-server")
 	implementation("org.springframework.boot:spring-boot-starter-zipkin")
 	developmentOnly("com.vaadin:vaadin-dev")
 	implementation("com.vaadin:vaadin-spring-boot-starter")
@@ -78,4 +82,12 @@ kotlin {
 
 tasks.withType<Test> {
 	useJUnitPlatform()
+}
+
+tasks.named<ProcessResources>("processResources") {
+	from(sourceSets["main"].resources) {
+		include("application.properties")
+		val timestamp = Instant.now().toString()
+		expand(mapOf("app.build.timestamp" to timestamp))
+	}
 }
