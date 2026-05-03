@@ -1,3 +1,4 @@
+
 .PHONY: help dev-up dev-down build run run-local run-prod test clean logs pg-shell-docker shell
 
 -include .env
@@ -68,5 +69,5 @@ logs:
 
 # Open PostgreSQL shell inside docker container (requires dev-up)
 pg-shell-docker:
-	docker compose -f compose.yaml exec postgres psql -U $${POSTGRES_USER} -d $${POSTGRES_DB}
+	docker compose -f compose.yaml exec postgres psql -U $(POSTGRES_USER) -d $(POSTGRES_DB)
 
