@@ -358,7 +358,7 @@ x-business-rules:
     name: Sort field allowlist
     description: >
       The sort parameter on GET /api/articles MUST be validated against an
-      explicit allowlist before use in SQL ORDER BY: [id, createdAt, language, title].
+      explicit allowlist before use in SQL ORDER BY: [id, createdAt, language, title, url].
       Column names must never be interpolated from raw user input.
       An unrecognised field returns 400 Bad Request.
   - id: BR-27
@@ -400,7 +400,7 @@ x-vaadin-ui:
       features:
         - Server-side pagination; default page size 20
         - Page size selector dropdown with options [10, 20, 40, 60, 80, 100]
-        - Sort by any column
+        - Sort by any displayed column (allowlist: id, createdAt, language, title, url)
         - Click row to open source URL in a new tab
 
 # ──────────────────────────────────────────────────────────────
@@ -436,6 +436,9 @@ info:
     - Error responses use `application/problem+json` (RFC 9457 /
       Spring `ProblemDetail`).
   version: 0.0.1-SNAPSHOT
+  license:
+    name: GNU General Public License v3.0
+    url: https://www.gnu.org/licenses/gpl-3.0.html
 
 servers:
   - url: http://localhost:8080
@@ -526,7 +529,7 @@ paths:
           in: query
           description: >
             Sort expression: field,direction — e.g. createdAt,desc.
-            Permitted fields: id, createdAt, language, title.
+            Permitted fields: id, createdAt, language, title, url.
             Unknown field returns 400 Bad Request.
           schema:
             type: string
@@ -539,6 +542,8 @@ paths:
               - language,desc
               - title,asc
               - title,desc
+              - url,asc
+              - url,desc
             example: createdAt,desc
       responses:
         '200':
@@ -1145,7 +1150,7 @@ components:
                 type: https://cozazjeb.pl/problems/article-url-conflict
                 title: Article URL Already Exists
                 status: 409
-                detail: Article with this URL already exists.
+                detail: "Article with this URL already exists (canonicalized: <url>)."
                 instance: /api/articles
                 conflictField: url
                 existingId: 42

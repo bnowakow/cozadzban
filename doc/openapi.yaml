@@ -42,6 +42,8 @@ info:
   license:
     name: GNU General Public License v3.0
     url: https://www.gnu.org/licenses/gpl-3.0.html
+
+servers:
   - url: http://localhost:8080
     description: Local development
 
@@ -130,7 +132,7 @@ paths:
           in: query
           description: >
             Sort expression: field,direction — e.g. createdAt,desc.
-            Permitted fields: id, createdAt, language, title.
+            Permitted fields: id, createdAt, language, title, url.
             Unknown field returns 400 Bad Request.
           schema:
             type: string
@@ -143,6 +145,8 @@ paths:
               - language,desc
               - title,asc
               - title,desc
+              - url,asc
+              - url,desc
             example: createdAt,desc
       responses:
         '200':
@@ -754,7 +758,7 @@ components:
                 type: https://cozazjeb.pl/problems/article-url-conflict
                 title: Article URL Already Exists
                 status: 409
-                detail: Article with this URL already exists.
+                detail: "Article with this URL already exists (canonicalized: <url>)."
                 instance: /api/articles
                 conflictField: url
                 existingId: 42
