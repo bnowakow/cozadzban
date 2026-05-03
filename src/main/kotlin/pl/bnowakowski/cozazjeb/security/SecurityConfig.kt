@@ -40,7 +40,9 @@ class SecurityConfig(
             }
             .with(VaadinSecurityConfigurer.vaadin()) { vaadin ->
                 vaadin
-                    .enableCsrfConfiguration(false) // we configure CSRF ourselves above
+                    // Keep Vaadin internal CSRF handling enabled for UIDL requests.
+                    // API/RSS CSRF exceptions are configured in csrf { ... } above.
+                    .enableCsrfConfiguration(true)
                     .enableAuthorizedRequestsConfiguration(true)
                     .enableNavigationAccessControl(true)
             }
