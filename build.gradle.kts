@@ -87,9 +87,8 @@ tasks.withType<Test> {
 }
 
 tasks.named<ProcessResources>("processResources") {
-	from(sourceSets["main"].resources) {
-		include("application.properties")
+	filesMatching("application.properties") {
 		val timestamp = Instant.now().toString()
-		expand(mapOf("app.build.timestamp" to timestamp))
+		filter { line -> line.replace("\${appBuildTimestamp}", timestamp) }
 	}
 }

@@ -24,6 +24,11 @@ interface ArticleRepositoryCustom {
      */
     fun findPage(page: Int, size: Int, sortField: String, sortDirection: String): List<Article>
 
+    /**
+     * Returns articles for RSS ordered by created_at DESC, optionally filtered by language.
+     */
+    fun findForRss(language: String?): List<Article>
+
     companion object {
         /**
          * Allowlist mapping from API sort field name to SQL column name (BR-26).
@@ -64,6 +69,30 @@ class ArticleRepositoryCustomImpl(
              LIMIT :limit OFFSET :offset
         """.trimIndent()
         val params = mapOf("limit" to size, "offset" to page * size)
+        return jdbc.query(sql, params, ARTICLE_ROW_MAPPER)
+    }
+
+    override fun findForRss(language: String?): List<Article> {
+        val hasLanguageFilter = !language.isNullOrBlank()
+        val sql = if (hasLanguageFilter) {
+            """
+                SELECT id, url, language, title, thumbnail, lead, quote, ai_summary, created_at
+                  FROM article
+                 WHERE language = :language
+                 ORDER BY created_at DESC
+            """.trimIndent()
+        } else {
+            """
+                SELECT id, url, language, title, thumbnail, lead, quote, ai_summary, created_at
+                  FROM article
+                 ORDER BY created_at DESC
+            """.trimIndent()
+        }
+        val params = if (hasLanguageFilter) {
+            mapOf("language" to language)
+        } else {
+            emptyMap<String, Any>()
+        }
         return jdbc.query(sql, params, ARTICLE_ROW_MAPPER)
     }
 
