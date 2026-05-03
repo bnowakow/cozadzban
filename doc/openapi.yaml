@@ -39,8 +39,9 @@ info:
       Spring `ProblemDetail`).
 
   version: 0.0.1-SNAPSHOT
-
-servers:
+  license:
+    name: GNU General Public License v3.0
+    url: https://www.gnu.org/licenses/gpl-3.0.html
   - url: http://localhost:8080
     description: Local development
 
@@ -253,7 +254,9 @@ paths:
         - googleOidc: []
       description: >
         Updates only the provided fields. If url is changed the server
-        re-fetches the page to refresh the enriched fields.
+        re-fetches the page to refresh the enriched fields. Fully atomic —
+        if enrichment fails the server responds with 422 and the existing
+        record is left unchanged.
         Null for url or language is invalid and returns 400.
       requestBody:
         required: true

@@ -80,8 +80,7 @@ x-architecture:
         generator: cozazjeb.pl
         lastBuildDateSource: app.build.timestamp injected by Gradle as ISO-8601 UTC
         lastBuildDateFormat: RFC-822 UTC (converted by RSS controller from ISO-8601)
-        GET /rss?lang=<BCP-47> filters to a single language.
-        Language-filtered feed should set RSS channel language to the filter value.
+        langFilter: GET /rss?lang=<BCP-47> filters to a single language; channel language element is set to the filter value
     - name: Vaadin UI
       technology: Vaadin 25 + spring-boot-starter (server-side)
       description: >
@@ -170,7 +169,7 @@ x-database:
           type: BIGSERIAL
           constraints: PRIMARY KEY
         - name: email
-          type: VARCHAR(320)
+          type: VARCHAR(254)
           constraints: "NOT NULL UNIQUE"
           description: Lowercased, trimmed email used for authorization allowlist.
         - name: role
@@ -209,7 +208,9 @@ x-business-rules:
     description: >
       When an Article is patched (PATCH /api/articles/{id}) and the url field
       is included in the payload, the server MUST re-fetch to refresh enriched
-      fields. If url is absent, enriched fields are left unchanged.
+      fields. The operation is fully atomic: if enrichment fails, the server
+      responds with 422 and the existing article record is left unchanged.
+      If url is absent, enriched fields are left unchanged.
   - id: BR-04
     name: Language is BCP-47 string
     description: >
@@ -246,42 +247,6 @@ x-business-rules:
       NamedParameterJdbcTemplate MUST use named parameters (:param) and
       never string concatenation. Raw JdbcTemplate with concatenated SQL
       is forbidden (OWASP A03).
-  - id: BR-26
-    name: Sort field allowlist
-    description: >
-      The sort parameter on GET /api/articles MUST be validated against an
-      explicit allowlist before use in SQL ORDER BY: [id, createdAt, language, title].
-      Column names must never be interpolated from raw user input.
-      An unrecognised field returns 400 Bad Request.
-  - id: BR-27
-    name: Quote field semantics
-    description: >
-      quote is user-provided text, optional and nullable.
-      Clients supply it in POST/PUT body alongside url and language.
-      If omitted from POST/PUT, it defaults to null.
-      In PATCH, an explicit null value clears the field; omitting quote leaves
-      it unchanged (standard JSON Merge Patch semantics).
-  - id: BR-28
-    name: Input field length and format constraints
-    description: >
-      url: minLength 1, maxLength 2048, must match ^https?://.+ (http/https only).
-      language: minLength 1, maxLength 20 (matches VARCHAR(20) DB column).
-      quote: minLength 1 when present and non-null, maxLength 2000.
-      Empty string ("") is invalid for any string field and returns 400.
-      Violations return 400 Bad Request with ProblemDetail.
-  - id: BR-29
-    name: Allowlist email and role validation
-    description: >
-      email must be a valid RFC 5321 address, maxLength 254 characters.
-      role must be exactly one of the enum values USER or ADMIN (case-sensitive).
-      Any unrecognised role value returns 400 Bad Request.
-      Empty string for email or role returns 400 Bad Request.
-    description: >
-      quote is user-provided text, optional and nullable.
-      Clients supply it in POST/PUT body alongside url and language.
-      If omitted from POST/PUT, it defaults to null.
-      In PATCH, an explicit null value clears the field; omitting quote leaves
-      it unchanged (standard JSON Merge Patch semantics).
   - id: BR-10
     name: Public read endpoints
     description: >
@@ -389,6 +354,36 @@ x-business-rules:
       status, type, title, detail.
       type must be a stable URI discriminator. Optional extension fields such as
       conflictField, existingId, remainingAdmins may be included when relevant.
+  - id: BR-26
+    name: Sort field allowlist
+    description: >
+      The sort parameter on GET /api/articles MUST be validated against an
+      explicit allowlist before use in SQL ORDER BY: [id, createdAt, language, title].
+      Column names must never be interpolated from raw user input.
+      An unrecognised field returns 400 Bad Request.
+  - id: BR-27
+    name: Quote field semantics
+    description: >
+      quote is user-provided text, optional and nullable.
+      Clients supply it in POST/PUT body alongside url and language.
+      If omitted from POST/PUT, it defaults to null.
+      In PATCH, an explicit null value clears the field; omitting quote leaves
+      it unchanged (standard JSON Merge Patch semantics).
+  - id: BR-28
+    name: Input field length and format constraints
+    description: >
+      url: minLength 1, maxLength 2048, must match ^https?://.+ (http/https only).
+      language: minLength 1, maxLength 20 (matches VARCHAR(20) DB column).
+      quote: minLength 1 when present and non-null, maxLength 2000.
+      Empty string ("") is invalid for any string field and returns 400.
+      Violations return 400 Bad Request with ProblemDetail.
+  - id: BR-29
+    name: Allowlist email and role validation
+    description: >
+      email must be a valid RFC 5321 address, maxLength 254 characters.
+      role must be exactly one of the enum values USER or ADMIN (case-sensitive).
+      Any unrecognised role value returns 400 Bad Request.
+      Empty string for email or role returns 400 Bad Request.
 
 # ──────────────────────────────────────────────────────────────
 # VAADIN UI SPEC  (x-vaadin-ui)
