@@ -19,18 +19,18 @@ Phases 4 and 5 are independent and can be developed in parallel.
 4. **`V1__create_articles.sql`** — `article` table: `id`, `url` (UNIQUE), `language`, `title`,
    `thumbnail`, `lead`, `quote`, `ai_summary`, `created_at` + indexes `article_language_idx`,
    `article_created_at_idx`
-5. **`V2__create_allowed_users.sql`** — `allowed_user` table: `id`, `email` (UNIQUE), `role`,
-   `created_at` + index `allowed_user_email_idx`
+5. **`V2__create_app_users.sql`** — `app_user` table: `id`, `email` (UNIQUE), `role`,
+   `created_at` + index `app_user_email_idx`
 
 ---
 
 ## Phase 3 — Domain model & persistence
 
 6. **`Article` data class** — maps to `article` table (`@Table`, Spring Data JDBC)
-7. **`AllowedUser` data class** — maps to `allowed_user` table
+7. **`AppUser` data class** — maps to `app_user` table
 8. **`ArticleRepository`** — `CrudRepository` + custom `NamedParameterJdbcTemplate` query for
    paginated/sorted list (sort field validated against allowlist before interpolation)
-9. **`AllowedUserRepository`** — `CrudRepository` + `findByEmail`, `countByRole`
+9. **`AppUserRepository`** — `CrudRepository` + `findByEmail`, `countByRole`
 
 ---
 
@@ -39,7 +39,7 @@ Phases 4 and 5 are independent and can be developed in parallel.
 10. **`SecurityConfig`** — resource server JWT (Google OIDC), CORS config, CSRF rules
     (`/api/**` and `/rss` disabled), `denyByDefault`, custom `JwtAuthenticationConverter`
     reading `email` + `email_verified` claims
-11. **`AllowlistAuthorizationManager`** — loads `allowed_user` row by normalized email,
+11. **`AllowlistAuthorizationManager`** — loads `app_user` row by normalized email,
     checks role; used as method-security guard on write endpoints
 12. **`BootstrapAdminService`** — `ApplicationReadyEvent` listener: counts ADMIN rows,
     reads `COZAZJEB_BOOTSTRAP_ADMIN_EMAIL`, seeds/promotes or fails fast (BR-20)
@@ -67,9 +67,9 @@ Phases 4 and 5 are independent and can be developed in parallel.
 
 ## Phase 7 — Allowlist API
 
-17. **`AllowedUserService`** — email normalisation (trim + lowercase), duplicate check → 409
+17. **`AppUserService`** — email normalisation (trim + lowercase), duplicate check → 409
     `allowlistEmailConflict`, last-admin invariant → 409 `lastAdminRequired` (BR-23)
-18. **`AllowedUserController`** — `GET`, `POST`, `DELETE /{id}`, `PATCH /{id}` (role update);
+18. **`AppUserController`** — `GET`, `POST`, `DELETE /{id}`, `PATCH /{id}` (role update);
     all require ADMIN role
 
 ---

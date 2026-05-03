@@ -101,7 +101,7 @@ x-architecture:
     - name: Bootstrap configuration
       technology: Spring Boot configuration properties
       description: >
-        COZAZJEB_BOOTSTRAP_ADMIN_EMAIL is only required when the allowed_user
+        COZAZJEB_BOOTSTRAP_ADMIN_EMAIL is only required when the app_user
         table contains no ADMIN rows. If at least one ADMIN exists, the env var
         is optional and ignored. If no ADMINs exist and the env var is missing
         or empty, startup fails fast. If no ADMINs exist and env var is a valid
@@ -162,8 +162,8 @@ x-database:
         - name: article_created_at_idx
           columns: [created_at DESC]
           description: Speeds up default sort order for list and RSS endpoints.
-    - name: allowed_user
-      migration: V2__create_allowed_users.sql
+    - name: app_user
+      migration: V2__create_app_users.sql
       description: Stores emails permitted to execute write operations.
       columns:
         - name: id
@@ -182,7 +182,7 @@ x-database:
           constraints: "NOT NULL DEFAULT now()"
           description: UTC timestamp of allowlist entry creation.
       indexes:
-        - name: allowed_user_email_idx
+        - name: app_user_email_idx
           columns: [email]
           description: Supports fast exact email lookups during authorization.
 
@@ -273,7 +273,7 @@ x-business-rules:
     name: Allowlist enforcement
     description: >
       For all write operations, normalized token email (trimmed, lowercased)
-      must exist in allowed_user.email.
+      must exist in app_user.email.
       If token is valid but email is not allowlisted, return 403.
   - id: BR-14
     name: URL canonicalization defaults
@@ -298,10 +298,10 @@ x-business-rules:
   - id: BR-17
     name: Allowlist management API
     description: >
-      Allowlist is managed using /api/allowed-users endpoints.
+      Allowlist is managed using /api/users endpoints.
       All these endpoints require valid token, allowlisted email,
       and ADMIN role.
-      Role changes are performed with PATCH /api/allowed-users/{id}.
+      Role changes are performed with PATCH /api/users/{id}.
   - id: BR-18
     name: PATCH media type and semantics
     description: >
@@ -316,7 +316,7 @@ x-business-rules:
   - id: BR-20
     name: Bootstrap admin user
     description: >
-      On application startup, count ADMIN rows in allowed_user.
+      On application startup, count ADMIN rows in app_user.
       If at least one ADMIN exists, skip bootstrap entirely (env var ignored).
       If no ADMIN exists, COZAZJEB_BOOTSTRAP_ADMIN_EMAIL is required:
         missing, empty, or invalid email format → fail startup fast.
@@ -459,7 +459,7 @@ x-security-policy:
   audienceSource: spring.security.oauth2.resourceserver.jwt.audiences
   allowlist:
     enabled: true
-    table: allowed_user
+    table: app_user
     roleColumn: role
     emailNormalization: trim+lowercase
   bootstrap:
@@ -739,12 +739,12 @@ paths:
               schema:
                 type: string
 
-  /api/allowed-users:
+  /api/users:
 
     get:
       tags: [Security]
       summary: List allowlisted users
-      operationId: listAllowedUsers
+      operationId: listAppUsers
       x-required-role: ADMIN
       security:
         - googleOidc: []
@@ -756,7 +756,7 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/AllowedUser'
+                  $ref: '#/components/schemas/AppUser'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -765,7 +765,7 @@ paths:
     post:
       tags: [Security]
       summary: Add user to allowlist
-      operationId: addAllowedUser
+      operationId: addAppUser
       x-required-role: ADMIN
       security:
         - googleOidc: []
@@ -774,14 +774,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/AllowedUserInput'
+              $ref: '#/components/schemas/AppUserInput'
       responses:
         '201':
           description: User added to allowlist
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AllowedUser'
+                $ref: '#/components/schemas/AppUser'
         '400':
           $ref: '#/components/responses/BadRequest'
         '409':
@@ -791,7 +791,7 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
 
-  /api/allowed-users/{id}:
+  /api/users/{id}:
 
     parameters:
       - name: id
@@ -805,7 +805,7 @@ paths:
     delete:
       tags: [Security]
       summary: Remove user from allowlist
-      operationId: removeAllowedUser
+      operationId: removeAppUser
       x-required-role: ADMIN
       security:
         - googleOidc: []
@@ -824,7 +824,7 @@ paths:
     patch:
       tags: [Security]
       summary: Update allowlisted user role
-      operationId: updateAllowedUserRole
+      operationId: updateAppUserRole
       x-required-role: ADMIN
       security:
         - googleOidc: []
@@ -833,14 +833,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/AllowedUserRolePatch'
+              $ref: '#/components/schemas/AppUserRolePatch'
       responses:
         '200':
           description: Allowed user role updated (or unchanged if same role requested)
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AllowedUser'
+                $ref: '#/components/schemas/AppUser'
         '400':
           $ref: '#/components/responses/BadRequest'
         '404':
@@ -970,7 +970,7 @@ components:
           readOnly: true
           example: "2026-05-02T10:00:00Z"
 
-    AllowedUserInput:
+    AppUserInput:
       type: object
       required: [email, role]
       properties:
@@ -988,7 +988,7 @@ components:
           description: Authorization role assigned to this user
           example: USER
 
-    AllowedUser:
+    AppUser:
       type: object
       properties:
         id:
@@ -1011,7 +1011,7 @@ components:
           readOnly: true
           example: "2026-05-02T10:00:00Z"
 
-    AllowedUserRolePatch:
+    AppUserRolePatch:
       type: object
       required: [role]
       description: Role update payload for allowlisted user
@@ -1167,7 +1167,7 @@ components:
                 title: Allowlisted Email Already Exists
                 status: 409
                 detail: User with this email is already allowlisted.
-                instance: /api/allowed-users
+                instance: /api/users
                 conflictField: email
                 existingId: 7
             lastAdminRequired:
@@ -1177,7 +1177,7 @@ components:
                 title: Last Admin Required
                 status: 409
                 detail: Operation would leave the system without an ADMIN user.
-                instance: /api/allowed-users/1
+                instance: /api/users/1
                 remainingAdmins: 0
 
     Unauthorized:
