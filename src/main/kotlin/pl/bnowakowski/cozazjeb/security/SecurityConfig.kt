@@ -16,6 +16,7 @@ import org.springframework.security.authorization.AuthorizationDecision
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity
+import org.springframework.security.config.Customizer
 import org.springframework.security.web.SecurityFilterChain
 import org.springframework.web.cors.CorsConfiguration
 import org.springframework.web.cors.CorsConfigurationSource
@@ -47,6 +48,13 @@ class SecurityConfig(
                     .enableNavigationAccessControl(true)
             }
             .authorizeHttpRequests { auth ->
+                // OAuth2 login and callback endpoints must stay public.
+                auth.requestMatchers("/auth/login", "/oauth2/**", "/login/oauth2/**").permitAll()
+
+                // Session-backed UI identity endpoints (Phase 11)
+                auth.requestMatchers(HttpMethod.GET, "/auth/me").authenticated()
+                auth.requestMatchers(HttpMethod.POST, "/auth/logout").authenticated()
+
                 // /actuator/health is always public (load balancer / k8s probes)
                 auth.requestMatchers("/actuator/health").permitAll()
                 // /actuator/metrics and /actuator/info are public in local, authenticated in prod
@@ -95,6 +103,7 @@ class SecurityConfig(
             .oauth2ResourceServer { oauth2 ->
                 oauth2.jwt { jwt -> jwt.jwtAuthenticationConverter(GoogleJwtAuthenticationConverter()) }
             }
+            .oauth2Login(Customizer.withDefaults())
         return http.build()
     }
 
