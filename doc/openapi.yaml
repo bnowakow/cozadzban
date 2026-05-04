@@ -18,6 +18,10 @@ info:
     5. **Vaadin UI** — server-side paginated view of articles (separate from
        this REST spec; rendered at the root path `/`).
 
+     6. **Frontend authentication** — Vaadin UI starts OAuth Authorization Code + PKCE
+       via backend redirect (`GET /auth/login`) and uses server-side session cookie.
+     7. **Admin panel** — Vaadin UI at `/admin` for ADMIN users to manage allowlist
+       (add/delete/update users) using server-side service calls.
     ## Implementation notes
     - Language is a free-form BCP-47 string (e.g. `pl`, `en`, `de`).
     - `title`, `thumbnail` and `lead` are server-fetched; clients supply
@@ -26,7 +30,8 @@ info:
     - `aiSummary` is reserved for a future AI enrichment step; always `null`
       in the current version.
     - Read endpoints (`GET /api/articles`, `GET /api/articles/{id}`, `GET /rss`)
-      are public. Write endpoints require Google OAuth2/OIDC Bearer tokens.
+      are public. REST write endpoints require Google OAuth2/OIDC Bearer tokens.
+      First-party Vaadin UI writes are executed server-side and authenticated by session.
     - Write endpoints additionally require the token email to be present in
       database allowlist (`app_user` entity managed via API).
     - Roles: USER can write articles; ADMIN can manage allowlist users.
@@ -102,6 +107,8 @@ tags:
     description: RSS feed endpoints
   - name: Security
     description: Allowlist management endpoints
+  - name: Authentication
+    description: UI authentication and session endpoints
 
 paths:
 
@@ -194,6 +201,65 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+
+  /auth/login:
+
+    get:
+      tags: [Authentication]
+      summary: Start Google OAuth login
+      operationId: startLogin
+      security: []
+      description: >
+        Redirects browser to Google OpenID Connect authorization endpoint using
+        Authorization Code flow. Callback is handled by Spring Security.
+      responses:
+        '302':
+          description: Redirect to Google authorization endpoint
+
+  /auth/me:
+
+    get:
+      tags: [Authentication]
+      summary: Get current authenticated user
+      operationId: getCurrentUser
+      security:
+        - cookieAuth: []
+      description: >
+        Returns email and role of the currently authenticated user from server session.
+      responses:
+        '200':
+          description: Current user details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  email:
+                    type: string
+                    example: user@example.com
+                  role:
+                    type: string
+                    enum: [USER, ADMIN]
+                    example: ADMIN
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/logout:
+
+    post:
+      tags: [Authentication]
+      summary: Clear authentication session
+      operationId: logout
+      security:
+        - cookieAuth: []
+      description: >
+        Invalidates server session and clears session cookie.
+        Returns 204 No Content.
+      responses:
+        '204':
+          description: Logged out successfully; cookie cleared
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 
   /api/articles/{id}:
 
@@ -397,7 +463,6 @@ paths:
           $ref: '#/components/responses/Forbidden'
 
   /api/users/{id}:
-
     parameters:
       - name: id
         in: path
@@ -464,6 +529,11 @@ components:
       type: openIdConnect
       openIdConnectUrl: https://accounts.google.com/.well-known/openid-configuration
 
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: JSESSIONID
+      description: Server-managed authenticated session cookie
   parameters:
     ArticleId:
       name: id

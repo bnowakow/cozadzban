@@ -107,6 +107,27 @@ x-architecture:
         or empty, startup fails fast. If no ADMINs exist and env var is a valid
         email, one ADMIN row is seeded (or an existing USER is promoted).
 
+    - name: Frontend authentication
+      technology: Vaadin UI + Spring Security oauth2Login (Authorization Code + PKCE)
+      description: >
+        Login starts with redirect to Google authorization endpoint.
+        OAuth callback is handled server-side; frontend JavaScript never receives
+        access tokens or ID tokens.
+        Session is represented by HttpOnly server session cookie.
+        /auth/me provides current user info.
+    - name: Authentication endpoints
+      technology: Spring MVC UiAuthController + Spring Security oauth2Login
+      description: >
+        GET /auth/login starts OAuth Authorization Code + PKCE flow.
+        GET /auth/me returns current user (email, role).
+        POST /auth/logout invalidates server session and clears session cookie.
+    - name: Admin management panel
+      technology: Vaadin UI AdminView at @Route("/admin")
+      description: >
+        ADMIN-only view with user table (CRUD), add user form, delete/update role actions.
+        View invokes application services server-side from Vaadin event handlers;
+        no browser-side token forwarding is used.
+
 # ──────────────────────────────────────────────────────────────
 # DATABASE SPEC  (x-database)
 # ──────────────────────────────────────────────────────────────
@@ -186,6 +207,9 @@ x-database:
           columns: [email]
           description: Supports fast exact email lookups during authorization.
 
+    - name: sessions
+      migration: none (server-managed web session)
+      description: No additional DB table required; session is server-managed and identified by HttpOnly cookie.
 # ──────────────────────────────────────────────────────────────
 # BUSINESS RULES  (x-business-rules)
 # ──────────────────────────────────────────────────────────────
@@ -386,6 +410,57 @@ x-business-rules:
       Any unrecognised role value returns 400 Bad Request.
       Empty string for email or role returns 400 Bad Request.
 
+  - id: BR-30
+    name: Frontend login flow
+    description: >
+      User clicks "Login" button on ArticleListView.
+      Frontend navigates to GET /auth/login which redirects to Google OIDC.
+      OAuth callback is processed server-side using Authorization Code + PKCE.
+      Frontend JavaScript MUST NOT receive or store raw OAuth tokens.
+      UI stores only minimal display state (e.g. authenticated=true, email, role).
+      ArticleListView updates UI to show logout button and "Add Article" button.
+  - id: BR-31
+    name: Backend session issuance
+    description: >
+      On successful OAuth callback, backend creates authenticated server session.
+      Session cookie is HttpOnly, Secure in production, SameSite=Lax, Path=/.
+      Role is resolved from allowlist (`app_user`) using normalized email.
+      Session lifetime has idle timeout and absolute timeout configured in app properties.
+  - id: BR-32
+    name: Logout clears session
+    description: >
+      POST /auth/logout invalidates the server session, clears session cookie,
+      and returns 204.
+      Frontend clears local user state and shows "Login" button again.
+  - id: BR-33
+    name: Admin panel RBAC
+    description: >
+      GET /admin route requires authenticated user with role=ADMIN.
+      If user is not authenticated or not ADMIN, redirect to /?require-login=true or show 403.
+      Admin can list users, add users, delete users, and update roles.
+      These actions are executed server-side via application services.
+  - id: BR-34
+    name: Article creation requires login
+    description: >
+      "Add Article" button visible only when user is authenticated (active server session).
+      Click opens modal with form (url, language, optional quote).
+      Submission executes server-side `ArticleService` create operation from Vaadin event handler.
+      On success (201), modal closes, grid refreshes, success toast shown.
+      On failure (400, 409, 422, 403), error toast shown with detail.
+  - id: BR-35
+    name: Session renewal and expiry
+    description: >
+      Session expiry is controlled server-side by idle and absolute timeouts.
+      Session renewal uses server policy (sliding expiration) and does not expose
+      OAuth tokens or custom JWT refresh endpoints to frontend JavaScript.
+      Expired session returns 401 for /auth/me and requires re-login.
+  - id: BR-36
+    name: CSRF protection with cookies
+    description: >
+      Cookie-based authenticated UI requests MUST be protected by CSRF tokens.
+      HttpOnly protects against token theft via JavaScript but does NOT mitigate CSRF.
+      Vaadin/Spring Security CSRF mechanisms remain enabled for session-backed UI endpoints.
+      Stateless bearer-token API endpoints MAY remain CSRF-disabled.
 # ──────────────────────────────────────────────────────────────
 # VAADIN UI SPEC  (x-vaadin-ui)
 # ──────────────────────────────────────────────────────────────
@@ -404,6 +479,32 @@ x-vaadin-ui:
         - Sort by any displayed column (allowlist: id, createdAt, language, title, url)
         - Click row to open source URL in a new tab
 
+    - name: (Enhanced) ArticleListView
+      route: /
+      enhancements:
+        - "Top-right corner: Login button if not authenticated; Logout button if authenticated"
+        - "Logout button click -> POST /auth/logout, clear state, show Login"
+        - "If authenticated: Add Article button below grid or in toolbar"
+        - "Click Add Article -> modal with form (url, language, quote)"
+        - "Form validation: url required (^https?://.+), language required, quote optional"
+        - "Submit server-side via ArticleService with loading spinner; on success close modal + refresh grid + success toast"
+        - "On error (400/409/422): show error toast with detail"
+        - "Login button navigates to GET /auth/login and returns via OAuth callback"
+        - "On successful callback: close login modal, update UI to show logout button and Add Article, show success toast"
+
+    - name: AdminView
+      route: /admin
+      description: >
+        Admin-only user management panel. Requires authentication + ADMIN role.
+        If not authenticated or not admin, show 403 or redirect to /?require-login=true
+      columns: [id, email, role, createdAt]
+      features:
+        - Users table with all app_user records
+        - "Delete icon/button per row: invokes AppUserService delete, confirm dialog, error toast if 409 (last admin)"
+        - "Role selector per row: change role invokes AppUserService patchRole, shows success/error toast"
+        - "Add User button -> modal with email input + role selector"
+        - "Submit invokes AppUserService create, error toast on 400/409, success toast + table refresh"
+        - "Logout button in top-right (same as ArticleListView)"
 # ──────────────────────────────────────────────────────────────
 # API SPEC  (standard OpenAPI)
 # ──────────────────────────────────────────────────────────────

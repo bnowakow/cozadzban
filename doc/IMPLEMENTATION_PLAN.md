@@ -90,9 +90,87 @@ Phases 4 and 5 are independent and can be developed in parallel.
 
 ---
 
+## Phase 11 — Backend auth endpoints (NEW)
+
+23. **`UiAuthController` + OAuth2 login config** — secure first-party login flow:
+    - `GET /auth/login` — redirects to Google OIDC authorization endpoint
+      using Authorization Code + PKCE (no tokens exposed to frontend JS)
+    - OAuth callback handled by Spring Security (`/login/oauth2/code/google`)
+    - `GET /auth/me` — returns authenticated user details (email, role) for UI shell
+      from server-side SecurityContext; returns 401 if unauthenticated
+    - `POST /auth/logout` — invalidates server session and returns 204 No Content
+24. **`UiPrincipalMapper`** — maps authenticated Google principal to app role:
+    - normalize email (trim + lowercase)
+    - resolve role from `app_user` allowlist table
+    - deny write-capable UI actions when email not allowlisted
+25. **Session cookie + CSRF configuration**:
+    - session cookie `JSESSIONID`: HttpOnly, Secure (prod), SameSite=Lax, Path=/
+    - CSRF enabled for UI session-backed endpoints (`/auth/logout`, Vaadin internal requests)
+    - no OAuth token material stored in localStorage/sessionStorage
+
+---
+
+## Phase 12 — Admin panel UI (NEW)
+
+26. **`AdminView`** — `@Route("/admin")`, `@PreAuthorize("hasRole('ADMIN')")`:
+        - Users table with columns: id, email, role, createdAt
+        - Actions: delete user (if not last admin), update role (USER ↔ ADMIN)
+        - Add user form: email input + role selector, submit button
+        - Error toast on conflict/validation failure (409, 400)
+        - Success toast after add/update/delete
+        - Logout button in top-right
+        - Uses server-side service calls (`AppUserService`) from Vaadin events,
+            not browser-side REST calls with cookies
+
+---
+
+## Phase 13 — Article creation modal (ENHANCEMENT to Phase 9)
+
+27. **Enhanced `ArticleListView`**:
+    - Show/hide "Add Article" button based on authentication (visible only when logged in)
+    - Click "Add Article" → modal with form (url, language, optional quote)
+    - Form validation: url required, language required, quote optional
+    - Submit via server-side `ArticleService` call from Vaadin event handler (no browser token handling)
+    - Success: close modal, refresh grid, show success toast
+    - Failure: show error toast with detail (409 conflict, 422 enrichment failed, etc.)
+    - Modal also has "Login with Google" button overlay if user is not authenticated
+
+---
+
 ## Phase 10 — Tests
 
 21. **Slice tests** — `@WebMvcTest` per controller (mock service layer): happy paths +
     400 / 401 / 403 / 404 / 409 / 422 per endpoint
-22. **Integration tests** — `@SpringBootTest` + Testcontainers (already scaffolded):
+28. **Integration tests** — `@SpringBootTest` + Testcontainers (already scaffolded):
     Flyway migrations, bootstrap logic, end-to-end article lifecycle
+
+---
+
+## Phase 14 — Hybrid Auth Regression Test Plan (NEW)
+
+29. **Auth boundary tests (session vs bearer)**:
+    - Verify first-party Vaadin UI paths use authenticated server session only
+    - Verify REST write endpoints (`/api/articles` write methods, `/api/users/**`) still require Bearer JWT
+    - Verify no privilege escalation between session-authenticated UI and bearer-only API calls
+30. **OAuth2 login/session lifecycle tests**:
+    - `GET /auth/login` redirects to Google OIDC authorization endpoint
+    - OAuth callback establishes authenticated session with expected principal and role mapping
+    - `GET /auth/me` returns 200 with `{email, role}` for valid session and 401 otherwise
+    - `POST /auth/logout` invalidates session and subsequent `/auth/me` returns 401
+31. **Session security hardening tests**:
+    - Validate `JSESSIONID` cookie flags: HttpOnly, Secure (prod profile), SameSite policy, Path=/
+    - Validate session fixation protection on successful login
+    - Validate idle timeout and absolute timeout behavior (session expires as configured)
+32. **CSRF regression tests for cookie-authenticated UI flows**:
+    - Verify CSRF token is required on session-backed state-changing endpoints
+    - Verify requests missing/invalid CSRF token are rejected (403)
+    - Verify stateless bearer-token API endpoints keep intended CSRF behavior (`/api/**`, `/rss`)
+33. **RBAC + allowlist mapping tests for UI actions**:
+    - Verify `UiPrincipalMapper` normalizes email and resolves role from `app_user`
+    - Verify non-allowlisted authenticated users cannot perform write-capable UI actions
+    - Verify `@Route("/admin")` is ADMIN-only and USER is denied
+34. **End-to-end UI security regression scenarios**:
+    - Anonymous user: can view article list, cannot see/submit privileged actions
+    - Authenticated USER: can open add-article modal and submit article via server-side service path
+    - Authenticated ADMIN: can manage users in `AdminView` while preserving last-admin invariant
+    - Regression guard: no OAuth tokens appear in browser storage (`localStorage`/`sessionStorage`)
