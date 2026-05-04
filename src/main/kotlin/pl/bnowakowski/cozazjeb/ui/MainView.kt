@@ -96,7 +96,6 @@ class ArticleListView(
 
         grid.dataProvider = dataProvider
         grid.setPageSize(pageSize)
-        grid.setAllRowsVisible(true)
         grid.setSizeFull()
 
         refreshData()
