@@ -482,14 +482,14 @@ x-vaadin-ui:
     - name: (Enhanced) ArticleListView
       route: /
       enhancements:
-        - "Top-right corner: Login button if not authenticated; Logout button if authenticated"
-        - "Logout button click -> POST /auth/logout, clear state, show Login"
+        - "Top-right corner: Login button if not authenticated; Logout button if authenticated (present on every page)"
+        - "Logout button click -> invalidates server session, clears security context, redirects to /"
+        - "Login button click -> navigates to GET /auth/login (OAuth flow)"
         - "If authenticated: Add Article button below grid or in toolbar"
         - "Click Add Article -> modal with form (url, language, quote)"
         - "Form validation: url required (^https?://.+), language required, quote optional"
         - "Submit server-side via ArticleService with loading spinner; on success close modal + refresh grid + success toast"
         - "On error (400/409/422): show error toast with detail"
-        - "Login button navigates to GET /auth/login and returns via OAuth callback"
         - "On successful callback: close login modal, update UI to show logout button and Add Article, show success toast"
 
     - name: AdminView
@@ -504,7 +504,7 @@ x-vaadin-ui:
         - "Role selector per row: change role invokes AppUserService patchRole, shows success/error toast"
         - "Add User button -> modal with email input + role selector"
         - "Submit invokes AppUserService create, error toast on 400/409, success toast + table refresh"
-        - "Logout button in top-right (same as ArticleListView)"
+        - "Logout button in top-right (same as every other view): invalidates session, redirects to /"
 # ──────────────────────────────────────────────────────────────
 # API SPEC  (standard OpenAPI)
 # ──────────────────────────────────────────────────────────────

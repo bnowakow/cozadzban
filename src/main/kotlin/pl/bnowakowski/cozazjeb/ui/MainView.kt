@@ -4,6 +4,7 @@
 package pl.bnowakowski.cozazjeb.ui
 
 import com.vaadin.flow.component.button.Button
+import com.vaadin.flow.component.button.ButtonVariant
 import com.vaadin.flow.component.html.H1
 import com.vaadin.flow.component.html.Span
 import com.vaadin.flow.component.grid.Grid
@@ -14,7 +15,9 @@ import com.vaadin.flow.component.select.Select
 import com.vaadin.flow.data.provider.DataProvider
 import com.vaadin.flow.data.provider.SortDirection
 import com.vaadin.flow.router.Route
+import com.vaadin.flow.server.VaadinServletRequest
 import com.vaadin.flow.server.auth.AnonymousAllowed
+import org.springframework.security.core.context.SecurityContextHolder
 import pl.bnowakowski.cozazjeb.article.Article
 import pl.bnowakowski.cozazjeb.article.ArticleRepository
 
@@ -50,6 +53,13 @@ class ArticleListView(
         setSizeFull()
 
         val title = H1("Co za zjeb")
+
+        val authButton = buildAuthButton()
+
+        val topBar = HorizontalLayout(title, authButton)
+        topBar.width = "100%"
+        topBar.defaultVerticalComponentAlignment = Alignment.CENTER
+        topBar.expand(title)
 
         val pageSizeSelect = Select<Int>()
         pageSizeSelect.label = "Page size"
@@ -99,8 +109,30 @@ class ArticleListView(
         grid.setSizeFull()
 
         refreshData()
-        add(title, controls, grid)
+        add(topBar, controls, grid)
         expand(grid)
+    }
+
+    private fun buildAuthButton(): Button {
+        val auth = SecurityContextHolder.getContext().authentication
+        val isAuthenticated = auth != null && auth.isAuthenticated && auth.principal != "anonymousUser"
+        return if (isAuthenticated) {
+            val button = Button("Logout")
+            button.addThemeVariants(ButtonVariant.LUMO_TERTIARY)
+            button.addClickListener { logoutAndRedirect() }
+            button
+        } else {
+            val button = Button("Login")
+            button.addThemeVariants(ButtonVariant.LUMO_PRIMARY)
+            button.addClickListener { ui.ifPresent { it.page.setLocation("/auth/login") } }
+            button
+        }
+    }
+
+    private fun logoutAndRedirect() {
+        VaadinServletRequest.getCurrent().httpServletRequest.getSession(false)?.invalidate()
+        SecurityContextHolder.clearContext()
+        ui.ifPresent { it.page.setLocation("/") }
     }
 
     private fun refreshData() {

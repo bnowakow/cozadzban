@@ -27,6 +27,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource
 @EnableMethodSecurity
 class SecurityConfig(
     private val allowlist: AllowlistAuthorizationManager,
+    private val uiRoleAuthoritiesMapper: UiRoleAuthoritiesMapper,
 ) {
 
     @Bean
@@ -100,7 +101,11 @@ class SecurityConfig(
             .oauth2ResourceServer { oauth2 ->
                 oauth2.jwt { jwt -> jwt.jwtAuthenticationConverter(GoogleJwtAuthenticationConverter()) }
             }
-            .oauth2Login(Customizer.withDefaults())
+            .oauth2Login { oauth2 ->
+                oauth2.userInfoEndpoint { userInfo ->
+                    userInfo.userAuthoritiesMapper(uiRoleAuthoritiesMapper)
+                }
+            }
         return http.build()
     }
 
