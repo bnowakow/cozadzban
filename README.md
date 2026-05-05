@@ -26,6 +26,7 @@ Edit `.env`:
 | `POSTGRES_USER` | Database user | _(required)_ |
 | `POSTGRES_PASSWORD` | Database password | _(required)_ |
 | `POSTGRES_PORT` | Host port for PostgreSQL | `5432` |
+| `APP_PORT` | Host port for the Dockerized Spring Boot app | `8080` |
 | `SPRING_PROFILES_ACTIVE` | Spring profile (`local` or `prod`) | `local` |
 | `SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_AUDIENCES` | Google OAuth2 client ID (used to validate JWT `aud` claim) | _(required for auth to work)_ |
 | `SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_ID` | Google OAuth2 client ID (used by UI login) | _(required for UI login)_ |
@@ -40,15 +41,31 @@ Edit `.env`:
 make dev-up
 ```
 
-Starts PostgreSQL on `localhost:${POSTGRES_PORT}` (as set in `.env`).
+Starts the Docker Compose stack from `compose.yaml`. PostgreSQL is exposed on
+`localhost:${POSTGRES_PORT}` and the Dockerized Spring Boot app is exposed on
+`http://localhost:${APP_PORT:-8080}`.
 
-### 3. Run the application
+The `app` container runs with the `prod` Spring profile and connects to PostgreSQL through the
+Compose network using:
+
+```text
+jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+```
+
+### 3. Run the application from Gradle
 
 ```sh
 make run
 ```
 
-Uses `SPRING_PROFILES_ACTIVE` from `.env`. Flyway migrations run automatically on startup.
+For a local JVM run, use `make run`. It uses `SPRING_PROFILES_ACTIVE` from `.env` and connects
+to PostgreSQL on `localhost:${POSTGRES_PORT}`.
+
+To run the full Dockerized application instead, use:
+
+```sh
+docker compose -f compose.yaml up --build
+```
 
 The Vaadin UI is available at **http://localhost:8080/**.
 
@@ -60,6 +77,21 @@ make build         # Build without tests
 make test          # Run all tests
 make docker-logs   # Follow Docker logs
 make dev-down      # Stop and remove containers
+```
+
+### Docker image
+
+The repository includes a multi-stage `Dockerfile`:
+
+- builder stage: Java 21 JDK image, runs `./gradlew bootJar --no-daemon`
+- runtime stage: Java 21 JRE image, copies the executable Spring Boot jar as `/app/app.jar`
+- runtime user: non-root `spring`
+- exposed port: `8080`
+
+Build it manually with:
+
+```sh
+docker build -t cozazjeb:local .
 ```
 
 ## Production
@@ -76,3 +108,9 @@ Set the following environment variables on your deployment platform (no `.env` f
 | `SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_ID` | Google OAuth2 client ID |
 | `SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_SECRET` | Google OAuth2 client secret |
 | `COZAZJEB_BOOTSTRAP_ADMIN_EMAIL` | First admin email (required until at least one ADMIN row exists) |
+
+### Production TODOs
+
+- TODO: Fix Nginx virtual host configuration for `www.cozazjeb.bnowakowski.pl`.
+  Current installer error:
+  `Could not automatically find a matching server block for www.cozazjeb.bnowakowski.pl. Set the server_name directive to use the Nginx installer.`

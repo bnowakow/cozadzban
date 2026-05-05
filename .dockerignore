@@ -1,0 +1,15 @@
+.git
+.gradle
+.idea
+.kotlin
+.vscode
+build
+docker-data
+node_modules
+src/main/frontend/generated
+.env
+.env.*
+*.iml
+*.iws
+*.ipr
+HELP.md

@@ -174,3 +174,21 @@ Phases 4 and 5 are independent and can be developed in parallel.
     - Authenticated USER: can open add-article modal and submit article via server-side service path
     - Authenticated ADMIN: can manage users in `AdminView` while preserving last-admin invariant
     - Regression guard: no OAuth tokens appear in browser storage (`localStorage`/`sessionStorage`)
+
+---
+
+## Phase 15 — Dockerized application runtime (NEW)
+
+35. **`Dockerfile`** — build the Spring Boot application with Gradle in a Java 21 builder image,
+    copy the boot jar into a smaller Java 21 runtime image, expose port 8080, and run as a
+    non-root user
+36. **`.dockerignore`** — keep local secrets, build outputs, IDE files, and Docker volume data
+    out of the image build context
+37. **`compose.yaml` app service** — build the app image and run it beside PostgreSQL, using
+    `jdbc:postgresql://postgres:5432/${POSTGRES_DB}` plus `JDBC_DATABASE_USERNAME` and
+    `JDBC_DATABASE_PASSWORD` derived from the existing `POSTGRES_*` variables
+38. **PostgreSQL healthcheck** — make the app wait for PostgreSQL readiness through
+    `depends_on: condition: service_healthy`
+39. **TODO: Nginx server block for production domain** — fix
+    `Could not automatically find a matching server block for www.cozazjeb.bnowakowski.pl. Set the server_name directive to use the Nginx installer.`
+    by setting the appropriate `server_name` directive for `www.cozazjeb.bnowakowski.pl`
