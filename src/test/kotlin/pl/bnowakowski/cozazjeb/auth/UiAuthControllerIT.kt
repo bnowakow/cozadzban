@@ -4,6 +4,9 @@
 package pl.bnowakowski.cozazjeb.auth
 
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.BeforeEach
+import org.mockito.kotlin.anyOrNull
+import org.mockito.kotlin.whenever
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.annotation.Import
@@ -11,14 +14,18 @@ import org.springframework.http.MediaType
 import org.springframework.security.oauth2.core.user.DefaultOAuth2User
 import org.springframework.security.oauth2.core.user.OAuth2UserAuthority
 import org.springframework.security.oauth2.jwt.JwtDecoder
+import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.oauth2Login
 import org.springframework.test.context.TestPropertySource
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
+import org.springframework.test.web.servlet.setup.MockMvcBuilders
+import org.springframework.web.context.WebApplicationContext
 import pl.bnowakowski.cozazjeb.TestcontainersConfiguration
 import pl.bnowakowski.cozazjeb.security.UiPrincipalMapper
+import pl.bnowakowski.cozazjeb.user.Role
 
 /**
  * Integration tests for Phase 11 UI Authentication flow.
@@ -42,9 +49,17 @@ import pl.bnowakowski.cozazjeb.security.UiPrincipalMapper
 ])
 class UiAuthControllerIT {
 
-    @Autowired private lateinit var mockMvc: MockMvc
+    private lateinit var mockMvc: MockMvc
+    @Autowired private lateinit var webApplicationContext: WebApplicationContext
     @MockitoBean private lateinit var uiPrincipalMapper: UiPrincipalMapper
     @MockitoBean private lateinit var jwtDecoder: JwtDecoder
+
+    @BeforeEach
+    fun setupMockMvc() {
+        mockMvc = MockMvcBuilders
+            .webAppContextSetup(webApplicationContext)
+            .build()
+    }
 
     @Test
     fun testAuthLoginRedirectsToGoogleOAuth() {
@@ -56,6 +71,14 @@ class UiAuthControllerIT {
 
     @Test
     fun testAuthMeReturnsUserInfoWhenAuthenticated() {
+        whenever(uiPrincipalMapper.resolve(anyOrNull())).thenReturn(
+            UiPrincipalMapper.UiPrincipal(
+                email = "test@example.com",
+                role = Role.ADMIN,
+                allowlisted = true,
+            ),
+        )
+
         val attributes = mapOf(
             "email" to "test@example.com",
             "name" to "Test User",
@@ -96,6 +119,7 @@ class UiAuthControllerIT {
 
         mockMvc.post("/auth/logout") {
             with(oauth2Login().oauth2User(oauth2User))
+            with(csrf())
         }.andExpect {
             status { isNoContent() }
         }
@@ -111,6 +135,14 @@ class UiAuthControllerIT {
 
     @Test
     fun testSessionCookieSecurityAttributes() {
+        whenever(uiPrincipalMapper.resolve(anyOrNull())).thenReturn(
+            UiPrincipalMapper.UiPrincipal(
+                email = "test@example.com",
+                role = Role.ADMIN,
+                allowlisted = true,
+            ),
+        )
+
         val attributes = mapOf("email" to "test@example.com")
         val authorities = listOf(OAuth2UserAuthority(attributes))
         val oauth2User = DefaultOAuth2User(authorities, attributes, "email")

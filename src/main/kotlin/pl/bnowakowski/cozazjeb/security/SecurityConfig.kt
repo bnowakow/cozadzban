@@ -35,8 +35,7 @@ class SecurityConfig(
             .cors { it.configurationSource(corsConfigurationSource()) }
             .csrf { csrf ->
                 // API and RSS are stateless — no CSRF needed (BR-16)
-                // Logout endpoint is invoked via simple POST from UI/devtools in Phase 11.
-                csrf.ignoringRequestMatchers("/api/**", "/rss", "/auth/logout")
+                csrf.ignoringRequestMatchers("/api/**", "/rss")
                 // Vaadin UI routes retain CSRF protection
             }
             .with(VaadinSecurityConfigurer.vaadin()) { vaadin ->
