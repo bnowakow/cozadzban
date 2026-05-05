@@ -5,13 +5,18 @@ package pl.bnowakowski.cozazjeb.ui
 
 import com.vaadin.flow.component.button.Button
 import com.vaadin.flow.component.button.ButtonVariant
+import com.vaadin.flow.component.dialog.Dialog
 import com.vaadin.flow.component.html.H1
 import com.vaadin.flow.component.html.Span
 import com.vaadin.flow.component.grid.Grid
+import com.vaadin.flow.component.notification.Notification
+import com.vaadin.flow.component.notification.NotificationVariant
 import com.vaadin.flow.component.orderedlayout.FlexComponent.Alignment
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout
 import com.vaadin.flow.component.orderedlayout.VerticalLayout
 import com.vaadin.flow.component.select.Select
+import com.vaadin.flow.component.textfield.TextArea
+import com.vaadin.flow.component.textfield.TextField
 import com.vaadin.flow.data.provider.DataProvider
 import com.vaadin.flow.data.provider.SortDirection
 import com.vaadin.flow.router.Route
@@ -19,12 +24,15 @@ import com.vaadin.flow.server.VaadinServletRequest
 import com.vaadin.flow.server.auth.AnonymousAllowed
 import org.springframework.security.core.context.SecurityContextHolder
 import pl.bnowakowski.cozazjeb.article.Article
+import pl.bnowakowski.cozazjeb.article.ArticleInput
 import pl.bnowakowski.cozazjeb.article.ArticleRepository
+import pl.bnowakowski.cozazjeb.article.ArticleService
 
 @Route("")
 @AnonymousAllowed
 class ArticleListView(
     private val articleRepository: ArticleRepository,
+    private val articleService: ArticleService,
 ) : VerticalLayout() {
 
     private val pageSizes = listOf(10, 20, 40, 60, 80, 100)
@@ -55,8 +63,16 @@ class ArticleListView(
         val title = H1("Co za zjeb")
 
         val authButton = buildAuthButton()
+        val isAuthenticated = authButton.text == "Logout"
 
-        val topBar = HorizontalLayout(title, authButton)
+        val topBar = if (isAuthenticated) {
+            val addArticleButton = Button("Add Article")
+            addArticleButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY)
+            addArticleButton.addClickListener { openAddArticleDialog() }
+            HorizontalLayout(title, addArticleButton, authButton)
+        } else {
+            HorizontalLayout(title, authButton)
+        }
         topBar.width = "100%"
         topBar.defaultVerticalComponentAlignment = Alignment.CENTER
         topBar.expand(title)
@@ -127,6 +143,70 @@ class ArticleListView(
             button.addClickListener { ui.ifPresent { it.page.setLocation("/auth/login") } }
             button
         }
+    }
+
+    private fun openAddArticleDialog() {
+        val urlField = TextField("URL")
+        urlField.isRequired = true
+        urlField.width = "28rem"
+        urlField.placeholder = "https://..."
+
+        val languageField = TextField("Language (BCP-47)")
+        languageField.isRequired = true
+        languageField.width = "28rem"
+        languageField.placeholder = "e.g. en, pl, de"
+
+        val quoteField = TextArea("Quote (optional)")
+        quoteField.width = "28rem"
+        quoteField.maxHeight = "8rem"
+
+        val submitButton = Button("Submit")
+        submitButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY)
+
+        val cancelButton = Button("Cancel")
+        cancelButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY)
+
+        val dialog = Dialog()
+        dialog.headerTitle = "Add Article"
+
+        submitButton.addClickListener {
+            val url = urlField.value?.trim().orEmpty()
+            val language = languageField.value?.trim().orEmpty()
+            val quote = quoteField.value?.trim()?.ifBlank { null }
+
+            if (url.isBlank()) { showError("URL is required"); return@addClickListener }
+            if (!url.matches(Regex("^https?://.+"))) { showError("URL must start with http:// or https://"); return@addClickListener }
+            if (language.isBlank()) { showError("Language is required"); return@addClickListener }
+
+            submitButton.isEnabled = false
+            try {
+                articleService.create(ArticleInput(url = url, language = language, quote = quote))
+                refreshData()
+                dialog.close()
+                showSuccess("Article added")
+            } catch (ex: Exception) {
+                showError(ex.message ?: "Failed to add article")
+            } finally {
+                submitButton.isEnabled = true
+            }
+        }
+
+        cancelButton.addClickListener { dialog.close() }
+
+        val actions = HorizontalLayout(submitButton, cancelButton)
+        actions.defaultVerticalComponentAlignment = Alignment.END
+
+        dialog.add(VerticalLayout(urlField, languageField, quoteField, actions))
+        dialog.open()
+    }
+
+    private fun showSuccess(message: String) {
+        Notification.show(message, 3000, Notification.Position.TOP_END)
+    }
+
+    private fun showError(message: String) {
+        val notification = Notification.show(message, 4000, Notification.Position.TOP_END)
+        notification.addThemeVariants(NotificationVariant.LUMO_ERROR)
     }
 
     private fun logoutAndRedirect() {
