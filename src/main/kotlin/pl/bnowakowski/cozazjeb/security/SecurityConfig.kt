@@ -1,3 +1,4 @@
+
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 https://bnowakowski.pl
 
@@ -7,7 +8,6 @@ import com.vaadin.flow.spring.security.VaadinSecurityConfigurer
 import jakarta.servlet.http.HttpServletResponse
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
-import org.springframework.core.env.Environment
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.http.ProblemDetail
@@ -26,7 +26,6 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource
 @EnableWebSecurity
 @EnableMethodSecurity
 class SecurityConfig(
-    private val env: Environment,
     private val allowlist: AllowlistAuthorizationManager,
 ) {
 
@@ -36,7 +35,8 @@ class SecurityConfig(
             .cors { it.configurationSource(corsConfigurationSource()) }
             .csrf { csrf ->
                 // API and RSS are stateless — no CSRF needed (BR-16)
-                csrf.ignoringRequestMatchers("/api/**", "/rss")
+                // Logout endpoint is invoked via simple POST from UI/devtools in Phase 11.
+                csrf.ignoringRequestMatchers("/api/**", "/rss", "/auth/logout")
                 // Vaadin UI routes retain CSRF protection
             }
             .with(VaadinSecurityConfigurer.vaadin()) { vaadin ->
@@ -57,11 +57,9 @@ class SecurityConfig(
 
                 // /actuator/health is always public (load balancer / k8s probes)
                 auth.requestMatchers("/actuator/health").permitAll()
-                // /actuator/metrics and /actuator/info are public in local, authenticated in prod
-                if (env.activeProfiles.contains("local")) {
-                    auth.requestMatchers("/actuator/metrics", "/actuator/info").permitAll()
-                } else {
-                    auth.requestMatchers("/actuator/metrics", "/actuator/info").authenticated()
+                // Selected actuator endpoints require authenticated, allowlisted user.
+                auth.requestMatchers("/actuator/info", "/actuator/metrics", "/actuator/metrics/**", "/actuator/env", "/actuator/env/**").access { authentication, _ ->
+                    AuthorizationDecision(allowlist.checkSessionOrBearer(authentication.get()))
                 }
                 // Public REST read endpoints (BR-10)
                 auth.requestMatchers(HttpMethod.GET, "/api/articles", "/api/articles/**", "/rss").permitAll()

@@ -7,6 +7,7 @@ import org.springframework.security.authorization.AuthorizationDecision
 import org.springframework.security.authorization.AuthorizationManager
 import org.springframework.security.authorization.AuthorizationResult
 import org.springframework.security.core.Authentication
+import org.springframework.security.oauth2.core.OAuth2AuthenticatedPrincipal
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken
 import org.springframework.security.web.access.intercept.RequestAuthorizationContext
 import org.springframework.stereotype.Component
@@ -51,6 +52,13 @@ class AllowlistAuthorizationManager(
     /** Convenience SpEL target: checks ADMIN role only. */
     fun checkAdmin(auth: Authentication): Boolean = isAllowlisted(auth, Role.ADMIN)
 
+    /**
+     * Checks allowlist membership for either bearer-token auth or OAuth2 login session auth.
+     * This is used for UI/session-protected routes like selected actuator endpoints.
+     */
+    fun checkSessionOrBearer(auth: Authentication): Boolean =
+        isAllowlistedSessionOrBearer(auth, null)
+
     // ─────────────────────────────────────────────────────────
 
     private fun isAllowlisted(auth: Authentication?, requiredRole: Role?): Boolean {
@@ -60,6 +68,21 @@ class AllowlistAuthorizationManager(
         val email = normalizeEmail(auth.name) ?: return false
         val user = appUserRepository.findByEmail(email) ?: return false
 
+        return requiredRole == null || user.role == requiredRole
+    }
+
+    private fun isAllowlistedSessionOrBearer(auth: Authentication?, requiredRole: Role?): Boolean {
+        if (auth == null || !auth.isAuthenticated) return false
+
+        val email = when {
+            auth is JwtAuthenticationToken -> normalizeEmail(auth.name)
+            auth.principal is OAuth2AuthenticatedPrincipal -> {
+                normalizeEmail((auth.principal as OAuth2AuthenticatedPrincipal).attributes["email"] as? String)
+            }
+            else -> normalizeEmail(auth.name)
+        } ?: return false
+
+        val user = appUserRepository.findByEmail(email) ?: return false
         return requiredRole == null || user.role == requiredRole
     }
 

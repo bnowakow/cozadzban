@@ -28,6 +28,8 @@ Edit `.env`:
 | `POSTGRES_PORT` | Host port for PostgreSQL | `5432` |
 | `SPRING_PROFILES_ACTIVE` | Spring profile (`local` or `prod`) | `local` |
 | `SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_AUDIENCES` | Google OAuth2 client ID (used to validate JWT `aud` claim) | _(required for auth to work)_ |
+| `SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_ID` | Google OAuth2 client ID (used by UI login) | _(required for UI login)_ |
+| `SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_SECRET` | Google OAuth2 client secret (used by UI login) | _(required for UI login)_ |
 | `COZAZJEB_BOOTSTRAP_ADMIN_EMAIL` | Email of the first admin user — only required when the `app_user` table has no ADMIN rows (first run). Ignored once an admin exists. | _(required on first run)_ |
 
 > `.env` is gitignored and must never be committed.
@@ -71,4 +73,6 @@ Set the following environment variables on your deployment platform (no `.env` f
 | `JDBC_DATABASE_USERNAME` | Database user |
 | `JDBC_DATABASE_PASSWORD` | Database password |
 | `SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_AUDIENCES` | Google OAuth2 client ID |
+| `SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_ID` | Google OAuth2 client ID |
+| `SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_SECRET` | Google OAuth2 client secret |
 | `COZAZJEB_BOOTSTRAP_ADMIN_EMAIL` | First admin email (required until at least one ADMIN row exists) |

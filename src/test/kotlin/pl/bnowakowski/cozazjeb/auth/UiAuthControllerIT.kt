@@ -10,6 +10,7 @@ import org.springframework.context.annotation.Import
 import org.springframework.http.MediaType
 import org.springframework.security.oauth2.core.user.DefaultOAuth2User
 import org.springframework.security.oauth2.core.user.OAuth2UserAuthority
+import org.springframework.security.oauth2.jwt.JwtDecoder
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.oauth2Login
 import org.springframework.test.context.TestPropertySource
 import org.springframework.test.context.bean.override.mockito.MockitoBean
@@ -39,10 +40,11 @@ import pl.bnowakowski.cozazjeb.security.UiPrincipalMapper
     "spring.security.oauth2.client.registration.google.redirect-uri=http://localhost:8080/login/oauth2/code/google",
     "spring.security.oauth2.resourceserver.jwt.audiences=test-audience"
 ])
-class UiAuthControllerIT(
-    @Autowired val mockMvc: MockMvc,
-    @MockitoBean val uiPrincipalMapper: UiPrincipalMapper
-) {
+class UiAuthControllerIT {
+
+    @Autowired private lateinit var mockMvc: MockMvc
+    @MockitoBean private lateinit var uiPrincipalMapper: UiPrincipalMapper
+    @MockitoBean private lateinit var jwtDecoder: JwtDecoder
 
     @Test
     fun testAuthLoginRedirectsToGoogleOAuth() {
