@@ -94,6 +94,21 @@ Build it manually with:
 docker build -t cozazjeb:local .
 ```
 
+### Docker resource limits
+
+`compose.yaml` sets conservative runtime limits for a small 4 vCPU / 8 GB VM that also runs
+WordPress and MySQL containers:
+
+| Service | CPU limit | Memory limit |
+|---|---:|---:|
+| `app` | `1.25` CPUs | `1536m` |
+| `postgres` | `0.75` CPUs | `1024m` |
+| `zipkin` | `0.25` CPUs | `384m` |
+
+The stack is capped at about `2.25` CPUs and `2944m` memory total. `memswap_limit` is set equal
+to `mem_limit` for each service to avoid heavy swap pressure on the host. The Spring Boot
+container also sets `JAVA_TOOL_OPTIONS` so the JVM heap stays inside the container memory limit.
+
 ## Production
 
 Set the following environment variables on your deployment platform (no `.env` file needed in prod):
@@ -114,3 +129,5 @@ Set the following environment variables on your deployment platform (no `.env` f
 - TODO: Fix Nginx virtual host configuration for `www.cozazjeb.bnowakowski.pl`.
   Current installer error:
   `Could not automatically find a matching server block for www.cozazjeb.bnowakowski.pl. Set the server_name directive to use the Nginx installer.`
+- TODO: Update Google OAuth authorized redirect URI from the temporary HTTP callback to
+  `https://cozazjeb.bnowakowski.pl/login/oauth2/code/google` once HTTPS/DNS is stable.

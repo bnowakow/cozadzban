@@ -192,3 +192,6 @@ Phases 4 and 5 are independent and can be developed in parallel.
 39. **TODO: Nginx server block for production domain** — fix
     `Could not automatically find a matching server block for www.cozazjeb.bnowakowski.pl. Set the server_name directive to use the Nginx installer.`
     by setting the appropriate `server_name` directive for `www.cozazjeb.bnowakowski.pl`
+40. **TODO: Google OAuth HTTPS redirect URI** — replace the temporary HTTP callback in Google
+    OAuth settings with `https://cozazjeb.bnowakowski.pl/login/oauth2/code/google` once
+    HTTPS/DNS is stable
