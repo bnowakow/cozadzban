@@ -22,6 +22,7 @@ import com.vaadin.flow.data.provider.SortDirection
 import com.vaadin.flow.router.Route
 import com.vaadin.flow.server.VaadinServletRequest
 import com.vaadin.flow.server.auth.AnonymousAllowed
+import org.springframework.security.access.AccessDeniedException
 import org.springframework.security.core.context.SecurityContextHolder
 import pl.bnowakowski.cozazjeb.article.Article
 import pl.bnowakowski.cozazjeb.article.ArticleInput
@@ -184,6 +185,8 @@ class ArticleListView(
                 refreshData()
                 dialog.close()
                 showSuccess("Article added")
+            } catch (ex: AccessDeniedException) {
+                showLoginOverlay(dialog)
             } catch (ex: Exception) {
                 showError(ex.message ?: "Failed to add article")
             } finally {
@@ -198,6 +201,20 @@ class ArticleListView(
 
         dialog.add(VerticalLayout(urlField, languageField, quoteField, actions))
         dialog.open()
+    }
+
+    private fun showLoginOverlay(dialog: Dialog) {
+        dialog.removeAll()
+        dialog.headerTitle = "Session Expired"
+        val loginButton = Button("Login with Google")
+        loginButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY)
+        loginButton.addClickListener { ui.ifPresent { it.page.setLocation("/auth/login") } }
+        val cancelButton = Button("Cancel")
+        cancelButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY)
+        cancelButton.addClickListener { dialog.close() }
+        val actions = HorizontalLayout(loginButton, cancelButton)
+        actions.defaultVerticalComponentAlignment = Alignment.END
+        dialog.add(VerticalLayout(Span("Your session has expired. Please log in again."), actions))
     }
 
     private fun showSuccess(message: String) {
