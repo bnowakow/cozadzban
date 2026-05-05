@@ -112,7 +112,7 @@ Phases 4 and 5 are independent and can be developed in parallel.
 
 ## Phase 12 — Admin panel UI (NEW)
 
-26. **`AdminView`** — `@Route("/admin")`, `@PreAuthorize("hasRole('ADMIN')")`:
+26. **`AdminView`** — `@Route("/admin")`, `@RolesAllowed("ADMIN")` (Vaadin navigation access control; `@PreAuthorize` cannot be used because Kotlin classes are `final` by default and CGLIB cannot proxy them):
         - Users table with columns: id, email, role, createdAt
         - Actions: delete user (if not last admin), update role (USER ↔ ADMIN)
         - Add user form: email input + role selector, submit button
