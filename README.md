@@ -129,3 +129,5 @@ Set the following environment variables on your deployment platform (no `.env` f
 - TODO: Fix Nginx virtual host configuration for `www.cozazjeb.bnowakowski.pl`.
   Current installer error:
   `Could not automatically find a matching server block for www.cozazjeb.bnowakowski.pl. Set the server_name directive to use the Nginx installer.`
+- TODO: Update Google OAuth authorized redirect URI from the temporary HTTP callback to
+  `https://cozazjeb.bnowakowski.pl/login/oauth2/code/google` once HTTPS/DNS is stable.
