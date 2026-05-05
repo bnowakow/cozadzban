@@ -3,10 +3,14 @@ services:
     build:
       context: .
     image: cozazjeb:local
+    cpus: '1.25'
+    mem_limit: 1536m
+    memswap_limit: 1536m
     depends_on:
       postgres:
         condition: service_healthy
     environment:
+      - 'JAVA_TOOL_OPTIONS=-XX:MaxRAMPercentage=75 -XX:InitialRAMPercentage=25'
       - 'SPRING_PROFILES_ACTIVE=prod'
       - 'JDBC_DATABASE_URL=jdbc:postgresql://postgres:5432/${POSTGRES_DB}'
       - 'JDBC_DATABASE_USERNAME=${POSTGRES_USER}'
@@ -21,6 +25,9 @@ services:
       - '${APP_PORT:-8080}:8080'
   postgres:
     image: 'postgres:latest'
+    cpus: '0.75'
+    mem_limit: 1024m
+    memswap_limit: 1024m
     environment:
       - 'POSTGRES_DB=${POSTGRES_DB}'
       - 'POSTGRES_PASSWORD=${POSTGRES_PASSWORD}'
@@ -36,5 +43,8 @@ services:
       retries: 5
   zipkin:
     image: 'openzipkin/zipkin:latest'
+    cpus: '0.25'
+    mem_limit: 384m
+    memswap_limit: 384m
     ports:
       - '9411'
