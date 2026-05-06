@@ -12,6 +12,7 @@ import com.vaadin.flow.component.grid.Grid
 import com.vaadin.flow.component.menubar.MenuBar
 import com.vaadin.flow.component.menubar.MenuBarVariant
 import com.vaadin.flow.component.html.Anchor
+import com.vaadin.flow.component.html.Div
 import com.vaadin.flow.component.html.H1
 import com.vaadin.flow.component.html.Image
 import com.vaadin.flow.component.html.Span
@@ -222,6 +223,9 @@ class ArticleListView(
         controlsRow2.defaultVerticalComponentAlignment = Alignment.END
 
         // ── Grid columns (Item 53) ─────────────────────────────────────────────
+        // Allow rows to expand for multi-line title cells
+        grid.element.style.set("--lumo-size-l", "auto")
+
         // Thumbnail preview — small image linked to article URL
         grid.addComponentColumn { article ->
             val src = article.thumbnail
@@ -243,46 +247,61 @@ class ArticleListView(
             .setAutoWidth(true)
             .setFlexGrow(0)
 
-        // Title as a link
+        // Title as a link — 3-line clamp so more text is visible in a wider column
         grid.addComponentColumn { article ->
-            val anchor = Anchor(article.url, article.title ?: article.url)
+            val textDiv = Div()
+            textDiv.text = article.title ?: article.url
+            textDiv.element.style.set("display", "-webkit-box")
+            textDiv.element.style.set("-webkit-line-clamp", "3")
+            textDiv.element.style.set("-webkit-box-orient", "vertical")
+            textDiv.element.style.set("overflow", "hidden")
+            textDiv.element.style.set("white-space", "normal")
+            textDiv.element.style.set("word-break", "break-word")
+            val anchor = Anchor(article.url, "")
             anchor.setTarget("_blank")
             anchor.element.setAttribute("rel", "noopener noreferrer")
+            anchor.add(textDiv)
             anchor
         }
             .setHeader("Title")
             .setKey("title")
             .setSortProperty("title")
             .setSortable(true)
-            .setFlexGrow(1)
+            .setFlexGrow(3)
 
         grid.addColumn(Article::language)
-            .setHeader("Language")
+            .setHeader("Lang")
             .setKey("language")
             .setSortProperty("language")
             .setSortable(true)
-            .setAutoWidth(true)
+            .setWidth("60px")
+            .setFlexGrow(0)
 
-        grid.addColumn { article -> article.publishedAt?.let { formatInstant(it) } ?: "" }
+        grid.addColumn { article -> article.publishedAt?.let { formatDate(it) } ?: "" }
             .setHeader("Published")
             .setKey("publishedAt")
             .setSortProperty("publishedAt")
             .setSortable(true)
-            .setAutoWidth(true)
+            .setWidth("100px")
+            .setFlexGrow(0)
 
-        grid.addColumn { article -> article.createdAt?.let { formatInstant(it) } ?: "" }
+        grid.addColumn { article -> article.createdAt?.let { formatDate(it) } ?: "" }
             .setHeader("Created")
             .setKey("createdAt")
             .setSortProperty("createdAt")
             .setSortable(true)
-            .setAutoWidth(true)
+            .setWidth("100px")
+            .setFlexGrow(0)
 
-        grid.addColumn(Article::id)
-            .setHeader("ID")
-            .setKey("id")
-            .setSortProperty("id")
-            .setSortable(true)
-            .setAutoWidth(true)
+        if (isAuthenticated) {
+            grid.addColumn(Article::id)
+                .setHeader("ID")
+                .setKey("id")
+                .setSortProperty("id")
+                .setSortable(true)
+                .setWidth("70px")
+                .setFlexGrow(0)
+        }
 
         // Creator column — authenticated users only (Item 53)
         if (isAuthenticated) {
@@ -519,7 +538,9 @@ class ArticleListView(
 
     companion object {
         private val DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneOffset.UTC)
+        private val SHORT_DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneOffset.UTC)
 
         private fun formatInstant(instant: Instant): String = DATE_FORMATTER.format(instant)
+        private fun formatDate(instant: Instant): String = SHORT_DATE_FORMATTER.format(instant)
     }
 }
