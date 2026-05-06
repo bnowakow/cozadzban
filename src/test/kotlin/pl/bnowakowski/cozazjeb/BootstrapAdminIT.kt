@@ -22,7 +22,7 @@ import pl.bnowakowski.cozazjeb.user.Role
  * Context loads with COZAZJEB_BOOTSTRAP_ADMIN_EMAIL set, which triggers
  * BootstrapAdminService to seed/promote an admin on ApplicationReadyEvent.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 @Import(TestcontainersConfiguration::class)
 @TestPropertySource(
     properties = [
@@ -70,7 +70,7 @@ class BootstrapAdminIT {
  * This test class gets its own application context (fresh container)
  * because it pre-populates the DB via SQL before bootstrap runs.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 @Import(TestcontainersConfiguration::class)
 @TestPropertySource(
     properties = [

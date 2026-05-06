@@ -8,6 +8,7 @@ import org.springframework.security.oauth2.core.OAuth2AuthenticatedPrincipal
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken
 import org.springframework.stereotype.Component
 import pl.bnowakowski.cozazjeb.user.AppUserRepository
+import pl.bnowakowski.cozazjeb.user.AppUserStatus
 import pl.bnowakowski.cozazjeb.user.Role
 
 @Component
@@ -25,12 +26,14 @@ class UiPrincipalMapper(
         if (authentication == null || !authentication.isAuthenticated) return null
 
         val email = extractNormalizedEmail(authentication) ?: return null
-        val role = appUserRepository.findByEmail(email)?.role
+        val user = appUserRepository.findByEmail(email)
+        val isActive = user?.status == AppUserStatus.ACTIVE
+        val role = if (isActive) user?.role else null
 
         return UiPrincipal(
             email = email,
             role = role,
-            allowlisted = role != null,
+            allowlisted = isActive && role != null,
         )
     }
 

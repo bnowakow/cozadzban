@@ -9,6 +9,7 @@ import org.mockito.kotlin.isNull
 import org.mockito.kotlin.whenever
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.security.oauth2.jwt.JwtDecoder
 import org.springframework.test.context.TestPropertySource
@@ -17,10 +18,12 @@ import org.springframework.test.web.servlet.get
 import pl.bnowakowski.cozazjeb.article.Article
 import pl.bnowakowski.cozazjeb.article.ArticleRepository
 import pl.bnowakowski.cozazjeb.user.AppUserRepository
+import pl.bnowakowski.cozazjeb.user.AppUserStatus
 import pl.bnowakowski.cozazjeb.user.Role
 import java.time.Instant
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
+@AutoConfigureMockMvc
 @TestPropertySource(properties = ["app.build.timestamp=2026-05-04T10:00:00Z"])
 class RssControllerTest {
 
@@ -40,6 +43,7 @@ class RssControllerTest {
             thumbnail = null,
             quote = null,
             aiSummary = null,
+            createdByUserId = 1L,
             createdAt = Instant.parse("2026-05-04T10:00:00Z"),
         ),
         Article(
@@ -51,13 +55,14 @@ class RssControllerTest {
             thumbnail = null,
             quote = null,
             aiSummary = null,
+            createdByUserId = 1L,
             createdAt = Instant.parse("2026-05-03T10:00:00Z"),
         ),
     )
 
     @BeforeEach
     fun setup() {
-        whenever(appUserRepository.countByRole(Role.ADMIN)).thenReturn(1L)
+        whenever(appUserRepository.countByRoleAndStatus(Role.ADMIN, AppUserStatus.ACTIVE)).thenReturn(1L)
     }
 
     @Test

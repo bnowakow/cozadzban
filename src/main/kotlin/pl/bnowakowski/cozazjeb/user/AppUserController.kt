@@ -41,4 +41,14 @@ class AppUserController(
     @PatchMapping("/{id}")
     fun updateUserRole(@PathVariable id: Long, @Valid @RequestBody patch: AppUserRolePatch): AppUser =
         appUserService.updateRole(id, patch)
+
+    @PatchMapping("/{id}/status")
+    fun updateUserStatus(@PathVariable id: Long, @RequestBody patch: AppUserStatusPatch): ResponseEntity<AppUser> =
+        when (patch.status) {
+            AppUserStatus.ACTIVE -> ResponseEntity.ok(appUserService.restore(id))
+            AppUserStatus.DELETED -> {
+                appUserService.delete(id)
+                ResponseEntity.noContent().build()
+            }
+        }
 }

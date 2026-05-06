@@ -10,6 +10,7 @@ import org.mockito.kotlin.eq
 import org.mockito.kotlin.whenever
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.http.MediaType
 import org.springframework.security.oauth2.jwt.JwtDecoder
@@ -25,9 +26,11 @@ import pl.bnowakowski.cozazjeb.enrichment.EnrichmentException
 import pl.bnowakowski.cozazjeb.user.AppUser
 import pl.bnowakowski.cozazjeb.user.AppUserRepository
 import pl.bnowakowski.cozazjeb.user.Role
+import pl.bnowakowski.cozazjeb.user.AppUserStatus
 import java.time.Instant
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
+@AutoConfigureMockMvc
 @TestPropertySource(properties = ["app.build.timestamp=2026-05-04T10:00:00Z"])
 class ArticleControllerTest {
 
@@ -50,6 +53,7 @@ class ArticleControllerTest {
         thumbnail = null,
         quote = null,
         aiSummary = null,
+        createdByUserId = 1L,
         createdAt = Instant.parse("2026-05-04T10:00:00Z"),
     )
 
@@ -70,7 +74,7 @@ class ArticleControllerTest {
     @BeforeEach
     fun setup() {
         // BootstrapAdminService skips when admin count >= 1
-        whenever(appUserRepository.countByRole(Role.ADMIN)).thenReturn(1L)
+        whenever(appUserRepository.countByRoleAndStatus(Role.ADMIN, AppUserStatus.ACTIVE)).thenReturn(1L)
         whenever(appUserRepository.findByEmail(userEmail)).thenReturn(AppUser(1L, userEmail, Role.USER))
         whenever(appUserRepository.findByEmail(adminEmail)).thenReturn(AppUser(2L, adminEmail, Role.ADMIN))
         whenever(appUserRepository.findByEmail(strangerEmail)).thenReturn(null)
@@ -134,7 +138,7 @@ class ArticleControllerTest {
 
     @Test
     fun `POST article returns 201 for allowlisted user`() {
-        whenever(articleService.create(any())).thenReturn(sampleArticle)
+        whenever(articleService.create(any(), any())).thenReturn(sampleArticle)
 
         mockMvc.post("/api/articles") {
             with(jwt().jwt { it.subject(userEmail) })
@@ -204,7 +208,7 @@ class ArticleControllerTest {
 
     @Test
     fun `POST article returns 409 on url conflict`() {
-        whenever(articleService.create(any()))
+        whenever(articleService.create(any(), any()))
             .thenThrow(ArticleUrlConflictException("https://example.com/article"))
 
         mockMvc.post("/api/articles") {
@@ -220,7 +224,7 @@ class ArticleControllerTest {
 
     @Test
     fun `POST article returns 422 on enrichment failure`() {
-        whenever(articleService.create(any()))
+        whenever(articleService.create(any(), any()))
             .thenThrow(EnrichmentException("unreachable", EnrichmentException.Reason.UNREACHABLE))
 
         mockMvc.post("/api/articles") {

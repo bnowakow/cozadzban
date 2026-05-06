@@ -33,6 +33,7 @@ import pl.bnowakowski.cozazjeb.article.PageableInfo
 import pl.bnowakowski.cozazjeb.article.SortInfo
 import pl.bnowakowski.cozazjeb.user.AppUser
 import pl.bnowakowski.cozazjeb.user.AppUserRepository
+import pl.bnowakowski.cozazjeb.user.AppUserStatus
 import pl.bnowakowski.cozazjeb.user.Role
 import java.time.Instant
 
@@ -87,6 +88,7 @@ class HybridAuthRegressionIT {
         thumbnail = null,
         quote = null,
         aiSummary = null,
+        createdByUserId = 1L,
         createdAt = Instant.parse("2026-05-04T10:00:00Z"),
     )
 
@@ -106,7 +108,7 @@ class HybridAuthRegressionIT {
 
     @BeforeEach
     fun setup() {
-        whenever(appUserRepository.countByRole(Role.ADMIN)).thenReturn(1L)
+        whenever(appUserRepository.countByRoleAndStatus(Role.ADMIN, AppUserStatus.ACTIVE)).thenReturn(1L)
         whenever(appUserRepository.findByEmail(userEmail)).thenReturn(AppUser(1L, userEmail, Role.USER))
         whenever(appUserRepository.findByEmail(adminEmail)).thenReturn(AppUser(2L, adminEmail, Role.ADMIN))
         whenever(uiPrincipalMapper.resolve(anyOrNull())).thenReturn(
@@ -135,7 +137,7 @@ class HybridAuthRegressionIT {
 
     @Test
     fun `REST write endpoint allows Bearer JWT for allowlisted user - session not used`() {
-        whenever(articleService.create(any())).thenReturn(sampleArticle)
+        whenever(articleService.create(any(), any())).thenReturn(sampleArticle)
 
         mockMvc.post("/api/articles") {
             with(jwt().jwt { it.subject(userEmail) })
@@ -304,7 +306,7 @@ class HybridAuthRegressionIT {
     @Test
     fun `POST api articles with Bearer JWT passes without CSRF token`() {
         // CSRF is disabled for /api/** (BR-16); JWT callers must not be blocked by CSRF
-        whenever(articleService.create(any())).thenReturn(sampleArticle)
+        whenever(articleService.create(any(), any())).thenReturn(sampleArticle)
 
         mockMvc.post("/api/articles") {
             with(jwt().jwt { it.subject(userEmail) })

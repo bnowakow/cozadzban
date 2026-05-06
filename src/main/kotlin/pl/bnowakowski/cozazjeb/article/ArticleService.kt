@@ -6,6 +6,7 @@ package pl.bnowakowski.cozazjeb.article
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.bnowakowski.cozazjeb.enrichment.EnrichmentService
+import pl.bnowakowski.cozazjeb.user.AppUserRepository
 import java.net.URI
 
 @Service
@@ -13,6 +14,7 @@ import java.net.URI
 class ArticleService(
     private val articleRepository: ArticleRepository,
     private val enrichmentService: EnrichmentService,
+    private val appUserRepository: AppUserRepository,
 ) {
 
     @Transactional(readOnly = true)
@@ -52,7 +54,7 @@ class ArticleService(
         )
     }
 
-    fun create(input: ArticleInput): Article {
+    fun create(input: ArticleInput, creatorId: Long): Article {
         val url = canonicalizeUrl(input.url)
         if (articleRepository.existsByUrl(url)) throw ArticleUrlConflictException(url)
         val enrichment = enrichmentService.enrich(url)
@@ -64,6 +66,7 @@ class ArticleService(
                 title = enrichment.title,
                 thumbnail = enrichment.thumbnail,
                 lead = enrichment.lead,
+                createdByUserId = creatorId,
             )
         )
     }

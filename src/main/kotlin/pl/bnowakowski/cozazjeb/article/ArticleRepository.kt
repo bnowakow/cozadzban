@@ -63,7 +63,7 @@ class ArticleRepositoryCustomImpl(
         }
         // column and direction are from a closed allowlist — safe to interpolate
         val sql = """
-            SELECT id, url, language, title, thumbnail, lead, quote, ai_summary, created_at
+            SELECT id, url, language, title, thumbnail, lead, quote, ai_summary, created_by_user_id, created_at
               FROM article
              ORDER BY $column $direction
              LIMIT :limit OFFSET :offset
@@ -76,14 +76,14 @@ class ArticleRepositoryCustomImpl(
         val hasLanguageFilter = !language.isNullOrBlank()
         val sql = if (hasLanguageFilter) {
             """
-                SELECT id, url, language, title, thumbnail, lead, quote, ai_summary, created_at
+                SELECT id, url, language, title, thumbnail, lead, quote, ai_summary, created_by_user_id, created_at
                   FROM article
                  WHERE language = :language
                  ORDER BY created_at DESC
             """.trimIndent()
         } else {
             """
-                SELECT id, url, language, title, thumbnail, lead, quote, ai_summary, created_at
+                SELECT id, url, language, title, thumbnail, lead, quote, ai_summary, created_by_user_id, created_at
                   FROM article
                  ORDER BY created_at DESC
             """.trimIndent()
@@ -99,15 +99,16 @@ class ArticleRepositoryCustomImpl(
     private companion object {
         val ARTICLE_ROW_MAPPER = RowMapper<Article> { rs, _ ->
             Article(
-                id        = rs.getLong("id"),
-                url       = rs.getString("url"),
-                language  = rs.getString("language"),
-                title     = rs.getString("title"),
-                thumbnail = rs.getString("thumbnail"),
-                lead      = rs.getString("lead"),
-                quote     = rs.getString("quote"),
-                aiSummary = rs.getString("ai_summary"),
-                createdAt = rs.getTimestamp("created_at")?.toInstant() ?: Instant.EPOCH,
+                id              = rs.getLong("id"),
+                url             = rs.getString("url"),
+                language        = rs.getString("language"),
+                title           = rs.getString("title"),
+                thumbnail       = rs.getString("thumbnail"),
+                lead            = rs.getString("lead"),
+                quote           = rs.getString("quote"),
+                aiSummary       = rs.getString("ai_summary"),
+                createdByUserId = rs.getLong("created_by_user_id"),
+                createdAt       = rs.getTimestamp("created_at")?.toInstant() ?: Instant.EPOCH,
             )
         }
     }

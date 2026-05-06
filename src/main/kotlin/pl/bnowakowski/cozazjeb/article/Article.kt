@@ -3,6 +3,7 @@
 
 package pl.bnowakowski.cozazjeb.article
 
+import com.fasterxml.jackson.annotation.JsonIgnore
 import org.springframework.data.annotation.Id
 import org.springframework.data.annotation.ReadOnlyProperty
 import org.springframework.data.relational.core.mapping.Table
@@ -18,5 +19,6 @@ data class Article(
     val lead: String? = null,
     val quote: String? = null,
     val aiSummary: String? = null,
+    @JsonIgnore val createdByUserId: Long,
     @ReadOnlyProperty val createdAt: Instant? = null,
 )

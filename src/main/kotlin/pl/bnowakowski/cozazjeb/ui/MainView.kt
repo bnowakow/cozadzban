@@ -24,16 +24,20 @@ import com.vaadin.flow.server.VaadinServletRequest
 import com.vaadin.flow.server.auth.AnonymousAllowed
 import org.springframework.security.access.AccessDeniedException
 import org.springframework.security.core.context.SecurityContextHolder
+import org.springframework.security.oauth2.core.OAuth2AuthenticatedPrincipal
 import pl.bnowakowski.cozazjeb.article.Article
 import pl.bnowakowski.cozazjeb.article.ArticleInput
 import pl.bnowakowski.cozazjeb.article.ArticleRepository
 import pl.bnowakowski.cozazjeb.article.ArticleService
+import pl.bnowakowski.cozazjeb.security.AllowlistAuthorizationManager
+import pl.bnowakowski.cozazjeb.user.AppUserRepository
 
 @Route("")
 @AnonymousAllowed
 class ArticleListView(
     private val articleRepository: ArticleRepository,
     private val articleService: ArticleService,
+    private val appUserRepository: AppUserRepository,
 ) : VerticalLayout() {
 
     private val pageSizes = listOf(10, 20, 40, 60, 80, 100)
@@ -181,7 +185,19 @@ class ArticleListView(
 
             submitButton.isEnabled = false
             try {
-                articleService.create(ArticleInput(url = url, language = language, quote = quote))
+                val auth = SecurityContextHolder.getContext().authentication
+                val email = when {
+                    auth?.principal is OAuth2AuthenticatedPrincipal ->
+                        (auth.principal as OAuth2AuthenticatedPrincipal).attributes["email"] as? String
+                    else -> auth?.name
+                }
+                val normalizedEmail = AllowlistAuthorizationManager.normalizeEmail(email)
+                val creator = normalizedEmail?.let { appUserRepository.findByEmail(it) }
+                if (creator == null) {
+                    showLoginOverlay(dialog)
+                    return@addClickListener
+                }
+                articleService.create(ArticleInput(url = url, language = language, quote = quote), creator.id!!)
                 refreshData()
                 dialog.close()
                 showSuccess("Article added")

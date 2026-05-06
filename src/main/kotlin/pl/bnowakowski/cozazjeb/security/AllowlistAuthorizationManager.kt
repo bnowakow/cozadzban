@@ -12,6 +12,7 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.security.web.access.intercept.RequestAuthorizationContext
 import org.springframework.stereotype.Component
 import pl.bnowakowski.cozazjeb.user.AppUserRepository
+import pl.bnowakowski.cozazjeb.user.AppUserStatus
 import pl.bnowakowski.cozazjeb.user.Role
 import java.util.function.Supplier
 
@@ -67,6 +68,7 @@ class AllowlistAuthorizationManager(
 
         val email = normalizeEmail(auth.name) ?: return false
         val user = appUserRepository.findByEmail(email) ?: return false
+        if (user.status != AppUserStatus.ACTIVE) return false
 
         return requiredRole == null || user.role == requiredRole
     }
@@ -83,6 +85,7 @@ class AllowlistAuthorizationManager(
         } ?: return false
 
         val user = appUserRepository.findByEmail(email) ?: return false
+        if (user.status != AppUserStatus.ACTIVE) return false
         return requiredRole == null || user.role == requiredRole
     }
 

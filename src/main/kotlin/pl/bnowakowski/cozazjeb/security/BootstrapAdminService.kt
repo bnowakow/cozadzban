@@ -10,6 +10,7 @@ import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Service
 import pl.bnowakowski.cozazjeb.user.AppUser
 import pl.bnowakowski.cozazjeb.user.AppUserRepository
+import pl.bnowakowski.cozazjeb.user.AppUserStatus
 import pl.bnowakowski.cozazjeb.user.Role
 
 /**
@@ -32,8 +33,8 @@ class BootstrapAdminService(
 
     @EventListener(ApplicationReadyEvent::class)
     fun onApplicationReady() {
-        if (appUserRepository.countByRole(Role.ADMIN) > 0) {
-            log.info("Bootstrap skipped — at least one ADMIN already exists")
+        if (appUserRepository.countByRoleAndStatus(Role.ADMIN, AppUserStatus.ACTIVE) > 0) {
+            log.info("Bootstrap skipped — at least one ACTIVE ADMIN already exists")
             return
         }
 
@@ -52,8 +53,8 @@ class BootstrapAdminService(
 
         val existing = appUserRepository.findByEmail(email)
         if (existing != null) {
-            appUserRepository.save(existing.copy(role = Role.ADMIN))
-            log.info("Bootstrap: promoted existing user '{}' to ADMIN", email)
+            appUserRepository.save(existing.copy(role = Role.ADMIN, status = AppUserStatus.ACTIVE))
+            log.info("Bootstrap: promoted existing user '{}' to ADMIN (status restored to ACTIVE)", email)
         } else {
             appUserRepository.save(AppUser(email = email, role = Role.ADMIN))
             log.info("Bootstrap: created ADMIN user '{}'", email)
