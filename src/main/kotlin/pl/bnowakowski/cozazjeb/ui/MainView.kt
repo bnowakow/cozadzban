@@ -166,26 +166,56 @@ class ArticleListView(
 
         val publishedFromPicker = DateTimePicker("Published from")
         publishedFromPicker.addValueChangeListener { event ->
-            publishedFromFilter = event.value?.toInstant(ZoneOffset.UTC)
+            val new = event.value
+            if (new != null && new.toLocalDate() != event.oldValue?.toLocalDate()) {
+                publishedFromPicker.value = new.toLocalDate().atStartOfDay()
+                return@addValueChangeListener
+            }
+            publishedFromFilter = new?.toInstant(ZoneOffset.UTC)
             refreshData()
         }
         val publishedToPicker = DateTimePicker("Published to")
         publishedToPicker.addValueChangeListener { event ->
-            publishedToFilter = event.value?.toInstant(ZoneOffset.UTC)
+            val new = event.value
+            if (new != null && new.toLocalDate() != event.oldValue?.toLocalDate()) {
+                publishedToPicker.value = new.toLocalDate().atStartOfDay()
+                return@addValueChangeListener
+            }
+            publishedToFilter = new?.toInstant(ZoneOffset.UTC)
             refreshData()
         }
         val createdFromPicker = DateTimePicker("Created from")
         createdFromPicker.addValueChangeListener { event ->
-            createdFromFilter = event.value?.toInstant(ZoneOffset.UTC)
+            val new = event.value
+            if (new != null && new.toLocalDate() != event.oldValue?.toLocalDate()) {
+                createdFromPicker.value = new.toLocalDate().atStartOfDay()
+                return@addValueChangeListener
+            }
+            createdFromFilter = new?.toInstant(ZoneOffset.UTC)
             refreshData()
         }
         val createdToPicker = DateTimePicker("Created to")
         createdToPicker.addValueChangeListener { event ->
-            createdToFilter = event.value?.toInstant(ZoneOffset.UTC)
+            val new = event.value
+            if (new != null && new.toLocalDate() != event.oldValue?.toLocalDate()) {
+                createdToPicker.value = new.toLocalDate().atStartOfDay()
+                return@addValueChangeListener
+            }
+            createdToFilter = new?.toInstant(ZoneOffset.UTC)
             refreshData()
         }
 
-        val controlsRow2 = HorizontalLayout(publishedFromPicker, publishedToPicker, createdFromPicker, createdToPicker)
+        val clearFiltersButton = Button("Clear filters") {
+            languageSelect.value = allLanguagesLabel
+            publishedFromPicker.clear()
+            publishedToPicker.clear()
+            createdFromPicker.clear()
+            createdToPicker.clear()
+            // filter state vars are reset by each picker's/select's own listener above
+        }
+        clearFiltersButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY, ButtonVariant.LUMO_SMALL)
+
+        val controlsRow2 = HorizontalLayout(publishedFromPicker, publishedToPicker, createdFromPicker, createdToPicker, clearFiltersButton)
         controlsRow2.defaultVerticalComponentAlignment = Alignment.END
 
         // ── Grid columns (Item 53) ─────────────────────────────────────────────
@@ -219,30 +249,35 @@ class ArticleListView(
         }
             .setHeader("Title")
             .setKey("title")
+            .setSortProperty("title")
             .setSortable(true)
             .setFlexGrow(1)
 
         grid.addColumn(Article::language)
             .setHeader("Language")
             .setKey("language")
+            .setSortProperty("language")
             .setSortable(true)
             .setAutoWidth(true)
 
         grid.addColumn { article -> article.publishedAt?.let { formatInstant(it) } ?: "" }
             .setHeader("Published")
             .setKey("publishedAt")
+            .setSortProperty("publishedAt")
             .setSortable(true)
             .setAutoWidth(true)
 
         grid.addColumn { article -> article.createdAt?.let { formatInstant(it) } ?: "" }
             .setHeader("Created")
             .setKey("createdAt")
+            .setSortProperty("createdAt")
             .setSortable(true)
             .setAutoWidth(true)
 
         grid.addColumn(Article::id)
             .setHeader("ID")
             .setKey("id")
+            .setSortProperty("id")
             .setSortable(true)
             .setAutoWidth(true)
 
