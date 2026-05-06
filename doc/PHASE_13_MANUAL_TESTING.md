@@ -12,8 +12,10 @@
 1. Open http://localhost:8080
 2. Click **Add Article** (visible only when authenticated)
 3. Fill in a valid URL (e.g. `https://news.ycombinator.com`) and language (`en`)
-4. Click **Submit**
-5. **Expected:** modal closes, grid refreshes with new article, success toast appears
+4. Leave **Published at** empty
+5. Click **Submit**
+6. **Expected:** modal closes, grid refreshes with new article, success toast appears
+7. **Expected:** article creator is assigned to the logged-in user internally; creator is not editable in the modal
 
 ---
 
@@ -99,3 +101,100 @@
 1. Log out (click **Logout** or clear `JSESSIONID` cookie)
 2. Open http://localhost:8080
 3. **Expected:** only **Login** button in top-right, no **Add Article** button
+
+---
+
+## TC-10: Publication date enrichment
+
+1. Log in
+2. Add an article whose page exposes publication metadata (`article:published_time`, JSON-LD `datePublished`, or `time[datetime]`)
+3. Leave **Published at** empty
+4. **Expected:** created article shows a populated `publishedAt` when metadata is available
+5. Add an article without recognizable publication metadata
+6. **Expected:** `publishedAt` may be empty/null; article creation still succeeds
+
+---
+
+## TC-11: Manual publication date override
+
+1. Open **Add Article**
+2. Fill URL and language
+3. Set **Published at** using date picker + time picker
+4. Submit
+5. **Expected:** saved article uses the manually selected publication timestamp even if enrichment finds a different value
+6. Edit the article and clear **Published at**
+7. **Expected:** saved article has `publishedAt = null`
+
+---
+
+## TC-12: Language normalization and validation
+
+1. Add article with language `PL`
+2. **Expected:** saved language is normalized to `pl`
+3. Add article with invalid language `not_a_language`
+4. **Expected:** validation error toast; article is not created
+
+---
+
+## TC-13: Article list filters
+
+1. Ensure articles exist in at least two languages
+2. Open the article list
+3. Use language dropdown and select one language
+4. **Expected:** grid shows only articles with that normalized language
+5. Set `publishedAt` date/time range
+6. **Expected:** grid shows only articles whose `publishedAt` is inside the range
+7. Set `createdAt` date/time range
+8. **Expected:** grid shows only articles whose `createdAt` is inside the range
+9. Combine language + date filters
+10. **Expected:** filters compose with pagination and sorting
+
+---
+
+## TC-14: Sorting
+
+1. Sort by `publishedAt`
+2. **Expected:** rows reorder by source publication timestamp, preserving null handling defined by implementation
+3. Sort by `createdAt`
+4. **Expected:** rows reorder by DB creation timestamp
+
+---
+
+## TC-15: Creator visibility
+
+1. Log out and open the public article list
+2. **Expected:** no creator email/id is visible
+3. Log in and open the article list
+4. **Expected:** creator email/id may be visible where the authenticated UI needs it
+5. Open `/rss`
+6. **Expected:** RSS never contains creator email/id
+
+---
+
+## TC-16: Analytics consent
+
+1. Start app with analytics IDs configured:
+   - `GOOGLE_ANALYTICS_MEASUREMENT_ID`
+   - `STATCOUNTER_PROJECT_ID`
+   - `STATCOUNTER_SECURITY_ID`
+2. Open the UI in a fresh browser profile
+3. **Expected:** analytics-only cookie consent banner is shown
+4. Reject analytics
+5. **Expected:** Google Analytics and StatCounter scripts are not loaded
+6. Clear/reopen consent settings and accept analytics
+7. **Expected:** Google Analytics and StatCounter scripts are loaded
+8. Start app with IDs blank
+9. **Expected:** no analytics scripts are rendered and no analytics consent prompt is required
+
+---
+
+## TC-17: RSS discovery
+
+1. Open the article list page
+2. View page source or inspect the document head
+3. **Expected:** page includes:
+   ```html
+   <link rel="alternate" type="application/rss+xml" title="Co za zjeb RSS" href="/rss">
+   ```
+4. Check the article list top bar
+5. **Expected:** visible RSS icon/link is present and points to `/rss`

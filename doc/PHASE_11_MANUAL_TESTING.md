@@ -4,8 +4,8 @@
 
 Set environment variables for Google OAuth2:
 ```bash
-export GOOGLE_CLIENT_ID="your-google-oauth-client-id"
-export GOOGLE_CLIENT_SECRET="your-google-oauth-client-secret"  
+export SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_ID="your-google-oauth-client-id"
+export SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_SECRET="your-google-oauth-client-secret"
 export SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_AUDIENCES="your-google-client-id"
 ```
 
@@ -129,13 +129,15 @@ curl -H "Authorization: Bearer YOUR_JWT_TOKEN" http://localhost:8080/api/article
 ## Troubleshooting
 
 ### OAuth Login Redirect Fails
-- Verify `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are set
+- Verify `SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_ID` and
+  `SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_SECRET` are set
 - Check `spring.security.oauth2.client.registration.google.scope` in `application.properties`
 
 ### /auth/me Returns Error
 - Ensure you've completed OAuth flow and have active session
 - Check JSESSIONID cookie exists
-- Verify email matches an entry in `app_user` allowlist table
+- Verify email matches an ACTIVE entry in `app_user` allowlist table
+- Verify the matching user is not soft-deleted (`status != DELETED`)
 
 ### Session Cookie Missing
 - OAuth callback handler didn't execute properly
@@ -152,7 +154,20 @@ curl -H "Authorization: Bearer YOUR_JWT_TOKEN" http://localhost:8080/api/article
 - [ ] OAuth login redirects to Google
 - [ ] GET /auth/me returns 401 when unauthenticated  
 - [ ] After OAuth flow, GET /auth/me returns user + role
+- [ ] Soft-deleted users cannot log in or authorize writes
 - [ ] JSESSIONID cookie has HttpOnly flag
 - [ ] POST /auth/logout returns 204
 - [ ] GET /auth/me returns 401 after logout
 - [ ] REST API endpoints still work with bearer tokens
+
+## Soft-deleted User Regression
+
+1. Log in as a user that exists in `app_user` with `status=ACTIVE`
+2. As ADMIN, change that user to `status=DELETED`
+3. Log out
+4. Attempt login again with the deleted user
+5. **Expected:** login/session is denied or treated as unauthenticated
+6. Attempt REST write with that user's bearer token
+7. **Expected:** 403 Forbidden
+8. As ADMIN, restore the user to `status=ACTIVE`
+9. **Expected:** login and write authorization work again according to role

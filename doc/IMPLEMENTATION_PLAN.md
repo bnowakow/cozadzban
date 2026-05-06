@@ -87,6 +87,7 @@ Phases 4 and 5 are independent and can be developed in parallel.
 20. **`ArticleListView`** — `@Route("")`, `Grid<Article>`, server-side `DataProvider`,
     pagination with page-size selector `[10, 20, 40, 60, 80, 100]`, sort on allowlisted
     columns `[id, createdAt, language, title, url]`, row click opens URL in new tab
+    (expanded in Phase 18 with publishedAt, filters, and creator-aware display)
 
 ---
 
@@ -114,7 +115,7 @@ Phases 4 and 5 are independent and can be developed in parallel.
 
 26. **`AdminView`** — `@Route("/admin")`, `@RolesAllowed("ADMIN")` (Vaadin navigation access control; `@PreAuthorize` cannot be used because Kotlin classes are `final` by default and CGLIB cannot proxy them):
         - Users table with columns: id, email, role, createdAt
-        - Actions: delete user (if not last admin), update role (USER ↔ ADMIN)
+        - Actions: soft-delete user (if not last active admin), update role (USER ↔ ADMIN)
         - Add user form: email input + role selector, submit button
         - Error toast on conflict/validation failure (409, 400)
         - Success toast after add/update/delete
@@ -195,3 +196,105 @@ Phases 4 and 5 are independent and can be developed in parallel.
 40. **TODO: Google OAuth HTTPS redirect URI** — replace the temporary HTTP callback in Google
     OAuth settings with `https://cozazjeb.bnowakowski.pl/login/oauth2/code/google` once
     HTTPS/DNS is stable
+
+---
+
+## Phase 16 — Article ownership and soft-deleted users (NEW)
+
+41. **`V3__article_creator_and_user_status.sql`** — add `app_user.status` (`ACTIVE`/`DELETED`,
+    default `ACTIVE`) and `article.created_by_user_id BIGINT NOT NULL` referencing
+    `app_user(id)`. Backfill existing articles to the oldest `app_user` by
+    `(created_at ASC, id ASC)`. Migration must fail if articles exist but no user exists.
+42. **`AppUser` status model** — add `AppUserStatus`, expose status in admin APIs/UI,
+    keep email unique even for `DELETED` users, and make delete a soft-delete operation.
+43. **Auth and allowlist checks** — only `ACTIVE` users can log in, create articles, or manage
+    resources. Deleted users are denied even if their Google JWT/session is otherwise valid.
+    Minimum-admin invariant counts only `ACTIVE ADMIN` users.
+44. **User restoration** — admin edit flow can change status from `DELETED` back to `ACTIVE`;
+    restoring an ADMIN must preserve the minimum-admin invariant and email uniqueness.
+45. **Article creator assignment** — article creation resolves creator from the authenticated
+    DB user (JWT email for REST, session principal for Vaadin) and stores only the FK. Creator
+    is immutable: `PUT`/`PATCH` must not accept or alter `created_by_user_id`.
+46. **Creator-aware article DTOs** — public/anonymous article responses omit creator data.
+    Authenticated article responses may include `createdBy: { id, email }`. RSS must never
+    expose creator/user data.
+
+---
+
+## Phase 17 — Publication metadata and language normalization (NEW)
+
+47. **`V4__article_published_at.sql`** — add nullable `article.published_at TIMESTAMPTZ` and
+    index `article_published_at_idx` for filtering/sorting.
+48. **Publication date enrichment** — extend `EnrichmentService` to parse nullable
+    `publishedAt`, in order: `meta[property=article:published_time]`, JSON-LD
+    `Article`/`NewsArticle.datePublished`, `meta[name=date]`, `meta[property=datePublished]`,
+    and `time[datetime]`. Invalid/missing values produce `null`, not enrichment failure.
+49. **Thumbnail enrichment hardening** — continue fetching `thumbnail` from `og:image`, resolving
+    relative URLs against the article URL where possible.
+50. **Manual publication date edits** — `ArticleInput` and `ArticlePatch` accept optional
+    `publishedAt`. On create, user-provided `publishedAt` overrides enriched value; omission
+    uses enrichment. On update/patch, admins/users may set or clear `publishedAt`.
+51. **Language normalization and validation** — normalize language tags to lowercase before
+    persistence. Validate against a conservative BCP-47-like pattern
+    `^[a-z]{2,3}(-[a-z0-9]{2,8})*$`; invalid values return 400.
+52. **Article list query upgrades** — support filters for `language`, `publishedAt` range, and
+    `createdAt` range. Add `publishedAt` and `createdAt` to sortable/filterable fields.
+
+---
+
+## Phase 18 — Article list UI filters and editing (NEW)
+
+53. **Article grid columns** — include `publishedAt`, `createdAt`, language, title, thumbnail
+    preview/link, URL, and authenticated-only creator display where appropriate.
+54. **Language filter** — dropdown populated from distinct normalized article languages with an
+    `All` option.
+55. **Date range filters** — add date/time range controls for `publishedAt` and `createdAt`.
+    Filters apply server-side and compose with pagination and sorting.
+56. **Article create/edit modal** — add date picker + time picker for optional `publishedAt`.
+    Support clearing the field to persist `null`. Keep creator immutable and hidden from form
+    inputs.
+57. **RSS discovery in UI** — advertise the feed in page HTML with
+    `<link rel="alternate" type="application/rss+xml" title="Co za zjeb RSS" href="/rss">`
+    and add a visible RSS icon/link in the article list top bar for users.
+
+---
+
+## Phase 19 — Analytics and consent (NEW)
+
+58. **Analytics configuration** — add env-backed properties
+    `GOOGLE_ANALYTICS_MEASUREMENT_ID`, `STATCOUNTER_PROJECT_ID`, and
+    `STATCOUNTER_SECURITY_ID`; update `.env.sample`, README, and Compose passthrough.
+59. **Conditional script rendering** — render Google Analytics and StatCounter scripts only
+    when their required IDs are configured and the user has accepted analytics cookies.
+60. **Analytics-only cookie consent** — add a consent banner explaining that tracking is for
+    analytics only. Store consent in browser storage/cookie, provide accept/reject controls,
+    and provide a way to change/revoke the decision later.
+
+---
+
+## Phase 20 — Article content preservation cache (FUTURE CONSIDERATION)
+
+61. **Preserved article content spike** — consider storing fetched article text/content at
+    creation time for preservation only. Do not use it for rendering, fallback, or AI summary
+    in the first step.
+62. **Potential future uses** — evaluate whether preserved content should later support
+    article display when the source URL stops responding, AI summary generation without extra
+    network calls, or audit/debugging of enrichment results.
+63. **Content cache constraints** — before implementation, decide storage shape (`TEXT` vs
+    separate table), sanitization/readability extraction, max size, copyright/privacy posture,
+    and whether admins can view or purge preserved content.
+
+---
+
+## Phase 21 — Regression tests for ownership, metadata, filters, RSS discovery, and analytics (NEW)
+
+64. **Migration tests** — verify creator backfill to oldest user, migration failure when
+    articles exist without users, `created_by_user_id NOT NULL`, and nullable `published_at`.
+65. **Auth/user tests** — verify soft-deleted users cannot log in or authorize writes, admins
+    can restore users, and final active admin cannot be deleted or demoted.
+66. **Article tests** — verify creator immutability, authenticated-only creator exposure,
+    RSS creator omission, publication date parsing/override/clearing, thumbnail extraction,
+    language normalization/validation, filters, and sorting.
+67. **UI/manual tests** — verify language dropdown, date filters, publication date picker/time
+    picker, creator visibility rules, RSS `<link rel="alternate">` discovery + visible RSS
+    link, and analytics consent/script rendering.

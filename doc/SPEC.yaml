@@ -59,8 +59,9 @@ x-architecture:
       description: >
         On create (POST), replace (PUT) and partial update (PATCH when url is
         changed), the server synchronously fetches the target URL and extracts
-        title (og:title / <title>), thumbnail (og:image) and lead
-        (og:description / <meta name="description">).
+        title (og:title / <title>), thumbnail (og:image), lead
+        (og:description / <meta name="description">), and best-effort
+        publication date metadata.
         Enrichment is synchronous and atomic — if the fetch fails no DB write occurs.
         Defaults: connect timeout 3 s, read timeout 5 s, no retries.
         If the fetch returns a non-2xx status, times out, or the URL is
@@ -71,8 +72,9 @@ x-architecture:
         rssTitle: article.title
         rssLink: article.url
         rssDescription: article.lead
-        rssPubDate: article.createdAt
+        rssPubDate: article.publishedAt when present, otherwise article.createdAt
         rssGuid: article.id
+        userData: never exposed
       rssChannel:
         title: Co za zjeb
         link: https://cozazjeb.pl
@@ -82,6 +84,9 @@ x-architecture:
         lastBuildDateSource: app.build.timestamp injected by Gradle as ISO-8601 UTC
         lastBuildDateFormat: RFC-822 UTC (converted by RSS controller from ISO-8601)
         langFilter: GET /rss?lang=<BCP-47> filters to a single language; channel language element is set to the filter value
+      htmlDiscovery:
+        linkRelAlternate: '<link rel="alternate" type="application/rss+xml" title="Co za zjeb RSS" href="/rss">'
+        visibleUiLink: ArticleListView top bar includes an RSS icon/link to /rss
     - name: Vaadin UI
       technology: Vaadin 25 + spring-boot-starter (server-side)
       description: >
@@ -124,9 +129,22 @@ x-architecture:
     - name: Admin management panel
       technology: Vaadin UI AdminView at @Route("/admin")
       description: >
-        ADMIN-only view with user table (CRUD), add user form, delete/update role actions.
+        ADMIN-only view with user table, add user form, soft-delete/restore/update role actions.
         View invokes application services server-side from Vaadin event handlers;
         no browser-side token forwarding is used.
+    - name: Analytics and consent
+      technology: Vaadin UI + configurable tracking IDs
+      description: >
+        Google Analytics and StatCounter scripts are rendered only when their
+        IDs are configured and the user has explicitly accepted analytics
+        cookies. Consent is analytics-only and can be changed later.
+    - name: Article content preservation cache
+      technology: Future PostgreSQL-backed content cache
+      description: >
+        Future consideration: preserve fetched article text/content at creation
+        time for archival purposes only. Initial step should not use it for UI
+        rendering, source fallback, or AI summary until separate product/legal
+        decisions are made.
 
 # ──────────────────────────────────────────────────────────────
 # DATABASE SPEC  (x-database)
@@ -176,6 +194,14 @@ x-database:
           type: TIMESTAMPTZ
           constraints: "NOT NULL DEFAULT now()"
           description: Timestamp of record creation; set by the database.
+        - name: published_at
+          type: TIMESTAMPTZ
+          constraints: nullable
+          description: Source article publication timestamp, fetched from metadata when available or edited manually.
+        - name: created_by_user_id
+          type: BIGINT
+          constraints: "NOT NULL REFERENCES app_user(id)"
+          description: Immutable FK to the user who created the article.
       indexes:
         - name: article_language_idx
           columns: [language]
@@ -183,6 +209,12 @@ x-database:
         - name: article_created_at_idx
           columns: [created_at DESC]
           description: Speeds up default sort order for list and RSS endpoints.
+        - name: article_published_at_idx
+          columns: [published_at DESC]
+          description: Speeds up publication date filtering and sorting.
+        - name: article_created_by_user_idx
+          columns: [created_by_user_id]
+          description: Supports authenticated creator display and ownership queries.
     - name: app_user
       migration: V2__create_app_users.sql
       description: Stores emails permitted to execute write operations.
@@ -198,6 +230,10 @@ x-database:
           type: VARCHAR(16)
           constraints: "NOT NULL"
           description: Authorization role, one of USER or ADMIN.
+        - name: status
+          type: VARCHAR(16)
+          constraints: "NOT NULL DEFAULT 'ACTIVE'"
+          description: User lifecycle status, one of ACTIVE or DELETED. DELETED users are retained but cannot authenticate or authorize writes.
         - name: created_at
           type: TIMESTAMPTZ
           constraints: "NOT NULL DEFAULT now()"
@@ -206,6 +242,9 @@ x-database:
         - name: app_user_email_idx
           columns: [email]
           description: Supports fast exact email lookups during authorization.
+        - name: app_user_status_idx
+          columns: [status]
+          description: Supports active-user authorization and admin filtering.
 
     - name: sessions
       migration: none (server-managed web session)
@@ -218,14 +257,16 @@ x-business-rules:
     name: URL enrichment on create
     description: >
       When a new Article is created (POST /api/articles), the server MUST fetch
-      the URL and populate title, thumbnail and lead before persisting.
+      the URL and populate title, thumbnail, lead, and best-effort publishedAt
+      before persisting.
       The operation is fully atomic: if enrichment fails (non-2xx, timeout, or
       unreachable), the server responds with 422 and no DB write occurs.
   - id: BR-02
     name: URL enrichment on replace
     description: >
       When an Article is replaced (PUT /api/articles/{id}), the server MUST
-      re-fetch the new URL to refresh title, thumbnail and lead.
+      re-fetch the new URL to refresh title, thumbnail, lead, and best-effort
+      publishedAt unless the request explicitly supplies publishedAt.
       The operation is fully atomic: if enrichment fails, the server responds
       with 422 and the existing article record is left unchanged.
   - id: BR-03
@@ -233,15 +274,18 @@ x-business-rules:
     description: >
       When an Article is patched (PATCH /api/articles/{id}) and the url field
       is included in the payload, the server MUST re-fetch to refresh enriched
-      fields. The operation is fully atomic: if enrichment fails, the server
+      fields. If the patch explicitly includes publishedAt, the supplied value
+      overrides fetched publication metadata. The operation is fully atomic: if enrichment fails, the server
       responds with 422 and the existing article record is left unchanged.
       If url is absent, enriched fields are left unchanged.
   - id: BR-04
-    name: Language is BCP-47 string
+    name: Language normalization and validation
     description: >
-      Language is stored and accepted as a free-form BCP-47 string.
-      No validation against a fixed enum; the client is responsible for
-      supplying a valid tag (e.g. pl, en, en-GB).
+      Language is accepted as a conservative BCP-47-like string, normalized to
+      lowercase before persistence, and validated with
+      ^[a-z]{2,3}(-[a-z0-9]{2,8})*$. Invalid values return 400 Bad Request.
+      The UI language filter uses distinct normalized values already present in
+      the database.
   - id: BR-05
     name: AI summary is future-only
     description: >
@@ -256,7 +300,8 @@ x-business-rules:
     name: RSS ordering
     description: >
       The RSS feed MUST list articles in descending createdAt order
-      (newest first).
+      (newest first). RSS pubDate uses publishedAt when present and falls back
+      to createdAt. RSS MUST never expose creator/user data.
   - id: BR-08
     name: URL uniqueness
     description: >
@@ -297,7 +342,7 @@ x-business-rules:
     name: Allowlist enforcement
     description: >
       For all write operations, normalized token email (trimmed, lowercased)
-      must exist in app_user.email.
+      must exist in app_user.email with status ACTIVE.
       If token is valid but email is not allowlisted, return 403.
   - id: BR-14
     name: URL canonicalization defaults
@@ -363,9 +408,10 @@ x-business-rules:
   - id: BR-23
     name: Minimum admin invariant
     description: >
-      System must always keep at least one ADMIN user.
-      Deleting the final ADMIN returns 409 Conflict.
-      Any role change that would result in zero ADMIN users returns 409 Conflict.
+      System must always keep at least one ACTIVE ADMIN user.
+      Soft-deleting the final ACTIVE ADMIN returns 409 Conflict.
+      Any role or status change that would result in zero ACTIVE ADMIN users
+      returns 409 Conflict.
   - id: BR-24
     name: Frozen response contract behavior
     description: >
@@ -383,7 +429,8 @@ x-business-rules:
     name: Sort field allowlist
     description: >
       The sort parameter on GET /api/articles MUST be validated against an
-      explicit allowlist before use in SQL ORDER BY: [id, createdAt, language, title, url].
+      explicit allowlist before use in SQL ORDER BY:
+      [id, createdAt, publishedAt, language, title, url].
       Column names must never be interpolated from raw user input.
       An unrecognised field returns 400 Bad Request.
   - id: BR-27
@@ -398,8 +445,10 @@ x-business-rules:
     name: Input field length and format constraints
     description: >
       url: minLength 1, maxLength 2048, must match ^https?://.+ (http/https only).
-      language: minLength 1, maxLength 20 (matches VARCHAR(20) DB column).
+      language: minLength 1, maxLength 20 (matches VARCHAR(20) DB column),
+      normalized to lowercase, and must match ^[a-z]{2,3}(-[a-z0-9]{2,8})*$.
       quote: minLength 1 when present and non-null, maxLength 2000.
+      publishedAt: nullable ISO-8601 date-time when present.
       Empty string ("") is invalid for any string field and returns 400.
       Violations return 400 Bad Request with ProblemDetail.
   - id: BR-29
@@ -407,6 +456,8 @@ x-business-rules:
     description: >
       email must be a valid RFC 5321 address, maxLength 254 characters.
       role must be exactly one of the enum values USER or ADMIN (case-sensitive).
+      status must be exactly one of ACTIVE or DELETED when included in admin
+      edit payloads.
       Any unrecognised role value returns 400 Bad Request.
       Empty string for email or role returns 400 Bad Request.
 
@@ -425,6 +476,7 @@ x-business-rules:
       On successful OAuth callback, backend creates authenticated server session.
       Session cookie is HttpOnly, Secure in production, SameSite=Lax, Path=/.
       Role is resolved from allowlist (`app_user`) using normalized email.
+      Users with status DELETED cannot log in or authorize write operations.
       Session lifetime has idle timeout and absolute timeout configured in app properties.
   - id: BR-32
     name: Logout clears session
@@ -437,7 +489,7 @@ x-business-rules:
     description: >
       GET /admin route requires authenticated user with role=ADMIN.
       If user is not authenticated or not ADMIN, redirect to /?require-login=true or show 403.
-      Admin can list users, add users, delete users, and update roles.
+      Admin can list users, add users, soft-delete/restore users, and update roles.
       These actions are executed server-side via application services.
   - id: BR-34
     name: Article creation requires login
@@ -461,6 +513,68 @@ x-business-rules:
       HttpOnly protects against token theft via JavaScript but does NOT mitigate CSRF.
       Vaadin/Spring Security CSRF mechanisms remain enabled for session-backed UI endpoints.
       Stateless bearer-token API endpoints MAY remain CSRF-disabled.
+  - id: BR-37
+    name: Article creator ownership
+    description: >
+      Every article MUST have an immutable created_by_user_id FK to app_user.
+      Article creation resolves this FK from the authenticated DB user: JWT email
+      for REST requests and session principal for Vaadin UI requests. PUT/PATCH
+      never accept or change creator.
+  - id: BR-38
+    name: Creator exposure rules
+    description: >
+      Public/anonymous article list and detail responses MUST omit creator data.
+      Authenticated article responses MAY include createdBy { id, email }.
+      RSS MUST never expose creator/user data.
+  - id: BR-39
+    name: Existing article creator backfill
+    description: >
+      The migration adding article.created_by_user_id MUST backfill all existing
+      articles to the oldest app_user by created_at ASC, id ASC. If articles
+      exist but no users exist, migration fails and the app must not launch.
+  - id: BR-40
+    name: Soft-deleted users
+    description: >
+      Deleting a user changes status from ACTIVE to DELETED. User rows and email
+      uniqueness are retained for audit/history and article creator FKs. DELETED
+      users cannot log in or authorize writes. Admins can restore users by
+      changing status back to ACTIVE.
+  - id: BR-41
+    name: Publication date metadata
+    description: >
+      publishedAt is nullable. Enrichment attempts publication date extraction
+      in order: meta[property=article:published_time], JSON-LD Article or
+      NewsArticle datePublished, meta[name=date], meta[property=datePublished],
+      and time[datetime]. Missing or unparseable publication date does not fail
+      enrichment and persists null unless a user-supplied value is provided.
+  - id: BR-42
+    name: Article filtering
+    description: >
+      Article list endpoints and UI support filters for language, publishedAt
+      range, and createdAt range. Filters compose with pagination and sorting.
+  - id: BR-43
+    name: Analytics consent
+    description: >
+      Google Analytics and StatCounter scripts are loaded only when configured
+      IDs are present and the user has accepted analytics cookies. Consent text
+      must make clear tracking is for analytics only, and users can reject or
+      later revoke consent.
+  - id: BR-44
+    name: RSS discovery
+    description: >
+      Article pages MUST advertise the RSS feed to browsers/feed readers using
+      a standard HTML discovery link:
+      <link rel="alternate" type="application/rss+xml" title="Co za zjeb RSS" href="/rss">.
+      The UI SHOULD also include a visible RSS icon/link to /rss in the article
+      list top bar.
+  - id: BR-45
+    name: Article content preservation cache future consideration
+    description: >
+      Consider preserving fetched article text/content at creation time in a
+      future phase. First implementation should treat it as preservation only;
+      do not rely on it for UI fallback, source URL failure handling, or AI
+      summary generation until storage shape, sanitization, max size, access
+      control, copyright/privacy posture, and purge behavior are decided.
 # ──────────────────────────────────────────────────────────────
 # VAADIN UI SPEC  (x-vaadin-ui)
 # ──────────────────────────────────────────────────────────────
@@ -472,11 +586,13 @@ x-vaadin-ui:
       route: /
       description: >
         Paginated, read-only grid listing all articles.
-      columns: [id, title, language, url, createdAt]
+      columns: [id, title, language, thumbnail, url, publishedAt, createdAt]
       features:
         - Server-side pagination; default page size 20
         - Page size selector dropdown with options [10, 20, 40, 60, 80, 100]
-        - Sort by any displayed column (allowlist: id, createdAt, language, title, url)
+        - Sort by any displayed column (allowlist: id, createdAt, publishedAt, language, title, url)
+        - Filter by language dropdown populated from distinct normalized languages
+        - Filter by publishedAt and createdAt date/time ranges
         - Click row to open source URL in a new tab
 
     - name: (Enhanced) ArticleListView
@@ -486,22 +602,26 @@ x-vaadin-ui:
         - "Logout button click -> invalidates server session, clears security context, redirects to /"
         - "Login button click -> navigates to GET /auth/login (OAuth flow)"
         - "If authenticated: Add Article button below grid or in toolbar"
-        - "Click Add Article -> modal with form (url, language, quote)"
-        - "Form validation: url required (^https?://.+), language required, quote optional"
+        - "Click Add Article -> modal with form (url, language, quote, optional publishedAt date/time)"
+        - "Form validation: url required (^https?://.+), language required and normalized lowercase, quote optional, publishedAt optional"
         - "Submit server-side via ArticleService with loading spinner; on success close modal + refresh grid + success toast"
         - "On error (400/409/422): show error toast with detail"
         - "On successful callback: close login modal, update UI to show logout button and Add Article, show success toast"
+        - "Authenticated users may see creator email/id where useful; anonymous users never see creator data"
+        - "Expose RSS discovery via rel=alternate in page HTML and visible RSS icon/link in the top bar"
+        - "Analytics consent banner appears only when analytics IDs are configured and controls Google Analytics/StatCounter loading"
 
     - name: AdminView
       route: /admin
       description: >
         Admin-only user management panel. Requires authentication + ADMIN role.
         If not authenticated or not admin, show 403 or redirect to /?require-login=true
-      columns: [id, email, role, createdAt]
+      columns: [id, email, role, status, createdAt]
       features:
         - Users table with all app_user records
-        - "Delete icon/button per row: invokes AppUserService delete, confirm dialog, error toast if 409 (last admin)"
+        - "Delete icon/button per row: invokes AppUserService soft delete, confirm dialog, error toast if 409 (last active admin)"
         - "Role selector per row: change role invokes AppUserService patchRole, shows success/error toast"
+        - "Status selector per row: ACTIVE/DELETED; restoring a deleted user changes status back to ACTIVE"
         - "Add User button -> modal with email input + role selector"
         - "Submit invokes AppUserService create, error toast on 400/409, success toast + table refresh"
         - "Logout button in top-right (same as every other view): invalidates session, redirects to /"
@@ -514,7 +634,7 @@ info:
     ## Overview
     CoZaZjeb is a link-collecting application. Users submit a URL and a language
     tag; the server fetches the target page and automatically enriches the record
-    with title, thumbnail and lead before persisting it.
+    with title, thumbnail, lead, and best-effort publication date before persisting it.
 
     ## Components
     1. **REST API** — CRUD endpoints for `Article` resources (this spec).
@@ -528,9 +648,16 @@ info:
        this REST spec; rendered at the root path `/`).
 
     ## Implementation notes
-    - Language is a free-form BCP-47 string (e.g. `pl`, `en`, `de`).
-    - `title`, `thumbnail` and `lead` are server-fetched; clients supply
-      `url`, `language` and optional `quote` on create/replace.
+    - Language is normalized to lowercase and validated against a conservative
+      BCP-47-like pattern (e.g. `pl`, `en`, `en-gb`).
+    - Language is normalized to lowercase and validated against a conservative
+      BCP-47-like pattern.
+    - `title`, `thumbnail`, `lead` and best-effort `publishedAt` are
+      server-fetched; clients supply `url`, `language`, optional `quote`, and
+      optional `publishedAt` on create/replace.
+    - Each article stores an immutable creator FK. Creator data is omitted from
+      anonymous article responses and RSS; authenticated article responses may
+      include `createdBy`.
     - `aiSummary` is reserved for a future AI enrichment step; always `null`
       in the current version.
     - Read endpoints (`GET /api/articles`, `GET /api/articles/{id}`, `GET /rss`)
@@ -562,6 +689,8 @@ x-security-policy:
     enabled: true
     table: app_user
     roleColumn: role
+    statusColumn: status
+    activeStatus: ACTIVE
     emailNormalization: trim+lowercase
   bootstrap:
     adminEmailEnvVar: COZAZJEB_BOOTSTRAP_ADMIN_EMAIL
@@ -579,6 +708,14 @@ x-security-policy:
   csrf:
     disabledPaths: [/api/**, /rss]
     enabledForVaadinUi: true
+
+x-runtime-configuration:
+  analytics:
+    googleAnalyticsMeasurementIdEnvVar: GOOGLE_ANALYTICS_MEASUREMENT_ID
+    statCounterProjectIdEnvVar: STATCOUNTER_PROJECT_ID
+    statCounterSecurityIdEnvVar: STATCOUNTER_SECURITY_ID
+    renderOnlyWhenConfigured: true
+    requiresUserConsent: true
 
 x-problem-types:
   articleUrlConflict:
@@ -631,7 +768,7 @@ paths:
           in: query
           description: >
             Sort expression: field,direction — e.g. createdAt,desc.
-            Permitted fields: id, createdAt, language, title, url.
+            Permitted fields: id, createdAt, publishedAt, language, title, url.
             Unknown field returns 400 Bad Request.
           schema:
             type: string
@@ -640,6 +777,8 @@ paths:
               - id,desc
               - createdAt,asc
               - createdAt,desc
+              - publishedAt,asc
+              - publishedAt,desc
               - language,asc
               - language,desc
               - title,asc
@@ -647,6 +786,43 @@ paths:
               - url,asc
               - url,desc
             example: createdAt,desc
+        - name: language
+          in: query
+          description: Normalized BCP-47-like language filter, e.g. pl or en-gb
+          required: false
+          schema:
+            type: string
+            maxLength: 20
+            pattern: '^[a-z]{2,3}(-[a-z0-9]{2,8})*$'
+            example: pl
+        - name: publishedFrom
+          in: query
+          description: Inclusive lower bound for publishedAt
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: publishedTo
+          in: query
+          description: Inclusive upper bound for publishedAt
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: createdFrom
+          in: query
+          description: Inclusive lower bound for createdAt
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: createdTo
+          in: query
+          description: Inclusive upper bound for createdAt
+          required: false
+          schema:
+            type: string
+            format: date-time
       responses:
         '200':
           description: Paginated list of articles
@@ -666,7 +842,8 @@ paths:
       description: >
         Accepts a URL and a BCP-47 language tag.
         The server fetches the page at the given URL and automatically
-        populates title, thumbnail and lead before persisting.
+        populates title, thumbnail, lead, and best-effort publishedAt before
+        persisting. Creator is resolved from the authenticated DB user.
       requestBody:
         required: true
         content:
@@ -722,7 +899,8 @@ paths:
         - googleOidc: []
       description: >
         Replaces url, language and optional quote. The server re-fetches the
-        target page to refresh title, thumbnail and lead.
+        target page to refresh title, thumbnail, lead, and best-effort
+        publishedAt unless publishedAt is explicitly supplied.
       requestBody:
         required: true
         content:
@@ -756,8 +934,9 @@ paths:
       security:
         - googleOidc: []
       description: >
-        Updates only the provided fields. Updatable fields: url, language, quote.
+        Updates only the provided fields. Updatable fields: url, language, quote, publishedAt.
         Setting quote to null explicitly clears it; omitting quote leaves it unchanged.
+        Setting publishedAt to null explicitly clears it; omitting publishedAt leaves it unchanged unless url changes and no override is supplied.
         If url is changed the server re-fetches the page to refresh the enriched
         fields. Fully atomic — if enrichment fails the server responds with 422
         and the existing record is left unchanged.
@@ -817,7 +996,7 @@ paths:
         description: fucked up news
         language:
           default: en
-          note: accepts any BCP-47 tag (free-form, no fixed enum)
+          note: accepts normalized BCP-47-like tags
         generator: cozazjeb.pl
         lastBuildDateSource: app.build.timestamp injected by Gradle as ISO-8601 UTC
         lastBuildDateFormat: RFC-822 UTC (converted by RSS controller from ISO-8601)
@@ -827,10 +1006,11 @@ paths:
           in: query
           description: >-
             BCP-47 language tag filter (e.g. en, pl, de).
-            Accepts any free-form BCP-47 tag — no fixed enum.
+            Must match the same normalized BCP-47-like validation used by articles.
           required: false
           schema:
             type: string
+            pattern: '^[a-z]{2,3}(-[a-z0-9]{2,8})*$'
             example: pl
       responses:
         '200':
@@ -905,14 +1085,14 @@ paths:
 
     delete:
       tags: [Security]
-      summary: Remove user from allowlist
+      summary: Soft-delete user from allowlist
       operationId: removeAppUser
       x-required-role: ADMIN
       security:
         - googleOidc: []
       responses:
         '204':
-          description: User removed from allowlist
+          description: User marked DELETED and no longer allowed to authenticate or authorize writes
         '409':
           $ref: '#/components/responses/Conflict'
         '404':
@@ -924,7 +1104,7 @@ paths:
 
     patch:
       tags: [Security]
-      summary: Update allowlisted user role
+      summary: Update allowlisted user role/status
       operationId: updateAppUserRole
       x-required-role: ADMIN
       security:
@@ -937,7 +1117,7 @@ paths:
               $ref: '#/components/schemas/AppUserRolePatch'
       responses:
         '200':
-          description: Allowed user role updated (or unchanged if same role requested)
+          description: Allowed user role/status updated (or unchanged if same values requested)
           content:
             application/json:
               schema:
@@ -989,6 +1169,7 @@ components:
           type: string
           minLength: 1
           maxLength: 20
+          pattern: '^[a-z]{2,3}(-[a-z0-9]{2,8})*$'
           description: BCP-47 language tag identifying the article's language
           example: pl
         quote:
@@ -998,6 +1179,12 @@ components:
           maxLength: 2000
           description: Optional user-provided quote or comment about the article
           example: "This perfectly captures the absurdity."
+        publishedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Optional manual source publication timestamp. If omitted on create, enrichment attempts to populate it.
+          example: "2026-05-02T08:30:00Z"
 
     ArticlePatch:
       type: object
@@ -1014,6 +1201,7 @@ components:
           type: string
           minLength: 1
           maxLength: 20
+          pattern: '^[a-z]{2,3}(-[a-z0-9]{2,8})*$'
           description: BCP-47 language tag
           example: en
         quote:
@@ -1023,9 +1211,18 @@ components:
           maxLength: 2000
           description: User-provided quote; null explicitly clears it; empty string is invalid
           example: "This perfectly captures the absurdity."
+        publishedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Source publication timestamp; null explicitly clears it
+          example: "2026-05-02T08:30:00Z"
 
     Article:
       type: object
+      description: >
+        Article response. `createdBy` is included only for authenticated requests
+        and omitted for anonymous/public responses and RSS.
       properties:
         id:
           type: integer
@@ -1065,11 +1262,40 @@ components:
           type: string
           description: AI-generated summary — future feature, null until implemented
           nullable: true
+        publishedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Source article publication timestamp, fetched from metadata or edited manually
+          example: "2026-05-02T08:30:00Z"
         createdAt:
           type: string
           format: date-time
           readOnly: true
           example: "2026-05-02T10:00:00Z"
+        createdBy:
+          $ref: '#/components/schemas/ArticleCreator'
+
+    PublicArticle:
+      allOf:
+        - $ref: '#/components/schemas/Article'
+      description: >
+        Public article representation. Implementations MUST omit createdBy for
+        unauthenticated requests even though authenticated Article responses may include it.
+
+    ArticleCreator:
+      type: object
+      readOnly: true
+      description: Present only for authenticated article responses; never exposed in RSS.
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        email:
+          type: string
+          format: email
+          example: user@example.com
 
     AppUserInput:
       type: object
@@ -1088,6 +1314,11 @@ components:
           minLength: 1
           description: Authorization role assigned to this user
           example: USER
+        status:
+          type: string
+          enum: [ACTIVE, DELETED]
+          description: Optional initial lifecycle status; defaults to ACTIVE
+          example: ACTIVE
 
     AppUser:
       type: object
@@ -1106,6 +1337,10 @@ components:
           type: string
           enum: [USER, ADMIN]
           example: USER
+        status:
+          type: string
+          enum: [ACTIVE, DELETED]
+          example: ACTIVE
         createdAt:
           type: string
           format: date-time
@@ -1114,8 +1349,8 @@ components:
 
     AppUserRolePatch:
       type: object
-      required: [role]
-      description: Role update payload for allowlisted user
+      minProperties: 1
+      description: Role/status update payload for allowlisted user
       properties:
         role:
           type: string
@@ -1123,6 +1358,11 @@ components:
           minLength: 1
           description: New role to assign
           example: ADMIN
+        status:
+          type: string
+          enum: [ACTIVE, DELETED]
+          description: New lifecycle status to assign
+          example: ACTIVE
 
     ArticlePage:
       type: object
