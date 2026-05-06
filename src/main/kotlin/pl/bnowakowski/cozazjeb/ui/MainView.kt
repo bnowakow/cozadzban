@@ -31,6 +31,7 @@ import pl.bnowakowski.cozazjeb.article.ArticleRepository
 import pl.bnowakowski.cozazjeb.article.ArticleService
 import pl.bnowakowski.cozazjeb.security.AllowlistAuthorizationManager
 import pl.bnowakowski.cozazjeb.user.AppUserRepository
+import pl.bnowakowski.cozazjeb.user.AppUserStatus
 
 @Route("")
 @AnonymousAllowed
@@ -193,7 +194,7 @@ class ArticleListView(
                 }
                 val normalizedEmail = AllowlistAuthorizationManager.normalizeEmail(email)
                 val creator = normalizedEmail?.let { appUserRepository.findByEmail(it) }
-                if (creator == null) {
+                if (creator == null || creator.status != AppUserStatus.ACTIVE) {
                     showLoginOverlay(dialog)
                     return@addClickListener
                 }
