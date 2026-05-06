@@ -148,4 +148,40 @@ class RssControllerTest {
                 status { isOk() }
             }
     }
+
+    // ─── Phase 21 / Item 66 — RSS creator omission ────────────────────────────
+
+    @Test
+    fun `RSS feed does not expose creator email or user data`() {
+        whenever(articleRepository.findForRss(isNull())).thenReturn(sampleArticles)
+
+        mockMvc.get("/rss")
+            .andExpect {
+                status { isOk() }
+                content {
+                    // None of the user/creator-related fields should appear in the RSS XML
+                    string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("createdByUserId")))
+                    string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("created_by_user_id")))
+                    // The article URLs should appear but no email addresses
+                    string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.matchesPattern(".*\\b[A-Za-z0-9._%+\\-]+@[A-Za-z0-9.\\-]+\\.[A-Za-z]{2,}\\b.*")))
+                }
+            }
+    }
+
+    // ─── Phase 21 / Item 67 — RSS discovery link in index.html ───────────────
+
+    @Test
+    fun `index html contains RSS alternate link for feed discovery`() {
+        val indexHtml = java.io.File("src/main/frontend/index.html").readText()
+        assert(indexHtml.contains("""rel="alternate"""")) {
+            "index.html should contain rel=\"alternate\" for RSS discovery"
+        }
+        assert(indexHtml.contains("""type="application/rss+xml"""")) {
+            "index.html should contain type=\"application/rss+xml\" for RSS discovery"
+        }
+        assert(indexHtml.contains("""href="/rss"""")) {
+            "index.html should contain href=\"/rss\" for RSS discovery"
+        }
+    }
 }
+
