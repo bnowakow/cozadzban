@@ -7,6 +7,7 @@ import org.springframework.data.repository.CrudRepository
 import org.springframework.jdbc.core.RowMapper
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Repository
+import java.sql.Timestamp
 import java.time.Instant
 
 interface ArticleRepository : CrudRepository<Article, Long>, ArticleRepositoryCustom {
@@ -17,12 +18,31 @@ interface ArticleRepository : CrudRepository<Article, Long>, ArticleRepositoryCu
 interface ArticleRepositoryCustom {
     /**
      * Returns a page of articles sorted by [sortField] (validated against [SORT_COLUMN_MAP])
-     * and [sortDirection] ("asc" or "desc", case-insensitive).
+     * and [sortDirection] ("asc" or "desc", case-insensitive), with optional filters.
      *
      * @throws IllegalArgumentException if [sortField] is not in the allowlist or
      *   [sortDirection] is not "asc"/"desc" — caller should return 400.
      */
-    fun findPage(page: Int, size: Int, sortField: String, sortDirection: String): List<Article>
+    fun findPage(
+        page: Int,
+        size: Int,
+        sortField: String,
+        sortDirection: String,
+        language: String? = null,
+        publishedFrom: Instant? = null,
+        publishedTo: Instant? = null,
+        createdFrom: Instant? = null,
+        createdTo: Instant? = null,
+    ): List<Article>
+
+    /** Counts articles matching the same filter criteria used in [findPage]. */
+    fun countFiltered(
+        language: String? = null,
+        publishedFrom: Instant? = null,
+        publishedTo: Instant? = null,
+        createdFrom: Instant? = null,
+        createdTo: Instant? = null,
+    ): Long
 
     /**
      * Returns articles for RSS ordered by created_at DESC, optionally filtered by language.
@@ -35,11 +55,12 @@ interface ArticleRepositoryCustom {
          * Raw user input MUST NOT be interpolated into SQL directly.
          */
         val SORT_COLUMN_MAP: Map<String, String> = mapOf(
-            "id"        to "id",
-            "createdAt" to "created_at",
-            "language"  to "language",
-            "title"     to "title",
-            "url"       to "url",
+            "id"          to "id",
+            "createdAt"   to "created_at",
+            "publishedAt" to "published_at",
+            "language"    to "language",
+            "title"       to "title",
+            "url"         to "url",
         )
     }
 }
@@ -49,7 +70,17 @@ class ArticleRepositoryCustomImpl(
     private val jdbc: NamedParameterJdbcTemplate,
 ) : ArticleRepositoryCustom {
 
-    override fun findPage(page: Int, size: Int, sortField: String, sortDirection: String): List<Article> {
+    override fun findPage(
+        page: Int,
+        size: Int,
+        sortField: String,
+        sortDirection: String,
+        language: String?,
+        publishedFrom: Instant?,
+        publishedTo: Instant?,
+        createdFrom: Instant?,
+        createdTo: Instant?,
+    ): List<Article> {
         val column = ArticleRepositoryCustom.SORT_COLUMN_MAP[sortField]
             ?: throw IllegalArgumentException(
                 "Invalid sort field '$sortField'. Allowed: ${ArticleRepositoryCustom.SORT_COLUMN_MAP.keys}"
@@ -61,29 +92,47 @@ class ArticleRepositoryCustomImpl(
                 "Invalid sort direction '$sortDirection'. Allowed: asc, desc"
             )
         }
+        val (whereClause, params) = buildWhereClause(language, publishedFrom, publishedTo, createdFrom, createdTo)
+        params["limit"] = size
+        params["offset"] = page * size
         // column and direction are from a closed allowlist — safe to interpolate
         val sql = """
-            SELECT id, url, language, title, thumbnail, lead, quote, ai_summary, created_by_user_id, created_at
+            SELECT id, url, language, title, thumbnail, lead, quote, ai_summary,
+                   created_by_user_id, created_at, published_at
               FROM article
+             $whereClause
              ORDER BY $column $direction
              LIMIT :limit OFFSET :offset
         """.trimIndent()
-        val params = mapOf("limit" to size, "offset" to page * size)
         return jdbc.query(sql, params, ARTICLE_ROW_MAPPER)
+    }
+
+    override fun countFiltered(
+        language: String?,
+        publishedFrom: Instant?,
+        publishedTo: Instant?,
+        createdFrom: Instant?,
+        createdTo: Instant?,
+    ): Long {
+        val (whereClause, params) = buildWhereClause(language, publishedFrom, publishedTo, createdFrom, createdTo)
+        val sql = "SELECT COUNT(*) FROM article $whereClause"
+        return jdbc.queryForObject(sql, params, Long::class.java) ?: 0L
     }
 
     override fun findForRss(language: String?): List<Article> {
         val hasLanguageFilter = !language.isNullOrBlank()
         val sql = if (hasLanguageFilter) {
             """
-                SELECT id, url, language, title, thumbnail, lead, quote, ai_summary, created_by_user_id, created_at
+                SELECT id, url, language, title, thumbnail, lead, quote, ai_summary,
+                       created_by_user_id, created_at, published_at
                   FROM article
                  WHERE language = :language
                  ORDER BY created_at DESC
             """.trimIndent()
         } else {
             """
-                SELECT id, url, language, title, thumbnail, lead, quote, ai_summary, created_by_user_id, created_at
+                SELECT id, url, language, title, thumbnail, lead, quote, ai_summary,
+                       created_by_user_id, created_at, published_at
                   FROM article
                  ORDER BY created_at DESC
             """.trimIndent()
@@ -94,6 +143,45 @@ class ArticleRepositoryCustomImpl(
             emptyMap<String, Any>()
         }
         return jdbc.query(sql, params, ARTICLE_ROW_MAPPER)
+    }
+
+    /**
+     * Builds a parameterised WHERE clause from the given filters.
+     * Column names are hardcoded — only parameter values come from user input (BR-09).
+     */
+    private fun buildWhereClause(
+        language: String?,
+        publishedFrom: Instant?,
+        publishedTo: Instant?,
+        createdFrom: Instant?,
+        createdTo: Instant?,
+    ): Pair<String, MutableMap<String, Any?>> {
+        val conditions = mutableListOf<String>()
+        val params = mutableMapOf<String, Any?>()
+
+        if (!language.isNullOrBlank()) {
+            conditions += "language = :language"
+            params["language"] = language
+        }
+        if (publishedFrom != null) {
+            conditions += "published_at >= :publishedFrom"
+            params["publishedFrom"] = Timestamp.from(publishedFrom)
+        }
+        if (publishedTo != null) {
+            conditions += "published_at <= :publishedTo"
+            params["publishedTo"] = Timestamp.from(publishedTo)
+        }
+        if (createdFrom != null) {
+            conditions += "created_at >= :createdFrom"
+            params["createdFrom"] = Timestamp.from(createdFrom)
+        }
+        if (createdTo != null) {
+            conditions += "created_at <= :createdTo"
+            params["createdTo"] = Timestamp.from(createdTo)
+        }
+
+        val whereClause = if (conditions.isEmpty()) "" else "WHERE " + conditions.joinToString(" AND ")
+        return Pair(whereClause, params)
     }
 
     private companion object {
@@ -108,8 +196,10 @@ class ArticleRepositoryCustomImpl(
                 quote           = rs.getString("quote"),
                 aiSummary       = rs.getString("ai_summary"),
                 createdByUserId = rs.getLong("created_by_user_id"),
+                publishedAt     = rs.getTimestamp("published_at")?.toInstant(),
                 createdAt       = rs.getTimestamp("created_at")?.toInstant() ?: Instant.EPOCH,
             )
         }
     }
 }
+

@@ -4,6 +4,7 @@
 package pl.bnowakowski.cozazjeb.article
 
 import jakarta.validation.Valid
+import org.springframework.format.annotation.DateTimeFormat
 import org.springframework.http.ResponseEntity
 import org.springframework.security.core.Authentication
 import org.springframework.web.bind.annotation.DeleteMapping
@@ -20,6 +21,7 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder
 import pl.bnowakowski.cozazjeb.security.AllowlistAuthorizationManager
 import pl.bnowakowski.cozazjeb.user.AppUser
 import pl.bnowakowski.cozazjeb.user.AppUserRepository
+import java.time.Instant
 
 @RestController
 @RequestMapping("/api/articles")
@@ -33,7 +35,12 @@ class ArticleController(
         @RequestParam(defaultValue = "0") page: Int,
         @RequestParam(defaultValue = "20") size: Int,
         @RequestParam(defaultValue = "createdAt,desc") sort: String,
-    ): ArticlePage = articleService.findPage(page, size, sort)
+        @RequestParam(required = false) language: String?,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) publishedFrom: Instant?,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) publishedTo: Instant?,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) createdFrom: Instant?,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) createdTo: Instant?,
+    ): ArticlePage = articleService.findPage(page, size, sort, language, publishedFrom, publishedTo, createdFrom, createdTo)
 
     @GetMapping("/{id}")
     fun getArticle(@PathVariable id: Long, authentication: Authentication?): ArticleResponse {

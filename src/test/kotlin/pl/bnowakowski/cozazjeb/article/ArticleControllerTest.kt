@@ -6,6 +6,7 @@ package pl.bnowakowski.cozazjeb.article
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.any
+import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.whenever
 import org.springframework.beans.factory.annotation.Autowired
@@ -84,7 +85,7 @@ class ArticleControllerTest {
 
     @Test
     fun `GET articles returns 200 with article page`() {
-        whenever(articleService.findPage(0, 20, "createdAt,desc")).thenReturn(samplePage)
+        whenever(articleService.findPage(eq(0), eq(20), eq("createdAt,desc"), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull())).thenReturn(samplePage)
 
         mockMvc.get("/api/articles")
             .andExpect {
@@ -98,7 +99,7 @@ class ArticleControllerTest {
 
     @Test
     fun `GET articles returns 400 on invalid sort field`() {
-        whenever(articleService.findPage(any(), any(), eq("badField,desc")))
+        whenever(articleService.findPage(any(), any(), eq("badField,desc"), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull()))
             .thenThrow(IllegalArgumentException("Invalid sort field 'badField'"))
 
         mockMvc.get("/api/articles?sort=badField,desc")

@@ -25,6 +25,7 @@ data class ArticleResponse(
     val lead: String?,
     val quote: String?,
     val aiSummary: String?,
+    val publishedAt: Instant?,
     val createdAt: Instant?,
     val createdBy: CreatedByInfo?,
 ) {
@@ -38,6 +39,7 @@ data class ArticleResponse(
             lead = article.lead,
             quote = article.quote,
             aiSummary = article.aiSummary,
+            publishedAt = article.publishedAt,
             createdAt = article.createdAt,
             createdBy = creator?.id?.let { CreatedByInfo(it, creator.email) },
         )

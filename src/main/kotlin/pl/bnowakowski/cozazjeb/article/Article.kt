@@ -20,5 +20,6 @@ data class Article(
     val quote: String? = null,
     val aiSummary: String? = null,
     @JsonIgnore val createdByUserId: Long,
+    val publishedAt: Instant? = null,
     @ReadOnlyProperty val createdAt: Instant? = null,
 )

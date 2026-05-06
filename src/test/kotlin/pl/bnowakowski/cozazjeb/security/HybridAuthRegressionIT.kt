@@ -323,7 +323,7 @@ class HybridAuthRegressionIT {
 
     @Test
     fun `anonymous user can view article list`() {
-        whenever(articleService.findPage(any(), any(), any())).thenReturn(emptyPage)
+        whenever(articleService.findPage(any(), any(), any(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull())).thenReturn(emptyPage)
 
         mockMvc.get("/api/articles")
             .andExpect { status { isOk() } }
