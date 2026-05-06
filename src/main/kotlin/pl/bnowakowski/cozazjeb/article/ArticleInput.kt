@@ -6,6 +6,7 @@ package pl.bnowakowski.cozazjeb.article
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.Pattern
 import jakarta.validation.constraints.Size
+import java.time.Instant
 
 data class ArticleInput(
     @field:NotBlank
@@ -19,4 +20,6 @@ data class ArticleInput(
 
     @field:Size(min = 1, max = 2000)
     val quote: String? = null,
+
+    val publishedAt: Instant? = null,
 )

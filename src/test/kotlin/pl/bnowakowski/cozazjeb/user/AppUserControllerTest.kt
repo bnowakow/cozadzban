@@ -10,6 +10,7 @@ import org.mockito.kotlin.eq
 import org.mockito.kotlin.whenever
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.http.MediaType
 import org.springframework.security.oauth2.jwt.JwtDecoder
@@ -20,9 +21,11 @@ import org.springframework.test.web.servlet.delete
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.patch
 import org.springframework.test.web.servlet.post
+import pl.bnowakowski.cozazjeb.user.AppUserStatus
 import java.time.Instant
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
+@AutoConfigureMockMvc
 @TestPropertySource(properties = ["app.build.timestamp=2026-05-04T10:00:00Z"])
 class AppUserControllerTest {
 
@@ -45,7 +48,7 @@ class AppUserControllerTest {
 
     @BeforeEach
     fun setup() {
-        whenever(appUserRepository.countByRole(Role.ADMIN)).thenReturn(1L)
+        whenever(appUserRepository.countByRoleAndStatus(Role.ADMIN, AppUserStatus.ACTIVE)).thenReturn(1L)
         whenever(appUserRepository.findByEmail(adminEmail)).thenReturn(AppUser(2L, adminEmail, Role.ADMIN))
         whenever(appUserRepository.findByEmail(userEmail)).thenReturn(AppUser(1L, userEmail, Role.USER))
         whenever(appUserRepository.findByEmail(strangerEmail)).thenReturn(null)

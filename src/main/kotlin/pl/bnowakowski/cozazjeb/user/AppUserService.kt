@@ -31,22 +31,40 @@ class AppUserService(
         )
     }
 
-    fun delete(id: Long) {
+    fun delete(id: Long): AppUser {
         val existing = appUserRepository.findById(id)
             .orElseThrow { NoSuchElementException("User $id not found") }
 
-        if (existing.role == Role.ADMIN && appUserRepository.countByRole(Role.ADMIN) <= 1) {
+        if (existing.status == AppUserStatus.DELETED) return existing
+
+        if (existing.role == Role.ADMIN &&
+            appUserRepository.countByRoleAndStatus(Role.ADMIN, AppUserStatus.ACTIVE) <= 1
+        ) {
             throw LastAdminRequiredException()
         }
 
-        appUserRepository.deleteById(id)
+        return appUserRepository.save(existing.copy(status = AppUserStatus.DELETED))
+    }
+
+    fun restore(id: Long): AppUser {
+        val existing = appUserRepository.findById(id)
+            .orElseThrow { NoSuchElementException("User $id not found") }
+
+        if (existing.status == AppUserStatus.ACTIVE) return existing
+        return appUserRepository.save(existing.copy(status = AppUserStatus.ACTIVE))
     }
 
     fun updateRole(id: Long, patch: AppUserRolePatch): AppUser {
         val existing = appUserRepository.findById(id)
             .orElseThrow { NoSuchElementException("User $id not found") }
 
-        if (existing.role == Role.ADMIN && patch.role != Role.ADMIN && appUserRepository.countByRole(Role.ADMIN) <= 1) {
+        if (existing.status == AppUserStatus.DELETED) {
+            throw NoSuchElementException("User $id not found")
+        }
+
+        if (existing.role == Role.ADMIN && patch.role != Role.ADMIN &&
+            appUserRepository.countByRoleAndStatus(Role.ADMIN, AppUserStatus.ACTIVE) <= 1
+        ) {
             throw LastAdminRequiredException()
         }
 

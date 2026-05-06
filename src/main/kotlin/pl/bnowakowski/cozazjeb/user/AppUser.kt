@@ -15,5 +15,6 @@ data class AppUser(
     @Id val id: Long? = null,
     val email: String,
     val role: Role,
+    val status: AppUserStatus = AppUserStatus.ACTIVE,
     @ReadOnlyProperty val createdAt: Instant? = null,
 )

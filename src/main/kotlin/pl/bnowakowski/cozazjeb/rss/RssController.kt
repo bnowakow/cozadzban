@@ -54,8 +54,9 @@ class RssController(
         val title = article.title ?: article.url
         val description = article.lead.orEmpty()
         val guid = article.id?.toString() ?: article.url
-        val pubDate = article.createdAt?.atOffset(ZoneOffset.UTC)?.format(RFC_822_FORMATTER)
-            ?: Instant.EPOCH.atOffset(ZoneOffset.UTC).format(RFC_822_FORMATTER)
+        // BR-07: use publishedAt when present, fall back to createdAt
+        val pubDate = (article.publishedAt ?: article.createdAt ?: Instant.EPOCH)
+            .atOffset(ZoneOffset.UTC).format(RFC_822_FORMATTER)
 
         append("<item>")
         append("<title>${xmlEscape(title)}</title>")

@@ -25,6 +25,7 @@ import pl.bnowakowski.cozazjeb.user.AppUser
 import pl.bnowakowski.cozazjeb.user.AppUserInput
 import pl.bnowakowski.cozazjeb.user.AppUserRolePatch
 import pl.bnowakowski.cozazjeb.user.AppUserService
+import pl.bnowakowski.cozazjeb.user.AppUserStatus
 import pl.bnowakowski.cozazjeb.user.Role
 
 @Route("admin")
@@ -122,6 +123,9 @@ class AdminView(
         usersGrid.addColumn(AppUser::role)
             .setHeader("Role")
             .setAutoWidth(true)
+        usersGrid.addColumn(AppUser::status)
+            .setHeader("Status")
+            .setAutoWidth(true)
         usersGrid.addColumn { it.createdAt?.toString().orEmpty() }
             .setHeader("Created At")
             .setAutoWidth(true)
@@ -129,8 +133,8 @@ class AdminView(
         usersGrid.addComponentColumn { user -> roleEditor(user) }
             .setHeader("Update role")
             .setAutoWidth(true)
-        usersGrid.addComponentColumn { user -> deleteButton(user) }
-            .setHeader("Delete")
+        usersGrid.addComponentColumn { user -> actionButtons(user) }
+            .setHeader("Actions")
             .setAutoWidth(true)
     }
 
@@ -154,6 +158,28 @@ class AdminView(
         }
 
         return HorizontalLayout(select)
+    }
+
+    private fun actionButtons(user: AppUser): HorizontalLayout {
+        val layout = HorizontalLayout()
+        if (user.status == AppUserStatus.DELETED) {
+            val restoreButton = Button("Restore")
+            restoreButton.addThemeVariants(ButtonVariant.LUMO_SUCCESS, ButtonVariant.LUMO_TERTIARY)
+            restoreButton.addClickListener {
+                val id = user.id ?: return@addClickListener
+                try {
+                    appUserService.restore(id)
+                    refreshGrid()
+                    showSuccess("User restored")
+                } catch (ex: Exception) {
+                    showError(ex.message ?: "Failed to restore user")
+                }
+            }
+            layout.add(restoreButton)
+        } else {
+            layout.add(deleteButton(user))
+        }
+        return layout
     }
 
     private fun deleteButton(user: AppUser): Button {

@@ -13,7 +13,7 @@ import org.junit.jupiter.api.Test
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
-import org.springframework.security.access.prepost.PreAuthorize
+import jakarta.annotation.security.RolesAllowed
 import pl.bnowakowski.cozazjeb.user.AppUser
 import pl.bnowakowski.cozazjeb.user.AppUserService
 import pl.bnowakowski.cozazjeb.user.Role
@@ -26,12 +26,12 @@ class AdminViewTest {
     @Test
     fun `admin view has expected route and role guard`() {
         val route = AdminView::class.java.getAnnotation(Route::class.java)
-        val preAuthorize = AdminView::class.java.getAnnotation(PreAuthorize::class.java)
+        val rolesAllowed = AdminView::class.java.getAnnotation(RolesAllowed::class.java)
 
         assertNotNull(route)
         assertEquals("admin", route.value)
-        assertNotNull(preAuthorize)
-        assertEquals("hasRole('ADMIN')", preAuthorize.value)
+        assertNotNull(rolesAllowed)
+        assertTrue(rolesAllowed.value.contains("ADMIN"), "Expected ADMIN in @RolesAllowed")
     }
 
     @Test
