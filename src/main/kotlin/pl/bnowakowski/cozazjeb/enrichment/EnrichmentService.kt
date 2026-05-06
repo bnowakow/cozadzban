@@ -84,12 +84,14 @@ class EnrichmentService(
         val thumbnail = absoluteOrRawMetaContent(doc, "meta[property=og:image]")
         val lead = metaContent(doc, "meta[property=og:description]") ?: metaContent(doc, "meta[name=description]")
         val publishedAt = parsePublishedAt(doc)
+        val plainText = doc.body().text().normalized()
 
         return EnrichmentResult(
             title = title,
             thumbnail = thumbnail,
             lead = lead,
             publishedAt = publishedAt,
+            plainText = plainText,
         )
     }
 
@@ -185,6 +187,8 @@ data class EnrichmentResult(
     val thumbnail: String?,
     val lead: String?,
     val publishedAt: Instant? = null,
+    /** Plain text extracted from the page body, for preservation only. Never exposed publicly. */
+    val plainText: String? = null,
 )
 
 

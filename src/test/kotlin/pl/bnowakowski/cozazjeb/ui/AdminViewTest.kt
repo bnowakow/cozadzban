@@ -14,6 +14,8 @@ import org.mockito.kotlin.mock
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import jakarta.annotation.security.RolesAllowed
+import pl.bnowakowski.cozazjeb.article.ArticleContentRepository
+import pl.bnowakowski.cozazjeb.article.ArticleRepository
 import pl.bnowakowski.cozazjeb.user.AppUser
 import pl.bnowakowski.cozazjeb.user.AppUserService
 import pl.bnowakowski.cozazjeb.user.Role
@@ -22,6 +24,8 @@ import java.time.Instant
 class AdminViewTest {
 
     private val appUserService: AppUserService = mock()
+    private val articleRepository: ArticleRepository = mock()
+    private val articleContentRepository: ArticleContentRepository = mock()
 
     @Test
     fun `admin view has expected route and role guard`() {
@@ -46,8 +50,9 @@ class AdminViewTest {
                 ),
             ),
         )
+        whenever(articleContentRepository.findAll()).thenReturn(emptyList())
 
-        AdminView(appUserService)
+        AdminView(appUserService, articleRepository, articleContentRepository)
 
         verify(appUserService).list()
     }
@@ -55,8 +60,9 @@ class AdminViewTest {
     @Test
     fun `admin view contains logout and add user controls`() {
         whenever(appUserService.list()).thenReturn(emptyList())
+        whenever(articleContentRepository.findAll()).thenReturn(emptyList())
 
-        val view = AdminView(appUserService)
+        val view = AdminView(appUserService, articleRepository, articleContentRepository)
         val buttons = findComponents(view, Button::class.java)
 
         assertTrue(buttons.any { it.text == "Logout" })
@@ -66,8 +72,9 @@ class AdminViewTest {
     @Test
     fun `admin view contains add user button`() {
         whenever(appUserService.list()).thenReturn(emptyList())
+        whenever(articleContentRepository.findAll()).thenReturn(emptyList())
 
-        val view = AdminView(appUserService)
+        val view = AdminView(appUserService, articleRepository, articleContentRepository)
 
         val buttons = findComponents(view, Button::class.java)
         assertTrue(buttons.any { it.text == "Add user" })

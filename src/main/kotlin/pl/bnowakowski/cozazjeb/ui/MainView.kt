@@ -6,8 +6,11 @@ package pl.bnowakowski.cozazjeb.ui
 import com.vaadin.flow.component.button.Button
 import com.vaadin.flow.component.button.ButtonVariant
 import com.vaadin.flow.component.datetimepicker.DateTimePicker
+import com.vaadin.flow.component.confirmdialog.ConfirmDialog
 import com.vaadin.flow.component.dialog.Dialog
 import com.vaadin.flow.component.grid.Grid
+import com.vaadin.flow.component.menubar.MenuBar
+import com.vaadin.flow.component.menubar.MenuBarVariant
 import com.vaadin.flow.component.html.Anchor
 import com.vaadin.flow.component.html.H1
 import com.vaadin.flow.component.html.Image
@@ -288,13 +291,24 @@ class ArticleListView(
                 .setAutoWidth(true)
         }
 
-        // Edit button column — active authenticated users only
+        // Edit / Delete column — active authenticated users only
         if (isAuthenticated && authenticatedUser?.status == AppUserStatus.ACTIVE) {
             grid.addComponentColumn { article ->
                 val editBtn = Button("Edit")
                 editBtn.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY)
                 editBtn.addClickListener { openEditArticleDialog(article) }
-                editBtn
+
+                val menuBar = MenuBar()
+                menuBar.addThemeVariants(MenuBarVariant.LUMO_SMALL, MenuBarVariant.LUMO_TERTIARY)
+                val dotsItem = menuBar.addItem("\u22EF") // ⋯ horizontal ellipsis
+                val subMenu = dotsItem.subMenu
+                val deleteItem = subMenu.addItem("Delete")
+                deleteItem.addClickListener { confirmDeleteArticle(article) }
+
+                val row = HorizontalLayout(editBtn, menuBar)
+                row.isPadding = false
+                row.isSpacing = false
+                row
             }.setAutoWidth(true).setFlexGrow(0)
         }
 
@@ -391,6 +405,20 @@ class ArticleListView(
         actions.defaultVerticalComponentAlignment = Alignment.END
 
         dialog.add(VerticalLayout(urlField, languageField, quoteField, publishedAtPicker, actions))
+        dialog.open()
+    }
+
+    private fun confirmDeleteArticle(article: Article) {
+        val dialog = ConfirmDialog()
+        dialog.setHeader("Delete article")
+        dialog.setText("Delete \"${article.title ?: article.url}\"? This cannot be undone.")
+        dialog.setConfirmText("Delete")
+        dialog.setConfirmButtonTheme("error primary")
+        dialog.setCancelable(true)
+        dialog.addConfirmListener {
+            articleService.delete(article.id!!)
+            refreshData()
+        }
         dialog.open()
     }
 

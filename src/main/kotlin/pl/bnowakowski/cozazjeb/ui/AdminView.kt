@@ -9,18 +9,24 @@ import com.vaadin.flow.component.confirmdialog.ConfirmDialog
 import com.vaadin.flow.component.dialog.Dialog
 import com.vaadin.flow.component.grid.Grid
 import com.vaadin.flow.component.html.H2
+import com.vaadin.flow.component.html.H3
+import com.vaadin.flow.component.html.Paragraph
 import com.vaadin.flow.component.notification.Notification
 import com.vaadin.flow.component.notification.NotificationVariant
 import com.vaadin.flow.component.orderedlayout.FlexComponent.Alignment
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout
 import com.vaadin.flow.component.orderedlayout.VerticalLayout
 import com.vaadin.flow.component.select.Select
+import com.vaadin.flow.component.textfield.TextArea
 import com.vaadin.flow.component.textfield.TextField
 import com.vaadin.flow.router.PageTitle
 import com.vaadin.flow.router.Route
 import com.vaadin.flow.server.VaadinServletRequest
 import jakarta.annotation.security.RolesAllowed
 import org.springframework.security.core.context.SecurityContextHolder
+import pl.bnowakowski.cozazjeb.article.ArticleContent
+import pl.bnowakowski.cozazjeb.article.ArticleContentRepository
+import pl.bnowakowski.cozazjeb.article.ArticleRepository
 import pl.bnowakowski.cozazjeb.user.AppUser
 import pl.bnowakowski.cozazjeb.user.AppUserInput
 import pl.bnowakowski.cozazjeb.user.AppUserRolePatch
@@ -33,9 +39,12 @@ import pl.bnowakowski.cozazjeb.user.Role
 @RolesAllowed("ADMIN")
 class AdminView(
     private val appUserService: AppUserService,
+    private val articleRepository: ArticleRepository,
+    private val articleContentRepository: ArticleContentRepository,
 ) : VerticalLayout() {
 
     private val usersGrid = Grid(AppUser::class.java, false)
+    private val contentGrid = Grid(ArticleContent::class.java, false)
 
     init {
         setSizeFull()
@@ -54,7 +63,10 @@ class AdminView(
         configureGrid()
         refreshGrid()
 
-        add(topBar, usersGrid)
+        configureContentGrid()
+        refreshContentGrid()
+
+        add(topBar, usersGrid, H3("Article content cache"), contentGrid)
         expand(usersGrid)
     }
 
@@ -210,6 +222,87 @@ class AdminView(
 
     private fun refreshGrid() {
         usersGrid.setItems(appUserService.list())
+    }
+
+    private fun configureContentGrid() {
+        contentGrid.setSizeFull()
+        contentGrid.addColumn { it.articleId.toString() }
+            .setHeader("Article ID")
+            .setAutoWidth(true)
+        contentGrid.addColumn { entry ->
+            articleRepository.findById(entry.articleId).map { it.url }.orElse("—")
+        }
+            .setHeader("Article URL")
+            .setFlexGrow(1)
+        contentGrid.addColumn { "${it.content.length} chars" }
+            .setHeader("Size")
+            .setAutoWidth(true)
+        contentGrid.addColumn { if (it.truncated) "Yes" else "No" }
+            .setHeader("Truncated")
+            .setAutoWidth(true)
+        contentGrid.addColumn { it.capturedAt?.toString() ?: "—" }
+            .setHeader("Captured at")
+            .setAutoWidth(true)
+        contentGrid.addComponentColumn { entry -> contentActionButtons(entry) }
+            .setHeader("Actions")
+            .setAutoWidth(true)
+    }
+
+    private fun contentActionButtons(entry: ArticleContent): HorizontalLayout {
+        val viewButton = Button("View")
+        viewButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY, ButtonVariant.LUMO_SMALL)
+        viewButton.addClickListener { openContentDialog(entry) }
+
+        val purgeButton = Button("Purge")
+        purgeButton.addThemeVariants(ButtonVariant.LUMO_ERROR, ButtonVariant.LUMO_TERTIARY, ButtonVariant.LUMO_SMALL)
+        purgeButton.addClickListener {
+            val dialog = ConfirmDialog(
+                "Purge content",
+                "Delete preserved content for article ${entry.articleId}?",
+                "Purge",
+                {
+                    articleContentRepository.deleteByArticleId(entry.articleId)
+                    refreshContentGrid()
+                    showSuccess("Content purged")
+                },
+                "Cancel",
+                { },
+            )
+            dialog.open()
+        }
+
+        return HorizontalLayout(viewButton, purgeButton)
+    }
+
+    private fun openContentDialog(entry: ArticleContent) {
+        val textArea = TextArea("Content (read-only)")
+        textArea.value = entry.content
+        textArea.isReadOnly = true
+        textArea.setSizeFull()
+        textArea.minHeight = "400px"
+
+        val truncatedNote = if (entry.truncated) {
+            Paragraph("⚠ Content was truncated to 5 MB at capture time.")
+        } else null
+
+        val closeButton = Button("Close")
+        closeButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY)
+
+        val dialog = Dialog()
+        dialog.headerTitle = "Preserved content — article ${entry.articleId}"
+        dialog.setWidth("80vw")
+        dialog.setHeight("80vh")
+        val content = VerticalLayout(textArea)
+        if (truncatedNote != null) content.addComponentAsFirst(truncatedNote)
+        content.setSizeFull()
+        dialog.add(content)
+        closeButton.addClickListener { dialog.close() }
+        dialog.footer.add(closeButton)
+        dialog.open()
+    }
+
+    private fun refreshContentGrid() {
+        contentGrid.setItems(articleContentRepository.findAll().toList())
     }
 
     private fun logoutAndRedirect() {

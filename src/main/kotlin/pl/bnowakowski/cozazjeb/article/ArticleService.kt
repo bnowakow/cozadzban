@@ -16,6 +16,7 @@ class ArticleService(
     private val articleRepository: ArticleRepository,
     private val enrichmentService: EnrichmentService,
     private val appUserRepository: AppUserRepository,
+    private val articleContentRepository: ArticleContentRepository,
 ) {
 
     @Transactional(readOnly = true)
@@ -76,7 +77,7 @@ class ArticleService(
         if (articleRepository.existsByUrl(url)) throw ArticleUrlConflictException(url)
         val enrichment = enrichmentService.enrich(url)
         val publishedAt = input.publishedAt ?: enrichment.publishedAt
-        return articleRepository.save(
+        val article = articleRepository.save(
             Article(
                 url = url,
                 language = language,
@@ -88,6 +89,8 @@ class ArticleService(
                 createdByUserId = creatorId,
             )
         )
+        preserveContent(article.id!!, enrichment.plainText)
+        return article
     }
 
     fun replace(id: Long, input: ArticleInput): Article {
@@ -97,7 +100,7 @@ class ArticleService(
         if (url != existing.url && articleRepository.existsByUrl(url)) throw ArticleUrlConflictException(url)
         val enrichment = enrichmentService.enrich(url)
         val publishedAt = input.publishedAt ?: enrichment.publishedAt
-        return articleRepository.save(
+        val article = articleRepository.save(
             existing.copy(
                 url = url,
                 language = language,
@@ -108,6 +111,8 @@ class ArticleService(
                 publishedAt = publishedAt,
             )
         )
+        preserveContent(article.id!!, enrichment.plainText)
+        return article
     }
 
     fun patch(id: Long, patch: Map<String, Any?>): Article {
@@ -187,8 +192,27 @@ class ArticleService(
         articleRepository.deleteById(id)
     }
 
+    // ── private helpers ───────────────────────────────────────────────────────
+
+    /**
+     * Persists plain-text content for an article, truncating to [MAX_CONTENT_BYTES] if needed.
+     * Runs inside the same transaction as the article save; failures are logged but do not
+     * roll back the article itself.
+     */
+    private fun preserveContent(articleId: Long, plainText: String?) {
+        if (plainText.isNullOrBlank()) return
+        val bytes = plainText.toByteArray(Charsets.UTF_8)
+        val truncated = bytes.size > MAX_CONTENT_BYTES
+        val storedText = if (truncated) String(bytes, 0, MAX_CONTENT_BYTES, Charsets.UTF_8) else plainText
+        // Upsert: replace any existing content row for this article
+        articleContentRepository.deleteByArticleId(articleId)
+        articleContentRepository.save(ArticleContent(articleId = articleId, content = storedText, truncated = truncated))
+    }
+
     companion object {
         private val BCP47_PATTERN = Regex("^[a-z]{2,3}(-[a-z0-9]{2,8})*\$")
+        /** 5 MB in bytes — maximum size for preserved plain-text content. */
+        private const val MAX_CONTENT_BYTES = 5 * 1024 * 1024
 
         /**
          * Normalizes a language tag to lowercase and validates it against the BCP-47-like
