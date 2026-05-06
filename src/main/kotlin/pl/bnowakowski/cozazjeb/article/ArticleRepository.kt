@@ -49,6 +49,9 @@ interface ArticleRepositoryCustom {
      */
     fun findForRss(language: String?): List<Article>
 
+    /** Returns the distinct normalized language codes currently stored in the article table, sorted alphabetically. */
+    fun findDistinctLanguages(): List<String>
+
     companion object {
         /**
          * Allowlist mapping from API sort field name to SQL column name (BR-26).
@@ -144,6 +147,13 @@ class ArticleRepositoryCustomImpl(
         }
         return jdbc.query(sql, params, ARTICLE_ROW_MAPPER)
     }
+
+    override fun findDistinctLanguages(): List<String> =
+        jdbc.queryForList(
+            "SELECT DISTINCT language FROM article WHERE language IS NOT NULL ORDER BY language",
+            emptyMap<String, Any>(),
+            String::class.java,
+        )
 
     /**
      * Builds a parameterised WHERE clause from the given filters.
