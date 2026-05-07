@@ -90,7 +90,7 @@ class SecurityConfig(
                     req.requestURI.startsWith("/api/")
                 }
                 exceptions.defaultAuthenticationEntryPointFor(
-                    org.springframework.security.web.authentication.AuthenticationEntryPoint { _, response, ex ->
+                    org.springframework.security.web.AuthenticationEntryPoint { _, response, ex ->
                         writeProblem(response, HttpStatus.UNAUTHORIZED, "Unauthorized",
                             ex.localizedMessage ?: "Authentication is required")
                     },
