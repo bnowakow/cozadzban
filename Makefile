@@ -87,8 +87,8 @@ docker-logs:
 # Pull latest code, rebuild, restart, and follow logs
 docker-upgrade:
 	git pull --ff-only
-	docker compose -f compose.yaml down --remove-orphans
 	docker compose -f compose.yaml build --pull --no-cache app
+	docker compose -f compose.yaml down --remove-orphans
 	docker compose -f compose.yaml up -d --force-recreate
 	docker compose -f compose.yaml ps
 	docker compose -f compose.yaml logs -f
