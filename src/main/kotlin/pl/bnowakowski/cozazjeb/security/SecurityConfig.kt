@@ -94,14 +94,14 @@ class SecurityConfig(
                 exceptions.defaultAuthenticationEntryPointFor(
                     AuthenticationEntryPoint { _, response, ex ->
                         writeProblem(response, HttpStatus.UNAUTHORIZED, "Unauthorized",
-                            ex.message ?: "Authentication is required")
+                            ex.localizedMessage ?: "Authentication is required")
                     },
                     apiMatcher,
                 )
                 exceptions.defaultAccessDeniedHandlerFor(
                     AccessDeniedHandler { _, response, ex ->
                         writeProblem(response, HttpStatus.FORBIDDEN, "Forbidden",
-                            ex.message ?: "Access is denied")
+                            ex.localizedMessage ?: "Access is denied")
                     },
                     apiMatcher,
                 )
