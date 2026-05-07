@@ -18,7 +18,6 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity
 import org.springframework.security.config.Customizer
 import org.springframework.security.web.SecurityFilterChain
-import org.springframework.security.web.util.matcher.AntPathRequestMatcher
 import org.springframework.web.cors.CorsConfiguration
 import org.springframework.web.cors.CorsConfigurationSource
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource
@@ -86,29 +85,27 @@ class SecurityConfig(
             .exceptionHandling { exceptions ->
                 // Only apply JSON error responses to /api/** — Vaadin UI paths (heartbeat, UIDL)
                 // must use Vaadin's own session-expiry handling so the client can recover.
-                val apiMatcher = AntPathRequestMatcher("/api/**")
-                exceptions.defaultAuthenticationEntryPointFor(
-                    { _, response, ex ->
+                exceptions.authenticationEntryPoint { request, response, ex ->
+                    if (request.requestURI.startsWith("/api/")) {
                         writeProblem(
                             response = response,
                             status = HttpStatus.UNAUTHORIZED,
                             title = "Unauthorized",
                             detail = ex.message ?: "Authentication is required",
                         )
-                    },
-                    apiMatcher,
-                )
-                exceptions.defaultAccessDeniedHandlerFor(
-                    { _, response, ex ->
+                    }
+                    // For Vaadin paths: no response written — lets Vaadin handle session expiry
+                }
+                exceptions.accessDeniedHandler { request, response, ex ->
+                    if (request.requestURI.startsWith("/api/")) {
                         writeProblem(
                             response = response,
                             status = HttpStatus.FORBIDDEN,
                             title = "Forbidden",
                             detail = ex.message ?: "Access is denied",
                         )
-                    },
-                    apiMatcher,
-                )
+                    }
+                }
             }
             .oauth2ResourceServer { oauth2 ->
                 oauth2.jwt { jwt -> jwt.jwtAuthenticationConverter(GoogleJwtAuthenticationConverter()) }
