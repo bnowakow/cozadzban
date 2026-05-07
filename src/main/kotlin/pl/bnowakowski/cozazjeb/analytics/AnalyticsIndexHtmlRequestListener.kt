@@ -201,9 +201,9 @@ class AnalyticsIndexHtmlRequestListener(
     private fun scLoaderScript(projectId: String, securityId: String): String =
         """
         if (!document.getElementById('czj-sc-script')) {
-            var sc_project = ${projectId};
-            var sc_invisible = 1;
-            var sc_security = '${securityId}';
+            window.sc_project = ${projectId};
+            window.sc_invisible = 1;
+            window.sc_security = '${securityId}';
             var scEl = document.createElement('script');
             scEl.id = 'czj-sc-script';
             scEl.type = 'text/javascript';
