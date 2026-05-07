@@ -140,7 +140,58 @@ class AnalyticsIndexHtmlRequestListener(
             """
             (function () {
                 var CONSENT_KEY = 'czj_analytics_consent';
+                var CONSENT_COOKIE_MAX_AGE_SECONDS = 31536000;
                 var analyticsEnabled = ${analyticsEnabled};
+
+                function setCookie(name, value, maxAgeSeconds) {
+                    document.cookie = name + '=' + encodeURIComponent(value)
+                        + '; Max-Age=' + maxAgeSeconds
+                        + '; Path=/; SameSite=Lax';
+                }
+
+                function getCookie(name) {
+                    var prefix = name + '=';
+                    var parts = document.cookie ? document.cookie.split(';') : [];
+                    for (var i = 0; i < parts.length; i++) {
+                        var c = parts[i].trim();
+                        if (c.indexOf(prefix) === 0) {
+                            return decodeURIComponent(c.substring(prefix.length));
+                        }
+                    }
+                    return null;
+                }
+
+                function deleteCookie(name) {
+                    document.cookie = name + '=; Max-Age=0; Path=/; SameSite=Lax';
+                }
+
+                function setStoredConsent(value) {
+                    try {
+                        localStorage.setItem(CONSENT_KEY, value);
+                    } catch (e) {
+                        // Some browsers/privacy modes block localStorage access.
+                    }
+                    setCookie(CONSENT_KEY, value, CONSENT_COOKIE_MAX_AGE_SECONDS);
+                }
+
+                function getStoredConsent() {
+                    try {
+                        var lsValue = localStorage.getItem(CONSENT_KEY);
+                        if (lsValue) return lsValue;
+                    } catch (e) {
+                        // localStorage unavailable; fall back to cookie.
+                    }
+                    return getCookie(CONSENT_KEY);
+                }
+
+                function clearStoredConsent() {
+                    try {
+                        localStorage.removeItem(CONSENT_KEY);
+                    } catch (e) {
+                        // Ignore when localStorage is unavailable.
+                    }
+                    deleteCookie(CONSENT_KEY);
+                }
 
                 function loadAnalytics() {
                     if (!analyticsEnabled) return;
@@ -159,22 +210,22 @@ class AnalyticsIndexHtmlRequestListener(
                 }
 
                 window.czjConsentAccept = function () {
-                    localStorage.setItem(CONSENT_KEY, 'accepted');
+                    setStoredConsent('accepted');
                     hideBanner();
                     loadAnalytics();
                 };
 
                 window.czjConsentDecline = function () {
-                    localStorage.setItem(CONSENT_KEY, 'declined');
+                    setStoredConsent('declined');
                     hideBanner();
                 };
 
                 window.czjManageCookies = function () {
-                    localStorage.removeItem(CONSENT_KEY);
+                    clearStoredConsent();
                     showBanner();
                 };
 
-                var consent = localStorage.getItem(CONSENT_KEY);
+                var consent = getStoredConsent();
                 if (consent === 'accepted') {
                     loadAnalytics();
                     hideBanner();
