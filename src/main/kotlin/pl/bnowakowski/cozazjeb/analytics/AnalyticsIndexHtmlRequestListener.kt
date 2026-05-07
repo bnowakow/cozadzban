@@ -263,6 +263,20 @@ class AnalyticsIndexHtmlRequestListener(
                     if (banner) banner.style.display = 'none';
                 }
 
+                function applyStoredConsent() {
+                    var consent = getStoredConsent();
+                    if (consent === 'accepted') {
+                        loadAnalytics();
+                        hideBanner();
+                    } else if (consent === 'declined') {
+                        hideBanner();
+                    } else if (analyticsEnabled) {
+                        showBanner();
+                    } else {
+                        hideBanner();
+                    }
+                }
+
                 window.czjConsentAccept = function () {
                     setStoredConsent('accepted');
                     hideBanner();
@@ -279,16 +293,10 @@ class AnalyticsIndexHtmlRequestListener(
                     showBanner();
                 };
 
-                var consent = getStoredConsent();
-                if (consent === 'accepted') {
-                    loadAnalytics();
-                    hideBanner();
-                } else if (consent === 'declined') {
-                    hideBanner();
-                } else if (analyticsEnabled) {
-                    showBanner();
+                if (document.readyState === 'loading') {
+                    document.addEventListener('DOMContentLoaded', applyStoredConsent, { once: true });
                 } else {
-                    hideBanner();
+                    applyStoredConsent();
                 }
             })();
             """.trimIndent(),
