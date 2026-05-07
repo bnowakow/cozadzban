@@ -86,11 +86,12 @@ docker-logs:
 
 # Pull latest code, rebuild, restart, and follow logs
 docker-upgrade:
-	git pull
-	docker compose -f compose.yaml build
-	$(MAKE) docker-down
-	$(MAKE) docker-up
-	$(MAKE) docker-logs
+	git pull --ff-only
+	docker compose -f compose.yaml down --remove-orphans
+	docker compose -f compose.yaml build --pull --no-cache app
+	docker compose -f compose.yaml up -d --force-recreate
+	docker compose -f compose.yaml ps
+	docker compose -f compose.yaml logs -f
 
 # Open PostgreSQL shell inside docker container (requires dev-up)
 docker-pg-shell:
