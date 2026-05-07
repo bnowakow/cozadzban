@@ -143,10 +143,21 @@ class AnalyticsIndexHtmlRequestListener(
                 var CONSENT_COOKIE_MAX_AGE_SECONDS = 31536000;
                 var analyticsEnabled = ${analyticsEnabled};
 
-                function setCookie(name, value, maxAgeSeconds) {
-                    document.cookie = name + '=' + encodeURIComponent(value)
+                function getSharedCookieDomain() {
+                    var host = window.location.hostname || '';
+                    if (!host || host === 'localhost' || /^\d+\.\d+\.\d+\.\d+$/.test(host)) return null;
+                    var parts = host.split('.');
+                    if (parts.length < 2) return null;
+                    return '.' + parts.slice(-2).join('.');
+                }
+
+                function setCookie(name, value, maxAgeSeconds, domain) {
+                    var cookie = name + '=' + encodeURIComponent(value)
                         + '; Max-Age=' + maxAgeSeconds
                         + '; Path=/; SameSite=Lax';
+                    if (window.location.protocol === 'https:') cookie += '; Secure';
+                    if (domain) cookie += '; Domain=' + domain;
+                    document.cookie = cookie;
                 }
 
                 function getCookie(name) {
@@ -161,8 +172,45 @@ class AnalyticsIndexHtmlRequestListener(
                     return null;
                 }
 
-                function deleteCookie(name) {
-                    document.cookie = name + '=; Max-Age=0; Path=/; SameSite=Lax';
+                function deleteCookie(name, domain) {
+                    var cookie = name + '=; Max-Age=0; Path=/; SameSite=Lax';
+                    if (window.location.protocol === 'https:') cookie += '; Secure';
+                    if (domain) cookie += '; Domain=' + domain;
+                    document.cookie = cookie;
+                }
+
+                function setWindowNameConsent(value) {
+                    try {
+                        var payload = {};
+                        if (window.name && window.name.indexOf('{') === 0) {
+                            payload = JSON.parse(window.name);
+                        }
+                        payload[CONSENT_KEY] = value;
+                        window.name = JSON.stringify(payload);
+                    } catch (e) {
+                        // Ignore if window.name cannot be parsed or written.
+                    }
+                }
+
+                function getWindowNameConsent() {
+                    try {
+                        if (!window.name || window.name.indexOf('{') !== 0) return null;
+                        var payload = JSON.parse(window.name);
+                        return payload[CONSENT_KEY] || null;
+                    } catch (e) {
+                        return null;
+                    }
+                }
+
+                function clearWindowNameConsent() {
+                    try {
+                        if (!window.name || window.name.indexOf('{') !== 0) return;
+                        var payload = JSON.parse(window.name);
+                        delete payload[CONSENT_KEY];
+                        window.name = JSON.stringify(payload);
+                    } catch (e) {
+                        // Ignore if window.name cannot be parsed.
+                    }
                 }
 
                 function setStoredConsent(value) {
@@ -171,7 +219,9 @@ class AnalyticsIndexHtmlRequestListener(
                     } catch (e) {
                         // Some browsers/privacy modes block localStorage access.
                     }
-                    setCookie(CONSENT_KEY, value, CONSENT_COOKIE_MAX_AGE_SECONDS);
+                    setWindowNameConsent(value);
+                    setCookie(CONSENT_KEY, value, CONSENT_COOKIE_MAX_AGE_SECONDS, null);
+                    setCookie(CONSENT_KEY, value, CONSENT_COOKIE_MAX_AGE_SECONDS, getSharedCookieDomain());
                 }
 
                 function getStoredConsent() {
@@ -181,7 +231,9 @@ class AnalyticsIndexHtmlRequestListener(
                     } catch (e) {
                         // localStorage unavailable; fall back to cookie.
                     }
-                    return getCookie(CONSENT_KEY);
+                    var cookieValue = getCookie(CONSENT_KEY);
+                    if (cookieValue) return cookieValue;
+                    return getWindowNameConsent();
                 }
 
                 function clearStoredConsent() {
@@ -190,7 +242,9 @@ class AnalyticsIndexHtmlRequestListener(
                     } catch (e) {
                         // Ignore when localStorage is unavailable.
                     }
-                    deleteCookie(CONSENT_KEY);
+                    clearWindowNameConsent();
+                    deleteCookie(CONSENT_KEY, null);
+                    deleteCookie(CONSENT_KEY, getSharedCookieDomain());
                 }
 
                 function loadAnalytics() {
