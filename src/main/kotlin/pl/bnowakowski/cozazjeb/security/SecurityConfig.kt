@@ -18,8 +18,6 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity
 import org.springframework.security.config.Customizer
 import org.springframework.security.web.SecurityFilterChain
-import org.springframework.security.web.access.AccessDeniedHandler
-import org.springframework.security.web.authentication.AuthenticationEntryPoint
 import org.springframework.web.cors.CorsConfiguration
 import org.springframework.web.cors.CorsConfigurationSource
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource
@@ -88,18 +86,18 @@ class SecurityConfig(
                 // Scope JSON error responses to /api/** only.
                 // Vaadin paths (heartbeat, UIDL) fall through to Vaadin's own session-expiry
                 // handler so the client receives the correct response and can recover.
-                val apiMatcher = org.springframework.security.web.util.matcher.RequestMatcher {
-                    it.requestURI.startsWith("/api/")
+                val apiMatcher = org.springframework.security.web.util.matcher.RequestMatcher { req ->
+                    req.requestURI.startsWith("/api/")
                 }
                 exceptions.defaultAuthenticationEntryPointFor(
-                    AuthenticationEntryPoint { _, response, ex ->
+                    org.springframework.security.web.authentication.AuthenticationEntryPoint { _, response, ex ->
                         writeProblem(response, HttpStatus.UNAUTHORIZED, "Unauthorized",
                             ex.localizedMessage ?: "Authentication is required")
                     },
                     apiMatcher,
                 )
                 exceptions.defaultAccessDeniedHandlerFor(
-                    AccessDeniedHandler { _, response, ex ->
+                    org.springframework.security.web.access.AccessDeniedHandler { _, response, ex ->
                         writeProblem(response, HttpStatus.FORBIDDEN, "Forbidden",
                             ex.localizedMessage ?: "Access is denied")
                     },
