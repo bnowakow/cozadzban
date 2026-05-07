@@ -1,5 +1,5 @@
 
-.PHONY: help dev-up dev-down docker-pg-nuke build run run-local run-prod test clean docker-logs docker-pg-shell
+.PHONY: help docker-up docker-down docker-pg-nuke build run run-local run-prod test clean docker-logs docker-pg-shell docker-upgrade
 
 -include .env
 
@@ -9,8 +9,8 @@ help:
 	@echo ""
 	@echo "  PostgreSQL port from .env: $(POSTGRES_PORT)"
 	@echo ""
-	@echo "  dev-up          Start local infrastructure from compose.yaml"
-	@echo "  dev-down        Stop and remove local infrastructure containers"
+	@echo "  docker-up       Start local infrastructure from compose.yaml"
+	@echo "  docker-down     Stop and remove local infrastructure containers"
 	@echo "  docker-pg-nuke  Recreate PostgreSQL container and reset docker-data/postgres"
 	@echo "  build           Build the project (skip tests)"
 	@echo "  run             Run Spring Boot with SPRING_PROFILES_ACTIVE from .env"
@@ -20,6 +20,7 @@ help:
 	@echo "  clean           Clean Gradle build artifacts"
 	@echo "  docker-logs     Show compose logs (follow mode)"
 	@echo "  docker-pg-shell Open PostgreSQL shell inside docker container"
+	@echo "  docker-upgrade  Pull latest code, rebuild image, restart containers, follow logs"
 	@echo ""
 
 # Active Spring profile used by the generic run target.
@@ -28,7 +29,7 @@ PROFILE ?= local
 POSTGRES_PORT ?= 5432
 
 # Start local development environment from compose.yaml
-dev-up:
+docker-up:
 	docker compose -f compose.yaml up -d
 	@echo ""
 	@echo "✓ Services started:"
@@ -36,14 +37,14 @@ dev-up:
 	@echo ""
 
 # Stop local development environment
-dev-down:
+docker-down:
 	docker compose -f compose.yaml down
 
 # Recreate PostgreSQL container with a fresh data directory
 docker-pg-nuke:
-	$(MAKE) dev-down
+	$(MAKE) docker-down
 	rm -rf ./docker-data/postgres
-	$(MAKE) dev-up
+	$(MAKE) docker-up
 
 # Build the project (skip tests)
 build:
@@ -72,6 +73,14 @@ clean:
 # Follow docker-compose logs
 docker-logs:
 	docker compose -f compose.yaml logs -f
+
+# Pull latest code, rebuild, restart, and follow logs
+docker-upgrade:
+	git pull
+	docker compose -f compose.yaml build
+	$(MAKE) docker-down
+	$(MAKE) docker-up
+	$(MAKE) docker-logs
 
 # Open PostgreSQL shell inside docker container (requires dev-up)
 docker-pg-shell:
