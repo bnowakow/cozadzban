@@ -141,10 +141,12 @@ x-architecture:
     - name: Article content preservation cache
       technology: Future PostgreSQL-backed content cache
       description: >
-        Future consideration: preserve fetched article text/content at creation
-        time for archival purposes only. Initial step should not use it for UI
-        rendering, source fallback, or AI summary until separate product/legal
-        decisions are made.
+        Implemented: article text/content is captured at creation/update time
+        into the article_content table (V5 migration) for preservation only.
+        Content is NOT used for UI rendering, source fallback, or AI summary.
+        Max stored length is 50 000 characters; longer content is truncated
+        and flagged. Separate product/legal decisions required before any
+        further use.
 
 # ──────────────────────────────────────────────────────────────
 # DATABASE SPEC  (x-database)
@@ -249,6 +251,26 @@ x-database:
     - name: sessions
       migration: none (server-managed web session)
       description: No additional DB table required; session is server-managed and identified by HttpOnly cookie.
+    - name: article_content
+      migration: V5__article_content.sql
+      description: Stores preserved article text captured at creation/update time. Used for archival only.
+      columns:
+        - name: article_id
+          type: BIGINT
+          constraints: "PRIMARY KEY REFERENCES article(id) ON DELETE CASCADE"
+          description: FK to the parent article. Cascade delete removes content when article is deleted.
+        - name: content
+          type: TEXT
+          constraints: NOT NULL
+          description: Captured article text, truncated to 50 000 characters when necessary.
+        - name: truncated
+          type: BOOLEAN
+          constraints: "NOT NULL DEFAULT false"
+          description: True when the stored content was truncated due to length limit.
+        - name: captured_at
+          type: TIMESTAMPTZ
+          constraints: nullable
+          description: Timestamp of when content was last captured.
 # ──────────────────────────────────────────────────────────────
 # BUSINESS RULES  (x-business-rules)
 # ──────────────────────────────────────────────────────────────
@@ -524,7 +546,10 @@ x-business-rules:
     name: Creator exposure rules
     description: >
       Public/anonymous article list and detail responses MUST omit creator data.
-      Authenticated article responses MAY include createdBy { id, email }.
+      Authenticated article responses MUST include createdBy { id, email } in
+      both the list endpoint (GET /api/articles) and the detail endpoint
+      (GET /api/articles/{id}). Creator IDs are batch-fetched per page for the
+      list endpoint to avoid N+1 queries.
       RSS MUST never expose creator/user data.
   - id: BR-39
     name: Existing article creator backfill
@@ -558,7 +583,9 @@ x-business-rules:
       Google Analytics and StatCounter scripts are loaded only when configured
       IDs are present and the user has accepted analytics cookies. Consent text
       must make clear tracking is for analytics only, and users can reject or
-      later revoke consent.
+      later revoke consent. The consent banner is shown by default (when
+      analytics is configured) and remains visible until the user explicitly
+      accepts or declines.
   - id: BR-44
     name: RSS discovery
     description: >
@@ -570,11 +597,11 @@ x-business-rules:
   - id: BR-45
     name: Article content preservation cache future consideration
     description: >
-      Consider preserving fetched article text/content at creation time in a
-      future phase. First implementation should treat it as preservation only;
-      do not rely on it for UI fallback, source URL failure handling, or AI
-      summary generation until storage shape, sanitization, max size, access
-      control, copyright/privacy posture, and purge behavior are decided.
+      Article text/content is captured at creation/update time (V5 migration,
+      article_content table, max 50 000 chars with truncation flag). Used for
+      archival/preservation only. Do NOT use for UI rendering, source fallback,
+      or AI summary generation without separate product/legal decisions on
+      sanitization, access control, copyright/privacy posture, and purge behavior.
 # ──────────────────────────────────────────────────────────────
 # VAADIN UI SPEC  (x-vaadin-ui)
 # ──────────────────────────────────────────────────────────────

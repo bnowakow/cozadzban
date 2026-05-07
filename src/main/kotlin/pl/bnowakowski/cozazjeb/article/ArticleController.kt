@@ -40,7 +40,32 @@ class ArticleController(
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) publishedTo: Instant?,
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) createdFrom: Instant?,
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) createdTo: Instant?,
-    ): ArticlePage = articleService.findPage(page, size, sort, language, publishedFrom, publishedTo, createdFrom, createdTo)
+        authentication: Authentication?,
+    ): ArticleResponsePage {
+        val articlePage = articleService.findPage(page, size, sort, language, publishedFrom, publishedTo, createdFrom, createdTo)
+        val creatorMap: Map<Long, AppUser> = if (authentication != null && authentication.isAuthenticated) {
+            val ids = articlePage.content.map { it.createdByUserId }.distinct()
+            appUserRepository.findAllById(ids).associateBy { it.id!! }
+        } else {
+            emptyMap()
+        }
+        val content = articlePage.content.map { article ->
+            ArticleResponse.from(article, creatorMap[article.createdByUserId])
+        }
+        return ArticleResponsePage(
+            content = content,
+            pageable = articlePage.pageable,
+            totalElements = articlePage.totalElements,
+            totalPages = articlePage.totalPages,
+            size = articlePage.size,
+            number = articlePage.number,
+            numberOfElements = articlePage.numberOfElements,
+            sort = articlePage.sort,
+            first = articlePage.first,
+            last = articlePage.last,
+            empty = articlePage.empty,
+        )
+    }
 
     @GetMapping("/{id}")
     fun getArticle(@PathVariable id: Long, authentication: Authentication?): ArticleResponse {

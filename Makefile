@@ -27,6 +27,8 @@ help:
 PROFILE ?= $(SPRING_PROFILES_ACTIVE)
 PROFILE ?= local
 POSTGRES_PORT ?= 5432
+LOCAL_UID ?= $(shell id -u)
+LOCAL_GID ?= $(shell id -g)
 
 # Start local development environment from compose.yaml
 docker-up:
@@ -43,7 +45,15 @@ docker-down:
 # Recreate PostgreSQL container with a fresh data directory
 docker-pg-nuke:
 	$(MAKE) docker-down
-	rm -rf ./docker-data/postgres
+	@echo "Resetting ./docker-data/postgres ..."
+	@if rm -rf ./docker-data/postgres 2>/dev/null; then \
+		echo "✓ Removed postgres data directory"; \
+	else \
+		echo "! Host cleanup failed (likely root-owned files), using containerized cleanup"; \
+		docker run --rm -v "$(PWD)/docker-data:/work" alpine:3.20 \
+			sh -c "rm -rf /work/postgres && mkdir -p /work/postgres && chown -R $(LOCAL_UID):$(LOCAL_GID) /work/postgres"; \
+	fi
+	@mkdir -p ./docker-data/postgres
 	$(MAKE) docker-up
 
 # Build the project (skip tests)

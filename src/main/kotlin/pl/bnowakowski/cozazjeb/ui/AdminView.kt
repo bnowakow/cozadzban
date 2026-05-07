@@ -51,11 +51,14 @@ class AdminView(
 
         val title = H2("Admin Panel")
         val addUserButton = buildAddUserButton()
+        val manageArticlesButton = Button("Manage articles")
+        manageArticlesButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY)
+        manageArticlesButton.addClickListener { ui.ifPresent { it.navigate("") } }
         val logoutButton = Button("Logout")
         logoutButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY)
         logoutButton.addClickListener { logoutAndRedirect() }
 
-        val topBar = HorizontalLayout(title, addUserButton, logoutButton)
+        val topBar = HorizontalLayout(title, addUserButton, manageArticlesButton, logoutButton)
         topBar.width = "100%"
         topBar.defaultVerticalComponentAlignment = Alignment.CENTER
         topBar.expand(title)

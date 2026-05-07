@@ -17,6 +17,20 @@ data class ArticlePage(
     val empty: Boolean,
 )
 
+data class ArticleResponsePage(
+    val content: List<ArticleResponse>,
+    val pageable: PageableInfo,
+    val totalElements: Long,
+    val totalPages: Int,
+    val size: Int,
+    val number: Int,
+    val numberOfElements: Int,
+    val sort: SortInfo,
+    val first: Boolean,
+    val last: Boolean,
+    val empty: Boolean,
+)
+
 data class PageableInfo(
     val pageNumber: Int,
     val pageSize: Int,

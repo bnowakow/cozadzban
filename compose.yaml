@@ -9,6 +9,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      zipkin:
+        condition: service_started
     environment:
       - 'JAVA_TOOL_OPTIONS=-XX:MaxRAMPercentage=75 -XX:InitialRAMPercentage=25'
       - 'SPRING_PROFILES_ACTIVE=prod'

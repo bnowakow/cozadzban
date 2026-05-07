@@ -179,12 +179,14 @@
    - `STATCOUNTER_SECURITY_ID`
 2. Open the UI in a fresh browser profile
 3. **Expected:** analytics-only cookie consent banner is shown
-4. Reject analytics
-5. **Expected:** Google Analytics and StatCounter scripts are not loaded
-6. Clear/reopen consent settings and accept analytics
-7. **Expected:** Google Analytics and StatCounter scripts are loaded
-8. Start app with IDs blank
-9. **Expected:** no analytics scripts are rendered and no analytics consent prompt is required
+4. Refresh the page without choosing Accept/Decline
+5. **Expected:** consent banner is still shown (until explicit choice)
+6. Reject analytics
+7. **Expected:** Google Analytics and StatCounter scripts are not loaded
+8. Clear/reopen consent settings and accept analytics
+9. **Expected:** Google Analytics and StatCounter scripts are loaded
+10. Start app with IDs blank
+11. **Expected:** no analytics scripts are rendered and no analytics consent prompt is required
 
 ---
 

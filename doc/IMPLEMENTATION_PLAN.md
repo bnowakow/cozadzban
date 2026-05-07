@@ -216,8 +216,8 @@ Phases 4 and 5 are independent and can be developed in parallel.
     DB user (JWT email for REST, session principal for Vaadin) and stores only the FK. Creator
     is immutable: `PUT`/`PATCH` must not accept or alter `created_by_user_id`.
 46. **Creator-aware article DTOs** — public/anonymous article responses omit creator data.
-    Authenticated article responses may include `createdBy: { id, email }`. RSS must never
-    expose creator/user data.
+    Authenticated article responses include `createdBy: { id, email }` in both list and
+    detail endpoints (batch-fetched per page for the list). RSS must never expose creator/user data.
 
 ---
 
@@ -274,15 +274,16 @@ Phases 4 and 5 are independent and can be developed in parallel.
 
 ## Phase 20 — Article content preservation cache (FUTURE CONSIDERATION)
 
-61. **Preserved article content spike** — consider storing fetched article text/content at
-    creation time for preservation only. Do not use it for rendering, fallback, or AI summary
-    in the first step.
-62. **Potential future uses** — evaluate whether preserved content should later support
-    article display when the source URL stops responding, AI summary generation without extra
-    network calls, or audit/debugging of enrichment results.
-63. **Content cache constraints** — before implementation, decide storage shape (`TEXT` vs
-    separate table), sanitization/readability extraction, max size, copyright/privacy posture,
-    and whether admins can view or purge preserved content.
+61. **Article content preservation** — article text/content is captured at creation and
+    update time into the `article_content` table (`V5__article_content.sql`). Content is
+    stored for archival/preservation only (max 50 000 chars, `truncated` flag). NOT used
+    for UI rendering, source fallback, or AI summary.
+62. **Potential future uses** — preserved content may later support article display when
+    source URL stops responding, AI summary generation, or audit/debugging. Requires
+    separate product/legal decisions first.
+63. **Content cache constraints** — sanitization/readability extraction, access control,
+    copyright/privacy posture, and purge behavior must be decided before any use beyond
+    archival.
 
 ---
 

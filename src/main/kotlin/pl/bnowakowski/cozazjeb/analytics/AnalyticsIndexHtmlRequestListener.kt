@@ -15,8 +15,8 @@ import org.springframework.stereotype.Component
  * 2. Injects an inline cookie-consent banner + JS that gates the analytics scripts on the
  *    visitor's explicit consent stored in localStorage["czj_analytics_consent"] (item 60).
  *
- * Scripts are only loaded when consent == "accepted". The banner is shown once and
- * dismissed by choosing "Accept" or "Decline". A "Manage cookies" link reopens the
+ * Scripts are only loaded when consent == "accepted". The banner is shown until the
+ * visitor explicitly chooses "Accept" or "Decline". A "Manage cookies" link reopens the
  * choice at any time.
  */
 @Component
@@ -87,29 +87,36 @@ class AnalyticsIndexHtmlRequestListener(
     private fun injectConsentBannerHtml(doc: Document) {
         val body = doc.body()
 
-        // Cookie consent banner (hidden until JS decides to show it)
+        // Cookie consent banner (visible by default only when analytics is enabled)
         val banner = body.prependElement("div")
         banner.attr("id", "czj-consent-banner")
-        banner.attr("style", "display:none")
-        banner.html(
-            """
-            <p>We use analytics cookies to understand how visitors interact with this site.
-               No personal data is sold. You can change your choice at any time.</p>
-            <div class="czj-consent-actions">
-                <button id="czj-consent-accept" onclick="czjConsentAccept()">Accept</button>
-                <button id="czj-consent-decline" onclick="czjConsentDecline()">Decline</button>
-            </div>
-            """.trimIndent(),
+        if (!analytics.isAnyEnabled) {
+            banner.attr("style", "display:none")
+        }
+        banner.appendElement("p").text(
+            "We use analytics cookies to understand how visitors interact with this site. " +
+                "No personal data is sold. You can change your choice at any time.",
         )
+        val actions = banner.appendElement("div").attr("class", "czj-consent-actions")
+        actions.appendElement("button")
+            .attr("id", "czj-consent-accept")
+            .attr("onclick", "czjConsentAccept()")
+            .text("Accept")
+        actions.appendElement("button")
+            .attr("id", "czj-consent-decline")
+            .attr("onclick", "czjConsentDecline()")
+            .text("Decline")
 
         // "Manage cookies" link — always present when analytics is configured, so users can revoke consent
         if (analytics.isAnyEnabled) {
             val footer = body.appendElement("div")
             footer.attr("id", "czj-cookie-footer")
             footer.attr("style", "position:fixed;bottom:4px;right:8px;z-index:9999")
-            footer.html(
-                """<button id="czj-manage-cookies" onclick="czjManageCookies()" title="Change cookie preferences">Manage cookies</button>""",
-            )
+            footer.appendElement("button")
+                .attr("id", "czj-manage-cookies")
+                .attr("onclick", "czjManageCookies()")
+                .attr("title", "Change cookie preferences")
+                .text("Manage cookies")
         }
     }
 
@@ -170,8 +177,13 @@ class AnalyticsIndexHtmlRequestListener(
                 var consent = localStorage.getItem(CONSENT_KEY);
                 if (consent === 'accepted') {
                     loadAnalytics();
-                } else if (consent === null && analyticsEnabled) {
+                    hideBanner();
+                } else if (consent === 'declined') {
+                    hideBanner();
+                } else if (analyticsEnabled) {
                     showBanner();
+                } else {
+                    hideBanner();
                 }
             })();
             """.trimIndent(),

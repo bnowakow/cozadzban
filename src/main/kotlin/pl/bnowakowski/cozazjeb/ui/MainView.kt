@@ -40,6 +40,7 @@ import pl.bnowakowski.cozazjeb.security.AllowlistAuthorizationManager
 import pl.bnowakowski.cozazjeb.user.AppUser
 import pl.bnowakowski.cozazjeb.user.AppUserRepository
 import pl.bnowakowski.cozazjeb.user.AppUserStatus
+import pl.bnowakowski.cozazjeb.user.Role
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneOffset
@@ -134,7 +135,14 @@ class ArticleListView(
             val addArticleButton = Button("Add Article")
             addArticleButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY)
             addArticleButton.addClickListener { openAddArticleDialog() }
-            HorizontalLayout(title, rssAnchor, addArticleButton, authButton)
+            if (authenticatedUser?.role == Role.ADMIN) {
+                val manageUsersButton = Button("Manage users")
+                manageUsersButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY)
+                manageUsersButton.addClickListener { ui.ifPresent { it.navigate("admin") } }
+                HorizontalLayout(title, rssAnchor, addArticleButton, manageUsersButton, authButton)
+            } else {
+                HorizontalLayout(title, rssAnchor, addArticleButton, authButton)
+            }
         } else {
             HorizontalLayout(title, rssAnchor, authButton)
         }
