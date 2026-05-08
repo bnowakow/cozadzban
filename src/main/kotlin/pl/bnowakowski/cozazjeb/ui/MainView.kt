@@ -9,8 +9,6 @@ import com.vaadin.flow.component.datetimepicker.DateTimePicker
 import com.vaadin.flow.component.confirmdialog.ConfirmDialog
 import com.vaadin.flow.component.dialog.Dialog
 import com.vaadin.flow.component.grid.Grid
-import com.vaadin.flow.component.menubar.MenuBar
-import com.vaadin.flow.component.menubar.MenuBarVariant
 import com.vaadin.flow.component.html.Anchor
 import com.vaadin.flow.component.html.Div
 import com.vaadin.flow.component.html.H1
@@ -325,16 +323,14 @@ class ArticleListView(
                 editBtn.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY)
                 editBtn.addClickListener { openEditArticleDialog(article) }
 
-                val menuBar = MenuBar()
-                menuBar.addThemeVariants(MenuBarVariant.LUMO_SMALL)
-                val dotsItem = menuBar.addItem("\u22EE") // ⋮ vertical ellipsis
-                val subMenu = dotsItem.subMenu
-                val deleteItem = subMenu.addItem("Delete")
-                deleteItem.addClickListener { confirmDeleteArticle(article) }
+                val deleteBtn = Button("Delete")
+                deleteBtn.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_ERROR, ButtonVariant.LUMO_TERTIARY)
+                deleteBtn.addClickListener { confirmDeleteArticle(article) }
 
-                val row = HorizontalLayout(editBtn, menuBar)
+                val row = HorizontalLayout(editBtn, deleteBtn)
                 row.isPadding = false
-                row.isSpacing = false
+                row.isSpacing = true
+                row.defaultVerticalComponentAlignment = Alignment.CENTER
                 row
             }
                 .setAutoWidth(true)
