@@ -89,7 +89,8 @@ class ArticleService(
                 createdByUserId = creatorId,
             )
         )
-        preserveContent(article.id!!, enrichment.plainText)
+        val contentForCache = enrichment.plainText ?: enrichment.lead ?: enrichment.title
+        preserveContent(article.id!!, contentForCache)
         return article
     }
 
@@ -111,7 +112,8 @@ class ArticleService(
                 publishedAt = publishedAt,
             )
         )
-        preserveContent(article.id!!, enrichment.plainText)
+        val contentForCache = enrichment.plainText ?: enrichment.lead ?: enrichment.title
+        preserveContent(article.id!!, contentForCache)
         return article
     }
 

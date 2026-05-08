@@ -23,6 +23,7 @@ import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.patch
 import org.springframework.test.web.servlet.post
 import org.springframework.test.web.servlet.put
+import pl.bnowakowski.cozazjeb.article.ArticleContentRepository
 import pl.bnowakowski.cozazjeb.article.ArticleRepository
 import pl.bnowakowski.cozazjeb.enrichment.EnrichmentResult
 import pl.bnowakowski.cozazjeb.enrichment.EnrichmentService
@@ -65,6 +66,7 @@ class ArticleOwnershipIT {
     @Autowired private lateinit var appUserRepository: AppUserRepository
     @Autowired private lateinit var appUserService: AppUserService
     @Autowired private lateinit var articleRepository: ArticleRepository
+    @Autowired private lateinit var articleContentRepository: ArticleContentRepository
 
     @MockitoBean private lateinit var jwtDecoder: JwtDecoder
     @MockitoBean private lateinit var enrichmentService: EnrichmentService
@@ -107,6 +109,23 @@ class ArticleOwnershipIT {
 
         val saved = articleRepository.findById(id).orElseThrow()
         assertEquals(adminUser.id, saved.createdByUserId)
+    }
+
+    @Test
+    fun `cache is stored from lead when plainText is empty`() {
+        whenever(enrichmentService.enrich(any())).thenReturn(
+            EnrichmentResult(
+                title = "Facebook Title",
+                thumbnail = null,
+                lead = "Facebook lead preview",
+                plainText = null,
+            ),
+        )
+
+        val id = createArticle(url = uniqueUrl("fb-fallback"))
+
+        val content = articleContentRepository.findById(id).orElseThrow()
+        assertEquals("Facebook lead preview", content.content)
     }
 
     @Test
