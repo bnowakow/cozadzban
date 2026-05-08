@@ -116,6 +116,17 @@ class EnrichmentServiceTest {
         }
     }
 
+    @Test
+    fun `TEMP live Facebook pfbid fallback extracts metadata and publish date`() {
+        val result = EnrichmentService(RestClient.builder()).enrich(
+            "https://www.facebook.com/akurasinski/posts/pfbid033CLUhJTuKWPiYspPP2womaWEF7vH9yHSTED9EkLpHNrPmoZzjEyUQ25aJrHZP3sul",
+        )
+
+        assertEquals("Artur Kurasiński", result.title)
+        assertEquals("Walka Trumpa z putinem wygląda tak.", result.lead)
+        assertEquals(Instant.parse("2025-11-08T19:43:24Z"), result.publishedAt)
+    }
+
     private fun withServer(body: String, path: String = "/", block: (String) -> Unit) {
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         server.createContext(path) { exchange ->
