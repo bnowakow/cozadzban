@@ -245,6 +245,27 @@ class ArticleOwnershipIT {
     }
 
     @Test
+    fun `generic Facebook post title uses cache excerpt`() {
+        val url = "https://www.facebook.com/akurasinski/posts/pfbid033CLUhJTuKWPiYspPP2womaWEF7vH9yHSTED9EkLpHNrPmoZzjEyUQ25aJrHZP3sul?title-excerpt-test"
+
+        whenever(enrichmentService.enrich(any())).thenReturn(
+            EnrichmentResult(
+                title = "Facebook post",
+                thumbnail = null,
+                lead = "Walka Trumpa z putinem wygląda tak.",
+                plainText = null,
+            ),
+        )
+
+        val id = createArticle(url = url)
+
+        val article = articleRepository.findById(id).orElseThrow()
+        val content = articleContentRepository.findById(id).orElseThrow()
+        assertEquals("Walka Trumpa z putinem wygląda tak.", article.title)
+        assertEquals("Walka Trumpa z putinem wygląda tak.", content.content)
+    }
+
+    @Test
     fun `cache repairs known Other98 Facebook post from real provided data`() {
         val url = "https://www.facebook.com/TheOther98/posts/pfbid0yidDpVT2Xxb2cM56G33f91qTRSSYW1bpixPNNQ7DLkHdCUD5oEhRL58Mjmo3ierxl"
         val staleTeaser = "Pete Hegseth has fired 24 generals. Now he brings his wife to Pentagon meetings. " +

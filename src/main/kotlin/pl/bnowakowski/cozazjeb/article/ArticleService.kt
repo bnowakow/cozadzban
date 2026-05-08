@@ -81,19 +81,19 @@ class ArticleService(
         if (articleRepository.existsByUrl(url)) throw ArticleUrlConflictException(url)
         val enrichment = enrichmentService.enrich(url)
         val publishedAt = input.publishedAt ?: enrichment.publishedAt
+        val contentForCache = selectContentForCache(url, enrichment.plainText, enrichment.lead, enrichment.title)
         val article = articleRepository.save(
             Article(
                 url = url,
                 language = language,
                 quote = input.quote,
-                title = enrichment.title,
+                title = titleForSave(enrichment.title, contentForCache),
                 thumbnail = enrichment.thumbnail,
                 lead = enrichment.lead,
                 publishedAt = publishedAt,
                 createdByUserId = creatorId,
             )
         )
-        val contentForCache = selectContentForCache(url, enrichment.plainText, enrichment.lead, enrichment.title)
         preserveContent(article.id!!, contentForCache)
         return article
     }
@@ -105,18 +105,18 @@ class ArticleService(
         if (url != existing.url && articleRepository.existsByUrl(url)) throw ArticleUrlConflictException(url)
         val enrichment = enrichmentService.enrich(url)
         val publishedAt = input.publishedAt ?: enrichment.publishedAt
+        val contentForCache = selectContentForCache(url, enrichment.plainText, enrichment.lead, enrichment.title)
         val article = articleRepository.save(
             existing.copy(
                 url = url,
                 language = language,
                 quote = input.quote,
-                title = enrichment.title,
+                title = titleForSave(enrichment.title, contentForCache),
                 thumbnail = enrichment.thumbnail,
                 lead = enrichment.lead,
                 publishedAt = publishedAt,
             )
         )
-        val contentForCache = selectContentForCache(url, enrichment.plainText, enrichment.lead, enrichment.title)
         preserveContent(article.id!!, contentForCache)
         return article
     }
@@ -179,8 +179,15 @@ class ArticleService(
         } else {
             null
         }
+        val contentForChangedUrl = enrichmentForChangedUrl?.let {
+            selectContentForCache(newUrl, it.plainText, it.lead, it.title)
+        }
         val (newTitle, newThumbnail, newLead) = if (enrichmentForChangedUrl != null) {
-            Triple(enrichmentForChangedUrl.title, enrichmentForChangedUrl.thumbnail, enrichmentForChangedUrl.lead)
+            Triple(
+                titleForSave(enrichmentForChangedUrl.title, contentForChangedUrl),
+                enrichmentForChangedUrl.thumbnail,
+                enrichmentForChangedUrl.lead,
+            )
         } else {
             Triple(existing.title, existing.thumbnail, existing.lead)
         }
@@ -205,13 +212,7 @@ class ArticleService(
                 preserveContent(saved.id!!, newContent)
             }
         } else if (enrichmentForChangedUrl != null) {
-            val contentForCache = selectContentForCache(
-                newUrl,
-                enrichmentForChangedUrl.plainText,
-                enrichmentForChangedUrl.lead,
-                enrichmentForChangedUrl.title,
-            )
-            preserveContent(saved.id!!, contentForCache)
+            preserveContent(saved.id!!, contentForChangedUrl)
         }
 
         return saved
@@ -276,6 +277,25 @@ class ArticleService(
         return title?.trim()?.takeIf { it.isNotBlank() }
     }
 
+    private fun titleForSave(title: String?, contentForCache: String?): String? {
+        val normalizedTitle = title?.trim()?.takeIf { it.isNotBlank() }
+        if (normalizedTitle != GENERIC_FACEBOOK_TITLE) return normalizedTitle
+
+        return contentForCache
+            ?.replace(Regex("\\s+"), " ")
+            ?.trim()
+            ?.takeIf { it.isNotBlank() && it != GENERIC_FACEBOOK_TITLE }
+            ?.let { excerpt(it, ARTICLE_TITLE_EXCERPT_LENGTH) }
+            ?: normalizedTitle
+    }
+
+    private fun excerpt(text: String, maxLength: Int): String =
+        if (text.length <= maxLength) {
+            text
+        } else {
+            text.take(maxLength).trimEnd() + "..."
+        }
+
     private fun facebookVideoTitleContent(url: String, title: String?): String? {
         if (!isFacebookVideoOrReelUrl(url)) return null
         if (title.isNullOrBlank()) return null
@@ -317,6 +337,8 @@ class ArticleService(
 
     companion object {
         private val BCP47_PATTERN = Regex("^[a-z]{2,3}(-[a-z0-9]{2,8})*\$")
+        private const val GENERIC_FACEBOOK_TITLE = "Facebook post"
+        private const val ARTICLE_TITLE_EXCERPT_LENGTH = 120
         private const val OTHER98_HEGSETH_FACEBOOK_URL =
             "https://www.facebook.com/TheOther98/posts/pfbid0yidDpVT2Xxb2cM56G33f91qTRSSYW1bpixPNNQ7DLkHdCUD5oEhRL58Mjmo3ierxl"
         private val OTHER98_HEGSETH_FACEBOOK_CONTENT = """
