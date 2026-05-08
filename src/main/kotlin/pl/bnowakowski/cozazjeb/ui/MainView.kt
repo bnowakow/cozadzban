@@ -462,11 +462,14 @@ class ArticleListView(
         quoteField.value = article.quote ?: ""
 
         val publishedAtPicker = DateTimePicker("Published at (optional — clear to remove)")
-        publishedAtPicker.width = "28rem"
+        publishedAtPicker.width = "18rem"
         publishedAtPicker.value = article.publishedAt?.atOffset(ZoneOffset.UTC)?.toLocalDateTime()
 
         val refreshPublishedAtButton = Button("Refresh published date")
         refreshPublishedAtButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY)
+        val publishedAtControls = HorizontalLayout(publishedAtPicker, refreshPublishedAtButton)
+        publishedAtControls.defaultVerticalComponentAlignment = Alignment.END
+        publishedAtControls.width = "28rem"
 
         val contentField = TextArea("Cached content (optional — paste full text to override)")
         contentField.width = "28rem"
@@ -530,7 +533,7 @@ class ArticleListView(
         val actions = HorizontalLayout(submitButton, cancelButton)
         actions.defaultVerticalComponentAlignment = Alignment.END
 
-        dialog.add(VerticalLayout(languageField, quoteField, publishedAtPicker, refreshPublishedAtButton, contentField, actions))
+        dialog.add(VerticalLayout(languageField, quoteField, publishedAtControls, contentField, actions))
         dialog.open()
     }
 

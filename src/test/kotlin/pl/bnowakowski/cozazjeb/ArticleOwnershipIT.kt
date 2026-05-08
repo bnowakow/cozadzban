@@ -25,6 +25,7 @@ import org.springframework.test.web.servlet.post
 import org.springframework.test.web.servlet.put
 import pl.bnowakowski.cozazjeb.article.ArticleContentRepository
 import pl.bnowakowski.cozazjeb.article.ArticleRepository
+import pl.bnowakowski.cozazjeb.article.ArticleService
 import pl.bnowakowski.cozazjeb.enrichment.EnrichmentResult
 import pl.bnowakowski.cozazjeb.enrichment.EnrichmentService
 import pl.bnowakowski.cozazjeb.user.AppUserRepository
@@ -66,6 +67,7 @@ class ArticleOwnershipIT {
     @Autowired private lateinit var appUserRepository: AppUserRepository
     @Autowired private lateinit var appUserService: AppUserService
     @Autowired private lateinit var articleRepository: ArticleRepository
+    @Autowired private lateinit var articleService: ArticleService
     @Autowired private lateinit var articleContentRepository: ArticleContentRepository
 
     @MockitoBean private lateinit var jwtDecoder: JwtDecoder
@@ -374,6 +376,20 @@ class ArticleOwnershipIT {
     }
 
     @Test
+    fun `refreshPublishedAt updates article from enrichment`() {
+        val id = createArticle(url = uniqueUrl("pub-refresh"))
+        val refreshedDate = Instant.parse("2026-02-03T04:05:06Z")
+        whenever(enrichmentService.enrich(any())).thenReturn(
+            baseEnrichment.copy(publishedAt = refreshedDate),
+        )
+
+        val refreshed = articleService.refreshPublishedAt(id)
+
+        assertEquals(refreshedDate, refreshed.publishedAt)
+        assertEquals(refreshedDate, articleRepository.findById(id).orElseThrow().publishedAt)
+    }
+
+    @Test
     fun `article without enriched publishedAt has null publishedAt`() {
         // baseEnrichment has no publishedAt
         mockMvc.post("/api/articles") {
@@ -385,6 +401,24 @@ class ArticleOwnershipIT {
             // ArticleResponse uses @JsonInclude(NON_NULL) — null fields are omitted
             jsonPath("$.publishedAt") { doesNotExist() }
         }
+    }
+
+    @Test
+    fun `refreshContentCache updates preserved content from enrichment`() {
+        val id = createArticle(url = uniqueUrl("cache-refresh"))
+        whenever(enrichmentService.enrich(any())).thenReturn(
+            EnrichmentResult(
+                title = "Updated title",
+                thumbnail = null,
+                lead = "Updated lead",
+                plainText = "Updated full cached content",
+            ),
+        )
+
+        val refreshed = articleService.refreshContentCache(id)
+
+        assertEquals("Updated full cached content", refreshed.content)
+        assertEquals("Updated full cached content", articleContentRepository.findById(id).orElseThrow().content)
     }
 
     @Test
