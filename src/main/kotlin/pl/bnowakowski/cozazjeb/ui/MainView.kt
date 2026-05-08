@@ -336,10 +336,14 @@ class ArticleListView(
                 row.isPadding = false
                 row.isSpacing = false
                 row
-            }.setAutoWidth(true).setFlexGrow(0)
+            }
+                .setAutoWidth(true)
+                .setFlexGrow(0)
+                .setKey("actions")
         }
 
         grid.addItemClickListener { event ->
+            if (event.column?.key == "actions") return@addItemClickListener
             grid.element.executeJs("window.open($0, '_blank', 'noopener')", event.item.url)
         }
 
