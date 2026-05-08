@@ -326,8 +326,8 @@ class ArticleListView(
                 editBtn.addClickListener { openEditArticleDialog(article) }
 
                 val menuBar = MenuBar()
-                menuBar.addThemeVariants(MenuBarVariant.LUMO_SMALL, MenuBarVariant.LUMO_TERTIARY)
-                val dotsItem = menuBar.addItem("\u22EF") // ⋯ horizontal ellipsis
+                menuBar.addThemeVariants(MenuBarVariant.LUMO_SMALL)
+                val dotsItem = menuBar.addItem("\u22EE") // ⋮ vertical ellipsis
                 val subMenu = dotsItem.subMenu
                 val deleteItem = subMenu.addItem("Delete")
                 deleteItem.addClickListener { confirmDeleteArticle(article) }
