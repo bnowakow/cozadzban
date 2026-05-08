@@ -116,6 +116,16 @@ class EnrichmentServiceTest {
         }
     }
 
+    @Test
+    fun `TEMP live RP article enriches without 403`() {
+        val result = EnrichmentService(RestClient.builder()).enrich(
+            "https://www.rp.pl/dyplomacja/art43431321-czy-pete-hegseth-nakazal-dobic-ocalalych-w-ataku-na-lodz-na-morzu-karaibskim",
+        )
+
+        assertEquals("„To byłaby zbrodnia wojenna” USA. Kongres zajmie się doniesieniami „Washington Post”", result.title)
+        assertEquals(Instant.parse("2025-12-01T10:12:00Z"), result.publishedAt)
+    }
+
     private fun withServer(body: String, path: String = "/", block: (String) -> Unit) {
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         server.createContext(path) { exchange ->
