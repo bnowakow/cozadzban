@@ -1,5 +1,5 @@
 
-.PHONY: help docker-up docker-down docker-pg-nuke build run run-local run-prod test clean docker-logs docker-pg-shell docker-upgrade bump-version bump-patch
+.PHONY: help docker-up docker-down docker-pg-nuke build run run-local run-prod test clean docker-logs docker-pg-shell docker-upgrade bump-version bump-patch bump-minor
 
 -include .env
 
@@ -20,6 +20,7 @@ help:
 	@echo "  clean           Clean Gradle build artifacts"
 	@echo "  bump-version    Set project version in build.gradle.kts (use VERSION=x.y.z[-SNAPSHOT])"
 	@echo "  bump-patch      Auto-increment patch for x.y.z-SNAPSHOT versions"
+	@echo "  bump-minor      Auto-increment minor and reset patch for x.y.z-SNAPSHOT versions"
 	@echo "  docker-logs     Show compose logs (follow mode)"
 	@echo "  docker-pg-shell Open PostgreSQL shell inside docker container"
 	@echo "  docker-upgrade  Pull latest code, rebuild image, restart containers, follow logs"
@@ -93,13 +94,27 @@ bump-version:
 
 # Auto-bump patch for semantic snapshot versions, e.g. 0.0.2-SNAPSHOT -> 0.0.3-SNAPSHOT
 bump-patch:
-	@current=$$(sed -n 's/^version\s*=\s*"\([^"]*\)"/\1/p' build.gradle.kts); \
+	@current=$$(perl -ne 'print $$1 if /^version\s*=\s*"([^"]+)"/' build.gradle.kts); \
 	if echo "$$current" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+-SNAPSHOT$$'; then \
 		major=$$(echo "$$current" | cut -d. -f1); \
 		minor=$$(echo "$$current" | cut -d. -f2); \
 		patch=$$(echo "$$current" | sed -E 's/^[0-9]+\.[0-9]+\.([0-9]+)-SNAPSHOT$$/\1/'); \
 		next_patch=$$((patch + 1)); \
 		next="$$major.$$minor.$$next_patch-SNAPSHOT"; \
+		$(MAKE) bump-version VERSION="$$next"; \
+	else \
+		echo "Current version '$$current' is not x.y.z-SNAPSHOT; use make bump-version VERSION=..."; \
+		exit 1; \
+	fi
+
+# Auto-bump minor for semantic snapshot versions, e.g. 0.0.2-SNAPSHOT -> 0.1.0-SNAPSHOT
+bump-minor:
+	@current=$$(perl -ne 'print $$1 if /^version\s*=\s*"([^"]+)"/' build.gradle.kts); \
+	if echo "$$current" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+-SNAPSHOT$$'; then \
+		major=$$(echo "$$current" | cut -d. -f1); \
+		minor=$$(echo "$$current" | cut -d. -f2); \
+		next_minor=$$((minor + 1)); \
+		next="$$major.$$next_minor.0-SNAPSHOT"; \
 		$(MAKE) bump-version VERSION="$$next"; \
 	else \
 		echo "Current version '$$current' is not x.y.z-SNAPSHOT; use make bump-version VERSION=..."; \
@@ -122,4 +137,3 @@ docker-upgrade:
 # Open PostgreSQL shell inside docker container (requires dev-up)
 docker-pg-shell:
 	docker compose -f compose.yaml exec postgres psql -U $(POSTGRES_USER) -d $(POSTGRES_DB)
-
