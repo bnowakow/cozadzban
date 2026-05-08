@@ -1,5 +1,5 @@
 
-.PHONY: help docker-up docker-down docker-pg-nuke build run run-local run-prod test clean docker-logs docker-pg-shell docker-upgrade
+.PHONY: help docker-up docker-down docker-pg-nuke build run run-local run-prod test clean docker-logs docker-pg-shell docker-upgrade bump-version bump-patch
 
 -include .env
 
@@ -18,6 +18,8 @@ help:
 	@echo "  run-prod        Run Spring Boot with prod profile"
 	@echo "  test            Run all tests"
 	@echo "  clean           Clean Gradle build artifacts"
+	@echo "  bump-version    Set project version in build.gradle.kts (use VERSION=x.y.z[-SNAPSHOT])"
+	@echo "  bump-patch      Auto-increment patch for x.y.z-SNAPSHOT versions"
 	@echo "  docker-logs     Show compose logs (follow mode)"
 	@echo "  docker-pg-shell Open PostgreSQL shell inside docker container"
 	@echo "  docker-upgrade  Pull latest code, rebuild image, restart containers, follow logs"
@@ -79,6 +81,30 @@ test:
 # Clean build artifacts
 clean:
 	./gradlew clean
+
+# Set project version in build.gradle.kts, e.g. make bump-version VERSION=0.0.3-SNAPSHOT
+bump-version:
+	@if [ -z "$(VERSION)" ]; then \
+		echo "Usage: make bump-version VERSION=x.y.z[-SNAPSHOT]"; \
+		exit 1; \
+	fi
+	@perl -i -pe 's/^version\s*=\s*"[^"]+"/version = "$(VERSION)"/' build.gradle.kts
+	@echo "✓ Version set to $(VERSION)"
+
+# Auto-bump patch for semantic snapshot versions, e.g. 0.0.2-SNAPSHOT -> 0.0.3-SNAPSHOT
+bump-patch:
+	@current=$$(sed -n 's/^version\s*=\s*"\([^"]*\)"/\1/p' build.gradle.kts); \
+	if echo "$$current" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+-SNAPSHOT$$'; then \
+		major=$$(echo "$$current" | cut -d. -f1); \
+		minor=$$(echo "$$current" | cut -d. -f2); \
+		patch=$$(echo "$$current" | sed -E 's/^[0-9]+\.[0-9]+\.([0-9]+)-SNAPSHOT$$/\1/'); \
+		next_patch=$$((patch + 1)); \
+		next="$$major.$$minor.$$next_patch-SNAPSHOT"; \
+		$(MAKE) bump-version VERSION="$$next"; \
+	else \
+		echo "Current version '$$current' is not x.y.z-SNAPSHOT; use make bump-version VERSION=..."; \
+		exit 1; \
+	fi
 
 # Follow docker-compose logs
 docker-logs:
