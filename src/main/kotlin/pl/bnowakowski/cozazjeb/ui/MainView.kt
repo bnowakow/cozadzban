@@ -14,6 +14,7 @@ import com.vaadin.flow.component.html.Div
 import com.vaadin.flow.component.html.H1
 import com.vaadin.flow.component.html.Image
 import com.vaadin.flow.component.html.Span
+import com.vaadin.flow.component.icon.VaadinIcon
 import com.vaadin.flow.component.notification.Notification
 import com.vaadin.flow.component.notification.NotificationVariant
 import com.vaadin.flow.component.orderedlayout.FlexComponent.Alignment
@@ -546,12 +547,16 @@ class ArticleListView(
             notification.addThemeVariants(variant)
         }
 
-        val closeButton = Button("Close")
-        closeButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY_INLINE)
+        val closeButton = Button(VaadinIcon.CLOSE_SMALL.create())
+        closeButton.element.setAttribute("aria-label", "Close notification")
+        closeButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY_INLINE, ButtonVariant.LUMO_ICON)
         closeButton.addClickListener { notification.close() }
 
-        val layout = HorizontalLayout(Span(message), closeButton)
+        val messageText = Span(message)
+        val layout = HorizontalLayout(messageText, closeButton)
         layout.defaultVerticalComponentAlignment = Alignment.CENTER
+        layout.expand(messageText)
+        layout.width = "100%"
         notification.add(layout)
         notification.open()
     }
