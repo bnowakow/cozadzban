@@ -47,6 +47,13 @@ class EnrichmentService(
         .defaultHeader(HttpHeaders.USER_AGENT, BROWSER_USER_AGENT)
         .defaultHeader(HttpHeaders.ACCEPT, "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
         .defaultHeader(HttpHeaders.ACCEPT_LANGUAGE, "pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7")
+        .defaultHeader(HttpHeaders.CACHE_CONTROL, "no-cache")
+        .defaultHeader("Pragma", "no-cache")
+        .defaultHeader("Upgrade-Insecure-Requests", "1")
+        .defaultHeader("Sec-Fetch-Dest", "document")
+        .defaultHeader("Sec-Fetch-Mode", "navigate")
+        .defaultHeader("Sec-Fetch-Site", "none")
+        .defaultHeader("Sec-Fetch-User", "?1")
         .build()
 
     fun enrich(url: String): EnrichmentResult {
