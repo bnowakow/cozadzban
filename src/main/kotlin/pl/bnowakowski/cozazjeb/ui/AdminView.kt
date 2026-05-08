@@ -282,6 +282,12 @@ class AdminView(
     }
 
     private fun openContentDialog(entry: ArticleContent) {
+        val articleUrl = articleRepository.findById(entry.articleId).map { it.url }.orElse("—")
+        val urlField = TextField("Article URL")
+        urlField.value = articleUrl
+        urlField.isReadOnly = true
+        urlField.width = "100%"
+
         val textArea = TextArea("Content (read-only)")
         textArea.value = entry.content
         textArea.isReadOnly = true
@@ -302,7 +308,7 @@ class AdminView(
         dialog.headerTitle = "Preserved content — article ${entry.articleId}"
         dialog.setWidth("80vw")
         dialog.setHeight("80vh")
-        val content = VerticalLayout(textArea)
+        val content = VerticalLayout(urlField, textArea)
         if (truncatedNote != null) content.addComponentAsFirst(truncatedNote)
         content.setSizeFull()
         dialog.add(content)
