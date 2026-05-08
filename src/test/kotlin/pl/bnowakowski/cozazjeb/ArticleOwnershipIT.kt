@@ -151,6 +151,25 @@ class ArticleOwnershipIT {
     }
 
     @Test
+    fun `cache prefers truncated plainText over title fallback`() {
+        val teaser = "Pete Hegseth has fired 24 generals. Now he brings his wife to Pentagon meetings..."
+
+        whenever(enrichmentService.enrich(any())).thenReturn(
+            EnrichmentResult(
+                title = "The Other 98%",
+                thumbnail = null,
+                lead = null,
+                plainText = teaser,
+            ),
+        )
+
+        val id = createArticle(url = uniqueUrl("fb-no-title-fallback"))
+
+        val content = articleContentRepository.findById(id).orElseThrow()
+        assertEquals(teaser, content.content)
+    }
+
+    @Test
     fun `article JSON response does not expose createdByUserId`() {
         mockMvc.post("/api/articles") {
             with(jwt().jwt { it.subject(adminEmail) })

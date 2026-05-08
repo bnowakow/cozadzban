@@ -212,18 +212,21 @@ class ArticleService(
     }
 
     private fun selectContentForCache(plainText: String?, lead: String?, title: String?): String? {
-        val candidates = listOfNotNull(plainText, lead, title)
+        val bodyCandidates = listOfNotNull(plainText, lead)
             .map { it.trim() }
             .filter { it.isNotBlank() }
 
-        if (candidates.isEmpty()) return null
+        // Prefer body-like content over title to avoid collapsing rich snippets into short page titles.
+        if (bodyCandidates.isNotEmpty()) {
+            return bodyCandidates.maxByOrNull { contentQualityScore(it) }
+        }
 
-        return candidates.maxByOrNull { contentQualityScore(it) }
+        return title?.trim()?.takeIf { it.isNotBlank() }
     }
 
     private fun contentQualityScore(text: String): Int {
         val lengthScore = text.length.coerceAtMost(20_000)
-        val truncatedPenalty = if (looksTruncated(text)) 10_000 else 0
+        val truncatedPenalty = if (looksTruncated(text)) 500 else 0
         return lengthScore - truncatedPenalty
     }
 
