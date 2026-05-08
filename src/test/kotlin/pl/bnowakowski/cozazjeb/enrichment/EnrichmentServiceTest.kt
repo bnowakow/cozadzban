@@ -117,13 +117,29 @@ class EnrichmentServiceTest {
     }
 
     @Test
-    fun `TEMP live RP article enriches without 403`() {
-        val result = EnrichmentService(RestClient.builder()).enrich(
-            "https://www.rp.pl/dyplomacja/art43431321-czy-pete-hegseth-nakazal-dobic-ocalalych-w-ataku-na-lodz-na-morzu-karaibskim",
-        )
+    fun `extracts JSON-LD NewsArticle published date with offset`() {
+        val html = """
+            <!doctype html>
+            <html>
+              <head>
+                <meta property="og:title" content="RP article">
+                <script type="application/ld+json">
+                  {
+                    "@context": "https://schema.org",
+                    "@type": "NewsArticle",
+                    "datePublished": "2025-12-01T11:12:00+01:00"
+                  }
+                </script>
+              </head>
+              <body>Article</body>
+            </html>
+        """.trimIndent()
 
-        assertEquals("„To byłaby zbrodnia wojenna” USA. Kongres zajmie się doniesieniami „Washington Post”", result.title)
-        assertEquals(Instant.parse("2025-12-01T10:12:00Z"), result.publishedAt)
+        withServer(html) { url ->
+            val result = EnrichmentService(RestClient.builder()).enrich(url)
+
+            assertEquals(Instant.parse("2025-12-01T10:12:00Z"), result.publishedAt)
+        }
     }
 
     private fun withServer(body: String, path: String = "/", block: (String) -> Unit) {

@@ -69,11 +69,26 @@ class EnrichmentService(
         .defaultHeader(HttpHeaders.ACCEPT_LANGUAGE, "pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7")
         .build()
 
+    private val rpFallbackRestClient: RestClient = restClientBuilder
+        .requestFactory(
+            SimpleClientHttpRequestFactory().apply {
+                setConnectTimeout(CONNECT_TIMEOUT_MS)
+                setReadTimeout(READ_TIMEOUT_MS)
+            }
+        )
+        .defaultHeader(HttpHeaders.USER_AGENT, BROWSER_USER_AGENT)
+        .defaultHeader(HttpHeaders.ACCEPT, "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+        .defaultHeader(HttpHeaders.ACCEPT_LANGUAGE, "pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7")
+        .build()
+
     fun enrich(url: String): EnrichmentResult {
         val html = try {
             fetchHtml(url)
         } catch (ex: RestClientResponseException) {
             fetchFacebookCrawlerFallback(url, ex.statusCode.value(), ex.responseBodyAsString)?.let { fallbackHtml ->
+                return enrichHtml(url, fallbackHtml)
+            }
+            fetchRpFallback(url, ex.statusCode.value())?.let { fallbackHtml ->
                 return enrichHtml(url, fallbackHtml)
             }
             recoverFacebookPostFromGenericError(url, ex.statusCode.value(), ex.responseBodyAsString)?.let {
@@ -123,6 +138,17 @@ class EnrichmentService(
         val fallbackUrl = facebookMbasicUrl(url) ?: return null
         return try {
             fetchHtml(fallbackUrl, facebookCrawlerRestClient)
+        } catch (_: RestClientException) {
+            null
+        }
+    }
+
+    private fun fetchRpFallback(url: String, statusCode: Int): String? {
+        if (statusCode != 403) return null
+        if (!isRpUrl(url)) return null
+
+        return try {
+            fetchHtml(url, rpFallbackRestClient)
         } catch (_: RestClientException) {
             null
         }
@@ -383,6 +409,13 @@ private fun facebookMbasicUrl(url: String): String? {
     val path = uri.rawPath ?: return null
     val query = uri.rawQuery?.let { "?$it" }.orEmpty()
     return "https://mbasic.facebook.com$path$query"
+}
+
+private fun isRpUrl(url: String): Boolean {
+    val uri = runCatching { URI(url) }.getOrNull() ?: return false
+    val host = uri.host?.lowercase() ?: return false
+
+    return host == "rp.pl" || host.endsWith(".rp.pl")
 }
 
 private fun isFacebookGenericError(responseBody: String): Boolean =
