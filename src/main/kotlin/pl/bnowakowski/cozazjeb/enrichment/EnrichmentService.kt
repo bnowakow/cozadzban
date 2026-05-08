@@ -13,6 +13,7 @@ import org.springframework.web.client.RestClient
 import org.springframework.web.client.RestClientException
 import org.springframework.web.client.RestClientResponseException
 import java.net.ConnectException
+import java.net.URI
 import java.net.SocketTimeoutException
 import java.time.Instant
 import java.time.LocalDate
@@ -64,6 +65,9 @@ class EnrichmentService(
                 .body(String::class.java)
                 ?: ""
         } catch (ex: RestClientResponseException) {
+            recoverFacebookPostFromGenericError(url, ex.statusCode.value(), ex.responseBodyAsString)?.let {
+                return it
+            }
             throw EnrichmentException(
                 message = "URL enrichment failed: target returned HTTP ${ex.statusCode.value()} for '$url'",
                 reason = EnrichmentException.Reason.NON_2XX,
@@ -286,6 +290,37 @@ data class EnrichmentResult(
     /** Plain text extracted from the page body, for preservation only. Never exposed publicly. */
     val plainText: String? = null,
 )
+
+internal fun recoverFacebookPostFromGenericError(
+    url: String,
+    statusCode: Int,
+    responseBody: String,
+): EnrichmentResult? {
+    if (statusCode != 400) return null
+    if (!isFacebookPfbidPostUrl(url)) return null
+    if (!isFacebookGenericError(responseBody)) return null
+
+    return EnrichmentResult(
+        title = "Facebook post",
+        thumbnail = null,
+        lead = null,
+        publishedAt = null,
+        plainText = null,
+    )
+}
+
+private fun isFacebookPfbidPostUrl(url: String): Boolean {
+    val uri = runCatching { URI(url) }.getOrNull() ?: return false
+    val host = uri.host?.lowercase() ?: return false
+    val path = uri.path ?: return false
+
+    return (host == "facebook.com" || host.endsWith(".facebook.com")) &&
+        path.contains("/posts/pfbid")
+}
+
+private fun isFacebookGenericError(responseBody: String): Boolean =
+    responseBody.contains("<title>Error</title>", ignoreCase = true) ||
+        responseBody.contains("Sorry, something went wrong", ignoreCase = true)
 
 
 /**

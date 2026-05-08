@@ -5,6 +5,7 @@ package pl.bnowakowski.cozazjeb.enrichment
 
 import com.sun.net.httpserver.HttpServer
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Test
 import org.springframework.web.client.RestClient
 import java.net.InetSocketAddress
@@ -79,6 +80,27 @@ class EnrichmentServiceTest {
             assertEquals("RP article", result.title)
             assertEquals(Instant.parse("2026-02-12T11:10:30Z"), result.publishedAt)
         }
+    }
+
+    @Test
+    fun `recovers generic Facebook pfbid 400 as minimal post`() {
+        val result = recoverFacebookPostFromGenericError(
+            url = "https://www.facebook.com/akurasinski/posts/pfbid033CLUhJTuKWPiYspPP2womaWEF7vH9yHSTED9EkLpHNrPmoZzjEyUQ25aJrHZP3sul",
+            statusCode = HttpURLConnection.HTTP_BAD_REQUEST,
+            responseBody = "<html><head><title>Error</title></head><body>Sorry, something went wrong.</body></html>",
+        )
+
+        assertNotNull(result)
+        assertEquals("Facebook post", result?.title)
+    }
+
+    @Test
+    fun `TEMP live exact Facebook pfbid generic 400 is recoverable`() {
+        val result = EnrichmentService(RestClient.builder()).enrich(
+            "https://www.facebook.com/akurasinski/posts/pfbid033CLUhJTuKWPiYspPP2womaWEF7vH9yHSTED9EkLpHNrPmoZzjEyUQ25aJrHZP3sul",
+        )
+
+        assertEquals("Facebook post", result.title)
     }
 
     private fun withServer(body: String, path: String = "/", block: (String) -> Unit) {
