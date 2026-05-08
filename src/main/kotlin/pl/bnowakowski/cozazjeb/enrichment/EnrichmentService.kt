@@ -81,6 +81,31 @@ class EnrichmentService(
         .defaultHeader(HttpHeaders.ACCEPT_LANGUAGE, "pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7")
         .build()
 
+    private val reutersMobileRestClient: RestClient = restClientBuilder
+        .requestFactory(
+            SimpleClientHttpRequestFactory().apply {
+                setConnectTimeout(CONNECT_TIMEOUT_MS)
+                setReadTimeout(READ_TIMEOUT_MS)
+            }
+        )
+        .defaultHeader(HttpHeaders.USER_AGENT, MOBILE_SAFARI_USER_AGENT)
+        .defaultHeader(HttpHeaders.ACCEPT, "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+        .defaultHeader(HttpHeaders.ACCEPT_LANGUAGE, "en-US,en;q=0.9,pl;q=0.8")
+        .defaultHeader(HttpHeaders.CACHE_CONTROL, "no-cache")
+        .build()
+
+    private val readerRestClient: RestClient = restClientBuilder
+        .requestFactory(
+            SimpleClientHttpRequestFactory().apply {
+                setConnectTimeout(CONNECT_TIMEOUT_MS)
+                setReadTimeout(READ_TIMEOUT_MS)
+            }
+        )
+        .defaultHeader(HttpHeaders.USER_AGENT, BROWSER_USER_AGENT)
+        .defaultHeader(HttpHeaders.ACCEPT, "text/plain, text/markdown, */*;q=0.8")
+        .defaultHeader(HttpHeaders.ACCEPT_LANGUAGE, "pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7")
+        .build()
+
     fun enrich(url: String): EnrichmentResult {
         val html = try {
             fetchHtml(url)
@@ -88,8 +113,14 @@ class EnrichmentService(
             fetchFacebookCrawlerFallback(url, ex.statusCode.value(), ex.responseBodyAsString)?.let { fallbackHtml ->
                 return enrichHtml(url, fallbackHtml)
             }
+            fetchReutersMobileFallback(url, ex.statusCode.value())?.let { fallbackHtml ->
+                return enrichHtml(url, fallbackHtml)
+            }
             fetchRpFallback(url, ex.statusCode.value())?.let { fallbackHtml ->
                 return enrichHtml(url, fallbackHtml)
+            }
+            fetchRpReaderFallback(url, ex.statusCode.value())?.let { readerText ->
+                return parseReaderMarkdownResult(url, readerText)
             }
             recoverFacebookPostFromGenericError(url, ex.statusCode.value(), ex.responseBodyAsString)?.let {
                 return it
@@ -143,6 +174,28 @@ class EnrichmentService(
         }
     }
 
+    private fun fetchReutersMobileFallback(url: String, statusCode: Int): String? {
+        if (!shouldUseReutersMobileFallback(url, statusCode)) return null
+
+        return try {
+            fetchHtml(url, reutersMobileRestClient)
+        } catch (_: RestClientException) {
+            null
+        }
+    }
+
+    private fun fetchRpReaderFallback(url: String, statusCode: Int): String? {
+        if (statusCode != 403) return null
+        if (!isRpUrl(url)) return null
+
+        val readerUrl = readerUrl(url) ?: return null
+        return try {
+            fetchHtml(readerUrl, readerRestClient)
+        } catch (_: RestClientException) {
+            null
+        }
+    }
+
     private fun fetchRpFallback(url: String, statusCode: Int): String? {
         if (statusCode != 403) return null
         if (!isRpUrl(url)) return null
@@ -157,10 +210,19 @@ class EnrichmentService(
     private fun enrichHtml(url: String, html: String): EnrichmentResult {
         val doc = Jsoup.parse(html, url)
         val title = metaContent(doc, "meta[property=og:title]") ?: doc.title().normalized()
-        val thumbnail = absoluteOrRawMetaContent(doc, "meta[property=og:image]")
-        val lead = metaContent(doc, "meta[property=og:description]") ?: metaContent(doc, "meta[name=description]")
+        val thumbnail = firstMetaImage(
+            doc,
+            "meta[property=og:image]",
+            "meta[property=og:image:url]",
+            "meta[name=twitter:image]",
+            "meta[property=twitter:image]",
+        )
+        val facebookPostText = parseFacebookEmbeddedMessageText(url, doc)
+        val lead = facebookPostText
+            ?: metaContent(doc, "meta[property=og:description]")
+            ?: metaContent(doc, "meta[name=description]")
         val publishedAt = parsePublishedAt(url, doc)
-        val plainText = doc.body().text().normalized()
+        val plainText = facebookPostText ?: doc.body().text().normalized()
 
         return EnrichmentResult(
             title = title,
@@ -279,6 +341,100 @@ class EnrichmentService(
         return null
     }
 
+    private fun parseFacebookEmbeddedMessageText(url: String, doc: org.jsoup.nodes.Document): String? {
+        if (!isFacebookDocument(url, doc)) return null
+
+        val html = doc.html()
+        return facebookMessageCandidates(html, storyMessagesOnly = true)
+            .ifEmpty { facebookMessageCandidates(html, storyMessagesOnly = false) }
+            .maxByOrNull { facebookMessageScore(it) }
+    }
+
+    private fun facebookMessageCandidates(html: String, storyMessagesOnly: Boolean): List<String> {
+        val candidates = mutableListOf<String>()
+        var index = 0
+        while (index in html.indices && candidates.size < MAX_FACEBOOK_MESSAGE_CANDIDATES) {
+            val markerIndex = html.indexOf(if (storyMessagesOnly) """"message"""" else """"text"""", index)
+            if (markerIndex < 0) break
+
+            val textKeyIndex = if (storyMessagesOnly) {
+                val searchEnd = (markerIndex + FACEBOOK_MESSAGE_SEARCH_WINDOW).coerceAtMost(html.length)
+                html.indexOf(""""text"""", markerIndex).takeIf { it >= 0 && it < searchEnd }
+            } else {
+                markerIndex
+            }
+
+            if (textKeyIndex != null) {
+                extractJsonStringValue(html, textKeyIndex)
+                    ?.let { decodeJsonString(it) }
+                    ?.normalized()
+                    ?.takeIf { it.length >= MIN_FACEBOOK_MESSAGE_LENGTH }
+                    ?.let { candidates += it }
+            }
+
+            index = markerIndex + 1
+        }
+        return candidates
+    }
+
+    private fun extractJsonStringValue(html: String, keyIndex: Int): String? {
+        val colonIndex = html.indexOf(':', keyIndex)
+        if (colonIndex < 0) return null
+
+        var valueStart = colonIndex + 1
+        while (valueStart < html.length && html[valueStart].isWhitespace()) {
+            valueStart++
+        }
+        if (valueStart >= html.length || html[valueStart] != '"') return null
+
+        val raw = StringBuilder()
+        var escaped = false
+        var index = valueStart + 1
+        while (index < html.length && raw.length <= MAX_FACEBOOK_MESSAGE_RAW_LENGTH) {
+            val char = html[index]
+            when {
+                escaped -> {
+                    raw.append('\\').append(char)
+                    escaped = false
+                }
+                char == '\\' -> escaped = true
+                char == '"' -> return raw.toString()
+                else -> raw.append(char)
+            }
+            index++
+        }
+
+        return null
+    }
+
+    private fun isFacebookDocument(url: String, doc: org.jsoup.nodes.Document): Boolean {
+        if (isFacebookHost(url)) return true
+
+        val ogUrl = metaContent(doc, "meta[property=og:url]") ?: doc.selectFirst("link[rel=canonical]")?.attr("href")
+        return ogUrl?.let { isFacebookHost(it) } == true
+    }
+
+    private fun isFacebookHost(url: String): Boolean {
+        val uri = runCatching { URI(url) }.getOrNull() ?: return false
+        val host = uri.host?.lowercase() ?: return false
+        return host == "facebook.com" || host.endsWith(".facebook.com")
+    }
+
+    private fun decodeJsonString(value: String): String? =
+        try {
+            JSON_MAPPER.readValue("\"$value\"", String::class.java)
+        } catch (_: Exception) {
+            null
+        }
+
+    private fun facebookMessageScore(value: String): Int {
+        var score = value.length.coerceAtMost(2_000)
+        if (value.contains('\n')) score += 500
+        if (value.contains("http://") || value.contains("https://")) score += 500
+        if (value.contains("więcej", ignoreCase = true) || value.contains("wiecej", ignoreCase = true)) score += 300
+        return score
+    }
+
     private fun knownPublishedAtForUrl(url: String): Instant? =
         if (url.contains("2380672702377664")) {
             Instant.parse("2005-11-28T00:00:00Z")
@@ -298,13 +454,22 @@ class EnrichmentService(
         return element.attr("content").normalized()
     }
 
+    private fun firstMetaImage(doc: org.jsoup.nodes.Document, vararg selectors: String): String? =
+        selectors.firstNotNullOfOrNull { selector -> absoluteOrRawMetaContent(doc, selector) }
+
     private fun String?.normalized(): String? = this?.trim()?.takeIf { it.isNotEmpty() }
 
     companion object {
         private const val CONNECT_TIMEOUT_MS = 3_000
         private const val READ_TIMEOUT_MS = 5_000
+        private const val MIN_FACEBOOK_MESSAGE_LENGTH = 12
+        private const val MAX_FACEBOOK_MESSAGE_CANDIDATES = 500
+        private const val MAX_FACEBOOK_MESSAGE_RAW_LENGTH = 20_000
+        private const val FACEBOOK_MESSAGE_SEARCH_WINDOW = 2_000
         private const val BROWSER_USER_AGENT =
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+        private const val MOBILE_SAFARI_USER_AGENT =
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1"
         private const val FACEBOOK_CRAWLER_USER_AGENT =
             "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
         private val JSON_MAPPER = ObjectMapper()
@@ -411,6 +576,70 @@ private fun facebookMbasicUrl(url: String): String? {
     return "https://mbasic.facebook.com$path$query"
 }
 
+internal fun readerUrl(url: String): String? {
+    val uri = runCatching { URI(url) }.getOrNull() ?: return null
+    if (uri.scheme != "http" && uri.scheme != "https") return null
+    return "https://r.jina.ai/http://$url"
+}
+
+internal fun parseReaderMarkdownResult(url: String, text: String): EnrichmentResult {
+    val title = text.lineSequence()
+        .firstOrNull { it.startsWith(READER_TITLE_PREFIX) }
+        ?.removePrefix(READER_TITLE_PREFIX)
+        ?.normalizedText()
+    val publishedAt = text.lineSequence()
+        .firstOrNull { it.startsWith(READER_PUBLISHED_PREFIX) }
+        ?.removePrefix(READER_PUBLISHED_PREFIX)
+        ?.let { parseReaderInstant(it.trim()) }
+    val content = text.substringAfter(READER_MARKDOWN_MARKER, missingDelimiterValue = text)
+        .trim()
+        .normalizedText()
+    val lead = content?.lineSequence()
+        ?.map { cleanReaderMarkdownLine(it) }
+        ?.firstOrNull { isUsefulReaderLeadLine(it) }
+
+    return EnrichmentResult(
+        title = title ?: url,
+        thumbnail = null,
+        lead = lead,
+        publishedAt = publishedAt,
+        plainText = content,
+    )
+}
+
+private fun parseReaderInstant(value: String?): Instant? {
+    if (value.isNullOrBlank()) return null
+    return try {
+        Instant.parse(value)
+    } catch (_: Exception) {
+        try {
+            LocalDate.parse(value).atStartOfDay(ZoneOffset.UTC).toInstant()
+        } catch (_: Exception) {
+            null
+        }
+    }
+}
+
+private fun cleanReaderMarkdownLine(value: String): String =
+    value.trim()
+        .removePrefix("#")
+        .removePrefix("#")
+        .removePrefix("#")
+        .trim()
+        .replace(MARKDOWN_LINK_PATTERN, "$2")
+        .normalizedText()
+        .orEmpty()
+
+private fun isUsefulReaderLeadLine(value: String): Boolean =
+    value.length >= MIN_READER_LEAD_LENGTH &&
+        !value.startsWith("*") &&
+        !value.startsWith("!") &&
+        !value.equals("Reklama", ignoreCase = true) &&
+        !value.equals("Autopromocja", ignoreCase = true) &&
+        !value.equals("Czytaj więcej", ignoreCase = true)
+
+private fun String?.normalizedText(): String? = this?.trim()?.takeIf { it.isNotEmpty() }
+
 private fun isRpUrl(url: String): Boolean {
     val uri = runCatching { URI(url) }.getOrNull() ?: return false
     val host = uri.host?.lowercase() ?: return false
@@ -418,9 +647,23 @@ private fun isRpUrl(url: String): Boolean {
     return host == "rp.pl" || host.endsWith(".rp.pl")
 }
 
+internal fun shouldUseReutersMobileFallback(url: String, statusCode: Int): Boolean {
+    if (statusCode != 401) return false
+
+    val uri = runCatching { URI(url) }.getOrNull() ?: return false
+    val host = uri.host?.lowercase() ?: return false
+    return host == "reut.rs" || host == "reuters.com" || host.endsWith(".reuters.com")
+}
+
 private fun isFacebookGenericError(responseBody: String): Boolean =
     responseBody.contains("<title>Error</title>", ignoreCase = true) ||
         responseBody.contains("Sorry, something went wrong", ignoreCase = true)
+
+private const val READER_TITLE_PREFIX = "Title: "
+private const val READER_PUBLISHED_PREFIX = "Published Time: "
+private const val READER_MARKDOWN_MARKER = "Markdown Content:"
+private const val MIN_READER_LEAD_LENGTH = 30
+private val MARKDOWN_LINK_PATTERN = Regex("""!?\[([^\]]*)]\(([^)]*)\)""")
 
 
 /**

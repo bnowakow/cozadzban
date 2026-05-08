@@ -240,7 +240,9 @@ class ArticleOwnershipIT {
 
         val id = createArticle(url = url)
 
+        val article = articleRepository.findById(id).orElseThrow()
         val content = articleContentRepository.findById(id).orElseThrow()
+        assertEquals("Walka Trumpa z putinem wygląda tak.", article.title)
         assertEquals("Walka Trumpa z putinem wygląda tak.", content.content)
     }
 

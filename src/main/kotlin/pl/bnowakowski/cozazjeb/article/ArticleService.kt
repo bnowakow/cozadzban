@@ -87,7 +87,7 @@ class ArticleService(
                 url = url,
                 language = language,
                 quote = input.quote,
-                title = titleForSave(enrichment.title, contentForCache),
+                title = titleForSave(url, enrichment.title, contentForCache),
                 thumbnail = enrichment.thumbnail,
                 lead = enrichment.lead,
                 publishedAt = publishedAt,
@@ -111,7 +111,7 @@ class ArticleService(
                 url = url,
                 language = language,
                 quote = input.quote,
-                title = titleForSave(enrichment.title, contentForCache),
+                title = titleForSave(url, enrichment.title, contentForCache),
                 thumbnail = enrichment.thumbnail,
                 lead = enrichment.lead,
                 publishedAt = publishedAt,
@@ -184,7 +184,7 @@ class ArticleService(
         }
         val (newTitle, newThumbnail, newLead) = if (enrichmentForChangedUrl != null) {
             Triple(
-                titleForSave(enrichmentForChangedUrl.title, contentForChangedUrl),
+                titleForSave(newUrl, enrichmentForChangedUrl.title, contentForChangedUrl),
                 enrichmentForChangedUrl.thumbnail,
                 enrichmentForChangedUrl.lead,
             )
@@ -277,16 +277,18 @@ class ArticleService(
         return title?.trim()?.takeIf { it.isNotBlank() }
     }
 
-    private fun titleForSave(title: String?, contentForCache: String?): String? {
+    private fun titleForSave(url: String, title: String?, contentForCache: String?): String? {
         val normalizedTitle = title?.trim()?.takeIf { it.isNotBlank() }
-        if (normalizedTitle != GENERIC_FACEBOOK_TITLE) return normalizedTitle
-
-        return contentForCache
+        val cacheExcerpt = contentForCache
             ?.replace(Regex("\\s+"), " ")
             ?.trim()
             ?.takeIf { it.isNotBlank() && it != GENERIC_FACEBOOK_TITLE }
             ?.let { excerpt(it, ARTICLE_TITLE_EXCERPT_LENGTH) }
-            ?: normalizedTitle
+
+        if (isFacebookPostUrl(url) && cacheExcerpt != null) return cacheExcerpt
+        if (normalizedTitle != GENERIC_FACEBOOK_TITLE) return normalizedTitle
+
+        return cacheExcerpt ?: normalizedTitle
     }
 
     private fun excerpt(text: String, maxLength: Int): String =
@@ -314,6 +316,13 @@ class ArticleService(
         val path = uri.path ?: return false
 
         return isFacebookUrl(url) && (path.contains("/videos/") || path.contains("/reel/"))
+    }
+
+    private fun isFacebookPostUrl(url: String): Boolean {
+        val uri = runCatching { URI(url) }.getOrNull() ?: return false
+        val path = uri.path ?: return false
+
+        return isFacebookUrl(url) && path.contains("/posts/")
     }
 
     private fun isFacebookUrl(url: String): Boolean {

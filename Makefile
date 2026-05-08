@@ -1,5 +1,5 @@
 
-.PHONY: help docker-up docker-down docker-pg-nuke build run run-local run-prod test clean docker-logs docker-pg-shell docker-upgrade bump-version bump-patch bump-minor
+.PHONY: help docker-up docker-down docker-pg-nuke docker-pg-backup build run run-local run-prod test clean docker-logs docker-pg-shell docker-upgrade bump-version bump-patch bump-minor
 
 -include .env
 
@@ -12,6 +12,7 @@ help:
 	@echo "  docker-up       Start local infrastructure from compose.yaml"
 	@echo "  docker-down     Stop and remove local infrastructure containers"
 	@echo "  docker-pg-nuke  Recreate PostgreSQL container and reset docker-data/postgres"
+	@echo "  docker-pg-backup Dump PostgreSQL and zip it into docker-data/backup/postgres"
 	@echo "  build           Build the project (skip tests)"
 	@echo "  run             Run Spring Boot with SPRING_PROFILES_ACTIVE from .env"
 	@echo "  run-local       Run Spring Boot with local profile"
@@ -58,6 +59,19 @@ docker-pg-nuke:
 	fi
 	@mkdir -p ./docker-data/postgres
 	$(MAKE) docker-up
+
+# Dump PostgreSQL from the running compose container and store a timestamped zip.
+docker-pg-backup:
+	@mkdir -p ./docker-data/backup/postgres
+	@timestamp=$$(date +"%Y-%m-%d_%H-%M-%S"); \
+	base="cozazjeb-postgres-$$timestamp"; \
+	sql_path="./docker-data/backup/postgres/$$base.sql"; \
+	zip_path="./docker-data/backup/postgres/$$base.zip"; \
+	echo "Dumping PostgreSQL database '$(POSTGRES_DB)' to $$sql_path ..."; \
+	docker compose -f compose.yaml exec -T postgres pg_dump -U "$(POSTGRES_USER)" -d "$(POSTGRES_DB)" --clean --if-exists > "$$sql_path"; \
+	zip -j "$$zip_path" "$$sql_path" >/dev/null; \
+	rm "$$sql_path"; \
+	echo "✓ Backup written to $$zip_path"
 
 # Build the project (skip tests)
 build:

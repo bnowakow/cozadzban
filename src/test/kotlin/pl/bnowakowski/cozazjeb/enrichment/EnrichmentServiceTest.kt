@@ -95,6 +95,94 @@ class EnrichmentServiceTest {
     }
 
     @Test
+    fun `uses Reuters mobile fallback only for Reuters 401 responses`() {
+        assertEquals(true, shouldUseReutersMobileFallback("https://reut.rs/4oRr7wu", HttpURLConnection.HTTP_UNAUTHORIZED))
+        assertEquals(true, shouldUseReutersMobileFallback("https://www.reuters.com/world/example/", HttpURLConnection.HTTP_UNAUTHORIZED))
+        assertEquals(false, shouldUseReutersMobileFallback("https://example.com/article", HttpURLConnection.HTTP_UNAUTHORIZED))
+        assertEquals(false, shouldUseReutersMobileFallback("https://reut.rs/4oRr7wu", HttpURLConnection.HTTP_FORBIDDEN))
+    }
+
+    @Test
+    fun `builds reader fallback URL only for HTTP URLs`() {
+        assertEquals(
+            "https://r.jina.ai/http://https://www.rp.pl/example",
+            readerUrl("https://www.rp.pl/example"),
+        )
+        assertEquals(null, readerUrl("ftp://www.rp.pl/example"))
+    }
+
+    @Test
+    fun `parses reader fallback title published time and content`() {
+        val result = parseReaderMarkdownResult(
+            url = "https://www.rp.pl/example",
+            text = """
+                Title: Czy Pete Hegseth nakazał dobijać ocalałych? Kongres sprawdzi doniesienia „Washington Post” - rp.pl
+
+                URL Source: https://www.rp.pl/example
+
+                Published Time: 2025-12-01T11:12:00+01:00
+
+                Markdown Content:
+                ## Z tego artykułu dowiesz się:
+
+                *   Punkt listy
+
+                Amerykanie od 2 września prowadzą na wodach międzynarodowych ataki na łodzie.
+            """.trimIndent(),
+        )
+
+        assertEquals("Czy Pete Hegseth nakazał dobijać ocalałych? Kongres sprawdzi doniesienia „Washington Post” - rp.pl", result.title)
+        assertEquals(Instant.parse("2025-12-01T10:12:00Z"), result.publishedAt)
+        assertEquals(
+            "Amerykanie od 2 września prowadzą na wodach międzynarodowych ataki na łodzie.",
+            result.lead,
+        )
+    }
+
+    @Test
+    fun `extracts thumbnail from Facebook og image`() {
+        val expectedThumbnail = "https://lookaside.fbsbx.com/lookaside/crawler/media/?media_id=1605899074085738"
+        val html = """
+            <!doctype html>
+            <html>
+              <head>
+                <meta property="og:url" content="https://www.facebook.com/wysokienapieciepl/posts/pfbid0TFpq7SGQtgZvDuMdZQskpMHCABrxHznrNeKkGoz4VpHDuVk5c6bd1BGT2j1XredMl">
+                <meta property="og:title" content="WysokieNapiecie.pl">
+                <meta property="og:image" content="$expectedThumbnail">
+              </head>
+              <body>Post</body>
+            </html>
+        """.trimIndent()
+
+        withServer(html) { url ->
+            val result = EnrichmentService(RestClient.builder()).enrich(url)
+
+            assertEquals(expectedThumbnail, result.thumbnail)
+        }
+    }
+
+    @Test
+    fun `extracts thumbnail from twitter image when og image is missing`() {
+        val expectedThumbnail = "https://lookaside.fbsbx.com/lookaside/crawler/media/?media_id=1605899074085738"
+        val html = """
+            <!doctype html>
+            <html>
+              <head>
+                <meta property="og:title" content="WysokieNapiecie.pl">
+                <meta name="twitter:image" content="$expectedThumbnail">
+              </head>
+              <body>Post</body>
+            </html>
+        """.trimIndent()
+
+        withServer(html) { url ->
+            val result = EnrichmentService(RestClient.builder()).enrich(url)
+
+            assertEquals(expectedThumbnail, result.thumbnail)
+        }
+    }
+
+    @Test
     fun `extracts Facebook embedded publish timestamp`() {
         val html = """
             <!doctype html>
@@ -113,6 +201,66 @@ class EnrichmentServiceTest {
             val result = EnrichmentService(RestClient.builder()).enrich(url)
 
             assertEquals(Instant.parse("2025-11-08T19:43:24Z"), result.publishedAt)
+        }
+    }
+
+    @Test
+    fun `uses expanded Facebook embedded message instead of see more teaser`() {
+        val expected = "Kiedy uciekasz przed więzieniem do Budapesztu, ale ten Budapeszt to trochę jak więzienie.\n\n" +
+            "więcej: https://www.donald.pl/artykuly/tCWEBCLq/wegierski-gambit-posel-romanowski-z-uniewaznionymi-paszportami-ziobre-moze-czekac-to-samo"
+        val html = """
+            <!doctype html>
+            <html>
+              <head>
+                <meta property="og:url" content="https://www.facebook.com/serwisdonaldpl/posts/pfbid02fLBt8gqqFa59U1MmSiBsgz1zzE4EtNnPxmxrGsnFLXHsFgu2rSuZvgAxnpbpmwf6l">
+                <meta property="og:title" content="donald.pl">
+                <meta property="og:description" content="Kiedy uciekasz przed więzieniem do Budapesztu, ale ten Budapeszt to trochę jak więzienie. więcej:...">
+              </head>
+              <body>
+                <script type="application/json">
+                  {
+                    "post_id":"894176306277335",
+                    "actors":[],
+                    "message":{
+                      "__typename":"TextWithEntities",
+                      "text":"Kiedy uciekasz przed wi\u0119zieniem do Budapesztu, ale ten Budapeszt to troch\u0119 jak wi\u0119zienie.\n\nwi\u0119cej: https:\/\/www.donald.pl\/artykuly\/tCWEBCLq\/wegierski-gambit-posel-romanowski-z-uniewaznionymi-paszportami-ziobre-moze-czekac-to-samo"
+                    }
+                  }
+                </script>
+              </body>
+            </html>
+        """.trimIndent()
+
+        withServer(html) { url ->
+            val result = EnrichmentService(RestClient.builder()).enrich(url)
+
+            assertEquals(expected, result.lead)
+            assertEquals(expected, result.plainText)
+        }
+    }
+
+    @Test
+    fun `extracts Facebook embedded message from large payload without regex overflow`() {
+        val expected = "Niebezpiecznik post body with enough text to cache safely."
+        val noise = "x".repeat(25_000)
+        val html = """
+            <!doctype html>
+            <html>
+              <head>
+                <meta property="og:url" content="https://www.facebook.com/niebezpiecznik/posts/pfbid02zG5UuLqFzVEeBHi4dLqX1kX96z3JhCpLE6mCZgrT4TjbrGzQzsP1wYMhGjWRcdQFl">
+                <meta property="og:title" content="Niebezpiecznik">
+                <meta property="og:description" content="Niebezpiecznik post body...">
+              </head>
+              <body>
+                <script type="application/json">{"noise":"$noise","message":{"__typename":"TextWithEntities","text":"$expected"}}</script>
+              </body>
+            </html>
+        """.trimIndent()
+
+        withServer(html) { url ->
+            val result = EnrichmentService(RestClient.builder()).enrich(url)
+
+            assertEquals(expected, result.lead)
         }
     }
 

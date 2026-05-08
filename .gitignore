@@ -7,7 +7,9 @@ target/
 !gradle/wrapper/gradle-wrapper.jar
 !**/src/main/**/build/
 !**/src/test/**/build/
-docker-data/
+docker-data/*
+docker-data/backup/*
+docker-data/backup/postgres/*
 src/main/frontend/generated/
 
 ### STS ###

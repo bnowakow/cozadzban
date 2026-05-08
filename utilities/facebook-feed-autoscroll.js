@@ -1,5 +1,5 @@
 (() => {
-  const durationMs = 2 * 60 * 1000;
+  const durationMs = 8 * 60 * 1000;
   const stepPx = 900;
   const intervalMs = 1200;
   const start = Date.now();
