@@ -36,12 +36,11 @@ class ArticleContentRepositoryCustomImpl(
 
     override fun insert(content: ArticleContent) {
         jdbc.update(
-            "INSERT INTO article_content (article_id, content, truncated, captured_at) VALUES (:articleId, :content, :truncated, :capturedAt)",
+            "INSERT INTO article_content (article_id, content, truncated) VALUES (:articleId, :content, :truncated)",
             mapOf(
                 "articleId" to content.articleId,
                 "content" to content.content,
                 "truncated" to content.truncated,
-                "capturedAt" to content.capturedAt,
             ),
         )
     }
