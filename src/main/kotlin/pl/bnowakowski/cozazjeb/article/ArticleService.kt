@@ -206,7 +206,7 @@ class ArticleService(
         val storedText = if (truncated) String(bytes, 0, MAX_CONTENT_BYTES, Charsets.UTF_8) else plainText
         // Upsert: replace any existing content row for this article
         articleContentRepository.deleteByArticleId(articleId)
-        articleContentRepository.save(ArticleContent(articleId = articleId, content = storedText, truncated = truncated))
+        articleContentRepository.insert(ArticleContent(articleId = articleId, content = storedText, truncated = truncated, capturedAt = java.time.Instant.now()))
     }
 
     companion object {

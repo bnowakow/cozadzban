@@ -12,6 +12,7 @@ interface ArticleContentRepository : CrudRepository<ArticleContent, Long>, Artic
 interface ArticleContentRepositoryCustom {
     fun existsByArticleId(articleId: Long): Boolean
     fun deleteByArticleId(articleId: Long)
+    fun insert(content: ArticleContent)
 }
 
 @Repository
@@ -30,6 +31,18 @@ class ArticleContentRepositoryCustomImpl(
         jdbc.update(
             "DELETE FROM article_content WHERE article_id = :id",
             mapOf("id" to articleId),
+        )
+    }
+
+    override fun insert(content: ArticleContent) {
+        jdbc.update(
+            "INSERT INTO article_content (article_id, content, truncated, captured_at) VALUES (:articleId, :content, :truncated, :capturedAt)",
+            mapOf(
+                "articleId" to content.articleId,
+                "content" to content.content,
+                "truncated" to content.truncated,
+                "capturedAt" to content.capturedAt,
+            ),
         )
     }
 }
