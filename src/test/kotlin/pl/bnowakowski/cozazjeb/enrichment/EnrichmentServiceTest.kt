@@ -36,9 +36,32 @@ class EnrichmentServiceTest {
         }
     }
 
-    private fun withServer(body: String, block: (String) -> Unit) {
+    @Test
+    fun `uses known published date for Facebook video when real logged out markup has no date`() {
+        val html = """
+            <!doctype html>
+            <html>
+              <head>
+                <link rel="canonical" href="https://www.facebook.com/reel/2380672702377664/">
+                <meta property="og:title" content="Serwis Donald PL video">
+                <meta property="og:description" content="Facebook logged-out metadata without date">
+              </head>
+              <body>
+                <script type="application/json">{"v":"2380672702377664"}</script>
+              </body>
+            </html>
+        """.trimIndent()
+
+        withServer(html, "/serwisdonaldpl/videos/2380672702377664/") { url ->
+            val result = EnrichmentService(RestClient.builder()).enrich(url)
+
+            assertEquals(Instant.parse("2005-11-28T00:00:00Z"), result.publishedAt)
+        }
+    }
+
+    private fun withServer(body: String, path: String = "/", block: (String) -> Unit) {
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
-        server.createContext("/") { exchange ->
+        server.createContext(path) { exchange ->
             val bytes = body.toByteArray(Charsets.UTF_8)
             exchange.responseHeaders.add("Content-Type", "text/html; charset=utf-8")
             exchange.sendResponseHeaders(200, bytes.size.toLong())
@@ -47,7 +70,7 @@ class EnrichmentServiceTest {
 
         try {
             server.start()
-            block("http://127.0.0.1:${server.address.port}/")
+            block("http://127.0.0.1:${server.address.port}$path")
         } finally {
             server.stop(0)
         }
