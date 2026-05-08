@@ -262,7 +262,7 @@ class ArticleService(
     private fun selectContentForCache(url: String, plainText: String?, lead: String?, title: String?): String? {
         knownContentForUrl(url)?.let { return it }
 
-        val cachePlainText = if (isFacebookVideoOrReelUrl(url)) null else plainText
+        val cachePlainText = if (isFacebookUrl(url)) null else plainText
         val socialTitleContent = facebookVideoTitleContent(url, title)
         val bodyCandidates = listOfNotNull(cachePlainText, lead, socialTitleContent)
             .map { it.trim() }
@@ -291,11 +291,16 @@ class ArticleService(
 
     private fun isFacebookVideoOrReelUrl(url: String): Boolean {
         val uri = runCatching { URI(url) }.getOrNull() ?: return false
-        val host = uri.host?.lowercase() ?: return false
         val path = uri.path ?: return false
 
-        return (host == "facebook.com" || host.endsWith(".facebook.com")) &&
-            (path.contains("/videos/") || path.contains("/reel/"))
+        return isFacebookUrl(url) && (path.contains("/videos/") || path.contains("/reel/"))
+    }
+
+    private fun isFacebookUrl(url: String): Boolean {
+        val uri = runCatching { URI(url) }.getOrNull() ?: return false
+        val host = uri.host?.lowercase() ?: return false
+
+        return host == "facebook.com" || host.endsWith(".facebook.com")
     }
 
     private fun contentQualityScore(text: String): Int {

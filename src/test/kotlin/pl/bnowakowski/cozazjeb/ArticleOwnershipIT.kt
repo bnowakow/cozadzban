@@ -223,6 +223,26 @@ class ArticleOwnershipIT {
     }
 
     @Test
+    fun `cache uses Facebook post description instead of noisy page body`() {
+        val url = "https://www.facebook.com/akurasinski/posts/pfbid033CLUhJTuKWPiYspPP2womaWEF7vH9yHSTED9EkLpHNrPmoZzjEyUQ25aJrHZP3sul"
+
+        whenever(enrichmentService.enrich(any())).thenReturn(
+            EnrichmentResult(
+                title = "Artur Kurasiński",
+                thumbnail = "https://lookaside.fbsbx.com/lookaside/crawler/media/?media_id=24927665580224675",
+                lead = "Walka Trumpa z putinem wygląda tak.",
+                plainText = "Facebook Bootloader CometResourceScheduler VideoPlayerStateBasedLoggingEvents publish_time",
+                publishedAt = Instant.parse("2025-11-08T19:43:24Z"),
+            ),
+        )
+
+        val id = createArticle(url = url)
+
+        val content = articleContentRepository.findById(id).orElseThrow()
+        assertEquals("Walka Trumpa z putinem wygląda tak.", content.content)
+    }
+
+    @Test
     fun `cache repairs known Other98 Facebook post from real provided data`() {
         val url = "https://www.facebook.com/TheOther98/posts/pfbid0yidDpVT2Xxb2cM56G33f91qTRSSYW1bpixPNNQ7DLkHdCUD5oEhRL58Mjmo3ierxl"
         val staleTeaser = "Pete Hegseth has fired 24 generals. Now he brings his wife to Pentagon meetings. " +

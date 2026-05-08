@@ -57,14 +57,25 @@ class EnrichmentService(
         .defaultHeader("Sec-Fetch-User", "?1")
         .build()
 
+    private val facebookCrawlerRestClient: RestClient = restClientBuilder
+        .requestFactory(
+            SimpleClientHttpRequestFactory().apply {
+                setConnectTimeout(CONNECT_TIMEOUT_MS)
+                setReadTimeout(READ_TIMEOUT_MS)
+            }
+        )
+        .defaultHeader(HttpHeaders.USER_AGENT, FACEBOOK_CRAWLER_USER_AGENT)
+        .defaultHeader(HttpHeaders.ACCEPT, "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+        .defaultHeader(HttpHeaders.ACCEPT_LANGUAGE, "pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7")
+        .build()
+
     fun enrich(url: String): EnrichmentResult {
         val html = try {
-            restClient.get()
-                .uri(url)
-                .retrieve()
-                .body(String::class.java)
-                ?: ""
+            fetchHtml(url)
         } catch (ex: RestClientResponseException) {
+            fetchFacebookCrawlerFallback(url, ex.statusCode.value(), ex.responseBodyAsString)?.let { fallbackHtml ->
+                return enrichHtml(url, fallbackHtml)
+            }
             recoverFacebookPostFromGenericError(url, ex.statusCode.value(), ex.responseBodyAsString)?.let {
                 return it
             }
@@ -94,6 +105,30 @@ class EnrichmentService(
             )
         }
 
+        return enrichHtml(url, html)
+    }
+
+    private fun fetchHtml(url: String, client: RestClient = restClient): String =
+        client.get()
+            .uri(url)
+            .retrieve()
+            .body(String::class.java)
+            ?: ""
+
+    private fun fetchFacebookCrawlerFallback(url: String, statusCode: Int, responseBody: String): String? {
+        if (statusCode != 400) return null
+        if (!isFacebookPfbidPostUrl(url)) return null
+        if (!isFacebookGenericError(responseBody)) return null
+
+        val fallbackUrl = facebookMbasicUrl(url) ?: return null
+        return try {
+            fetchHtml(fallbackUrl, facebookCrawlerRestClient)
+        } catch (_: RestClientException) {
+            null
+        }
+    }
+
+    private fun enrichHtml(url: String, html: String): EnrichmentResult {
         val doc = Jsoup.parse(html, url)
         val title = metaContent(doc, "meta[property=og:title]") ?: doc.title().normalized()
         val thumbnail = absoluteOrRawMetaContent(doc, "meta[property=og:image]")
@@ -138,6 +173,9 @@ class EnrichmentService(
 
         // 6. Visible social-page date text, e.g. Facebook can render "28 november 2005"
         parseVisibleDate(doc.body()?.text())?.let { return it }
+
+        // 7. Facebook logged-out pages can hide timestamps in embedded story JSON.
+        parseFacebookEmbeddedTimestamp(doc.html())?.let { return it }
 
         knownPublishedAtForUrl(url)?.let { return it }
 
@@ -199,6 +237,22 @@ class EnrichmentService(
         return null
     }
 
+    private fun parseFacebookEmbeddedTimestamp(html: String): Instant? {
+        FACEBOOK_PUBLISH_TIME_PATTERN.find(html)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.toLongOrNull()
+            ?.let { return Instant.ofEpochSecond(it) }
+
+        FACEBOOK_CREATION_TIME_PATTERN.find(html)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.toLongOrNull()
+            ?.let { return Instant.ofEpochSecond(it) }
+
+        return null
+    }
+
     private fun knownPublishedAtForUrl(url: String): Instant? =
         if (url.contains("2380672702377664")) {
             Instant.parse("2005-11-28T00:00:00Z")
@@ -225,7 +279,11 @@ class EnrichmentService(
         private const val READ_TIMEOUT_MS = 5_000
         private const val BROWSER_USER_AGENT =
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+        private const val FACEBOOK_CRAWLER_USER_AGENT =
+            "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
         private val JSON_MAPPER = ObjectMapper()
+        private val FACEBOOK_PUBLISH_TIME_PATTERN = Regex("""publish_time\\?":\s*(\d{10})""")
+        private val FACEBOOK_CREATION_TIME_PATTERN = Regex("""creation_time\\?":\s*(\d{10})""")
         private val VISIBLE_DATE_PATTERN = Regex(
             """(?i)\b([0-3]?\d)\s+([a-ząćęłńóśźż]+)\s+((?:19|20)\d{2})\b""",
         )
@@ -316,6 +374,15 @@ private fun isFacebookPfbidPostUrl(url: String): Boolean {
 
     return (host == "facebook.com" || host.endsWith(".facebook.com")) &&
         path.contains("/posts/pfbid")
+}
+
+private fun facebookMbasicUrl(url: String): String? {
+    val uri = runCatching { URI(url) }.getOrNull() ?: return null
+    if (!isFacebookPfbidPostUrl(url)) return null
+
+    val path = uri.rawPath ?: return null
+    val query = uri.rawQuery?.let { "?$it" }.orEmpty()
+    return "https://mbasic.facebook.com$path$query"
 }
 
 private fun isFacebookGenericError(responseBody: String): Boolean =

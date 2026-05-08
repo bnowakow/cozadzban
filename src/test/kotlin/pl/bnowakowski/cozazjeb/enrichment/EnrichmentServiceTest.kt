@@ -94,6 +94,28 @@ class EnrichmentServiceTest {
         assertEquals("Facebook post", result?.title)
     }
 
+    @Test
+    fun `extracts Facebook embedded publish timestamp`() {
+        val html = """
+            <!doctype html>
+            <html>
+              <head>
+                <meta property="og:title" content="Artur Kurasiński">
+                <meta property="og:description" content="Walka Trumpa z putinem wygląda tak.">
+              </head>
+              <body>
+                <script>{"publish_time\":1762631004,"creation_time\":1762652986}</script>
+              </body>
+            </html>
+        """.trimIndent()
+
+        withServer(html) { url ->
+            val result = EnrichmentService(RestClient.builder()).enrich(url)
+
+            assertEquals(Instant.parse("2025-11-08T19:43:24Z"), result.publishedAt)
+        }
+    }
+
     private fun withServer(body: String, path: String = "/", block: (String) -> Unit) {
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         server.createContext(path) { exchange ->
