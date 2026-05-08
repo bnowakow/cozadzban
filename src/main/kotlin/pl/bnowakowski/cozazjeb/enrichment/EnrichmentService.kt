@@ -5,6 +5,7 @@ package pl.bnowakowski.cozazjeb.enrichment
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.jsoup.Jsoup
+import org.springframework.http.HttpHeaders
 import org.springframework.http.client.SimpleClientHttpRequestFactory
 import org.springframework.stereotype.Service
 import org.springframework.web.client.ResourceAccessException
@@ -43,6 +44,9 @@ class EnrichmentService(
                 setReadTimeout(READ_TIMEOUT_MS)
             }
         )
+        .defaultHeader(HttpHeaders.USER_AGENT, BROWSER_USER_AGENT)
+        .defaultHeader(HttpHeaders.ACCEPT, "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+        .defaultHeader(HttpHeaders.ACCEPT_LANGUAGE, "pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7")
         .build()
 
     fun enrich(url: String): EnrichmentResult {
@@ -208,6 +212,8 @@ class EnrichmentService(
     companion object {
         private const val CONNECT_TIMEOUT_MS = 3_000
         private const val READ_TIMEOUT_MS = 5_000
+        private const val BROWSER_USER_AGENT =
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
         private val JSON_MAPPER = ObjectMapper()
         private val VISIBLE_DATE_PATTERN = Regex(
             """(?i)\b([0-3]?\d)\s+([a-ząćęłńóśźż]+)\s+((?:19|20)\d{2})\b""",

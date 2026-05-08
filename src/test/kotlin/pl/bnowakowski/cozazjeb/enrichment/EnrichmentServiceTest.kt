@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.springframework.web.client.RestClient
 import java.net.InetSocketAddress
+import java.net.HttpURLConnection
 import java.time.Instant
 
 class EnrichmentServiceTest {
@@ -59,6 +60,27 @@ class EnrichmentServiceTest {
         }
     }
 
+    @Test
+    fun `sends browser-like headers for sites that block generic clients`() {
+        val html = """
+            <!doctype html>
+            <html>
+              <head>
+                <meta property="og:title" content="RP article">
+                <meta property="article:published_time" content="2026-02-12T11:10:30Z">
+              </head>
+              <body>Article</body>
+            </html>
+        """.trimIndent()
+
+        withHeaderCheckingServer(html) { url ->
+            val result = EnrichmentService(RestClient.builder()).enrich(url)
+
+            assertEquals("RP article", result.title)
+            assertEquals(Instant.parse("2026-02-12T11:10:30Z"), result.publishedAt)
+        }
+    }
+
     private fun withServer(body: String, path: String = "/", block: (String) -> Unit) {
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         server.createContext(path) { exchange ->
@@ -71,6 +93,33 @@ class EnrichmentServiceTest {
         try {
             server.start()
             block("http://127.0.0.1:${server.address.port}$path")
+        } finally {
+            server.stop(0)
+        }
+    }
+
+    private fun withHeaderCheckingServer(body: String, block: (String) -> Unit) {
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/") { exchange ->
+            val userAgent = exchange.requestHeaders.getFirst("User-Agent").orEmpty()
+            val accept = exchange.requestHeaders.getFirst("Accept").orEmpty()
+            val acceptLanguage = exchange.requestHeaders.getFirst("Accept-Language").orEmpty()
+            if (!userAgent.contains("Mozilla/5.0") ||
+                !accept.contains("text/html") ||
+                !acceptLanguage.contains("pl-PL")
+            ) {
+                exchange.sendResponseHeaders(HttpURLConnection.HTTP_FORBIDDEN, -1)
+            } else {
+                val bytes = body.toByteArray(Charsets.UTF_8)
+                exchange.responseHeaders.add("Content-Type", "text/html; charset=utf-8")
+                exchange.sendResponseHeaders(HttpURLConnection.HTTP_OK, bytes.size.toLong())
+                exchange.responseBody.use { it.write(bytes) }
+            }
+        }
+
+        try {
+            server.start()
+            block("http://127.0.0.1:${server.address.port}/")
         } finally {
             server.stop(0)
         }
