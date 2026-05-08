@@ -463,6 +463,12 @@ class ArticleListView(
         publishedAtPicker.width = "28rem"
         publishedAtPicker.value = article.publishedAt?.atOffset(ZoneOffset.UTC)?.toLocalDateTime()
 
+        val contentField = TextArea("Cached content (optional — paste full text to override)")
+        contentField.width = "28rem"
+        contentField.minHeight = "10rem"
+        contentField.maxHeight = "20rem"
+        contentField.value = articleService.getContent(article.id!!) ?: ""
+
         val submitButton = Button("Save")
         submitButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY)
 
@@ -477,6 +483,7 @@ class ArticleListView(
             val quote = quoteField.value?.trim()?.ifBlank { null }
             // publishedAt key always present: null clears, value sets
             val publishedAt = publishedAtPicker.value?.toInstant(ZoneOffset.UTC)
+            val content = contentField.value?.trim()
 
             if (language.isBlank()) { showError("Language is required"); return@addClickListener }
 
@@ -486,6 +493,7 @@ class ArticleListView(
                     "language" to language,
                     "quote" to quote,
                     "publishedAt" to publishedAt?.toString(),
+                    "content" to content,
                 )
                 articleService.patch(article.id!!, patch)
                 refreshData()
@@ -503,7 +511,7 @@ class ArticleListView(
         val actions = HorizontalLayout(submitButton, cancelButton)
         actions.defaultVerticalComponentAlignment = Alignment.END
 
-        dialog.add(VerticalLayout(languageField, quoteField, publishedAtPicker, actions))
+        dialog.add(VerticalLayout(languageField, quoteField, publishedAtPicker, contentField, actions))
         dialog.open()
     }
 

@@ -24,6 +24,10 @@ class ArticleService(
         articleRepository.findById(id).orElseThrow { NoSuchElementException("Article $id not found") }
 
     @Transactional(readOnly = true)
+    fun getContent(articleId: Long): String? =
+        articleContentRepository.findById(articleId).map { it.content }.orElse(null)
+
+    @Transactional(readOnly = true)
     fun findPage(
         page: Int,
         size: Int,
@@ -124,6 +128,7 @@ class ArticleService(
         val languagePresent = patch.containsKey("language")
         val quotePresent = patch.containsKey("quote")
         val publishedAtPresent = patch.containsKey("publishedAt")
+        val contentPresent = patch.containsKey("content")
 
         if (urlPresent && patch["url"] == null) throw IllegalArgumentException("url must not be null")
         if (languagePresent && patch["language"] == null) throw IllegalArgumentException("language must not be null")
@@ -176,7 +181,7 @@ class ArticleService(
             Triple(existing.title, existing.thumbnail, existing.lead)
         }
 
-        return articleRepository.save(
+        val saved = articleRepository.save(
             existing.copy(
                 url = newUrl,
                 language = newLanguage,
@@ -187,6 +192,17 @@ class ArticleService(
                 publishedAt = newPublishedAt,
             )
         )
+
+        if (contentPresent) {
+            val newContent = patch["content"] as? String
+            if (newContent.isNullOrBlank()) {
+                articleContentRepository.deleteByArticleId(saved.id!!)
+            } else {
+                preserveContent(saved.id!!, newContent)
+            }
+        }
+
+        return saved
     }
 
     fun delete(id: Long) {
