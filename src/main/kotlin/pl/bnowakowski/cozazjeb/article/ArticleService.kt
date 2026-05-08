@@ -217,6 +217,26 @@ class ArticleService(
         return saved
     }
 
+    fun refreshPublishedAt(id: Long): Article {
+        val existing = findById(id)
+        val enrichment = enrichmentService.enrich(existing.url)
+        val publishedAt = enrichment.publishedAt
+            ?: throw NoSuchElementException("No published date found on the article page")
+
+        return articleRepository.save(existing.copy(publishedAt = publishedAt))
+    }
+
+    fun refreshContentCache(id: Long): ArticleContent {
+        val existing = findById(id)
+        val enrichment = enrichmentService.enrich(existing.url)
+        val contentForCache = selectContentForCache(existing.url, enrichment.plainText, enrichment.lead, enrichment.title)
+            ?: throw NoSuchElementException("No cacheable content found on the article page")
+
+        preserveContent(id, contentForCache)
+        return articleContentRepository.findById(id)
+            .orElseThrow { NoSuchElementException("Content cache was not stored for article $id") }
+    }
+
     fun delete(id: Long) {
         if (!articleRepository.existsById(id)) throw NoSuchElementException("Article $id not found")
         articleRepository.deleteById(id)

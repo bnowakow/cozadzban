@@ -16,6 +16,7 @@ import org.mockito.kotlin.whenever
 import jakarta.annotation.security.RolesAllowed
 import pl.bnowakowski.cozazjeb.article.ArticleContentRepository
 import pl.bnowakowski.cozazjeb.article.ArticleRepository
+import pl.bnowakowski.cozazjeb.article.ArticleService
 import pl.bnowakowski.cozazjeb.user.AppUser
 import pl.bnowakowski.cozazjeb.user.AppUserService
 import pl.bnowakowski.cozazjeb.user.Role
@@ -24,6 +25,7 @@ import java.time.Instant
 class AdminViewTest {
 
     private val appUserService: AppUserService = mock()
+    private val articleService: ArticleService = mock()
     private val articleRepository: ArticleRepository = mock()
     private val articleContentRepository: ArticleContentRepository = mock()
 
@@ -52,7 +54,7 @@ class AdminViewTest {
         )
         whenever(articleContentRepository.findAll()).thenReturn(emptyList())
 
-        AdminView(appUserService, articleRepository, articleContentRepository)
+        AdminView(appUserService, articleService, articleRepository, articleContentRepository)
 
         verify(appUserService).list()
     }
@@ -62,7 +64,7 @@ class AdminViewTest {
         whenever(appUserService.list()).thenReturn(emptyList())
         whenever(articleContentRepository.findAll()).thenReturn(emptyList())
 
-        val view = AdminView(appUserService, articleRepository, articleContentRepository)
+        val view = AdminView(appUserService, articleService, articleRepository, articleContentRepository)
         val buttons = findComponents(view, Button::class.java)
 
         assertTrue(buttons.any { it.text == "Logout" })
@@ -74,7 +76,7 @@ class AdminViewTest {
         whenever(appUserService.list()).thenReturn(emptyList())
         whenever(articleContentRepository.findAll()).thenReturn(emptyList())
 
-        val view = AdminView(appUserService, articleRepository, articleContentRepository)
+        val view = AdminView(appUserService, articleService, articleRepository, articleContentRepository)
 
         val buttons = findComponents(view, Button::class.java)
         assertTrue(buttons.any { it.text == "Add user" })

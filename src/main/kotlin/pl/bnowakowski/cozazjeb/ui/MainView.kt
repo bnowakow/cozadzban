@@ -465,6 +465,9 @@ class ArticleListView(
         publishedAtPicker.width = "28rem"
         publishedAtPicker.value = article.publishedAt?.atOffset(ZoneOffset.UTC)?.toLocalDateTime()
 
+        val refreshPublishedAtButton = Button("Refresh published date")
+        refreshPublishedAtButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY)
+
         val contentField = TextArea("Cached content (optional — paste full text to override)")
         contentField.width = "28rem"
         contentField.minHeight = "10rem"
@@ -479,6 +482,20 @@ class ArticleListView(
 
         val dialog = Dialog()
         dialog.headerTitle = "Edit Article"
+
+        refreshPublishedAtButton.addClickListener {
+            refreshPublishedAtButton.isEnabled = false
+            try {
+                val updated = articleService.refreshPublishedAt(article.id!!)
+                publishedAtPicker.value = updated.publishedAt?.atOffset(ZoneOffset.UTC)?.toLocalDateTime()
+                refreshData()
+                showSuccess("Published date refreshed")
+            } catch (ex: Exception) {
+                showError(ex.message ?: "Failed to refresh published date")
+            } finally {
+                refreshPublishedAtButton.isEnabled = true
+            }
+        }
 
         submitButton.addClickListener {
             val language = languageField.value?.trim().orEmpty()
@@ -513,7 +530,7 @@ class ArticleListView(
         val actions = HorizontalLayout(submitButton, cancelButton)
         actions.defaultVerticalComponentAlignment = Alignment.END
 
-        dialog.add(VerticalLayout(languageField, quoteField, publishedAtPicker, contentField, actions))
+        dialog.add(VerticalLayout(languageField, quoteField, publishedAtPicker, refreshPublishedAtButton, contentField, actions))
         dialog.open()
     }
 

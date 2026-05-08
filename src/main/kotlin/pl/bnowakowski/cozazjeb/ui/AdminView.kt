@@ -29,6 +29,7 @@ import org.springframework.security.core.context.SecurityContextHolder
 import pl.bnowakowski.cozazjeb.article.ArticleContent
 import pl.bnowakowski.cozazjeb.article.ArticleContentRepository
 import pl.bnowakowski.cozazjeb.article.ArticleRepository
+import pl.bnowakowski.cozazjeb.article.ArticleService
 import pl.bnowakowski.cozazjeb.user.AppUser
 import pl.bnowakowski.cozazjeb.user.AppUserInput
 import pl.bnowakowski.cozazjeb.user.AppUserRolePatch
@@ -41,6 +42,7 @@ import pl.bnowakowski.cozazjeb.user.Role
 @RolesAllowed("ADMIN")
 class AdminView(
     private val appUserService: AppUserService,
+    private val articleService: ArticleService,
     private val articleRepository: ArticleRepository,
     private val articleContentRepository: ArticleContentRepository,
 ) : VerticalLayout() {
@@ -293,6 +295,9 @@ class AdminView(
         val closeButton = Button("Close")
         closeButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY)
 
+        val refreshButton = Button("Refresh cache from website")
+        refreshButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY)
+
         val dialog = Dialog()
         dialog.headerTitle = "Preserved content — article ${entry.articleId}"
         dialog.setWidth("80vw")
@@ -301,8 +306,21 @@ class AdminView(
         if (truncatedNote != null) content.addComponentAsFirst(truncatedNote)
         content.setSizeFull()
         dialog.add(content)
+        refreshButton.addClickListener {
+            refreshButton.isEnabled = false
+            try {
+                val refreshed = articleService.refreshContentCache(entry.articleId)
+                textArea.value = refreshed.content
+                refreshContentGrid()
+                showSuccess("Content cache refreshed")
+            } catch (ex: Exception) {
+                showError(ex.message ?: "Failed to refresh content cache")
+            } finally {
+                refreshButton.isEnabled = true
+            }
+        }
         closeButton.addClickListener { dialog.close() }
-        dialog.footer.add(closeButton)
+        dialog.footer.add(refreshButton, closeButton)
         dialog.open()
     }
 
