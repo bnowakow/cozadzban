@@ -262,7 +262,9 @@ class ArticleService(
     private fun selectContentForCache(url: String, plainText: String?, lead: String?, title: String?): String? {
         knownContentForUrl(url)?.let { return it }
 
-        val bodyCandidates = listOfNotNull(plainText, lead)
+        val cachePlainText = if (isFacebookVideoOrReelUrl(url)) null else plainText
+        val socialTitleContent = facebookVideoTitleContent(url, title)
+        val bodyCandidates = listOfNotNull(cachePlainText, lead, socialTitleContent)
             .map { it.trim() }
             .filter { it.isNotBlank() }
 
@@ -274,8 +276,27 @@ class ArticleService(
         return title?.trim()?.takeIf { it.isNotBlank() }
     }
 
+    private fun facebookVideoTitleContent(url: String, title: String?): String? {
+        if (!isFacebookVideoOrReelUrl(url)) return null
+        if (title.isNullOrBlank()) return null
+
+        return title
+            .substringAfter(" | ", title)
+            .trim()
+            .takeIf { it.isNotBlank() }
+    }
+
     private fun knownContentForUrl(url: String): String? =
         if (url == OTHER98_HEGSETH_FACEBOOK_URL) OTHER98_HEGSETH_FACEBOOK_CONTENT else null
+
+    private fun isFacebookVideoOrReelUrl(url: String): Boolean {
+        val uri = runCatching { URI(url) }.getOrNull() ?: return false
+        val host = uri.host?.lowercase() ?: return false
+        val path = uri.path ?: return false
+
+        return (host == "facebook.com" || host.endsWith(".facebook.com")) &&
+            (path.contains("/videos/") || path.contains("/reel/"))
+    }
 
     private fun contentQualityScore(text: String): Int {
         val lengthScore = text.length.coerceAtMost(20_000)

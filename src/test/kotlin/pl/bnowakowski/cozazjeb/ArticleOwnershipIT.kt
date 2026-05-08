@@ -187,6 +187,42 @@ class ArticleOwnershipIT {
     }
 
     @Test
+    fun `cache uses full Facebook video title metadata instead of truncated description`() {
+        val url = "https://www.facebook.com/serwisdonaldpl/videos/2380672702377664/"
+        val title = """
+            164 tys. wyświetleń · 2,3 tys. reakcji | Ciekawostka: Polska to taki kraj, w którym 99% ludzi ma mniej, niż trzy mieszkania. Za to niecały 1% ma więcej niż trzy mieszkania. No i teraz słuchajcie:
+
+            Borys Budka: Uważam, że podatek katastralny uderzyłby w osoby najbiedniejsze.
+
+            - Osoby najbiedniejsze nie mają 3 mieszkań.
+
+            Borys Budka: Ale to nie chodzi o ilość mieszkań, tylko o to, że podatek katastralny dotyczy wartości nieruchomości.
+
+            źródło: Radio Zet | donald.pl
+        """.trimIndent()
+        val expected = title.substringAfter(" | ")
+        val truncatedLead = """
+            Ciekawostka: Polska to taki kraj, w którym 99% ludzi ma mniej, niż trzy mieszkania. Za to niecały 1% ma więcej niż trzy mieszkania. No i teraz słuchajcie:
+
+            Borys Budka: Uważam, że podatek katastralny...
+        """.trimIndent()
+
+        whenever(enrichmentService.enrich(any())).thenReturn(
+            EnrichmentResult(
+                title = title,
+                thumbnail = null,
+                lead = truncatedLead,
+                plainText = "Facebook Bootloader VideoPlayerStateBasedLoggingEvents CometResourceScheduler",
+            ),
+        )
+
+        val id = createArticle(url = url)
+
+        val content = articleContentRepository.findById(id).orElseThrow()
+        assertEquals(expected, content.content)
+    }
+
+    @Test
     fun `cache repairs known Other98 Facebook post from real provided data`() {
         val url = "https://www.facebook.com/TheOther98/posts/pfbid0yidDpVT2Xxb2cM56G33f91qTRSSYW1bpixPNNQ7DLkHdCUD5oEhRL58Mjmo3ierxl"
         val staleTeaser = "Pete Hegseth has fired 24 generals. Now he brings his wife to Pentagon meetings. " +
