@@ -171,11 +171,11 @@ class EnrichmentService(
             ?.let { parseInstant(it) }
             ?.let { return it }
 
-        // 6. Visible social-page date text, e.g. Facebook can render "28 november 2005"
-        parseVisibleDate(doc.body()?.text())?.let { return it }
-
-        // 7. Facebook logged-out pages can hide timestamps in embedded story JSON.
+        // 6. Facebook logged-out pages can hide exact timestamps in embedded story JSON.
         parseFacebookEmbeddedTimestamp(doc.html())?.let { return it }
+
+        // 7. Visible social-page date text, e.g. Facebook can render "28 november 2005"
+        parseVisibleDate(doc.body()?.text())?.let { return it }
 
         knownPublishedAtForUrl(url)?.let { return it }
 
