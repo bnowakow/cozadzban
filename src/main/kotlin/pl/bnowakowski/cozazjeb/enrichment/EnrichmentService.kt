@@ -121,6 +121,9 @@ class EnrichmentService(
             ?.let { parseInstant(it) }
             ?.let { return it }
 
+        // 6. Visible social-page date text, e.g. Facebook can render "28 november 2005"
+        parseVisibleDate(doc.body()?.text())?.let { return it }
+
         return null
     }
 
@@ -161,6 +164,24 @@ class EnrichmentService(
         }
     }
 
+    private fun parseVisibleDate(text: String?): Instant? {
+        if (text.isNullOrBlank()) return null
+
+        for (match in VISIBLE_DATE_PATTERN.findAll(text)) {
+            val day = match.groupValues[1].toIntOrNull() ?: continue
+            val month = MONTHS[match.groupValues[2].lowercase()] ?: continue
+            val year = match.groupValues[3].toIntOrNull() ?: continue
+
+            try {
+                return LocalDate.of(year, month, day).atStartOfDay(ZoneOffset.UTC).toInstant()
+            } catch (_: Exception) {
+                // Keep scanning; visible page text can contain unrelated malformed dates.
+            }
+        }
+
+        return null
+    }
+
     // ── helpers ───────────────────────────────────────────────────────────────
 
     private fun metaContent(doc: org.jsoup.nodes.Document, selector: String): String? =
@@ -179,6 +200,59 @@ class EnrichmentService(
         private const val CONNECT_TIMEOUT_MS = 3_000
         private const val READ_TIMEOUT_MS = 5_000
         private val JSON_MAPPER = ObjectMapper()
+        private val VISIBLE_DATE_PATTERN = Regex(
+            """(?i)\b([0-3]?\d)\s+([a-ząćęłńóśźż]+)\s+((?:19|20)\d{2})\b""",
+        )
+        private val MONTHS = mapOf(
+            "january" to 1,
+            "jan" to 1,
+            "february" to 2,
+            "feb" to 2,
+            "march" to 3,
+            "mar" to 3,
+            "april" to 4,
+            "apr" to 4,
+            "may" to 5,
+            "june" to 6,
+            "jun" to 6,
+            "july" to 7,
+            "jul" to 7,
+            "august" to 8,
+            "aug" to 8,
+            "september" to 9,
+            "sep" to 9,
+            "sept" to 9,
+            "october" to 10,
+            "oct" to 10,
+            "november" to 11,
+            "nov" to 11,
+            "december" to 12,
+            "dec" to 12,
+            "styczeń" to 1,
+            "stycznia" to 1,
+            "luty" to 2,
+            "lutego" to 2,
+            "marzec" to 3,
+            "marca" to 3,
+            "kwiecień" to 4,
+            "kwietnia" to 4,
+            "maj" to 5,
+            "maja" to 5,
+            "czerwiec" to 6,
+            "czerwca" to 6,
+            "lipiec" to 7,
+            "lipca" to 7,
+            "sierpień" to 8,
+            "sierpnia" to 8,
+            "wrzesień" to 9,
+            "września" to 9,
+            "październik" to 10,
+            "października" to 10,
+            "listopad" to 11,
+            "listopada" to 11,
+            "grudzień" to 12,
+            "grudnia" to 12,
+        )
     }
 }
 
@@ -202,4 +276,3 @@ data class EnrichmentResult(
  * - extract og:title/<title>, og:image, og:description/meta[name=description]
  * - throw typed exception on non-2xx / timeout / unreachable
  */
-
