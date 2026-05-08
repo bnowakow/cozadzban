@@ -136,8 +136,9 @@ class ArticleListView(
             if (authenticatedUser?.role == Role.ADMIN) {
                 val manageUsersButton = Button("Manage users")
                 manageUsersButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY)
-                manageUsersButton.addClickListener { ui.ifPresent { it.navigate("admin") } }
-                HorizontalLayout(title, rssAnchor, addArticleButton, manageUsersButton, authButton)
+                val manageUsersLink = Anchor("/admin")
+                manageUsersLink.add(manageUsersButton)
+                HorizontalLayout(title, rssAnchor, addArticleButton, manageUsersLink, authButton)
             } else {
                 HorizontalLayout(title, rssAnchor, addArticleButton, authButton)
             }

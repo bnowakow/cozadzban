@@ -242,7 +242,7 @@ class ArticleService(
 
     private fun contentQualityScore(text: String): Int {
         val lengthScore = text.length.coerceAtMost(20_000)
-        val truncatedPenalty = if (looksTruncated(text)) 500 else 0
+        val truncatedPenalty = if (looksTruncated(text)) 10_000 else 0
         return lengthScore - truncatedPenalty
     }
 
