@@ -531,12 +531,29 @@ class ArticleListView(
     }
 
     private fun showSuccess(message: String) {
-        Notification.show(message, 3000, Notification.Position.TOP_END)
+        showNotification(message, 3000)
     }
 
     private fun showError(message: String) {
-        val notification = Notification.show(message, 4000, Notification.Position.TOP_END)
-        notification.addThemeVariants(NotificationVariant.LUMO_ERROR)
+        showNotification(message, 4000, NotificationVariant.LUMO_ERROR)
+    }
+
+    private fun showNotification(message: String, duration: Int, variant: NotificationVariant? = null) {
+        val notification = Notification()
+        notification.duration = duration
+        notification.position = Notification.Position.TOP_END
+        if (variant != null) {
+            notification.addThemeVariants(variant)
+        }
+
+        val closeButton = Button("Close")
+        closeButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY_INLINE)
+        closeButton.addClickListener { notification.close() }
+
+        val layout = HorizontalLayout(Span(message), closeButton)
+        layout.defaultVerticalComponentAlignment = Alignment.CENTER
+        notification.add(layout)
+        notification.open()
     }
 
     private fun logoutAndRedirect() {
