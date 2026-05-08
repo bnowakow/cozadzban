@@ -89,7 +89,7 @@ class ArticleService(
                 createdByUserId = creatorId,
             )
         )
-        val contentForCache = enrichment.plainText ?: enrichment.lead ?: enrichment.title
+        val contentForCache = selectContentForCache(enrichment.plainText, enrichment.lead, enrichment.title)
         preserveContent(article.id!!, contentForCache)
         return article
     }
@@ -112,7 +112,7 @@ class ArticleService(
                 publishedAt = publishedAt,
             )
         )
-        val contentForCache = enrichment.plainText ?: enrichment.lead ?: enrichment.title
+        val contentForCache = selectContentForCache(enrichment.plainText, enrichment.lead, enrichment.title)
         preserveContent(article.id!!, contentForCache)
         return article
     }
@@ -209,6 +209,28 @@ class ArticleService(
         // Upsert: replace any existing content row for this article
         articleContentRepository.deleteByArticleId(articleId)
         articleContentRepository.insert(ArticleContent(articleId = articleId, content = storedText, truncated = truncated, capturedAt = java.time.Instant.now()))
+    }
+
+    private fun selectContentForCache(plainText: String?, lead: String?, title: String?): String? {
+        val candidates = listOfNotNull(plainText, lead, title)
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+
+        if (candidates.isEmpty()) return null
+
+        return candidates.maxByOrNull { contentQualityScore(it) }
+    }
+
+    private fun contentQualityScore(text: String): Int {
+        val lengthScore = text.length.coerceAtMost(20_000)
+        val truncatedPenalty = if (looksTruncated(text)) 10_000 else 0
+        return lengthScore - truncatedPenalty
+    }
+
+    private fun looksTruncated(text: String): Boolean {
+        if (text.endsWith("...") || text.endsWith("…")) return true
+        // Mid-text teaser ellipsis is common in social snippets.
+        return text.contains("...") && text.length < 2_000
     }
 
     companion object {

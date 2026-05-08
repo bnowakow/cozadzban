@@ -129,6 +129,28 @@ class ArticleOwnershipIT {
     }
 
     @Test
+    fun `cache prefers rich lead over truncated plainText teaser`() {
+        val teaser = "Pete Hegseth has fired 24 generals. Now he brings his wife to Pentagon meetings..."
+        val fullLead = "Pete Hegseth has fired 24 generals. Now he brings his wife to Pentagon meetings. " +
+            "The Guardian published a major investigation Sunday. " +
+            "The headline finding: Hegseth's third wife, Jennifer Rauchet, has been showing up to Pentagon meetings."
+
+        whenever(enrichmentService.enrich(any())).thenReturn(
+            EnrichmentResult(
+                title = "Some title",
+                thumbnail = null,
+                lead = fullLead,
+                plainText = teaser,
+            ),
+        )
+
+        val id = createArticle(url = uniqueUrl("fb-rich-lead"))
+
+        val content = articleContentRepository.findById(id).orElseThrow()
+        assertEquals(fullLead, content.content)
+    }
+
+    @Test
     fun `article JSON response does not expose createdByUserId`() {
         mockMvc.post("/api/articles") {
             with(jwt().jwt { it.subject(adminEmail) })
