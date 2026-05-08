@@ -5,6 +5,8 @@ package pl.bnowakowski.cozazjeb
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.any
@@ -462,6 +464,9 @@ class ArticleOwnershipIT {
     @Test
     fun `refreshContentCache updates preserved content from enrichment`() {
         val id = createArticle(url = uniqueUrl("cache-refresh"))
+        val originalCapturedAt = articleContentRepository.findById(id).orElseThrow().capturedAt
+        assertNotNull(originalCapturedAt)
+
         whenever(enrichmentService.enrich(any())).thenReturn(
             EnrichmentResult(
                 title = "Updated title",
@@ -474,7 +479,12 @@ class ArticleOwnershipIT {
         val refreshed = articleService.refreshContentCache(id)
 
         assertEquals("Updated full cached content", refreshed.content)
-        assertEquals("Updated full cached content", articleContentRepository.findById(id).orElseThrow().content)
+        assertNotNull(refreshed.capturedAt)
+        assertTrue(!refreshed.capturedAt!!.isBefore(originalCapturedAt))
+
+        val stored = articleContentRepository.findById(id).orElseThrow()
+        assertEquals("Updated full cached content", stored.content)
+        assertEquals(refreshed.capturedAt, stored.capturedAt)
     }
 
     @Test

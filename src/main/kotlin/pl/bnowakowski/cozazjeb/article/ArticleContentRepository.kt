@@ -6,6 +6,7 @@ package pl.bnowakowski.cozazjeb.article
 import org.springframework.data.repository.CrudRepository
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Repository
+import java.sql.Timestamp
 
 interface ArticleContentRepository : CrudRepository<ArticleContent, Long>, ArticleContentRepositoryCustom
 
@@ -36,11 +37,15 @@ class ArticleContentRepositoryCustomImpl(
 
     override fun insert(content: ArticleContent) {
         jdbc.update(
-            "INSERT INTO article_content (article_id, content, truncated) VALUES (:articleId, :content, :truncated)",
+            """
+                INSERT INTO article_content (article_id, content, truncated, captured_at)
+                VALUES (:articleId, :content, :truncated, :capturedAt)
+            """.trimIndent(),
             mapOf(
                 "articleId" to content.articleId,
                 "content" to content.content,
                 "truncated" to content.truncated,
+                "capturedAt" to Timestamp.from(content.capturedAt ?: java.time.Instant.now()),
             ),
         )
     }
