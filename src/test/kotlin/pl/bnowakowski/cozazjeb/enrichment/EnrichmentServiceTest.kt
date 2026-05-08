@@ -94,15 +94,6 @@ class EnrichmentServiceTest {
         assertEquals("Facebook post", result?.title)
     }
 
-    @Test
-    fun `TEMP live exact Facebook pfbid generic 400 is recoverable`() {
-        val result = EnrichmentService(RestClient.builder()).enrich(
-            "https://www.facebook.com/akurasinski/posts/pfbid033CLUhJTuKWPiYspPP2womaWEF7vH9yHSTED9EkLpHNrPmoZzjEyUQ25aJrHZP3sul",
-        )
-
-        assertEquals("Facebook post", result.title)
-    }
-
     private fun withServer(body: String, path: String = "/", block: (String) -> Unit) {
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         server.createContext(path) { exchange ->
