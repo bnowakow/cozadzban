@@ -417,9 +417,12 @@ class ArticleService(
                 uri.path == "/" -> ""
                 else -> uri.path
             }
-            val query = uri.rawQuery?.let { "?$it" } ?: ""
+            val query = if (isFacebookHost(host)) "" else uri.rawQuery?.let { "?$it" } ?: ""
             return "$scheme://$authority$path$query"
         }
+
+        private fun isFacebookHost(host: String): Boolean =
+            host == "facebook.com" || host.endsWith(".facebook.com")
 
         private fun parseSortParam(sort: String): Pair<String, String> {
             val parts = sort.split(",")
