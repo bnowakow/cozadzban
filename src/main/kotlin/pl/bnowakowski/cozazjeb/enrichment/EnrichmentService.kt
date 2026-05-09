@@ -3,6 +3,7 @@
 
 package pl.bnowakowski.cozazjeb.enrichment
 
+import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.jsoup.Jsoup
 import org.springframework.http.HttpHeaders
@@ -325,8 +326,7 @@ class EnrichmentService(
                     else -> emptyList()
                 }
                 for (node in nodes) {
-                    val type = node.get("@type")?.asText()
-                    if (type == "Article" || type == "NewsArticle") {
+                    if (hasPublishableJsonLdType(node)) {
                         val datePublished = node.get("datePublished")?.asText()
                         parseInstant(datePublished)?.let { return it }
                     }
@@ -338,11 +338,20 @@ class EnrichmentService(
         return null
     }
 
-    private fun jsonGraphNodes(node: com.fasterxml.jackson.databind.JsonNode): List<com.fasterxml.jackson.databind.JsonNode> {
+    private fun jsonGraphNodes(node: JsonNode): List<JsonNode> {
         val graph = node.get("@graph") ?: return emptyList()
         if (!graph.isArray) return emptyList()
 
         return (0 until graph.size()).map { graph[it] }
+    }
+
+    private fun hasPublishableJsonLdType(node: JsonNode): Boolean {
+        val type = node.get("@type") ?: return false
+        if (type.isArray) {
+            return (0 until type.size()).any { type[it].asText() in PUBLISHABLE_JSON_LD_TYPES }
+        }
+
+        return type.asText() in PUBLISHABLE_JSON_LD_TYPES
     }
 
     /** Parses ISO-8601 instant or date-only string. Returns null on parse failure (not enrichment failure). */
@@ -541,6 +550,13 @@ class EnrichmentService(
         private const val FACEBOOK_CRAWLER_USER_AGENT =
             "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
         private val JSON_MAPPER = ObjectMapper()
+        private val PUBLISHABLE_JSON_LD_TYPES = setOf(
+            "Article",
+            "NewsArticle",
+            "BlogPosting",
+            "ClaimReview",
+            "WebPage",
+        )
         private val FACEBOOK_PUBLISH_TIME_PATTERN = Regex("""publish_time\\?":\s*(\d{10})""")
         private val FACEBOOK_CREATION_TIME_PATTERN = Regex("""creation_time\\?":\s*(\d{10})""")
         private val FACEBOOK_PLUGIN_POST_MESSAGE_PATTERN = Regex(
