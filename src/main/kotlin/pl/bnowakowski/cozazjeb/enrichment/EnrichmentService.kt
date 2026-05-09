@@ -545,9 +545,6 @@ class EnrichmentService(
             ?: metaContent(doc, "meta[name=twitter:title]")
             ?: metaContent(doc, "meta[property=twitter:title]")
             ?: doc.title().normalized()
-        val title = extractedTitle
-            ?.takeUnless { isGenericTitle(url, it) }
-            ?: fetchYoutubeOEmbedTitle(url)
         val thumbnail = firstMetaImage(
             doc,
             "meta[property=og:image]",
@@ -556,14 +553,25 @@ class EnrichmentService(
             "meta[property=twitter:image]",
         )?.takeUnless { isGenericInstagramThumbnail(url, it) }
         val facebookPostText = parseFacebookEmbeddedMessageText(url, html, doc)
-        val lead = facebookPostText
-            ?: (
-                metaContent(doc, "meta[property=og:description]")
-                    ?: metaContent(doc, "meta[name=description]")
-                )
-                ?.takeUnless { isGenericInstagramDescription(url, it) }
+        val metaDescription = metaContent(doc, "meta[property=og:description]")
+            ?: metaContent(doc, "meta[name=description]")
+        val lead = if (isFacebookVideoOrReelUrl(url)) {
+            metaDescription?.takeUnless { isGenericInstagramDescription(url, it) }
+                ?: facebookPostText
+        } else {
+            facebookPostText
+                ?: metaDescription?.takeUnless { isGenericInstagramDescription(url, it) }
+        }
+        val title = facebookVideoOrReelPostTextTitle(url, lead)
+            ?: extractedTitle
+                ?.takeUnless { isGenericTitle(url, it) }
+            ?: fetchYoutubeOEmbedTitle(url)
         val publishedAt = parsePublishedAt(url, doc)
-        val plainText = facebookPostText ?: doc.body().text().normalized()
+        val plainText = if (isFacebookVideoOrReelUrl(url)) {
+            lead ?: doc.body().text().normalized()
+        } else {
+            facebookPostText ?: doc.body().text().normalized()
+        }
 
         return EnrichmentResult(
             title = title,
@@ -722,6 +730,14 @@ class EnrichmentService(
         return facebookMessageCandidates(parsedHtml, storyMessagesOnly = true)
             .ifEmpty { facebookMessageCandidates(parsedHtml, storyMessagesOnly = false) }
             .maxByOrNull { facebookMessageScore(it) }
+    }
+
+    private fun facebookVideoOrReelPostTextTitle(url: String, text: String?): String? {
+        if (!isFacebookVideoOrReelUrl(url)) return null
+
+        return text
+            .normalized()
+            ?.takeIf { it.length >= MIN_FACEBOOK_MESSAGE_LENGTH || it.contains(Regex("""\p{L}""")) }
     }
 
     private fun parseFacebookPluginPostMessage(html: String): String? =

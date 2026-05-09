@@ -243,8 +243,28 @@ class EnrichmentServiceTest {
 
         val result = enrichHtml("https://www.facebook.com/reel/1648200636595572", html)
 
-        assertEquals("1.1M views, 3K reactions | $lead | Reuters", result.title)
+        assertEquals(lead, result.title)
         assertEquals(lead, result.lead)
+    }
+
+    @Test
+    fun `uses Facebook reel post text as title instead of metrics title`() {
+        val postText = "Viktor Orbán? Nie słyszałem… 🤡"
+        val html = """
+            <!doctype html>
+            <html>
+              <head>
+                <meta property="og:title" content="253 tys. wyświetleń · 5,2 tys. reakcji | ${postText.escapeHtmlAttribute()} | SokzBuraka">
+                <meta property="og:description" content="${postText.escapeHtmlAttribute()}">
+              </head>
+              <body>Facebook logged-out reel page chrome</body>
+            </html>
+        """.trimIndent()
+
+        val result = enrichHtml("https://www.facebook.com/reel/964254756224446", html)
+
+        assertEquals(postText, result.title)
+        assertEquals(postText, result.lead)
     }
 
     @Test
