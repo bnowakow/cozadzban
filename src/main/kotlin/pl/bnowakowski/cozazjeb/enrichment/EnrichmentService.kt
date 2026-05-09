@@ -196,6 +196,8 @@ class EnrichmentService(
         }
 
         val result = enrichHtml(url, html)
+        fetchBloombergReaderFallbackIfIncomplete(url, result)
+            ?.let { return parseReaderMarkdownResult(url, it) }
         return fetchSprinklrReaderFallbackIfIncomplete(url, result)
             ?.let { parseReaderMarkdownResult(url, it) }
             ?: result
@@ -297,6 +299,13 @@ class EnrichmentService(
 
     private fun fetchBloombergReaderFallback(url: String): String? {
         if (!isBloombergUrl(url)) return null
+
+        return fetchReaderFallback(url)
+    }
+
+    private fun fetchBloombergReaderFallbackIfIncomplete(url: String, result: EnrichmentResult): String? {
+        if (!isBloombergUrl(url)) return null
+        if (result.title != null && result.thumbnail != null && result.publishedAt != null) return null
 
         return fetchReaderFallback(url)
     }

@@ -268,6 +268,13 @@ class EnrichmentServiceTest {
     }
 
     @Test
+    fun `recognizes Bloomberg links for reader fallback`() {
+        assertEquals(true, isBloombergUrl("http://bloom.bg/41WfJW4"))
+        assertEquals(true, isBloombergUrl("https://www.bloomberg.com/news/articles/2026-04-07/example"))
+        assertEquals(false, isBloombergUrl("https://example.com/article"))
+    }
+
+    @Test
     fun `recognizes Sprinklr short links for reader fallback`() {
         assertEquals(true, isSprinklrShortUrl("http://spklr.io/6043EyVh7"))
         assertEquals(true, isSprinklrShortUrl("https://spklr.io/6043EyVh7"))
@@ -361,6 +368,33 @@ class EnrichmentServiceTest {
             "War reporter says Polymarket bettors pressured him to change article - The Washington Post",
             result.lead,
         )
+        assertEquals(thumbnail, result.thumbnail)
+    }
+
+    @Test
+    fun `parses Bloomberg reader fallback title published time thumbnail and lead`() {
+        val thumbnail = "https://assets.bwbx.io/images/users/iqjWHBFdfxIU/iXnD6rCw2QMI/v3/620x-1.jpg"
+        val result = parseReaderMarkdownResult(
+            url = "http://bloom.bg/41WfJW4",
+            text = """
+                Title: Vance Picks Fight With Europe Over Orban in Vote Endorsement
+
+                URL Source: http://bloom.bg/41WfJW4
+
+                Published Time: 2026-04-07T12:27:35.149Z
+
+                Markdown Content:
+                # Vance Picks Fight With Europe Over Orban in Vote Endorsement - Bloomberg
+
+                ![Image 2]($thumbnail)
+
+                Vice President JD Vance criticized the European Union for “interference” in the Hungarian election as he endorsed Prime Minister Viktor Orban.
+            """.trimIndent(),
+        )
+
+        assertEquals("Vance Picks Fight With Europe Over Orban in Vote Endorsement", result.title)
+        assertEquals(Instant.parse("2026-04-07T12:27:35.149Z"), result.publishedAt)
+        assertEquals("Vance Picks Fight With Europe Over Orban in Vote Endorsement - Bloomberg", result.lead)
         assertEquals(thumbnail, result.thumbnail)
     }
 
