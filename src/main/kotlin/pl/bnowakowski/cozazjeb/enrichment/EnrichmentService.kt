@@ -154,6 +154,9 @@ class EnrichmentService(
                 is ConnectException -> EnrichmentException.Reason.UNREACHABLE
                 else -> EnrichmentException.Reason.UNREACHABLE
             }
+            fetchNytReaderFallback(url)?.let { readerText ->
+                return parseReaderMarkdownResult(url, readerText)
+            }
             fetchWashingtonPostReaderFallback(url)?.let { readerText ->
                 return parseReaderMarkdownResult(url, readerText)
             }
@@ -166,6 +169,9 @@ class EnrichmentService(
                 cause = ex,
             )
         } catch (ex: RestClientException) {
+            fetchNytReaderFallback(url)?.let { readerText ->
+                return parseReaderMarkdownResult(url, readerText)
+            }
             fetchWashingtonPostReaderFallback(url)?.let { readerText ->
                 return parseReaderMarkdownResult(url, readerText)
             }
@@ -247,7 +253,13 @@ class EnrichmentService(
     }
 
     private fun fetchNytReaderFallback(url: String, statusCode: Int): String? {
-        if (statusCode != 403) return null
+        if (statusCode != 401 && statusCode != 403 && statusCode != 429) return null
+        if (!isNytUrl(url)) return null
+
+        return fetchReaderFallback(url)
+    }
+
+    private fun fetchNytReaderFallback(url: String): String? {
         if (!isNytUrl(url)) return null
 
         return fetchReaderFallback(url)
@@ -881,6 +893,7 @@ private fun isUsefulReaderLeadLine(rawValue: String, cleanValue: String): Boolea
         !raw.contains("![") &&
         !cleanValue.startsWith("*") &&
         !cleanValue.startsWith("!") &&
+        !cleanValue.startsWith("You have been granted access", ignoreCase = true) &&
         !cleanValue.equals("Reklama", ignoreCase = true) &&
         !cleanValue.equals("Autopromocja", ignoreCase = true) &&
         !cleanValue.equals("Czytaj więcej", ignoreCase = true)

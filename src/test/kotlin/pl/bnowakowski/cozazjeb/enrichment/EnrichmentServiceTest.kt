@@ -304,6 +304,34 @@ class EnrichmentServiceTest {
     }
 
     @Test
+    fun `parses NYTimes reader fallback for short link that redirects through trib al`() {
+        val result = parseReaderMarkdownResult(
+            url = "https://nyti.ms/4tisLZM",
+            text = """
+                Title: Pam Bondi Fired as Trump’s Attorney General
+
+                URL Source: https://nyti.ms/4tisLZM
+
+                Published Time: 2026-04-02T17:07:51.000Z
+
+                Markdown Content:
+                You have been granted access, use your keyboard to continue reading.
+
+                In a social media post, President Trump said he was replacing Ms. Bondi with Todd Blanche, her deputy, on an interim basis.
+
+                April 2, 2026
+            """.trimIndent(),
+        )
+
+        assertEquals("Pam Bondi Fired as Trump’s Attorney General", result.title)
+        assertEquals(Instant.parse("2026-04-02T17:07:51Z"), result.publishedAt)
+        assertEquals(
+            "In a social media post, President Trump said he was replacing Ms. Bondi with Todd Blanche, her deputy, on an interim basis.",
+            result.lead,
+        )
+    }
+
+    @Test
     fun `parses Washington Post reader fallback title published time thumbnail and lead`() {
         val thumbnail =
             "https://www.washingtonpost.com/wp-apps/imrs.php?src=https://cloudfront-us-east-1.images.arcpublishing.com/wapo/RIXQ5R4N7JG2SWLWTGVK77JCLQ.JPG&w=440%20400w"
