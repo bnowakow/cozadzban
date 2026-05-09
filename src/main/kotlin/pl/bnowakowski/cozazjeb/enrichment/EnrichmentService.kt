@@ -154,6 +154,9 @@ class EnrichmentService(
             fetchSprinklrReaderFallback(url)?.let { readerText ->
                 return parseReaderMarkdownResult(url, readerText)
             }
+            fetchEbxReaderFallback(url)?.let { readerText ->
+                return parseReaderMarkdownResult(url, readerText)
+            }
             fetchInstagramCrawlerFallback(url)?.let { fallbackHtml ->
                 return enrichHtml(url, fallbackHtml)
             }
@@ -185,6 +188,9 @@ class EnrichmentService(
             fetchSprinklrReaderFallback(url)?.let { readerText ->
                 return parseReaderMarkdownResult(url, readerText)
             }
+            fetchEbxReaderFallback(url)?.let { readerText ->
+                return parseReaderMarkdownResult(url, readerText)
+            }
             fetchInstagramCrawlerFallback(url)?.let { fallbackHtml ->
                 return enrichHtml(url, fallbackHtml)
             }
@@ -206,6 +212,9 @@ class EnrichmentService(
             fetchSprinklrReaderFallback(url)?.let { readerText ->
                 return parseReaderMarkdownResult(url, readerText)
             }
+            fetchEbxReaderFallback(url)?.let { readerText ->
+                return parseReaderMarkdownResult(url, readerText)
+            }
             fetchInstagramCrawlerFallback(url)?.let { fallbackHtml ->
                 return enrichHtml(url, fallbackHtml)
             }
@@ -220,6 +229,8 @@ class EnrichmentService(
         fetchInstagramCrawlerFallbackIfIncomplete(url, result)
             ?.let { return enrichHtml(url, it) }
         fetchBloombergReaderFallbackIfIncomplete(url, result)
+            ?.let { return parseReaderMarkdownResult(url, it) }
+        fetchEbxReaderFallbackIfIncomplete(url, result)
             ?.let { return parseReaderMarkdownResult(url, it) }
         return fetchSprinklrReaderFallbackIfIncomplete(url, result)
             ?.let { parseReaderMarkdownResult(url, it) }
@@ -341,6 +352,19 @@ class EnrichmentService(
 
     private fun fetchSprinklrReaderFallbackIfIncomplete(url: String, result: EnrichmentResult): String? {
         if (!isSprinklrShortUrl(url)) return null
+        if (result.title != null && result.thumbnail != null && result.publishedAt != null) return null
+
+        return fetchReaderFallback(url)
+    }
+
+    private fun fetchEbxReaderFallback(url: String): String? {
+        if (!isEbxShortUrl(url)) return null
+
+        return fetchReaderFallback(url)
+    }
+
+    private fun fetchEbxReaderFallbackIfIncomplete(url: String, result: EnrichmentResult): String? {
+        if (!isEbxShortUrl(url)) return null
         if (result.title != null && result.thumbnail != null && result.publishedAt != null) return null
 
         return fetchReaderFallback(url)
@@ -1116,6 +1140,13 @@ internal fun isSprinklrShortUrl(url: String): Boolean {
     val host = uri.host?.lowercase() ?: return false
 
     return host == "spklr.io" || host.endsWith(".spklr.io")
+}
+
+internal fun isEbxShortUrl(url: String): Boolean {
+    val uri = runCatching { URI(url) }.getOrNull() ?: return false
+    val host = uri.host?.lowercase() ?: return false
+
+    return host == "ebx.sh" || host.endsWith(".ebx.sh")
 }
 
 internal fun shouldUseReutersMobileFallback(url: String, statusCode: Int): Boolean {

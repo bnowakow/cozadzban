@@ -337,6 +337,36 @@ class EnrichmentServiceTest {
     }
 
     @Test
+    fun `recognizes Ebx short links for reader fallback`() {
+        assertEquals(true, isEbxShortUrl("https://ebx.sh/6q8VNF"))
+        assertEquals(true, isEbxShortUrl("https://www.ebx.sh/6q8VNF"))
+        assertEquals(false, isEbxShortUrl("https://www.rp.pl/sluzby/art44126601-example"))
+    }
+
+    @Test
+    fun `parses Ebx reader fallback published date`() {
+        val result = parseReaderMarkdownResult(
+            url = "https://ebx.sh/6q8VNF",
+            text = """
+                Title: Od Włodzimierza Czarzastego po Grzegorza Brauna. Politycy narażają na szwank bezpieczeństwo Polski - rp.pl
+
+                URL Source: https://ebx.sh/6q8VNF
+
+                Published Time: 2026-04-11T07:00:00+02:00
+
+                Markdown Content:
+                ## Dlaczego Polska ma tak kulawy system ochrony informacji niejawnych?
+            """.trimIndent(),
+        )
+
+        assertEquals(
+            "Od Włodzimierza Czarzastego po Grzegorza Brauna. Politycy narażają na szwank bezpieczeństwo Polski - rp.pl",
+            result.title,
+        )
+        assertEquals(Instant.parse("2026-04-11T05:00:00Z"), result.publishedAt)
+    }
+
+    @Test
     fun `parses NYTimes reader fallback title published time and lead`() {
         val thumbnail = "https://static01.nyt.com/images/2026/03/12/multimedia/12dc-russiasanctions-whjc/12dc-russiasanctions-whjc-articleLarge.jpg?quality=75&auto=webp&disable=upscale"
         val result = parseReaderMarkdownResult(
