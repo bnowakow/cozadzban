@@ -1122,7 +1122,10 @@ internal fun isWashingtonPostUrl(url: String): Boolean {
     val uri = runCatching { URI(url) }.getOrNull() ?: return false
     val host = uri.host?.lowercase() ?: return false
 
-    return host == "washingtonpost.com" || host.endsWith(".washingtonpost.com")
+    return host == "washingtonpost.com" ||
+        host.endsWith(".washingtonpost.com") ||
+        host == "wapo.st" ||
+        host.endsWith(".wapo.st")
 }
 
 internal fun isBloombergUrl(url: String): Boolean {

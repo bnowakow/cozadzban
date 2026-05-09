@@ -318,6 +318,7 @@ class EnrichmentServiceTest {
             true,
             isWashingtonPostUrl("https://www.washingtonpost.com/technology/2026/03/17/israel-journalist-polymarket-iran-strike/"),
         )
+        assertEquals(true, isWashingtonPostUrl("https://wapo.st/4ciOmdN"))
         assertEquals(true, isWashingtonPostUrl("https://washingtonpost.com/example"))
         assertEquals(false, isWashingtonPostUrl("https://example.com/article"))
     }
