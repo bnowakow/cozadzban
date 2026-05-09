@@ -113,6 +113,9 @@ class EnrichmentService(
             fetchFacebookCrawlerFallback(url, ex.statusCode.value(), ex.responseBodyAsString)?.let { fallbackHtml ->
                 return enrichHtml(url, fallbackHtml)
             }
+            fetchFacebookVideoPluginFallback(url, ex.statusCode.value())?.let { fallbackHtml ->
+                return enrichHtml(url, fallbackHtml)
+            }
             fetchReutersMobileFallback(url, ex.statusCode.value())?.let { fallbackHtml ->
                 return enrichHtml(url, fallbackHtml)
             }
@@ -169,6 +172,18 @@ class EnrichmentService(
         val fallbackUrl = facebookMbasicUrl(url) ?: return null
         return try {
             fetchHtml(fallbackUrl, facebookCrawlerRestClient)
+        } catch (_: RestClientException) {
+            null
+        }
+    }
+
+    private fun fetchFacebookVideoPluginFallback(url: String, statusCode: Int): String? {
+        if (statusCode != 400) return null
+        if (!isFacebookVideoOrReelUrl(url)) return null
+
+        val fallbackUrl = facebookVideoPluginUrl(url) ?: return null
+        return try {
+            fetchHtml(fallbackUrl)
         } catch (_: RestClientException) {
             null
         }
@@ -343,6 +358,12 @@ class EnrichmentService(
 
     private fun parseFacebookEmbeddedMessageText(url: String, doc: org.jsoup.nodes.Document): String? {
         if (!isFacebookDocument(url, doc)) return null
+
+        doc.selectFirst("[data-testid=post_message]")
+            ?.text()
+            .normalized()
+            ?.takeIf { it.length >= MIN_FACEBOOK_MESSAGE_LENGTH }
+            ?.let { return it }
 
         val html = doc.html()
         return facebookMessageCandidates(html, storyMessagesOnly = true)
@@ -578,6 +599,14 @@ private fun isFacebookVideoOrReelUrl(url: String): Boolean {
     return (host == "facebook.com" || host.endsWith(".facebook.com")) &&
         (path.contains("/videos/") || path.contains("/reel/"))
 }
+
+private fun facebookVideoPluginUrl(url: String): String? {
+    if (!isFacebookVideoOrReelUrl(url)) return null
+    return "https://www.facebook.com/plugins/video.php?href=${encodeQueryParam(url)}&show_text=true&width=500"
+}
+
+private fun encodeQueryParam(value: String): String =
+    java.net.URLEncoder.encode(value, Charsets.UTF_8)
 
 private fun facebookFallbackTitle(url: String): String =
     if (isFacebookVideoOrReelUrl(url)) "Facebook reel" else "Facebook post"
