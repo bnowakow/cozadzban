@@ -225,6 +225,28 @@ class ArticleOwnershipIT {
     }
 
     @Test
+    fun `Facebook reel placeholder title is replaced with lead excerpt`() {
+        val url = "https://www.facebook.com/reel/1648200636595572"
+        val lead = "This Facebook reel has enough useful text to become the article title instead of the placeholder."
+
+        whenever(enrichmentService.enrich(any())).thenReturn(
+            EnrichmentResult(
+                title = "Facebook reel",
+                thumbnail = null,
+                lead = lead,
+                plainText = null,
+            ),
+        )
+
+        val id = createArticle(url = url)
+
+        val article = articleRepository.findById(id).orElseThrow()
+        val content = articleContentRepository.findById(id).orElseThrow()
+        assertEquals(lead, article.title)
+        assertEquals(lead, content.content)
+    }
+
+    @Test
     fun `cache uses Facebook post description instead of noisy page body`() {
         val url = "https://www.facebook.com/akurasinski/posts/pfbid033CLUhJTuKWPiYspPP2womaWEF7vH9yHSTED9EkLpHNrPmoZzjEyUQ25aJrHZP3sul"
 

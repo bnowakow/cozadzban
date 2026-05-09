@@ -282,14 +282,20 @@ class ArticleService(
         val cacheExcerpt = contentForCache
             ?.replace(Regex("\\s+"), " ")
             ?.trim()
-            ?.takeIf { it.isNotBlank() && it != GENERIC_FACEBOOK_TITLE }
+            ?.takeIf { it.isNotBlank() && !isGenericFacebookTitle(it) }
             ?.let { excerpt(it, ARTICLE_TITLE_EXCERPT_LENGTH) }
 
         if (isFacebookPostUrl(url) && cacheExcerpt != null) return cacheExcerpt
-        if (normalizedTitle != GENERIC_FACEBOOK_TITLE) return normalizedTitle
+        if (isFacebookVideoOrReelUrl(url) && isGenericFacebookTitle(normalizedTitle) && cacheExcerpt != null) {
+            return cacheExcerpt
+        }
+        if (!isGenericFacebookTitle(normalizedTitle)) return normalizedTitle
 
         return cacheExcerpt ?: normalizedTitle
     }
+
+    private fun isGenericFacebookTitle(title: String?): Boolean =
+        title == GENERIC_FACEBOOK_POST_TITLE || title == GENERIC_FACEBOOK_REEL_TITLE
 
     private fun excerpt(text: String, maxLength: Int): String =
         if (text.length <= maxLength) {
@@ -346,7 +352,8 @@ class ArticleService(
 
     companion object {
         private val BCP47_PATTERN = Regex("^[a-z]{2,3}(-[a-z0-9]{2,8})*\$")
-        private const val GENERIC_FACEBOOK_TITLE = "Facebook post"
+        private const val GENERIC_FACEBOOK_POST_TITLE = "Facebook post"
+        private const val GENERIC_FACEBOOK_REEL_TITLE = "Facebook reel"
         private const val ARTICLE_TITLE_EXCERPT_LENGTH = 120
         private const val OTHER98_HEGSETH_FACEBOOK_URL =
             "https://www.facebook.com/TheOther98/posts/pfbid0yidDpVT2Xxb2cM56G33f91qTRSSYW1bpixPNNQ7DLkHdCUD5oEhRL58Mjmo3ierxl"
