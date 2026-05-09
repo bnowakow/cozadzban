@@ -17,13 +17,42 @@ class ArticleServiceTitleTest {
         val title = titleForSave(
             url = "https://www.facebook.com/reel/1648200636595572",
             title = "Facebook reel",
+            lead = lead,
             contentForCache = lead,
         )
 
-        assertEquals(lead, title)
+        assertEquals(lead.excerptForArticleTitle(), title)
     }
 
-    private fun titleForSave(url: String, title: String?, contentForCache: String?): String? {
+    @Test
+    fun `Facebook plugin page title is replaced with lead excerpt for reel`() {
+        val lead = "White House press secretary Karoline Leavitt told reporters " +
+            "\"Americans will see oil and gas prices drop rapidly\" once the U.S. military's national security objectives are \"fully achieved\" in Iran."
+        val title = titleForSave(
+            url = "https://www.facebook.com/reel/1648200636595572",
+            title = "Facebook",
+            lead = lead,
+            contentForCache = lead,
+        )
+
+        assertEquals(lead.excerptForArticleTitle(), title)
+    }
+
+    @Test
+    fun `Facebook watch metrics title is replaced with lead excerpt for reel`() {
+        val lead = "White House press secretary Karoline Leavitt told reporters " +
+            "\"Americans will see oil and gas prices drop rapidly\" once the objectives are achieved."
+        val title = titleForSave(
+            url = "https://www.facebook.com/reel/1648200636595572",
+            title = "1.1M views, 3K reactions | $lead | Reuters",
+            lead = lead,
+            contentForCache = "1.1M views, 3K reactions | $lead | Reuters",
+        )
+
+        assertEquals(lead.excerptForArticleTitle(), title)
+    }
+
+    private fun titleForSave(url: String, title: String?, lead: String?, contentForCache: String?): String? {
         val service = ArticleService(
             articleRepository = mock<ArticleRepository>(),
             enrichmentService = mock<EnrichmentService>(),
@@ -35,8 +64,12 @@ class ArticleServiceTitleTest {
             String::class.java,
             String::class.java,
             String::class.java,
+            String::class.java,
         )
         method.isAccessible = true
-        return method.invoke(service, url, title, contentForCache) as String?
+        return method.invoke(service, url, title, lead, contentForCache) as String?
     }
 }
+
+private fun String.excerptForArticleTitle(): String =
+    if (length <= 120) this else take(120).trimEnd() + "..."

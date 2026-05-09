@@ -113,6 +113,9 @@ class EnrichmentService(
             fetchFacebookCrawlerFallback(url, ex.statusCode.value(), ex.responseBodyAsString)?.let { fallbackHtml ->
                 return enrichHtml(url, fallbackHtml)
             }
+            fetchFacebookWatchFallback(url, ex.statusCode.value())?.let { fallbackHtml ->
+                return enrichHtml(url, fallbackHtml)
+            }
             fetchFacebookVideoPluginFallback(url, ex.statusCode.value())?.let { fallbackHtml ->
                 return enrichHtml(url, fallbackHtml)
             }
@@ -189,6 +192,18 @@ class EnrichmentService(
         }
     }
 
+    private fun fetchFacebookWatchFallback(url: String, statusCode: Int): String? {
+        if (statusCode != 400) return null
+        if (!isFacebookVideoOrReelUrl(url)) return null
+
+        val fallbackUrl = facebookWatchUrl(url) ?: return null
+        return try {
+            fetchHtml(fallbackUrl)
+        } catch (_: RestClientException) {
+            null
+        }
+    }
+
     private fun fetchReutersMobileFallback(url: String, statusCode: Int): String? {
         if (!shouldUseReutersMobileFallback(url, statusCode)) return null
 
@@ -232,7 +247,7 @@ class EnrichmentService(
             "meta[name=twitter:image]",
             "meta[property=twitter:image]",
         )
-        val facebookPostText = parseFacebookEmbeddedMessageText(url, doc)
+        val facebookPostText = parseFacebookEmbeddedMessageText(url, html, doc)
         val lead = facebookPostText
             ?: metaContent(doc, "meta[property=og:description]")
             ?: metaContent(doc, "meta[name=description]")
@@ -356,8 +371,10 @@ class EnrichmentService(
         return null
     }
 
-    private fun parseFacebookEmbeddedMessageText(url: String, doc: org.jsoup.nodes.Document): String? {
+    private fun parseFacebookEmbeddedMessageText(url: String, html: String, doc: org.jsoup.nodes.Document): String? {
         if (!isFacebookDocument(url, doc)) return null
+
+        parseFacebookPluginPostMessage(html)?.let { return it }
 
         doc.selectFirst("[data-testid=post_message]")
             ?.text()
@@ -365,11 +382,19 @@ class EnrichmentService(
             ?.takeIf { it.length >= MIN_FACEBOOK_MESSAGE_LENGTH }
             ?.let { return it }
 
-        val html = doc.html()
-        return facebookMessageCandidates(html, storyMessagesOnly = true)
-            .ifEmpty { facebookMessageCandidates(html, storyMessagesOnly = false) }
+        val parsedHtml = doc.html()
+        return facebookMessageCandidates(parsedHtml, storyMessagesOnly = true)
+            .ifEmpty { facebookMessageCandidates(parsedHtml, storyMessagesOnly = false) }
             .maxByOrNull { facebookMessageScore(it) }
     }
+
+    private fun parseFacebookPluginPostMessage(html: String): String? =
+        FACEBOOK_PLUGIN_POST_MESSAGE_PATTERN.find(html)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.let { Jsoup.parseBodyFragment(it).text() }
+            .normalized()
+            ?.takeIf { it.length >= MIN_FACEBOOK_MESSAGE_LENGTH }
 
     private fun facebookMessageCandidates(html: String, storyMessagesOnly: Boolean): List<String> {
         val candidates = mutableListOf<String>()
@@ -496,6 +521,9 @@ class EnrichmentService(
         private val JSON_MAPPER = ObjectMapper()
         private val FACEBOOK_PUBLISH_TIME_PATTERN = Regex("""publish_time\\?":\s*(\d{10})""")
         private val FACEBOOK_CREATION_TIME_PATTERN = Regex("""creation_time\\?":\s*(\d{10})""")
+        private val FACEBOOK_PLUGIN_POST_MESSAGE_PATTERN = Regex(
+            """(?is)<div\b[^>]*\bdata-testid=["']post_message["'][^>]*>(.*?)</div>""",
+        )
         private val VISIBLE_DATE_PATTERN = Regex(
             """(?i)\b([0-3]?\d)\s+([a-ząćęłńóśźż]+)\s+((?:19|20)\d{2})\b""",
         )
@@ -603,6 +631,28 @@ private fun isFacebookVideoOrReelUrl(url: String): Boolean {
 private fun facebookVideoPluginUrl(url: String): String? {
     if (!isFacebookVideoOrReelUrl(url)) return null
     return "https://www.facebook.com/plugins/video.php?href=${encodeQueryParam(url)}&show_text=true&width=500"
+}
+
+internal fun facebookWatchUrl(url: String): String? {
+    val videoId = facebookVideoId(url) ?: return null
+    return "https://www.facebook.com/watch/?v=$videoId"
+}
+
+private fun facebookVideoId(url: String): String? {
+    val uri = runCatching { URI(url) }.getOrNull() ?: return null
+    val pathSegments = uri.path
+        ?.trim('/')
+        ?.split('/')
+        ?.filter { it.isNotBlank() }
+        .orEmpty()
+
+    return listOf("reel", "videos")
+        .firstNotNullOfOrNull { marker ->
+            val markerIndex = pathSegments.indexOf(marker)
+            pathSegments
+                .getOrNull(markerIndex + 1)
+                ?.takeIf { segment -> markerIndex >= 0 && segment.all(Char::isDigit) }
+        }
 }
 
 private fun encodeQueryParam(value: String): String =

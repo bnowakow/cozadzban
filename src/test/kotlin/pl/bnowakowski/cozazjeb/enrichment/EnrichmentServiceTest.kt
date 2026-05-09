@@ -107,6 +107,62 @@ class EnrichmentServiceTest {
     }
 
     @Test
+    fun `extracts Facebook plugin post message as lead`() {
+        val expected = "White House press secretary Karoline Leavitt told reporters " +
+            "\"Americans will see oil and gas prices drop rapidly\" once the U.S. military's national security objectives are \"fully achieved\" in Iran."
+        val html = """
+            <!doctype html>
+            <html>
+              <head><title>Facebook</title></head>
+              <body>
+                <div data-testid="post_message">
+                  <p>White House press secretary Karoline Leavitt told reporters &quot;Americans will see oil and gas prices drop rapidly&quot; once the U.S. military&#039;s national security objectives are &quot;fully achieved&quot; in Iran.</p>
+                </div>
+              </body>
+            </html>
+        """.trimIndent()
+
+        val result = enrichHtml("https://www.facebook.com/reel/1648200636595572", html)
+
+        assertEquals(expected, result.lead)
+        assertEquals(expected, result.plainText)
+    }
+
+    @Test
+    fun `extracts Facebook watch metadata lead for reel fallback`() {
+        val lead = "White House press secretary Karoline Leavitt told reporters " +
+            "\"Americans will see oil and gas prices drop rapidly\" once the U.S. military's national security objectives are \"fully achieved\" in Iran."
+        val html = """
+            <!doctype html>
+            <html>
+              <head>
+                <meta property="og:title" content="1.1M views, 3K reactions | ${lead.escapeHtmlAttribute()} | Reuters">
+                <meta property="og:description" content="${lead.escapeHtmlAttribute()}">
+              </head>
+              <body>Facebook logged-out watch page chrome</body>
+            </html>
+        """.trimIndent()
+
+        val result = enrichHtml("https://www.facebook.com/reel/1648200636595572", html)
+
+        assertEquals("1.1M views, 3K reactions | $lead | Reuters", result.title)
+        assertEquals(lead, result.lead)
+    }
+
+    @Test
+    fun `builds Facebook watch fallback URL for reels and videos`() {
+        assertEquals(
+            "https://www.facebook.com/watch/?v=1648200636595572",
+            facebookWatchUrl("https://www.facebook.com/reel/1648200636595572"),
+        )
+        assertEquals(
+            "https://www.facebook.com/watch/?v=2380672702377664",
+            facebookWatchUrl("https://www.facebook.com/serwisdonaldpl/videos/2380672702377664/"),
+        )
+        assertEquals(null, facebookWatchUrl("https://www.facebook.com/example/posts/pfbid123"))
+    }
+
+    @Test
     fun `uses Reuters mobile fallback only for Reuters 401 responses`() {
         assertEquals(true, shouldUseReutersMobileFallback("https://reut.rs/4oRr7wu", HttpURLConnection.HTTP_UNAUTHORIZED))
         assertEquals(true, shouldUseReutersMobileFallback("https://www.reuters.com/world/example/", HttpURLConnection.HTTP_UNAUTHORIZED))
@@ -346,4 +402,18 @@ class EnrichmentServiceTest {
         }
     }
 
+    private fun enrichHtml(url: String, html: String): EnrichmentResult {
+        val service = EnrichmentService(RestClient.builder())
+        val method = EnrichmentService::class.java.getDeclaredMethod(
+            "enrichHtml",
+            String::class.java,
+            String::class.java,
+        )
+        method.isAccessible = true
+        return method.invoke(service, url, html) as EnrichmentResult
+    }
 }
+
+private fun String.escapeHtmlAttribute(): String =
+    replace("&", "&amp;")
+        .replace("\"", "&quot;")

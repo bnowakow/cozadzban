@@ -87,7 +87,7 @@ class ArticleService(
                 url = url,
                 language = language,
                 quote = input.quote,
-                title = titleForSave(url, enrichment.title, contentForCache),
+                title = titleForSave(url, enrichment.title, enrichment.lead, contentForCache),
                 thumbnail = enrichment.thumbnail,
                 lead = enrichment.lead,
                 publishedAt = publishedAt,
@@ -111,7 +111,7 @@ class ArticleService(
                 url = url,
                 language = language,
                 quote = input.quote,
-                title = titleForSave(url, enrichment.title, contentForCache),
+                title = titleForSave(url, enrichment.title, enrichment.lead, contentForCache),
                 thumbnail = enrichment.thumbnail,
                 lead = enrichment.lead,
                 publishedAt = publishedAt,
@@ -184,7 +184,7 @@ class ArticleService(
         }
         val (newTitle, newThumbnail, newLead) = if (enrichmentForChangedUrl != null) {
             Triple(
-                titleForSave(newUrl, enrichmentForChangedUrl.title, contentForChangedUrl),
+                titleForSave(newUrl, enrichmentForChangedUrl.title, enrichmentForChangedUrl.lead, contentForChangedUrl),
                 enrichmentForChangedUrl.thumbnail,
                 enrichmentForChangedUrl.lead,
             )
@@ -277,17 +277,26 @@ class ArticleService(
         return title?.trim()?.takeIf { it.isNotBlank() }
     }
 
-    private fun titleForSave(url: String, title: String?, contentForCache: String?): String? {
+    private fun titleForSave(url: String, title: String?, lead: String?, contentForCache: String?): String? {
         val normalizedTitle = title?.trim()?.takeIf { it.isNotBlank() }
+        val leadExcerpt = lead
+            ?.replace(Regex("\\s+"), " ")
+            ?.trim()
+            ?.takeIf { it.isNotBlank() && !isGenericFacebookTitle(it) }
+            ?.let { excerpt(it, ARTICLE_TITLE_EXCERPT_LENGTH) }
         val cacheExcerpt = contentForCache
             ?.replace(Regex("\\s+"), " ")
             ?.trim()
             ?.takeIf { it.isNotBlank() && !isGenericFacebookTitle(it) }
             ?.let { excerpt(it, ARTICLE_TITLE_EXCERPT_LENGTH) }
 
-        if (isFacebookPostUrl(url) && cacheExcerpt != null) return cacheExcerpt
-        if (isFacebookVideoOrReelUrl(url) && isGenericFacebookTitle(normalizedTitle) && cacheExcerpt != null) {
-            return cacheExcerpt
+        if (isFacebookPostUrl(url)) {
+            leadExcerpt?.let { return it }
+            cacheExcerpt?.let { return it }
+        }
+        if (isFacebookVideoOrReelUrl(url) && shouldUseFacebookLeadTitle(normalizedTitle)) {
+            leadExcerpt?.let { return it }
+            cacheExcerpt?.let { return it }
         }
         if (!isGenericFacebookTitle(normalizedTitle)) return normalizedTitle
 
@@ -295,7 +304,12 @@ class ArticleService(
     }
 
     private fun isGenericFacebookTitle(title: String?): Boolean =
-        title == GENERIC_FACEBOOK_POST_TITLE || title == GENERIC_FACEBOOK_REEL_TITLE
+        title == GENERIC_FACEBOOK_PAGE_TITLE ||
+            title == GENERIC_FACEBOOK_POST_TITLE ||
+            title == GENERIC_FACEBOOK_REEL_TITLE
+
+    private fun shouldUseFacebookLeadTitle(title: String?): Boolean =
+        isGenericFacebookTitle(title) || title?.contains(" | ") == true
 
     private fun excerpt(text: String, maxLength: Int): String =
         if (text.length <= maxLength) {
@@ -352,6 +366,7 @@ class ArticleService(
 
     companion object {
         private val BCP47_PATTERN = Regex("^[a-z]{2,3}(-[a-z0-9]{2,8})*\$")
+        private const val GENERIC_FACEBOOK_PAGE_TITLE = "Facebook"
         private const val GENERIC_FACEBOOK_POST_TITLE = "Facebook post"
         private const val GENERIC_FACEBOOK_REEL_TITLE = "Facebook reel"
         private const val ARTICLE_TITLE_EXCERPT_LENGTH = 120
