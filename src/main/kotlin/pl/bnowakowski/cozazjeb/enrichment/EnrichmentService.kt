@@ -71,6 +71,18 @@ class EnrichmentService(
         .defaultHeader(HttpHeaders.ACCEPT_LANGUAGE, "pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7")
         .build()
 
+    private val instagramCrawlerRestClient: RestClient = restClientBuilder
+        .requestFactory(
+            SimpleClientHttpRequestFactory().apply {
+                setConnectTimeout(CONNECT_TIMEOUT_MS)
+                setReadTimeout(READ_TIMEOUT_MS)
+            }
+        )
+        .defaultHeader(HttpHeaders.USER_AGENT, TWITTERBOT_USER_AGENT)
+        .defaultHeader(HttpHeaders.ACCEPT, "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+        .defaultHeader(HttpHeaders.ACCEPT_LANGUAGE, "en-US,en;q=0.9")
+        .build()
+
     private val rpFallbackRestClient: RestClient = restClientBuilder
         .requestFactory(
             SimpleClientHttpRequestFactory().apply {
@@ -142,6 +154,9 @@ class EnrichmentService(
             fetchSprinklrReaderFallback(url)?.let { readerText ->
                 return parseReaderMarkdownResult(url, readerText)
             }
+            fetchInstagramCrawlerFallback(url)?.let { fallbackHtml ->
+                return enrichHtml(url, fallbackHtml)
+            }
             recoverFacebookPostFromGenericError(url, ex.statusCode.value(), ex.responseBodyAsString)?.let {
                 return it
             }
@@ -170,6 +185,9 @@ class EnrichmentService(
             fetchSprinklrReaderFallback(url)?.let { readerText ->
                 return parseReaderMarkdownResult(url, readerText)
             }
+            fetchInstagramCrawlerFallback(url)?.let { fallbackHtml ->
+                return enrichHtml(url, fallbackHtml)
+            }
             throw EnrichmentException(
                 message = "URL enrichment failed: target was unreachable or timed out for '$url'",
                 reason = reason,
@@ -188,6 +206,9 @@ class EnrichmentService(
             fetchSprinklrReaderFallback(url)?.let { readerText ->
                 return parseReaderMarkdownResult(url, readerText)
             }
+            fetchInstagramCrawlerFallback(url)?.let { fallbackHtml ->
+                return enrichHtml(url, fallbackHtml)
+            }
             throw EnrichmentException(
                 message = "URL enrichment failed for '$url'",
                 reason = EnrichmentException.Reason.UNREACHABLE,
@@ -196,6 +217,8 @@ class EnrichmentService(
         }
 
         val result = enrichHtml(url, html)
+        fetchInstagramCrawlerFallbackIfIncomplete(url, result)
+            ?.let { return enrichHtml(url, it) }
         fetchBloombergReaderFallbackIfIncomplete(url, result)
             ?.let { return parseReaderMarkdownResult(url, it) }
         return fetchSprinklrReaderFallbackIfIncomplete(url, result)
@@ -323,6 +346,23 @@ class EnrichmentService(
         return fetchReaderFallback(url)
     }
 
+    private fun fetchInstagramCrawlerFallback(url: String): String? {
+        if (!isInstagramUrl(url)) return null
+
+        return try {
+            fetchHtml(url, instagramCrawlerRestClient)
+        } catch (_: RestClientException) {
+            null
+        }
+    }
+
+    private fun fetchInstagramCrawlerFallbackIfIncomplete(url: String, result: EnrichmentResult): String? {
+        if (!isInstagramUrl(url)) return null
+        if (result.title != null && result.thumbnail != null && result.publishedAt != null) return null
+
+        return fetchInstagramCrawlerFallback(url)
+    }
+
     private fun fetchReaderFallback(url: String): String? {
         val readerUrl = readerUrl(url) ?: return null
         return try {
@@ -398,13 +438,14 @@ class EnrichmentService(
 
     private fun enrichHtml(url: String, html: String): EnrichmentResult {
         val doc = Jsoup.parse(html, url)
-        val title = youtubeStructuredTitle(url, html)
+        val extractedTitle = youtubeStructuredTitle(url, html)
             ?: metaContent(doc, "meta[property=og:title]")
             ?: metaContent(doc, "meta[name=title]")
             ?: metaContent(doc, "meta[name=twitter:title]")
             ?: metaContent(doc, "meta[property=twitter:title]")
             ?: doc.title().normalized()
-                ?.takeUnless { isGenericYoutubeTitle(url, it) }
+        val title = extractedTitle
+            ?.takeUnless { isGenericTitle(url, it) }
             ?: fetchYoutubeOEmbedTitle(url)
         val thumbnail = firstMetaImage(
             doc,
@@ -412,11 +453,14 @@ class EnrichmentService(
             "meta[property=og:image:url]",
             "meta[name=twitter:image]",
             "meta[property=twitter:image]",
-        )
+        )?.takeUnless { isGenericInstagramThumbnail(url, it) }
         val facebookPostText = parseFacebookEmbeddedMessageText(url, html, doc)
         val lead = facebookPostText
-            ?: metaContent(doc, "meta[property=og:description]")
-            ?: metaContent(doc, "meta[name=description]")
+            ?: (
+                metaContent(doc, "meta[property=og:description]")
+                    ?: metaContent(doc, "meta[name=description]")
+                )
+                ?.takeUnless { isGenericInstagramDescription(url, it) }
         val publishedAt = parsePublishedAt(url, doc)
         val plainText = facebookPostText ?: doc.body().text().normalized()
 
@@ -458,7 +502,10 @@ class EnrichmentService(
         // 6. Facebook logged-out pages can hide exact timestamps in embedded story JSON.
         parseFacebookEmbeddedTimestamp(doc.html())?.let { return it }
 
-        // 7. Visible social-page date text, e.g. Facebook can render "28 november 2005"
+        // 7. Instagram crawler descriptions render dates as "on April 9, 2026".
+        parseInstagramDescriptionDate(url, doc)?.let { return it }
+
+        // 8. Visible social-page date text, e.g. Facebook can render "28 november 2005"
         parseVisibleDate(doc.body()?.text())?.let { return it }
 
         knownPublishedAtForUrl(url)?.let { return it }
@@ -550,6 +597,24 @@ class EnrichmentService(
             ?.let { return Instant.ofEpochSecond(it) }
 
         return null
+    }
+
+    private fun parseInstagramDescriptionDate(url: String, doc: org.jsoup.nodes.Document): Instant? {
+        if (!isInstagramUrl(url)) return null
+
+        val description = metaContent(doc, "meta[property=og:description]")
+            ?: metaContent(doc, "meta[name=description]")
+            ?: return null
+        val match = INSTAGRAM_DESCRIPTION_DATE_PATTERN.find(description) ?: return null
+        val month = MONTHS[match.groupValues[1].lowercase()] ?: return null
+        val day = match.groupValues[2].toIntOrNull() ?: return null
+        val year = match.groupValues[3].toIntOrNull() ?: return null
+
+        return try {
+            LocalDate.of(year, month, day).atStartOfDay(ZoneOffset.UTC).toInstant()
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private fun parseFacebookEmbeddedMessageText(url: String, html: String, doc: org.jsoup.nodes.Document): String? {
@@ -725,6 +790,7 @@ class EnrichmentService(
             "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1"
         private const val FACEBOOK_CRAWLER_USER_AGENT =
             "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
+        private const val TWITTERBOT_USER_AGENT = "Twitterbot/1.0"
         private val JSON_MAPPER = ObjectMapper()
         private val PUBLISHABLE_JSON_LD_TYPES = setOf(
             "Article",
@@ -741,6 +807,9 @@ class EnrichmentService(
         private val FACEBOOK_CREATION_TIME_PATTERN = Regex("""creation_time\\?":\s*(\d{10})""")
         private val FACEBOOK_PLUGIN_POST_MESSAGE_PATTERN = Regex(
             """(?is)<div\b[^>]*\bdata-testid=["']post_message["'][^>]*>(.*?)</div>""",
+        )
+        private val INSTAGRAM_DESCRIPTION_DATE_PATTERN = Regex(
+            """(?i)\bon\s+([a-z]+)\s+([0-3]?\d),\s*((?:19|20)\d{2})\b""",
         )
         private val VISIBLE_DATE_PATTERN = Regex(
             """(?i)\b([0-3]?\d)\s+([a-ząćęłńóśźż]+)\s+((?:19|20)\d{2})\b""",
@@ -857,6 +926,27 @@ private fun isYoutubeUrl(url: String): Boolean {
 
 private fun isGenericYoutubeTitle(url: String, title: String): Boolean =
     isYoutubeUrl(url) && title.trim().equals("YouTube", ignoreCase = true)
+
+private fun isGenericTitle(url: String, title: String): Boolean =
+    isGenericYoutubeTitle(url, title) ||
+        (isInstagramUrl(url) && title.trim().equals("Instagram", ignoreCase = true))
+
+private fun isGenericInstagramThumbnail(url: String, thumbnail: String): Boolean =
+    isInstagramUrl(url) && thumbnail.contains("static.cdninstagram.com/rsrc.php", ignoreCase = true)
+
+private fun isGenericInstagramDescription(url: String, description: String): Boolean =
+    isInstagramUrl(url) &&
+        (
+            description.contains("log in", ignoreCase = true) ||
+                description.contains("sign up", ignoreCase = true)
+        )
+
+internal fun isInstagramUrl(url: String): Boolean {
+    val uri = runCatching { URI(url) }.getOrNull() ?: return false
+    val host = uri.host?.lowercase() ?: return false
+
+    return host == "instagram.com" || host.endsWith(".instagram.com")
+}
 
 private fun facebookVideoPluginUrl(url: String): String? {
     if (!isFacebookVideoOrReelUrl(url)) return null

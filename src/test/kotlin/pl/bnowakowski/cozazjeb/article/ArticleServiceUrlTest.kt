@@ -21,6 +21,16 @@ class ArticleServiceUrlTest {
     }
 
     @Test
+    fun `canonicalizeUrl strips Instagram tracking query parameters`() {
+        assertEquals(
+            "https://www.instagram.com/reel/DW6kHAvsM-p/",
+            ArticleService.canonicalizeUrl(
+                "https://www.instagram.com/reel/DW6kHAvsM-p/?igsh=MW5saTB1aWt1aW5nMQ%3D%3D",
+            ),
+        )
+    }
+
+    @Test
     fun `canonicalizeUrl keeps query parameters for non Facebook URLs`() {
         assertEquals(
             "https://youtu.be/Xi-HcxcM3dc?is=5gYGOGAFM0CG2OQ8",

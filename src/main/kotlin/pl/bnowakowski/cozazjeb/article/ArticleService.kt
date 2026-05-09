@@ -417,12 +417,18 @@ class ArticleService(
                 uri.path == "/" -> ""
                 else -> uri.path
             }
-            val query = if (isFacebookHost(host)) "" else uri.rawQuery?.let { "?$it" } ?: ""
+            val query = if (isTrackingOnlySocialHost(host)) "" else uri.rawQuery?.let { "?$it" } ?: ""
             return "$scheme://$authority$path$query"
         }
 
+        private fun isTrackingOnlySocialHost(host: String): Boolean =
+            isFacebookHost(host) || isInstagramHost(host)
+
         private fun isFacebookHost(host: String): Boolean =
             host == "facebook.com" || host.endsWith(".facebook.com")
+
+        private fun isInstagramHost(host: String): Boolean =
+            host == "instagram.com" || host.endsWith(".instagram.com")
 
         private fun parseSortParam(sort: String): Pair<String, String> {
             val parts = sort.split(",")
