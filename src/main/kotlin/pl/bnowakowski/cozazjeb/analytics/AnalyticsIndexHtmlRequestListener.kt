@@ -5,6 +5,7 @@ package pl.bnowakowski.cozazjeb.analytics
 
 import com.vaadin.flow.server.ServiceInitEvent
 import com.vaadin.flow.server.VaadinServiceInitListener
+import org.jsoup.nodes.DataNode
 import org.jsoup.nodes.Document
 import org.springframework.stereotype.Component
 
@@ -136,7 +137,7 @@ class AnalyticsIndexHtmlRequestListener(
 
         val script = doc.head().appendElement("script")
         script.attr("id", "czj-analytics-init")
-        script.html(
+        script.appendChild(DataNode(
             """
             (function () {
                 var CONSENT_KEY = 'czj_analytics_consent';
@@ -300,7 +301,7 @@ class AnalyticsIndexHtmlRequestListener(
                 }
             })();
             """.trimIndent(),
-        )
+        ))
     }
 
     // -------------------------------------------------------------------------

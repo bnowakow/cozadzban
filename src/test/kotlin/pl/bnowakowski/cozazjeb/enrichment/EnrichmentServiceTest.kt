@@ -208,6 +208,38 @@ class EnrichmentServiceTest {
     }
 
     @Test
+    fun `recognizes NYTimes and nyti short links for reader fallback`() {
+        assertEquals(true, isNytUrl("https://nyti.ms/46Xv8so"))
+        assertEquals(true, isNytUrl("https://www.nytimes.com/2026/03/12/us/politics/example.html"))
+        assertEquals(false, isNytUrl("https://example.com/article"))
+    }
+
+    @Test
+    fun `parses NYTimes reader fallback title published time and lead`() {
+        val result = parseReaderMarkdownResult(
+            url = "https://nyti.ms/46Xv8so",
+            text = """
+                Title: Trump Removes Sanctions on Russia to Help Oil Flow Amid Iran Conflict - The New York Times
+
+                URL Source: https://nyti.ms/46Xv8so
+
+                Published Time: 2026-03-13T01:32:01.000Z
+
+                Markdown Content:
+                # Trump Removes Sanctions on Russia to Help Oil Flow Amid Iran Conflict
+
+                Treasury Secretary Scott Bessent said it was “unfortunate” that the move could benefit Russia, but maintained that it was only for the short term.
+
+                The United States on Thursday temporarily lifted sanctions on Russian oil that is currently at sea.
+            """.trimIndent(),
+        )
+
+        assertEquals("Trump Removes Sanctions on Russia to Help Oil Flow Amid Iran Conflict - The New York Times", result.title)
+        assertEquals(Instant.parse("2026-03-13T01:32:01Z"), result.publishedAt)
+        assertEquals("Trump Removes Sanctions on Russia to Help Oil Flow Amid Iran Conflict", result.lead)
+    }
+
+    @Test
     fun `extracts thumbnail from Facebook og image`() {
         val expectedThumbnail = "https://lookaside.fbsbx.com/lookaside/crawler/media/?media_id=1605899074085738"
         val html = """

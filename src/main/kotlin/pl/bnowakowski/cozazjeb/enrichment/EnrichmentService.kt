@@ -128,6 +128,9 @@ class EnrichmentService(
             fetchRpReaderFallback(url, ex.statusCode.value())?.let { readerText ->
                 return parseReaderMarkdownResult(url, readerText)
             }
+            fetchNytReaderFallback(url, ex.statusCode.value())?.let { readerText ->
+                return parseReaderMarkdownResult(url, readerText)
+            }
             recoverFacebookPostFromGenericError(url, ex.statusCode.value(), ex.responseBodyAsString)?.let {
                 return it
             }
@@ -217,6 +220,18 @@ class EnrichmentService(
     private fun fetchRpReaderFallback(url: String, statusCode: Int): String? {
         if (statusCode != 403) return null
         if (!isRpUrl(url)) return null
+
+        val readerUrl = readerUrl(url) ?: return null
+        return try {
+            fetchHtml(readerUrl, readerRestClient)
+        } catch (_: RestClientException) {
+            null
+        }
+    }
+
+    private fun fetchNytReaderFallback(url: String, statusCode: Int): String? {
+        if (statusCode != 403) return null
+        if (!isNytUrl(url)) return null
 
         val readerUrl = readerUrl(url) ?: return null
         return try {
@@ -739,6 +754,16 @@ private fun isRpUrl(url: String): Boolean {
     val host = uri.host?.lowercase() ?: return false
 
     return host == "rp.pl" || host.endsWith(".rp.pl")
+}
+
+internal fun isNytUrl(url: String): Boolean {
+    val uri = runCatching { URI(url) }.getOrNull() ?: return false
+    val host = uri.host?.lowercase() ?: return false
+
+    return host == "nyti.ms" ||
+        host.endsWith(".nyti.ms") ||
+        host == "nytimes.com" ||
+        host.endsWith(".nytimes.com")
 }
 
 internal fun shouldUseReutersMobileFallback(url: String, statusCode: Int): Boolean {

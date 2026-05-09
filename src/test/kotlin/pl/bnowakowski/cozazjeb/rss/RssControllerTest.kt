@@ -10,13 +10,16 @@ import org.mockito.kotlin.whenever
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.security.oauth2.jwt.JwtDecoder
 import org.springframework.test.context.TestPropertySource
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
+import pl.bnowakowski.cozazjeb.NO_DATABASE_AUTOCONFIGURATION
 import pl.bnowakowski.cozazjeb.article.Article
 import pl.bnowakowski.cozazjeb.article.ArticleRepository
+import pl.bnowakowski.cozazjeb.article.ArticleService
 import pl.bnowakowski.cozazjeb.user.AppUserRepository
 import pl.bnowakowski.cozazjeb.user.AppUserStatus
 import pl.bnowakowski.cozazjeb.user.Role
@@ -24,14 +27,21 @@ import java.time.Instant
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 @AutoConfigureMockMvc
-@TestPropertySource(properties = ["app.build.timestamp=2026-05-04T10:00:00Z"])
+@TestPropertySource(
+    properties = [
+        "app.build.timestamp=2026-05-04T10:00:00Z",
+        NO_DATABASE_AUTOCONFIGURATION,
+    ],
+)
 class RssControllerTest {
 
     @Autowired private lateinit var mockMvc: MockMvc
 
     @MockitoBean private lateinit var jwtDecoder: JwtDecoder
+    @MockitoBean private lateinit var namedParameterJdbcTemplate: NamedParameterJdbcTemplate
     @MockitoBean private lateinit var appUserRepository: AppUserRepository
     @MockitoBean private lateinit var articleRepository: ArticleRepository
+    @MockitoBean private lateinit var articleService: ArticleService
 
     private val sampleArticles = listOf(
         Article(
@@ -184,4 +194,3 @@ class RssControllerTest {
         }
     }
 }
-

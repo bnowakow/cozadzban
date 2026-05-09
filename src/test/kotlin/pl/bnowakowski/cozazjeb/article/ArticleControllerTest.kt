@@ -14,6 +14,7 @@ import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.http.MediaType
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.security.oauth2.jwt.JwtDecoder
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt
 import org.springframework.test.context.TestPropertySource
@@ -23,6 +24,7 @@ import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.patch
 import org.springframework.test.web.servlet.post
 import org.springframework.test.web.servlet.put
+import pl.bnowakowski.cozazjeb.NO_DATABASE_AUTOCONFIGURATION
 import pl.bnowakowski.cozazjeb.enrichment.EnrichmentException
 import pl.bnowakowski.cozazjeb.user.AppUser
 import pl.bnowakowski.cozazjeb.user.AppUserRepository
@@ -32,13 +34,20 @@ import java.time.Instant
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 @AutoConfigureMockMvc
-@TestPropertySource(properties = ["app.build.timestamp=2026-05-04T10:00:00Z"])
+@TestPropertySource(
+    properties = [
+        "app.build.timestamp=2026-05-04T10:00:00Z",
+        NO_DATABASE_AUTOCONFIGURATION,
+    ],
+)
 class ArticleControllerTest {
 
     @Autowired private lateinit var mockMvc: MockMvc
 
     @MockitoBean private lateinit var jwtDecoder: JwtDecoder
+    @MockitoBean private lateinit var namedParameterJdbcTemplate: NamedParameterJdbcTemplate
     @MockitoBean private lateinit var appUserRepository: AppUserRepository
+    @MockitoBean private lateinit var articleRepository: ArticleRepository
     @MockitoBean private lateinit var articleService: ArticleService
 
     private val userEmail = "user@test.com"
