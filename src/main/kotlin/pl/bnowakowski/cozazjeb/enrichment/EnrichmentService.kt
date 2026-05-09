@@ -546,17 +546,20 @@ internal fun recoverFacebookPostFromGenericError(
     responseBody: String,
 ): EnrichmentResult? {
     if (statusCode != 400) return null
-    if (!isFacebookPfbidPostUrl(url)) return null
-    if (!isFacebookGenericError(responseBody)) return null
+    if (!isRecoverableFacebookUrl(url)) return null
+    if (!isFacebookVideoOrReelUrl(url) && !isFacebookGenericError(responseBody)) return null
 
     return EnrichmentResult(
-        title = "Facebook post",
+        title = facebookFallbackTitle(url),
         thumbnail = null,
         lead = null,
         publishedAt = null,
         plainText = null,
     )
 }
+
+private fun isRecoverableFacebookUrl(url: String): Boolean =
+    isFacebookPfbidPostUrl(url) || isFacebookVideoOrReelUrl(url)
 
 private fun isFacebookPfbidPostUrl(url: String): Boolean {
     val uri = runCatching { URI(url) }.getOrNull() ?: return false
@@ -566,6 +569,18 @@ private fun isFacebookPfbidPostUrl(url: String): Boolean {
     return (host == "facebook.com" || host.endsWith(".facebook.com")) &&
         path.contains("/posts/pfbid")
 }
+
+private fun isFacebookVideoOrReelUrl(url: String): Boolean {
+    val uri = runCatching { URI(url) }.getOrNull() ?: return false
+    val host = uri.host?.lowercase() ?: return false
+    val path = uri.path ?: return false
+
+    return (host == "facebook.com" || host.endsWith(".facebook.com")) &&
+        (path.contains("/videos/") || path.contains("/reel/"))
+}
+
+private fun facebookFallbackTitle(url: String): String =
+    if (isFacebookVideoOrReelUrl(url)) "Facebook reel" else "Facebook post"
 
 private fun facebookMbasicUrl(url: String): String? {
     val uri = runCatching { URI(url) }.getOrNull() ?: return null

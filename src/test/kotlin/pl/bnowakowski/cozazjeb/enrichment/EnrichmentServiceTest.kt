@@ -95,6 +95,18 @@ class EnrichmentServiceTest {
     }
 
     @Test
+    fun `recovers Facebook reel 400 as minimal reel`() {
+        val result = recoverFacebookPostFromGenericError(
+            url = "https://www.facebook.com/reel/1648200636595572",
+            statusCode = HttpURLConnection.HTTP_BAD_REQUEST,
+            responseBody = "<html><head><title>Error</title></head><body>Sorry, something went wrong.</body></html>",
+        )
+
+        assertNotNull(result)
+        assertEquals("Facebook reel", result?.title)
+    }
+
+    @Test
     fun `uses Reuters mobile fallback only for Reuters 401 responses`() {
         assertEquals(true, shouldUseReutersMobileFallback("https://reut.rs/4oRr7wu", HttpURLConnection.HTTP_UNAUTHORIZED))
         assertEquals(true, shouldUseReutersMobileFallback("https://www.reuters.com/world/example/", HttpURLConnection.HTTP_UNAUTHORIZED))
@@ -333,4 +345,5 @@ class EnrichmentServiceTest {
             server.stop(0)
         }
     }
+
 }
