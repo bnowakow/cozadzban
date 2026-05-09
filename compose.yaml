@@ -3,6 +3,7 @@ services:
     build:
       context: .
     image: cozazjeb:local
+    restart: unless-stopped
     cpus: '1.25'
     mem_limit: 1536m
     memswap_limit: 1536m
@@ -34,6 +35,7 @@ services:
       - '${APP_PORT:-8086}:8080'
   postgres:
     image: 'postgres:latest'
+    restart: unless-stopped
     cpus: '0.75'
     mem_limit: 1024m
     memswap_limit: 1024m
@@ -52,6 +54,7 @@ services:
       retries: 5
   zipkin:
     image: 'openzipkin/zipkin:latest'
+    restart: unless-stopped
     cpus: '0.25'
     mem_limit: 384m
     memswap_limit: 384m
