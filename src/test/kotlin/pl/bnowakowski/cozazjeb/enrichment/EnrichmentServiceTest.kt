@@ -6,6 +6,7 @@ package pl.bnowakowski.cozazjeb.enrichment
 import com.sun.net.httpserver.HttpServer
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import org.springframework.web.client.RestClient
 import java.net.InetSocketAddress
@@ -13,6 +14,60 @@ import java.net.HttpURLConnection
 import java.time.Instant
 
 class EnrichmentServiceTest {
+
+    @Test
+    fun `ignores generic Instagram login shell metadata`() {
+        val html = """
+            <!doctype html>
+            <html>
+              <head>
+                <title>Instagram</title>
+                <meta property="og:title" content="Instagram">
+                <meta property="og:image" content="https://static.cdninstagram.com/rsrc.php/v4/yD/r/R0fBIMurK8v.png">
+                <meta name="description" content="Create an account or log in to Instagram">
+              </head>
+              <body>Log in to Instagram</body>
+            </html>
+        """.trimIndent()
+
+        val result = enrichHtml("https://www.instagram.com/reel/DW6kHAvsM-p/", html)
+
+        assertNull(result.title)
+        assertNull(result.thumbnail)
+        assertNull(result.lead)
+    }
+
+    @Test
+    fun `extracts Instagram crawler metadata and description date`() {
+        val html = """
+            <!doctype html>
+            <html>
+              <head>
+                <meta property="og:title" content="Kacper Nowicki on Instagram: &quot;Patrick Who?&quot;">
+                <meta property="og:image" content="https://scontent-waw2-2.cdninstagram.com/v/t51.82787-15/image.jpg?oh=abc">
+                <meta property="og:description" content="66K likes, 3,923 comments - kacper.nowicki_ on April 9, 2026: &quot;Patrick Who?&quot;. ">
+              </head>
+              <body>Instagram reel</body>
+            </html>
+        """.trimIndent()
+
+        val result = enrichHtml("https://www.instagram.com/reel/DW6kHAvsM-p/", html)
+
+        assertEquals("Kacper Nowicki on Instagram: \"Patrick Who?\"", result.title)
+        assertEquals("https://scontent-waw2-2.cdninstagram.com/v/t51.82787-15/image.jpg?oh=abc", result.thumbnail)
+        assertEquals(
+            "66K likes, 3,923 comments - kacper.nowicki_ on April 9, 2026: \"Patrick Who?\".",
+            result.lead,
+        )
+        assertEquals(Instant.parse("2026-04-09T00:00:00Z"), result.publishedAt)
+    }
+
+    @Test
+    fun `recognizes Instagram links for crawler fallback`() {
+        assertEquals(true, isInstagramUrl("https://www.instagram.com/reel/DW6kHAvsM-p/"))
+        assertEquals(true, isInstagramUrl("https://instagram.com/p/DW6kHAvsM-p/"))
+        assertEquals(false, isInstagramUrl("https://example.com/reel/DW6kHAvsM-p/"))
+    }
 
     @Test
     fun `extracts visible Facebook style published date`() {

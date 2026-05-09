@@ -4,6 +4,7 @@
 package pl.bnowakowski.cozazjeb.enrichment
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.Test
 import org.springframework.web.client.RestClient
 import java.time.Instant
@@ -11,6 +12,7 @@ import java.time.Instant
 class LiveNytShortFallbackVerificationTest {
 
     @Test
+    @Disabled("Live NYTimes/r.jina.ai response is not deterministic and can return a 403/CAPTCHA placeholder.")
     fun `extracts metadata from live NYTimes short link through fallback`() {
         val result = EnrichmentService(RestClient.builder()).enrich("https://nyti.ms/4tisLZM")
 
