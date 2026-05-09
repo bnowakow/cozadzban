@@ -394,6 +394,42 @@ class EnrichmentServiceTest {
         }
     }
 
+    @Test
+    fun `extracts JSON-LD NewsArticle published date from graph`() {
+        val html = """
+            <!doctype html>
+            <html>
+              <head>
+                <meta property="og:title" content="XYZ article">
+                <script type="application/ld+json">
+                  {
+                    "@context": "https://schema.org",
+                    "@graph": [
+                      {
+                        "@type": "BreadcrumbList",
+                        "name": "Breadcrumbs"
+                      },
+                      {
+                        "@type": "NewsArticle",
+                        "headline": "Donald Trump: zniszczyliśmy prawie wszystkie stawiacze min",
+                        "datePublished": "2026-03-11T18:55:00+00:00",
+                        "dateModified": "2026-03-11T18:55:00+00:00"
+                      }
+                    ]
+                  }
+                </script>
+              </head>
+              <body>Article</body>
+            </html>
+        """.trimIndent()
+
+        withServer(html) { url ->
+            val result = EnrichmentService(RestClient.builder()).enrich(url)
+
+            assertEquals(Instant.parse("2026-03-11T18:55:00Z"), result.publishedAt)
+        }
+    }
+
     private fun withServer(body: String, path: String = "/", block: (String) -> Unit) {
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         server.createContext(path) { exchange ->

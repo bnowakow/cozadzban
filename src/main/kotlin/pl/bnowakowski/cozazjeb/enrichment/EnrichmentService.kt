@@ -321,7 +321,7 @@ class EnrichmentService(
                 val json = JSON_MAPPER.readTree(script.html()) ?: continue
                 val nodes = when {
                     json.isArray -> (0 until json.size()).map { json[it] }
-                    json.isObject -> listOf(json)
+                    json.isObject -> listOf(json) + jsonGraphNodes(json)
                     else -> emptyList()
                 }
                 for (node in nodes) {
@@ -336,6 +336,13 @@ class EnrichmentService(
             }
         }
         return null
+    }
+
+    private fun jsonGraphNodes(node: com.fasterxml.jackson.databind.JsonNode): List<com.fasterxml.jackson.databind.JsonNode> {
+        val graph = node.get("@graph") ?: return emptyList()
+        if (!graph.isArray) return emptyList()
+
+        return (0 until graph.size()).map { graph[it] }
     }
 
     /** Parses ISO-8601 instant or date-only string. Returns null on parse failure (not enrichment failure). */
