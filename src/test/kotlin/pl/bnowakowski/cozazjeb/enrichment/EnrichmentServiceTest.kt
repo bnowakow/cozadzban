@@ -345,6 +345,13 @@ class EnrichmentServiceTest {
     }
 
     @Test
+    fun `recognizes DlvrIt short links for reader fallback`() {
+        assertEquals(true, isDlvrItShortUrl("http://dlvr.it/TS1M9k"))
+        assertEquals(true, isDlvrItShortUrl("https://www.dlvr.it/TS1M9k"))
+        assertEquals(false, isDlvrItShortUrl("https://wiadomosci.onet.pl/kraj/example"))
+    }
+
+    @Test
     fun `parses Ebx reader fallback published date`() {
         val result = parseReaderMarkdownResult(
             url = "https://ebx.sh/6q8VNF",
@@ -365,6 +372,25 @@ class EnrichmentServiceTest {
             result.title,
         )
         assertEquals(Instant.parse("2026-04-11T05:00:00Z"), result.publishedAt)
+    }
+
+    @Test
+    fun `parses DlvrIt reader fallback compact timezone published date`() {
+        val result = parseReaderMarkdownResult(
+            url = "http://dlvr.it/TS1M9k",
+            text = """
+                Title: Bogdan Święczkowski stawia warunki sędziom Trybunału Konstytucyjnego
+
+                URL Source: http://dlvr.it/TS1M9k
+
+                Published Time: 2026-04-13T18:59:27+0200
+
+                Markdown Content:
+                Trybunał Konstytucyjny znalazł się w impasie po sejmowych uchwałach.
+            """.trimIndent(),
+        )
+
+        assertEquals(Instant.parse("2026-04-13T16:59:27Z"), result.publishedAt)
     }
 
     @Test
@@ -666,6 +692,35 @@ class EnrichmentServiceTest {
             val result = EnrichmentService(RestClient.builder()).enrich(url)
 
             assertEquals(Instant.parse("2025-12-01T10:12:00Z"), result.publishedAt)
+        }
+    }
+
+    @Test
+    fun `extracts JSON-LD NewsArticle published date with compact timezone offset`() {
+        val html = """
+            <!doctype html>
+            <html>
+              <head>
+                <meta property="og:title" content="Trybunał Konstytucyjny w impasie. Bogdan Święczkowski zabiera głos">
+                <meta property="og:image" content="https://cdn.wiadomosci.onet.pl/example.jpg">
+                <script type="application/ld+json">
+                  {
+                    "@context": "https://schema.org",
+                    "@type": "NewsArticle",
+                    "datePublished": "2026-04-13T18:59:27+0200"
+                  }
+                </script>
+              </head>
+              <body>Article</body>
+            </html>
+        """.trimIndent()
+
+        withServer(html) { url ->
+            val result = EnrichmentService(RestClient.builder()).enrich(url)
+
+            assertEquals("Trybunał Konstytucyjny w impasie. Bogdan Święczkowski zabiera głos", result.title)
+            assertEquals("https://cdn.wiadomosci.onet.pl/example.jpg", result.thumbnail)
+            assertEquals(Instant.parse("2026-04-13T16:59:27Z"), result.publishedAt)
         }
     }
 
