@@ -270,7 +270,7 @@ class ArticleOwnershipIT {
 
     @Test
     fun `generic Facebook post title uses cache excerpt`() {
-        val url = "https://www.facebook.com/akurasinski/posts/pfbid033CLUhJTuKWPiYspPP2womaWEF7vH9yHSTED9EkLpHNrPmoZzjEyUQ25aJrHZP3sul?title-excerpt-test"
+        val url = "https://www.facebook.com/akurasinski/posts/pfbidTitleExcerpt${System.nanoTime()}"
 
         whenever(enrichmentService.enrich(any())).thenReturn(
             EnrichmentResult(
