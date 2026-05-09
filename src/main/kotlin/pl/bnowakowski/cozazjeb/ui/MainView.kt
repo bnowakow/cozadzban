@@ -5,6 +5,7 @@ package pl.bnowakowski.cozazjeb.ui
 
 import com.vaadin.flow.component.button.Button
 import com.vaadin.flow.component.button.ButtonVariant
+import com.vaadin.flow.component.Key
 import com.vaadin.flow.component.datetimepicker.DateTimePicker
 import com.vaadin.flow.component.confirmdialog.ConfirmDialog
 import com.vaadin.flow.component.dialog.Dialog
@@ -394,6 +395,11 @@ class ArticleListView(
 
         val dialog = Dialog()
         dialog.headerTitle = "Add Article"
+        dialog.addOpenedChangeListener { event ->
+            if (event.isOpened) {
+                urlField.focus()
+            }
+        }
 
         submitButton.addClickListener {
             val url = urlField.value?.trim().orEmpty()
@@ -427,6 +433,7 @@ class ArticleListView(
                 submitButton.isEnabled = true
             }
         }
+        submitButton.addClickShortcut(Key.ENTER).listenOn(dialog)
 
         cancelButton.addClickListener { dialog.close() }
 
