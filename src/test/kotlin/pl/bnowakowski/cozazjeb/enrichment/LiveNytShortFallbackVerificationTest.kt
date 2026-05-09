@@ -16,5 +16,9 @@ class LiveNytShortFallbackVerificationTest {
 
         assertEquals("Pam Bondi Fired as Trump’s Attorney General", result.title)
         assertEquals(Instant.parse("2026-04-02T17:07:51Z"), result.publishedAt)
+        assertEquals(
+            "https://static01.nyt.com/images/2026/04/02/multimedia/00dc-bondiHFO-mzkg/00dc-bondiHFO-mzkg-largeHorizontalJumbo.jpg",
+            result.thumbnail,
+        )
     }
 }

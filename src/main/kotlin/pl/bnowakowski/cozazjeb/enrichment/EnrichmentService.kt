@@ -14,6 +14,7 @@ import org.springframework.web.client.RestClient
 import org.springframework.web.client.RestClientException
 import org.springframework.web.client.RestClientResponseException
 import java.net.ConnectException
+import java.net.HttpURLConnection
 import java.net.URI
 import java.net.SocketTimeoutException
 import java.time.Instant
@@ -130,7 +131,7 @@ class EnrichmentService(
                 return parseReaderMarkdownResult(url, readerText)
             }
             fetchNytReaderFallback(url, ex.statusCode.value())?.let { readerText ->
-                return parseReaderMarkdownResult(url, readerText)
+                return parseNytReaderMarkdownResult(url, readerText)
             }
             fetchWashingtonPostReaderFallback(url, ex.statusCode.value())?.let { readerText ->
                 return parseReaderMarkdownResult(url, readerText)
@@ -155,7 +156,7 @@ class EnrichmentService(
                 else -> EnrichmentException.Reason.UNREACHABLE
             }
             fetchNytReaderFallback(url)?.let { readerText ->
-                return parseReaderMarkdownResult(url, readerText)
+                return parseNytReaderMarkdownResult(url, readerText)
             }
             fetchWashingtonPostReaderFallback(url)?.let { readerText ->
                 return parseReaderMarkdownResult(url, readerText)
@@ -170,7 +171,7 @@ class EnrichmentService(
             )
         } catch (ex: RestClientException) {
             fetchNytReaderFallback(url)?.let { readerText ->
-                return parseReaderMarkdownResult(url, readerText)
+                return parseNytReaderMarkdownResult(url, readerText)
             }
             fetchWashingtonPostReaderFallback(url)?.let { readerText ->
                 return parseReaderMarkdownResult(url, readerText)
@@ -298,6 +299,59 @@ class EnrichmentService(
         } catch (_: RestClientException) {
             null
         }
+    }
+
+    private fun parseNytReaderMarkdownResult(url: String, text: String): EnrichmentResult {
+        val result = parseReaderMarkdownResult(url, text)
+        if (result.thumbnail != null) return result
+
+        return result.copy(thumbnail = fetchNytOEmbedThumbnail(url))
+    }
+
+    private fun fetchNytOEmbedThumbnail(url: String): String? {
+        if (!isNytUrl(url)) return null
+
+        val oembedUrl = "https://www.nytimes.com/svc/oembed/json/?url=${encodeQueryParam(resolveRedirectUrl(url) ?: url)}"
+        return try {
+            val response = fetchHtml(oembedUrl, readerRestClient)
+            JSON_MAPPER.readTree(response)
+                ?.get("thumbnail_url")
+                ?.asText()
+                .normalized()
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun resolveRedirectUrl(url: String): String? {
+        var current = url
+        repeat(MAX_REDIRECT_RESOLUTION_HOPS) {
+            val connection = try {
+                (URI(current).toURL().openConnection() as? HttpURLConnection) ?: return null
+            } catch (_: Exception) {
+                return null
+            }
+            connection.instanceFollowRedirects = false
+            connection.connectTimeout = CONNECT_TIMEOUT_MS
+            connection.readTimeout = READ_TIMEOUT_MS
+            connection.setRequestProperty(HttpHeaders.USER_AGENT, BROWSER_USER_AGENT)
+            connection.setRequestProperty(HttpHeaders.ACCEPT, "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+
+            try {
+                val statusCode = connection.responseCode
+                val location = connection.getHeaderField(HttpHeaders.LOCATION)
+                if (statusCode !in 300..399 || location.isNullOrBlank()) {
+                    return current
+                }
+                current = URI(current).resolve(location).toString()
+            } catch (_: Exception) {
+                return null
+            } finally {
+                connection.disconnect()
+            }
+        }
+
+        return current
     }
 
     private fun fetchRpFallback(url: String, statusCode: Int): String? {
@@ -629,6 +683,7 @@ class EnrichmentService(
     companion object {
         private const val CONNECT_TIMEOUT_MS = 3_000
         private const val READ_TIMEOUT_MS = 5_000
+        private const val MAX_REDIRECT_RESOLUTION_HOPS = 5
         private const val MIN_FACEBOOK_MESSAGE_LENGTH = 12
         private const val MAX_FACEBOOK_MESSAGE_CANDIDATES = 500
         private const val MAX_FACEBOOK_MESSAGE_RAW_LENGTH = 20_000
