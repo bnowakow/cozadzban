@@ -258,6 +258,16 @@ class EnrichmentServiceTest {
     }
 
     @Test
+    fun `recognizes Washington Post links for reader fallback`() {
+        assertEquals(
+            true,
+            isWashingtonPostUrl("https://www.washingtonpost.com/technology/2026/03/17/israel-journalist-polymarket-iran-strike/"),
+        )
+        assertEquals(true, isWashingtonPostUrl("https://washingtonpost.com/example"))
+        assertEquals(false, isWashingtonPostUrl("https://example.com/article"))
+    }
+
+    @Test
     fun `parses NYTimes reader fallback title published time and lead`() {
         val thumbnail = "https://static01.nyt.com/images/2026/03/12/multimedia/12dc-russiasanctions-whjc/12dc-russiasanctions-whjc-articleLarge.jpg?quality=75&auto=webp&disable=upscale"
         val result = parseReaderMarkdownResult(
@@ -283,6 +293,39 @@ class EnrichmentServiceTest {
         assertEquals("Trump Removes Sanctions on Russia to Help Oil Flow Amid Iran Conflict - The New York Times", result.title)
         assertEquals(Instant.parse("2026-03-13T01:32:01Z"), result.publishedAt)
         assertEquals("Trump Removes Sanctions on Russia to Help Oil Flow Amid Iran Conflict", result.lead)
+        assertEquals(thumbnail, result.thumbnail)
+    }
+
+    @Test
+    fun `parses Washington Post reader fallback title published time thumbnail and lead`() {
+        val thumbnail =
+            "https://www.washingtonpost.com/wp-apps/imrs.php?src=https://cloudfront-us-east-1.images.arcpublishing.com/wapo/RIXQ5R4N7JG2SWLWTGVK77JCLQ.JPG&w=440%20400w"
+        val result = parseReaderMarkdownResult(
+            url = "https://www.washingtonpost.com/technology/2026/03/17/israel-journalist-polymarket-iran-strike/",
+            text = """
+                Title: A journalist reported a missile strike. Then came the death threats.
+
+                URL Source: https://www.washingtonpost.com/technology/2026/03/17/israel-journalist-polymarket-iran-strike/
+
+                Published Time: 2026-03-17T09:00:00.273Z
+
+                Markdown Content:
+                # War reporter says Polymarket bettors pressured him to change article - The Washington Post
+
+                # A journalist reported a missile strike. Then came the death threats.
+
+                A Times of Israel reporter says online gamblers pressured him to change his story about an Iranian missile strike so they could win a payout.
+
+                ![Image 1]($thumbnail)
+            """.trimIndent(),
+        )
+
+        assertEquals("A journalist reported a missile strike. Then came the death threats.", result.title)
+        assertEquals(Instant.parse("2026-03-17T09:00:00.273Z"), result.publishedAt)
+        assertEquals(
+            "War reporter says Polymarket bettors pressured him to change article - The Washington Post",
+            result.lead,
+        )
         assertEquals(thumbnail, result.thumbnail)
     }
 

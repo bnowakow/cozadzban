@@ -132,6 +132,9 @@ class EnrichmentService(
             fetchNytReaderFallback(url, ex.statusCode.value())?.let { readerText ->
                 return parseReaderMarkdownResult(url, readerText)
             }
+            fetchWashingtonPostReaderFallback(url, ex.statusCode.value())?.let { readerText ->
+                return parseReaderMarkdownResult(url, readerText)
+            }
             recoverFacebookPostFromGenericError(url, ex.statusCode.value(), ex.responseBodyAsString)?.let {
                 return it
             }
@@ -148,12 +151,18 @@ class EnrichmentService(
                 is ConnectException -> EnrichmentException.Reason.UNREACHABLE
                 else -> EnrichmentException.Reason.UNREACHABLE
             }
+            fetchWashingtonPostReaderFallback(url)?.let { readerText ->
+                return parseReaderMarkdownResult(url, readerText)
+            }
             throw EnrichmentException(
                 message = "URL enrichment failed: target was unreachable or timed out for '$url'",
                 reason = reason,
                 cause = ex,
             )
         } catch (ex: RestClientException) {
+            fetchWashingtonPostReaderFallback(url)?.let { readerText ->
+                return parseReaderMarkdownResult(url, readerText)
+            }
             throw EnrichmentException(
                 message = "URL enrichment failed for '$url'",
                 reason = EnrichmentException.Reason.UNREACHABLE,
@@ -222,18 +231,30 @@ class EnrichmentService(
         if (statusCode != 403) return null
         if (!isRpUrl(url)) return null
 
-        val readerUrl = readerUrl(url) ?: return null
-        return try {
-            fetchHtml(readerUrl, readerRestClient)
-        } catch (_: RestClientException) {
-            null
-        }
+        return fetchReaderFallback(url)
     }
 
     private fun fetchNytReaderFallback(url: String, statusCode: Int): String? {
         if (statusCode != 403) return null
         if (!isNytUrl(url)) return null
 
+        return fetchReaderFallback(url)
+    }
+
+    private fun fetchWashingtonPostReaderFallback(url: String, statusCode: Int): String? {
+        if (statusCode != 401 && statusCode != 403 && statusCode != 429) return null
+        if (!isWashingtonPostUrl(url)) return null
+
+        return fetchReaderFallback(url)
+    }
+
+    private fun fetchWashingtonPostReaderFallback(url: String): String? {
+        if (!isWashingtonPostUrl(url)) return null
+
+        return fetchReaderFallback(url)
+    }
+
+    private fun fetchReaderFallback(url: String): String? {
         val readerUrl = readerUrl(url) ?: return null
         return try {
             fetchHtml(readerUrl, readerRestClient)
@@ -853,6 +874,13 @@ internal fun isNytUrl(url: String): Boolean {
         host.endsWith(".nyti.ms") ||
         host == "nytimes.com" ||
         host.endsWith(".nytimes.com")
+}
+
+internal fun isWashingtonPostUrl(url: String): Boolean {
+    val uri = runCatching { URI(url) }.getOrNull() ?: return false
+    val host = uri.host?.lowercase() ?: return false
+
+    return host == "washingtonpost.com" || host.endsWith(".washingtonpost.com")
 }
 
 internal fun shouldUseReutersMobileFallback(url: String, statusCode: Int): Boolean {
