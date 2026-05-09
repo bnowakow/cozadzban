@@ -83,6 +83,49 @@ class EnrichmentServiceTest {
     }
 
     @Test
+    fun `extracts YouTube title from video details when page title is generic`() {
+        val html = """
+            <!doctype html>
+            <html>
+              <head><title>YouTube</title></head>
+              <body>
+                <script>
+                  var ytInitialPlayerResponse = {
+                    "videoDetails": {
+                      "videoId": "Xi-HcxcM3dc",
+                      "title": "V EN MariaAI DemoB72 aLoora d5 9x16 s51 ID 6262",
+                      "shortDescription": ""
+                    }
+                  };
+                </script>
+              </body>
+            </html>
+        """.trimIndent()
+
+        val result = enrichHtml("https://youtu.be/Xi-HcxcM3dc?is=5gYGOGAFM0CG2OQ8", html)
+
+        assertEquals("V EN MariaAI DemoB72 aLoora d5 9x16 s51 ID 6262", result.title)
+    }
+
+    @Test
+    fun `extracts YouTube title from name title meta when OpenGraph title is absent`() {
+        val html = """
+            <!doctype html>
+            <html>
+              <head>
+                <title>YouTube</title>
+                <meta name="title" content="V EN MariaAI DemoB72 aLoora d5 9x16 s51 ID 6262">
+              </head>
+              <body>Video</body>
+            </html>
+        """.trimIndent()
+
+        val result = enrichHtml("https://www.youtube.com/watch?v=Xi-HcxcM3dc", html)
+
+        assertEquals("V EN MariaAI DemoB72 aLoora d5 9x16 s51 ID 6262", result.title)
+    }
+
+    @Test
     fun `recovers generic Facebook pfbid 400 as minimal post`() {
         val result = recoverFacebookPostFromGenericError(
             url = "https://www.facebook.com/akurasinski/posts/pfbid033CLUhJTuKWPiYspPP2womaWEF7vH9yHSTED9EkLpHNrPmoZzjEyUQ25aJrHZP3sul",

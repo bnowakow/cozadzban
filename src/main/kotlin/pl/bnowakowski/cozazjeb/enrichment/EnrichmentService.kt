@@ -255,7 +255,14 @@ class EnrichmentService(
 
     private fun enrichHtml(url: String, html: String): EnrichmentResult {
         val doc = Jsoup.parse(html, url)
-        val title = metaContent(doc, "meta[property=og:title]") ?: doc.title().normalized()
+        val title = youtubeStructuredTitle(url, html)
+            ?: metaContent(doc, "meta[property=og:title]")
+            ?: metaContent(doc, "meta[name=title]")
+            ?: metaContent(doc, "meta[name=twitter:title]")
+            ?: metaContent(doc, "meta[property=twitter:title]")
+            ?: doc.title().normalized()
+                ?.takeUnless { isGenericYoutubeTitle(url, it) }
+            ?: fetchYoutubeOEmbedTitle(url)
         val thumbnail = firstMetaImage(
             doc,
             "meta[property=og:image]",
@@ -534,6 +541,31 @@ class EnrichmentService(
     private fun firstMetaImage(doc: org.jsoup.nodes.Document, vararg selectors: String): String? =
         selectors.firstNotNullOfOrNull { selector -> absoluteOrRawMetaContent(doc, selector) }
 
+    private fun youtubeStructuredTitle(url: String, html: String): String? {
+        if (!isYoutubeUrl(url)) return null
+
+        return YOUTUBE_VIDEO_DETAILS_TITLE_PATTERN.find(html)
+            ?.groupValues
+            ?.get(1)
+            ?.let { decodeJsonString(it) }
+            .normalized()
+    }
+
+    private fun fetchYoutubeOEmbedTitle(url: String): String? {
+        if (!isYoutubeUrl(url)) return null
+
+        val oembedUrl = "https://www.youtube.com/oembed?url=${encodeQueryParam(url)}&format=json"
+        return try {
+            val response = fetchHtml(oembedUrl)
+            JSON_MAPPER.readTree(response)
+                ?.get("title")
+                ?.asText()
+                .normalized()
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     private fun String?.normalized(): String? = this?.trim()?.takeIf { it.isNotEmpty() }
 
     companion object {
@@ -556,6 +588,10 @@ class EnrichmentService(
             "BlogPosting",
             "ClaimReview",
             "WebPage",
+        )
+        private val YOUTUBE_VIDEO_DETAILS_TITLE_PATTERN = Regex(
+            """"videoDetails"\s*:\s*\{.*?"title"\s*:\s*"((?:\\.|[^"\\])*)"""",
+            RegexOption.DOT_MATCHES_ALL,
         )
         private val FACEBOOK_PUBLISH_TIME_PATTERN = Regex("""publish_time\\?":\s*(\d{10})""")
         private val FACEBOOK_CREATION_TIME_PATTERN = Regex("""creation_time\\?":\s*(\d{10})""")
@@ -665,6 +701,18 @@ private fun isFacebookVideoOrReelUrl(url: String): Boolean {
     return (host == "facebook.com" || host.endsWith(".facebook.com")) &&
         (path.contains("/videos/") || path.contains("/reel/"))
 }
+
+private fun isYoutubeUrl(url: String): Boolean {
+    val uri = runCatching { URI(url) }.getOrNull() ?: return false
+    val host = uri.host?.lowercase() ?: return false
+
+    return host == "youtu.be" ||
+        host == "youtube.com" ||
+        host.endsWith(".youtube.com")
+}
+
+private fun isGenericYoutubeTitle(url: String, title: String): Boolean =
+    isYoutubeUrl(url) && title.trim().equals("YouTube", ignoreCase = true)
 
 private fun facebookVideoPluginUrl(url: String): String? {
     if (!isFacebookVideoOrReelUrl(url)) return null
