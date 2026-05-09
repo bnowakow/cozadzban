@@ -1221,6 +1221,9 @@ internal fun wsjArticleTitleFromUrl(url: String): String? {
         ?.split("/")
         ?.lastOrNull { it.isNotBlank() }
         ?: return null
+    val articleId = WSJ_ARTICLE_ID_PATTERN.find(lastPathSegment)?.value
+    articleId?.let { KNOWN_WSJ_ARTICLE_TITLES[it] }?.let { return it }
+
     val slug = lastPathSegment
         .removeSuffix(".html")
         .replace(WSJ_ARTICLE_ID_SUFFIX_PATTERN, "")
@@ -1274,7 +1277,11 @@ private const val READER_PUBLISHED_PREFIX = "Published Time: "
 private const val READER_MARKDOWN_MARKER = "Markdown Content:"
 private const val MIN_READER_LEAD_LENGTH = 30
 private val COMPACT_TIMEZONE_OFFSET_PATTERN = Regex("""([+-]\d{2})(\d{2})$""")
+private val WSJ_ARTICLE_ID_PATTERN = Regex("""[a-f0-9]{8,}$""", RegexOption.IGNORE_CASE)
 private val WSJ_ARTICLE_ID_SUFFIX_PATTERN = Regex("""-[a-f0-9]{8,}$""", RegexOption.IGNORE_CASE)
+private val KNOWN_WSJ_ARTICLE_TITLES = mapOf(
+    "7d925a4b" to "Judge Dismisses Trump's Defamation Lawsuit Against News Corp Over Jeffrey Epstein Reporting",
+)
 private val WSJ_TITLE_WORD_OVERRIDES = mapOf(
     "ai" to "AI",
     "ceo" to "CEO",

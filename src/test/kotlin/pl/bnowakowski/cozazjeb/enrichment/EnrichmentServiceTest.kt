@@ -341,10 +341,22 @@ class EnrichmentServiceTest {
     @Test
     fun `derives WSJ fallback title from article slug`() {
         val title = wsjArticleTitleFromUrl(
+            "https://www.wsj.com/business/media/example-ai-lawsuit-f918d796?mod=e2fb",
+        )
+
+        assertEquals("Example AI Lawsuit", title)
+    }
+
+    @Test
+    fun `uses known WSJ title for blocked article`() {
+        val title = wsjArticleTitleFromUrl(
             "https://www.wsj.com/business/media/trump-lawsuit-murdoch-dow-jones-epstein-letter-7d925a4b?mod=e2fb",
         )
 
-        assertEquals("Trump Lawsuit Murdoch Dow Jones Epstein Letter", title)
+        assertEquals(
+            "Judge Dismisses Trump's Defamation Lawsuit Against News Corp Over Jeffrey Epstein Reporting",
+            title,
+        )
     }
 
     @Test
