@@ -152,6 +152,7 @@ class EnrichmentService(
             fetchBloombergReaderFallback(url, ex.statusCode.value())?.let { readerText ->
                 return parseReaderMarkdownResult(url, readerText)
             }
+            fetchWsjFallback(url, ex.statusCode.value())?.let { return it }
             fetchDlvrItReaderFallback(url)?.let { readerText ->
                 return parseReaderMarkdownResult(url, readerText)
             }
@@ -189,6 +190,7 @@ class EnrichmentService(
             fetchBloombergReaderFallback(url)?.let { readerText ->
                 return parseReaderMarkdownResult(url, readerText)
             }
+            fetchWsjFallback(url)?.let { return it }
             fetchDlvrItReaderFallback(url)?.let { readerText ->
                 return parseReaderMarkdownResult(url, readerText)
             }
@@ -216,6 +218,7 @@ class EnrichmentService(
             fetchBloombergReaderFallback(url)?.let { readerText ->
                 return parseReaderMarkdownResult(url, readerText)
             }
+            fetchWsjFallback(url)?.let { return it }
             fetchDlvrItReaderFallback(url)?.let { readerText ->
                 return parseReaderMarkdownResult(url, readerText)
             }
@@ -240,6 +243,7 @@ class EnrichmentService(
             ?.let { return enrichHtml(url, it) }
         fetchBloombergReaderFallbackIfIncomplete(url, result)
             ?.let { return parseReaderMarkdownResult(url, it) }
+        fetchWsjFallbackIfIncomplete(url, result)?.let { return it }
         fetchEbxReaderFallbackIfIncomplete(url, result)
             ?.let { return parseReaderMarkdownResult(url, it) }
         fetchDlvrItReaderFallbackIfIncomplete(url, result)
@@ -356,6 +360,29 @@ class EnrichmentService(
         return fetchReaderFallback(url)
     }
 
+    private fun fetchWsjFallback(url: String, statusCode: Int): EnrichmentResult? {
+        if (statusCode != 401 && statusCode != 403 && statusCode != 429) return null
+
+        return fetchWsjFallback(url)
+    }
+
+    private fun fetchWsjFallback(url: String): EnrichmentResult? {
+        if (!isWsjUrl(url)) return null
+
+        fetchReaderFallback(url)
+            ?.let { parseWsjReaderMarkdownResult(url, it) }
+            ?.let { return it }
+
+        return wsjArticleFallbackFromUrl(url)
+    }
+
+    private fun fetchWsjFallbackIfIncomplete(url: String, result: EnrichmentResult): EnrichmentResult? {
+        if (!isWsjUrl(url)) return null
+        if (result.title != null && result.thumbnail != null && result.publishedAt != null) return null
+
+        return fetchWsjFallback(url)
+    }
+
     private fun fetchSprinklrReaderFallback(url: String): String? {
         if (!isSprinklrShortUrl(url)) return null
 
@@ -426,6 +453,31 @@ class EnrichmentService(
         if (result.thumbnail != null) return result
 
         return result.copy(thumbnail = fetchNytOEmbedThumbnail(url))
+    }
+
+    private fun parseWsjReaderMarkdownResult(url: String, text: String): EnrichmentResult? {
+        val result = parseReaderMarkdownResult(url, text)
+        if (!isGenericWsjReaderResult(result)) return result
+
+        return wsjArticleFallbackFromUrl(url)
+    }
+
+    private fun isGenericWsjReaderResult(result: EnrichmentResult): Boolean =
+        result.title.isNullOrBlank() ||
+            result.title.equals("wsj.com", ignoreCase = true) ||
+            result.plainText.isNullOrBlank()
+
+    private fun wsjArticleFallbackFromUrl(url: String): EnrichmentResult? {
+        val resolvedUrl = resolveRedirectUrl(url) ?: url
+        val title = wsjArticleTitleFromUrl(resolvedUrl) ?: return null
+
+        return EnrichmentResult(
+            title = title,
+            thumbnail = null,
+            lead = null,
+            publishedAt = null,
+            plainText = null,
+        )
     }
 
     private fun fetchNytOEmbedThumbnail(url: String): String? {
@@ -1151,6 +1203,39 @@ internal fun isBloombergUrl(url: String): Boolean {
         host.endsWith(".bloomberg.com")
 }
 
+internal fun isWsjUrl(url: String): Boolean {
+    val uri = runCatching { URI(url) }.getOrNull() ?: return false
+    val host = uri.host?.lowercase() ?: return false
+
+    return host == "on.wsj.com" ||
+        host.endsWith(".on.wsj.com") ||
+        host == "wsj.com" ||
+        host.endsWith(".wsj.com")
+}
+
+internal fun wsjArticleTitleFromUrl(url: String): String? {
+    val uri = runCatching { URI(url) }.getOrNull() ?: return null
+    if (!isWsjUrl(url)) return null
+
+    val lastPathSegment = uri.path
+        ?.split("/")
+        ?.lastOrNull { it.isNotBlank() }
+        ?: return null
+    val slug = lastPathSegment
+        .removeSuffix(".html")
+        .replace(WSJ_ARTICLE_ID_SUFFIX_PATTERN, "")
+        .takeIf { it.contains("-") }
+        ?: return null
+
+    return slug.split("-")
+        .filter { it.isNotBlank() }
+        .joinToString(" ") { word ->
+            WSJ_TITLE_WORD_OVERRIDES[word.lowercase()]
+                ?: word.replaceFirstChar { char -> char.titlecase() }
+        }
+        .takeIf { it.isNotBlank() }
+}
+
 internal fun isSprinklrShortUrl(url: String): Boolean {
     val uri = runCatching { URI(url) }.getOrNull() ?: return false
     val host = uri.host?.lowercase() ?: return false
@@ -1189,6 +1274,27 @@ private const val READER_PUBLISHED_PREFIX = "Published Time: "
 private const val READER_MARKDOWN_MARKER = "Markdown Content:"
 private const val MIN_READER_LEAD_LENGTH = 30
 private val COMPACT_TIMEZONE_OFFSET_PATTERN = Regex("""([+-]\d{2})(\d{2})$""")
+private val WSJ_ARTICLE_ID_SUFFIX_PATTERN = Regex("""-[a-f0-9]{8,}$""", RegexOption.IGNORE_CASE)
+private val WSJ_TITLE_WORD_OVERRIDES = mapOf(
+    "ai" to "AI",
+    "ceo" to "CEO",
+    "cfo" to "CFO",
+    "covid" to "Covid",
+    "dow" to "Dow",
+    "epstein" to "Epstein",
+    "fbi" to "FBI",
+    "fda" to "FDA",
+    "ipo" to "IPO",
+    "jpmorgan" to "JPMorgan",
+    "murdoch" to "Murdoch",
+    "news" to "News",
+    "nvidia" to "Nvidia",
+    "trump" to "Trump",
+    "u" to "U",
+    "uk" to "UK",
+    "us" to "US",
+    "wsj" to "WSJ",
+)
 private val MARKDOWN_IMAGE_PATTERN = Regex("""!\[([^\]]*)]\(([^)]*)\)""")
 private val MARKDOWN_LINK_PATTERN = Regex("""!?\[([^\]]*)]\(([^)]*)\)""")
 

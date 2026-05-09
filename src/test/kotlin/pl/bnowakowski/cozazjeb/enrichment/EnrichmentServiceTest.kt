@@ -331,6 +331,23 @@ class EnrichmentServiceTest {
     }
 
     @Test
+    fun `recognizes WSJ links for fallback`() {
+        assertEquals(true, isWsjUrl("https://on.wsj.com/4cniLaK"))
+        assertEquals(true, isWsjUrl("https://www.wsj.com/business/media/example-7d925a4b"))
+        assertEquals(false, isWsjUrl("https://trib.al/83m4EmI"))
+        assertEquals(false, isWsjUrl("https://example.com/article"))
+    }
+
+    @Test
+    fun `derives WSJ fallback title from article slug`() {
+        val title = wsjArticleTitleFromUrl(
+            "https://www.wsj.com/business/media/trump-lawsuit-murdoch-dow-jones-epstein-letter-7d925a4b?mod=e2fb",
+        )
+
+        assertEquals("Trump Lawsuit Murdoch Dow Jones Epstein Letter", title)
+    }
+
+    @Test
     fun `recognizes Sprinklr short links for reader fallback`() {
         assertEquals(true, isSprinklrShortUrl("http://spklr.io/6043EyVh7"))
         assertEquals(true, isSprinklrShortUrl("https://spklr.io/6043EyVh7"))
