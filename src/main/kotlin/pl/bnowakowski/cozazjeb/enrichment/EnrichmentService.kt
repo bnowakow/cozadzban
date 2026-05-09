@@ -19,6 +19,7 @@ import java.net.URI
 import java.net.SocketTimeoutException
 import java.time.Instant
 import java.time.LocalDate
+import java.time.OffsetDateTime
 import java.time.ZoneOffset
 
 /**
@@ -151,6 +152,9 @@ class EnrichmentService(
             fetchBloombergReaderFallback(url, ex.statusCode.value())?.let { readerText ->
                 return parseReaderMarkdownResult(url, readerText)
             }
+            fetchDlvrItReaderFallback(url)?.let { readerText ->
+                return parseReaderMarkdownResult(url, readerText)
+            }
             fetchSprinklrReaderFallback(url)?.let { readerText ->
                 return parseReaderMarkdownResult(url, readerText)
             }
@@ -185,6 +189,9 @@ class EnrichmentService(
             fetchBloombergReaderFallback(url)?.let { readerText ->
                 return parseReaderMarkdownResult(url, readerText)
             }
+            fetchDlvrItReaderFallback(url)?.let { readerText ->
+                return parseReaderMarkdownResult(url, readerText)
+            }
             fetchSprinklrReaderFallback(url)?.let { readerText ->
                 return parseReaderMarkdownResult(url, readerText)
             }
@@ -209,6 +216,9 @@ class EnrichmentService(
             fetchBloombergReaderFallback(url)?.let { readerText ->
                 return parseReaderMarkdownResult(url, readerText)
             }
+            fetchDlvrItReaderFallback(url)?.let { readerText ->
+                return parseReaderMarkdownResult(url, readerText)
+            }
             fetchSprinklrReaderFallback(url)?.let { readerText ->
                 return parseReaderMarkdownResult(url, readerText)
             }
@@ -231,6 +241,8 @@ class EnrichmentService(
         fetchBloombergReaderFallbackIfIncomplete(url, result)
             ?.let { return parseReaderMarkdownResult(url, it) }
         fetchEbxReaderFallbackIfIncomplete(url, result)
+            ?.let { return parseReaderMarkdownResult(url, it) }
+        fetchDlvrItReaderFallbackIfIncomplete(url, result)
             ?.let { return parseReaderMarkdownResult(url, it) }
         return fetchSprinklrReaderFallbackIfIncomplete(url, result)
             ?.let { parseReaderMarkdownResult(url, it) }
@@ -365,6 +377,19 @@ class EnrichmentService(
 
     private fun fetchEbxReaderFallbackIfIncomplete(url: String, result: EnrichmentResult): String? {
         if (!isEbxShortUrl(url)) return null
+        if (result.title != null && result.thumbnail != null && result.publishedAt != null) return null
+
+        return fetchReaderFallback(url)
+    }
+
+    private fun fetchDlvrItReaderFallback(url: String): String? {
+        if (!isDlvrItShortUrl(url)) return null
+
+        return fetchReaderFallback(url)
+    }
+
+    private fun fetchDlvrItReaderFallbackIfIncomplete(url: String, result: EnrichmentResult): String? {
+        if (!isDlvrItShortUrl(url)) return null
         if (result.title != null && result.thumbnail != null && result.publishedAt != null) return null
 
         return fetchReaderFallback(url)
@@ -576,18 +601,7 @@ class EnrichmentService(
     }
 
     /** Parses ISO-8601 instant or date-only string. Returns null on parse failure (not enrichment failure). */
-    private fun parseInstant(value: String?): Instant? {
-        if (value.isNullOrBlank()) return null
-        return try {
-            Instant.parse(value)
-        } catch (_: Exception) {
-            try {
-                LocalDate.parse(value).atStartOfDay(ZoneOffset.UTC).toInstant()
-            } catch (_: Exception) {
-                null
-            }
-        }
-    }
+    private fun parseInstant(value: String?): Instant? = parseDateTimeInstant(value)
 
     private fun parseVisibleDate(text: String?): Instant? {
         if (text.isNullOrBlank()) return null
@@ -1047,17 +1061,16 @@ internal fun parseReaderMarkdownResult(url: String, text: String): EnrichmentRes
     )
 }
 
-private fun parseReaderInstant(value: String?): Instant? {
+private fun parseReaderInstant(value: String?): Instant? = parseDateTimeInstant(value)
+
+private fun parseDateTimeInstant(value: String?): Instant? {
     if (value.isNullOrBlank()) return null
-    return try {
-        Instant.parse(value)
-    } catch (_: Exception) {
-        try {
-            LocalDate.parse(value).atStartOfDay(ZoneOffset.UTC).toInstant()
-        } catch (_: Exception) {
-            null
-        }
-    }
+
+    val trimmed = value.trim()
+    val normalizedOffset = COMPACT_TIMEZONE_OFFSET_PATTERN.replace(trimmed, "$1:$2")
+    return runCatching { Instant.parse(normalizedOffset) }.getOrNull()
+        ?: runCatching { OffsetDateTime.parse(normalizedOffset).toInstant() }.getOrNull()
+        ?: runCatching { LocalDate.parse(trimmed).atStartOfDay(ZoneOffset.UTC).toInstant() }.getOrNull()
 }
 
 private fun cleanReaderMarkdownLine(value: String): String =
@@ -1152,6 +1165,13 @@ internal fun isEbxShortUrl(url: String): Boolean {
     return host == "ebx.sh" || host.endsWith(".ebx.sh")
 }
 
+internal fun isDlvrItShortUrl(url: String): Boolean {
+    val uri = runCatching { URI(url) }.getOrNull() ?: return false
+    val host = uri.host?.lowercase() ?: return false
+
+    return host == "dlvr.it" || host.endsWith(".dlvr.it")
+}
+
 internal fun shouldUseReutersMobileFallback(url: String, statusCode: Int): Boolean {
     if (statusCode != 401) return false
 
@@ -1168,6 +1188,7 @@ private const val READER_TITLE_PREFIX = "Title: "
 private const val READER_PUBLISHED_PREFIX = "Published Time: "
 private const val READER_MARKDOWN_MARKER = "Markdown Content:"
 private const val MIN_READER_LEAD_LENGTH = 30
+private val COMPACT_TIMEZONE_OFFSET_PATTERN = Regex("""([+-]\d{2})(\d{2})$""")
 private val MARKDOWN_IMAGE_PATTERN = Regex("""!\[([^\]]*)]\(([^)]*)\)""")
 private val MARKDOWN_LINK_PATTERN = Regex("""!?\[([^\]]*)]\(([^)]*)\)""")
 
