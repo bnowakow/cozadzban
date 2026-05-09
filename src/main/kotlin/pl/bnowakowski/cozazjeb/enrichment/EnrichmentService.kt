@@ -136,6 +136,9 @@ class EnrichmentService(
             fetchWashingtonPostReaderFallback(url, ex.statusCode.value())?.let { readerText ->
                 return parseReaderMarkdownResult(url, readerText)
             }
+            fetchBloombergReaderFallback(url, ex.statusCode.value())?.let { readerText ->
+                return parseReaderMarkdownResult(url, readerText)
+            }
             fetchSprinklrReaderFallback(url)?.let { readerText ->
                 return parseReaderMarkdownResult(url, readerText)
             }
@@ -161,6 +164,9 @@ class EnrichmentService(
             fetchWashingtonPostReaderFallback(url)?.let { readerText ->
                 return parseReaderMarkdownResult(url, readerText)
             }
+            fetchBloombergReaderFallback(url)?.let { readerText ->
+                return parseReaderMarkdownResult(url, readerText)
+            }
             fetchSprinklrReaderFallback(url)?.let { readerText ->
                 return parseReaderMarkdownResult(url, readerText)
             }
@@ -174,6 +180,9 @@ class EnrichmentService(
                 return parseNytReaderMarkdownResult(url, readerText)
             }
             fetchWashingtonPostReaderFallback(url)?.let { readerText ->
+                return parseReaderMarkdownResult(url, readerText)
+            }
+            fetchBloombergReaderFallback(url)?.let { readerText ->
                 return parseReaderMarkdownResult(url, readerText)
             }
             fetchSprinklrReaderFallback(url)?.let { readerText ->
@@ -275,6 +284,19 @@ class EnrichmentService(
 
     private fun fetchWashingtonPostReaderFallback(url: String): String? {
         if (!isWashingtonPostUrl(url)) return null
+
+        return fetchReaderFallback(url)
+    }
+
+    private fun fetchBloombergReaderFallback(url: String, statusCode: Int): String? {
+        if (statusCode != 401 && statusCode != 403 && statusCode != 429) return null
+        if (!isBloombergUrl(url)) return null
+
+        return fetchReaderFallback(url)
+    }
+
+    private fun fetchBloombergReaderFallback(url: String): String? {
+        if (!isBloombergUrl(url)) return null
 
         return fetchReaderFallback(url)
     }
@@ -978,6 +1000,16 @@ internal fun isWashingtonPostUrl(url: String): Boolean {
     val host = uri.host?.lowercase() ?: return false
 
     return host == "washingtonpost.com" || host.endsWith(".washingtonpost.com")
+}
+
+internal fun isBloombergUrl(url: String): Boolean {
+    val uri = runCatching { URI(url) }.getOrNull() ?: return false
+    val host = uri.host?.lowercase() ?: return false
+
+    return host == "bloom.bg" ||
+        host.endsWith(".bloom.bg") ||
+        host == "bloomberg.com" ||
+        host.endsWith(".bloomberg.com")
 }
 
 internal fun isSprinklrShortUrl(url: String): Boolean {
