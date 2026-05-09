@@ -703,13 +703,14 @@ internal fun parseReaderMarkdownResult(url: String, text: String): EnrichmentRes
     val content = text.substringAfter(READER_MARKDOWN_MARKER, missingDelimiterValue = text)
         .trim()
         .normalizedText()
+    val thumbnail = content?.let { firstReaderMarkdownImage(it) }
     val lead = content?.lineSequence()
         ?.map { cleanReaderMarkdownLine(it) }
         ?.firstOrNull { isUsefulReaderLeadLine(it) }
 
     return EnrichmentResult(
         title = title ?: url,
-        thumbnail = null,
+        thumbnail = thumbnail,
         lead = lead,
         publishedAt = publishedAt,
         plainText = content,
@@ -738,6 +739,23 @@ private fun cleanReaderMarkdownLine(value: String): String =
         .replace(MARKDOWN_LINK_PATTERN, "$2")
         .normalizedText()
         .orEmpty()
+
+private fun firstReaderMarkdownImage(text: String): String? =
+    MARKDOWN_IMAGE_PATTERN.findAll(text)
+        .mapNotNull { match -> match.groupValues.getOrNull(2)?.trim() }
+        .firstOrNull { isUsefulReaderImageUrl(it) }
+
+private fun isUsefulReaderImageUrl(value: String): Boolean {
+    val uri = runCatching { URI(value) }.getOrNull() ?: return false
+    val scheme = uri.scheme?.lowercase() ?: return false
+    if (scheme != "http" && scheme != "https") return false
+
+    val host = uri.host?.lowercase().orEmpty()
+    if (host.isBlank()) return false
+    return !host.contains("doubleclick.net") &&
+        !host.contains("googlesyndication.com") &&
+        !host.contains("googletagmanager.com")
+}
 
 private fun isUsefulReaderLeadLine(value: String): Boolean =
     value.length >= MIN_READER_LEAD_LENGTH &&
@@ -782,6 +800,7 @@ private const val READER_TITLE_PREFIX = "Title: "
 private const val READER_PUBLISHED_PREFIX = "Published Time: "
 private const val READER_MARKDOWN_MARKER = "Markdown Content:"
 private const val MIN_READER_LEAD_LENGTH = 30
+private val MARKDOWN_IMAGE_PATTERN = Regex("""!\[([^\]]*)]\(([^)]*)\)""")
 private val MARKDOWN_LINK_PATTERN = Regex("""!?\[([^\]]*)]\(([^)]*)\)""")
 
 

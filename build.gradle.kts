@@ -2,6 +2,7 @@
 // Copyright (C) 2026 https://bnowakowski.pl
 
 import java.time.Instant
+import java.util.concurrent.TimeUnit
 
 plugins {
 	kotlin("jvm") version "2.2.21"
@@ -88,7 +89,24 @@ kotlin {
 
 tasks.withType<Test> {
 	useJUnitPlatform()
+	if (!isDockerAvailable()) {
+		logger.lifecycle("Docker is not available; excluding Docker-backed integration tests.")
+		exclude("**/*IT.class", "**/CozazjebApplicationTests.class")
+	}
 }
+
+fun isDockerAvailable(): Boolean =
+	runCatching {
+		val process = ProcessBuilder("docker", "info")
+			.redirectErrorStream(true)
+			.start()
+		if (!process.waitFor(5, TimeUnit.SECONDS)) {
+			process.destroyForcibly()
+			false
+		} else {
+			process.exitValue() == 0
+		}
+	}.getOrDefault(false)
 
 tasks.named<ProcessResources>("processResources") {
 	filesMatching("application.properties") {

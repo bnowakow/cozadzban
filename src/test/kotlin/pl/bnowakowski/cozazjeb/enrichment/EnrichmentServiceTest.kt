@@ -216,6 +216,7 @@ class EnrichmentServiceTest {
 
     @Test
     fun `parses NYTimes reader fallback title published time and lead`() {
+        val thumbnail = "https://static01.nyt.com/images/2026/03/12/multimedia/12dc-russiasanctions-whjc/12dc-russiasanctions-whjc-articleLarge.jpg?quality=75&auto=webp&disable=upscale"
         val result = parseReaderMarkdownResult(
             url = "https://nyti.ms/46Xv8so",
             text = """
@@ -230,6 +231,8 @@ class EnrichmentServiceTest {
 
                 Treasury Secretary Scott Bessent said it was “unfortunate” that the move could benefit Russia, but maintained that it was only for the short term.
 
+                ![Image 1: Treasury Secretary Scott Bessent, wearing a dark suit, walks outside.]($thumbnail)
+
                 The United States on Thursday temporarily lifted sanctions on Russian oil that is currently at sea.
             """.trimIndent(),
         )
@@ -237,6 +240,7 @@ class EnrichmentServiceTest {
         assertEquals("Trump Removes Sanctions on Russia to Help Oil Flow Amid Iran Conflict - The New York Times", result.title)
         assertEquals(Instant.parse("2026-03-13T01:32:01Z"), result.publishedAt)
         assertEquals("Trump Removes Sanctions on Russia to Help Oil Flow Amid Iran Conflict", result.lead)
+        assertEquals(thumbnail, result.thumbnail)
     }
 
     @Test
