@@ -135,6 +135,9 @@ class EnrichmentService(
             fetchWashingtonPostReaderFallback(url, ex.statusCode.value())?.let { readerText ->
                 return parseReaderMarkdownResult(url, readerText)
             }
+            fetchSprinklrReaderFallback(url)?.let { readerText ->
+                return parseReaderMarkdownResult(url, readerText)
+            }
             recoverFacebookPostFromGenericError(url, ex.statusCode.value(), ex.responseBodyAsString)?.let {
                 return it
             }
@@ -154,6 +157,9 @@ class EnrichmentService(
             fetchWashingtonPostReaderFallback(url)?.let { readerText ->
                 return parseReaderMarkdownResult(url, readerText)
             }
+            fetchSprinklrReaderFallback(url)?.let { readerText ->
+                return parseReaderMarkdownResult(url, readerText)
+            }
             throw EnrichmentException(
                 message = "URL enrichment failed: target was unreachable or timed out for '$url'",
                 reason = reason,
@@ -163,6 +169,9 @@ class EnrichmentService(
             fetchWashingtonPostReaderFallback(url)?.let { readerText ->
                 return parseReaderMarkdownResult(url, readerText)
             }
+            fetchSprinklrReaderFallback(url)?.let { readerText ->
+                return parseReaderMarkdownResult(url, readerText)
+            }
             throw EnrichmentException(
                 message = "URL enrichment failed for '$url'",
                 reason = EnrichmentException.Reason.UNREACHABLE,
@@ -170,7 +179,10 @@ class EnrichmentService(
             )
         }
 
-        return enrichHtml(url, html)
+        val result = enrichHtml(url, html)
+        return fetchSprinklrReaderFallbackIfIncomplete(url, result)
+            ?.let { parseReaderMarkdownResult(url, it) }
+            ?: result
     }
 
     private fun fetchHtml(url: String, client: RestClient = restClient): String =
@@ -250,6 +262,19 @@ class EnrichmentService(
 
     private fun fetchWashingtonPostReaderFallback(url: String): String? {
         if (!isWashingtonPostUrl(url)) return null
+
+        return fetchReaderFallback(url)
+    }
+
+    private fun fetchSprinklrReaderFallback(url: String): String? {
+        if (!isSprinklrShortUrl(url)) return null
+
+        return fetchReaderFallback(url)
+    }
+
+    private fun fetchSprinklrReaderFallbackIfIncomplete(url: String, result: EnrichmentResult): String? {
+        if (!isSprinklrShortUrl(url)) return null
+        if (result.title != null && result.thumbnail != null && result.publishedAt != null) return null
 
         return fetchReaderFallback(url)
     }
@@ -797,8 +822,9 @@ internal fun parseReaderMarkdownResult(url: String, text: String): EnrichmentRes
         .normalizedText()
     val thumbnail = content?.let { firstReaderMarkdownImage(it) }
     val lead = content?.lineSequence()
-        ?.map { cleanReaderMarkdownLine(it) }
-        ?.firstOrNull { isUsefulReaderLeadLine(it) }
+        ?.map { rawLine -> rawLine to cleanReaderMarkdownLine(rawLine) }
+        ?.firstOrNull { (rawLine, cleanLine) -> isUsefulReaderLeadLine(rawLine, cleanLine) }
+        ?.second
 
     return EnrichmentResult(
         title = title ?: url,
@@ -849,13 +875,16 @@ private fun isUsefulReaderImageUrl(value: String): Boolean {
         !host.contains("googletagmanager.com")
 }
 
-private fun isUsefulReaderLeadLine(value: String): Boolean =
-    value.length >= MIN_READER_LEAD_LENGTH &&
-        !value.startsWith("*") &&
-        !value.startsWith("!") &&
-        !value.equals("Reklama", ignoreCase = true) &&
-        !value.equals("Autopromocja", ignoreCase = true) &&
-        !value.equals("Czytaj więcej", ignoreCase = true)
+private fun isUsefulReaderLeadLine(rawValue: String, cleanValue: String): Boolean {
+    val raw = rawValue.trim()
+    return cleanValue.length >= MIN_READER_LEAD_LENGTH &&
+        !raw.contains("![") &&
+        !cleanValue.startsWith("*") &&
+        !cleanValue.startsWith("!") &&
+        !cleanValue.equals("Reklama", ignoreCase = true) &&
+        !cleanValue.equals("Autopromocja", ignoreCase = true) &&
+        !cleanValue.equals("Czytaj więcej", ignoreCase = true)
+}
 
 private fun String?.normalizedText(): String? = this?.trim()?.takeIf { it.isNotEmpty() }
 
@@ -881,6 +910,13 @@ internal fun isWashingtonPostUrl(url: String): Boolean {
     val host = uri.host?.lowercase() ?: return false
 
     return host == "washingtonpost.com" || host.endsWith(".washingtonpost.com")
+}
+
+internal fun isSprinklrShortUrl(url: String): Boolean {
+    val uri = runCatching { URI(url) }.getOrNull() ?: return false
+    val host = uri.host?.lowercase() ?: return false
+
+    return host == "spklr.io" || host.endsWith(".spklr.io")
 }
 
 internal fun shouldUseReutersMobileFallback(url: String, statusCode: Int): Boolean {

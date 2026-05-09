@@ -268,6 +268,13 @@ class EnrichmentServiceTest {
     }
 
     @Test
+    fun `recognizes Sprinklr short links for reader fallback`() {
+        assertEquals(true, isSprinklrShortUrl("http://spklr.io/6043EyVh7"))
+        assertEquals(true, isSprinklrShortUrl("https://spklr.io/6043EyVh7"))
+        assertEquals(false, isSprinklrShortUrl("https://www.scientificamerican.com/article/example/"))
+    }
+
+    @Test
     fun `parses NYTimes reader fallback title published time and lead`() {
         val thumbnail = "https://static01.nyt.com/images/2026/03/12/multimedia/12dc-russiasanctions-whjc/12dc-russiasanctions-whjc-articleLarge.jpg?quality=75&auto=webp&disable=upscale"
         val result = parseReaderMarkdownResult(
@@ -326,6 +333,40 @@ class EnrichmentServiceTest {
             "War reporter says Polymarket bettors pressured him to change article - The Washington Post",
             result.lead,
         )
+        assertEquals(thumbnail, result.thumbnail)
+    }
+
+    @Test
+    fun `parses Sprinklr reader fallback title published time thumbnail and lead`() {
+        val thumbnail =
+            "https://static.scientificamerican.com/dam/m/65df83249b697135/original/GettyImages-2233062247-zuckerberg-trump.jpeg?m=1774619348.752&w=600"
+        val result = parseReaderMarkdownResult(
+            url = "http://spklr.io/6043EyVh7",
+            text = """
+                Title: Trump’s new science panel includes 9 tech billionaires—and just one scientist
+
+                URL Source: http://spklr.io/6043EyVh7
+
+                Published Time: 2026-03-27T10:00:00-04:00
+
+                Markdown Content:
+                March 27, 2026
+
+                3 min read
+
+                [![Image 1: Google Logo](blob:http://localhost/017ffba74acfdd6a516023e1c9567961)Add Us On Google Add SciAm](https://www.google.com/preferences/source?q=scientificamerican.com)
+
+                There’s a glaring hole in the president’s new science and tech council
+
+                By Dan Garisto
+
+                ![Image 2: Mark Zuckerberg and President Donald Trump laugh during a dinner with tech leaders at the White House on September 4, 2025.]($thumbnail)
+            """.trimIndent(),
+        )
+
+        assertEquals("Trump’s new science panel includes 9 tech billionaires—and just one scientist", result.title)
+        assertEquals(Instant.parse("2026-03-27T14:00:00Z"), result.publishedAt)
+        assertEquals("There’s a glaring hole in the president’s new science and tech council", result.lead)
         assertEquals(thumbnail, result.thumbnail)
     }
 
