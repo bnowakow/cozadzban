@@ -32,7 +32,7 @@ class RssController(
 
         val xml = buildString {
             append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>")
-            append("<rss version=\"2.0\"><channel>")
+            append("<rss version=\"2.0\" xmlns:media=\"http://search.yahoo.com/mrss/\"><channel>")
             append("<title>Co za zjeb</title>")
             append("<link>https://cozazjeb.pl</link>")
             append("<description>fucked up news</description>")
@@ -62,6 +62,14 @@ class RssController(
         append("<title>${xmlEscape(title)}</title>")
         append("<link>${xmlEscape(article.url)}</link>")
         append("<description>${xmlEscape(description)}</description>")
+        article.thumbnail
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?.let { thumbnail ->
+                val escapedThumbnail = xmlEscape(thumbnail)
+                append("<media:thumbnail url=\"$escapedThumbnail\" />")
+                append("<media:content url=\"$escapedThumbnail\" medium=\"image\" />")
+            }
         append("<guid isPermaLink=\"false\">${xmlEscape(guid)}</guid>")
         append("<pubDate>$pubDate</pubDate>")
         append("</item>")

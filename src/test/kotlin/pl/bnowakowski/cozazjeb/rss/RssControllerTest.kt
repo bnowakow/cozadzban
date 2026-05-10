@@ -50,7 +50,7 @@ class RssControllerTest {
             language = "en",
             title = "Article One",
             lead = "Lead for article one",
-            thumbnail = null,
+            thumbnail = "https://example.com/thumb-one.jpg?width=640&height=360",
             quote = null,
             aiSummary = null,
             createdByUserId = 1L,
@@ -95,6 +95,7 @@ class RssControllerTest {
                 status { isOk() }
                 content {
                     string(org.hamcrest.Matchers.containsString("<title>Co za zjeb</title>"))
+                    string(org.hamcrest.Matchers.containsString("""<rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/">"""))
                     string(org.hamcrest.Matchers.containsString("<link>https://cozazjeb.pl</link>"))
                     string(org.hamcrest.Matchers.containsString("<description>fucked up news</description>"))
                     string(org.hamcrest.Matchers.containsString("<generator>cozazjeb.pl</generator>"))
@@ -130,6 +131,20 @@ class RssControllerTest {
                     string(org.hamcrest.Matchers.containsString("<language>pl</language>"))
                     string(org.hamcrest.Matchers.containsString("<title>Article Two</title>"))
                     string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("<title>Article One</title>")))
+                }
+            }
+    }
+
+    @Test
+    fun `GET rss response includes media thumbnail for articles with thumbnail`() {
+        whenever(articleRepository.findForRss(isNull())).thenReturn(sampleArticles)
+
+        mockMvc.get("/rss")
+            .andExpect {
+                status { isOk() }
+                content {
+                    string(org.hamcrest.Matchers.containsString("""<media:thumbnail url="https://example.com/thumb-one.jpg?width=640&amp;height=360" />"""))
+                    string(org.hamcrest.Matchers.containsString("""<media:content url="https://example.com/thumb-one.jpg?width=640&amp;height=360" medium="image" />"""))
                 }
             }
     }
