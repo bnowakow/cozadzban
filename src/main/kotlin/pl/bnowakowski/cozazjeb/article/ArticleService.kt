@@ -182,6 +182,11 @@ class ArticleService(
         val contentForChangedUrl = enrichmentForChangedUrl?.let {
             selectContentForCache(newUrl, it.plainText, it.lead, it.title)
         }
+        val contentPatchForTitle = if (contentPresent && !urlChanged && isFacebookPostUrl(newUrl)) {
+            (patch["content"] as? String)?.trim()?.takeIf { it.isNotBlank() }
+        } else {
+            null
+        }
         val (newTitle, newThumbnail, newLead) = if (enrichmentForChangedUrl != null) {
             Triple(
                 titleForSave(newUrl, enrichmentForChangedUrl.title, enrichmentForChangedUrl.lead, contentForChangedUrl),
@@ -189,7 +194,11 @@ class ArticleService(
                 enrichmentForChangedUrl.lead,
             )
         } else {
-            Triple(existing.title, existing.thumbnail, existing.lead)
+            Triple(
+                contentPatchForTitle?.let { titleForSave(newUrl, existing.title, existing.lead, it) } ?: existing.title,
+                existing.thumbnail,
+                existing.lead,
+            )
         }
 
         val saved = articleRepository.save(
@@ -274,7 +283,7 @@ class ArticleService(
             return bodyCandidates.maxByOrNull { contentQualityScore(it) }
         }
 
-        return title?.trim()?.takeIf { it.isNotBlank() }
+        return title?.trim()?.takeIf { it.isNotBlank() && !isGenericFacebookTitle(it) }
     }
 
     private fun titleForSave(url: String, title: String?, lead: String?, contentForCache: String?): String? {
@@ -306,7 +315,8 @@ class ArticleService(
     private fun isGenericFacebookTitle(title: String?): Boolean =
         title == GENERIC_FACEBOOK_PAGE_TITLE ||
             title == GENERIC_FACEBOOK_POST_TITLE ||
-            title == GENERIC_FACEBOOK_REEL_TITLE
+            title == GENERIC_FACEBOOK_REEL_TITLE ||
+            title?.startsWith("$GENERIC_FACEBOOK_POST_TITLE by ") == true
 
     private fun shouldUseFacebookLeadTitle(title: String?): Boolean =
         isGenericFacebookTitle(title) || title?.contains(" | ") == true

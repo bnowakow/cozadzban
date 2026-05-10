@@ -5,9 +5,13 @@ package pl.bnowakowski.cozazjeb.article
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
+import org.mockito.kotlin.any
+import org.mockito.kotlin.whenever
 import org.mockito.kotlin.mock
 import pl.bnowakowski.cozazjeb.enrichment.EnrichmentService
 import pl.bnowakowski.cozazjeb.user.AppUserRepository
+import java.time.Instant
+import java.util.Optional
 
 class ArticleServiceTitleTest {
 
@@ -52,13 +56,65 @@ class ArticleServiceTitleTest {
         assertEquals(lead.excerptForArticleTitle(), title)
     }
 
-    private fun titleForSave(url: String, title: String?, lead: String?, contentForCache: String?): String? {
+    @Test
+    fun `Facebook profile fallback title is replaced with cached post excerpt`() {
+        val postText = "Michał Zimny zaczyna ten post od właściwej treści, więc to ona powinna zostać tytułem."
+        val title = titleForSave(
+            url = "https://www.facebook.com/mzimu/posts/pfbid02ouRUuuRuoF5KnkqjiyyyvDGKWGqRWSWEjA7Tmf1Tw9XZZbNP8dd3YTh6LXNtgrU7l",
+            title = "Facebook post by mzimu",
+            lead = null,
+            contentForCache = postText,
+        )
+
+        assertEquals(postText.excerptForArticleTitle(), title)
+    }
+
+    @Test
+    fun `Facebook profile fallback title is not cached as content`() {
+        val content = selectContentForCache(
+            url = "https://www.facebook.com/mzimu/posts/pfbid02ouRUuuRuoF5KnkqjiyyyvDGKWGqRWSWEjA7Tmf1Tw9XZZbNP8dd3YTh6LXNtgrU7l",
+            plainText = null,
+            lead = null,
+            title = "Facebook post by mzimu",
+        )
+
+        assertEquals(null, content)
+    }
+
+    @Test
+    fun `patching Facebook post cached content updates title from content excerpt`() {
+        val articleRepository = mock<ArticleRepository>()
+        val articleContentRepository = mock<ArticleContentRepository>()
         val service = ArticleService(
-            articleRepository = mock<ArticleRepository>(),
+            articleRepository = articleRepository,
             enrichmentService = mock<EnrichmentService>(),
             appUserRepository = mock<AppUserRepository>(),
-            articleContentRepository = mock<ArticleContentRepository>(),
+            articleContentRepository = articleContentRepository,
         )
+        val article = Article(
+            id = 249L,
+            url = "https://www.facebook.com/mzimu/posts/pfbid02ouRUuuRuoF5KnkqjiyyyvDGKWGqRWSWEjA7Tmf1Tw9XZZbNP8dd3YTh6LXNtgrU7l",
+            language = "pl",
+            title = "Facebook post by mzimu",
+            thumbnail = null,
+            lead = null,
+            quote = null,
+            aiSummary = null,
+            publishedAt = Instant.parse("2026-05-10T08:54:32Z"),
+            createdByUserId = 1L,
+            createdAt = Instant.parse("2026-05-10T08:54:31Z"),
+        )
+        val postText = "Michał Zimny zaczyna ten post od właściwej treści, więc to ona powinna zostać tytułem."
+        whenever(articleRepository.findById(249L)).thenReturn(Optional.of(article))
+        whenever(articleRepository.save(any())).thenAnswer { it.arguments[0] }
+
+        val saved = service.patch(249L, mapOf("content" to postText))
+
+        assertEquals(postText.excerptForArticleTitle(), saved.title)
+    }
+
+    private fun titleForSave(url: String, title: String?, lead: String?, contentForCache: String?): String? {
+        val service = articleService()
         val method = ArticleService::class.java.getDeclaredMethod(
             "titleForSave",
             String::class.java,
@@ -69,6 +125,27 @@ class ArticleServiceTitleTest {
         method.isAccessible = true
         return method.invoke(service, url, title, lead, contentForCache) as String?
     }
+
+    private fun selectContentForCache(url: String, plainText: String?, lead: String?, title: String?): String? {
+        val service = articleService()
+        val method = ArticleService::class.java.getDeclaredMethod(
+            "selectContentForCache",
+            String::class.java,
+            String::class.java,
+            String::class.java,
+            String::class.java,
+        )
+        method.isAccessible = true
+        return method.invoke(service, url, plainText, lead, title) as String?
+    }
+
+    private fun articleService(): ArticleService =
+        ArticleService(
+            articleRepository = mock<ArticleRepository>(),
+            enrichmentService = mock<EnrichmentService>(),
+            appUserRepository = mock<AppUserRepository>(),
+            articleContentRepository = mock<ArticleContentRepository>(),
+        )
 }
 
 private fun String.excerptForArticleTitle(): String =

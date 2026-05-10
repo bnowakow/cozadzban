@@ -59,6 +59,13 @@ class SecurityConfig(
 
                 // /actuator/health is always public (load balancer / k8s probes)
                 auth.requestMatchers("/actuator/health").permitAll()
+                // Public machine-readable API documentation.
+                auth.requestMatchers(
+                    "/v3/api-docs",
+                    "/v3/api-docs/**",
+                    "/swagger-ui.html",
+                    "/swagger-ui/**",
+                ).permitAll()
                 // Selected actuator endpoints require authenticated, allowlisted user.
                 auth.requestMatchers("/actuator/info", "/actuator/metrics", "/actuator/metrics/**", "/actuator/env", "/actuator/env/**").access { authentication, _ ->
                     AuthorizationDecision(allowlist.checkSessionOrBearer(authentication.get()))

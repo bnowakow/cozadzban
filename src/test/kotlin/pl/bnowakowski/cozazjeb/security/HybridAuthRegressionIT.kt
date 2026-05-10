@@ -330,6 +330,12 @@ class HybridAuthRegressionIT {
     }
 
     @Test
+    fun `anonymous user can access OpenAPI docs`() {
+        mockMvc.get("/v3/api-docs")
+            .andExpect { status { isOk() } }
+    }
+
+    @Test
     fun `anonymous user cannot submit article write - 401`() {
         mockMvc.post("/api/articles") {
             contentType = MediaType.APPLICATION_JSON
