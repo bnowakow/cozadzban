@@ -4,6 +4,7 @@
 package pl.bnowakowski.cozazjeb.enrichment
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import org.springframework.web.client.RestClient
@@ -19,7 +20,7 @@ class LiveFacebookMzimuFallbackVerificationTest {
         assertEquals("Facebook post by mzimu", result.title)
         assertNull(result.thumbnail)
         assertNull(result.lead)
-        assertNull(result.publishedAt)
+        assertNotNull(result.publishedAt)
         assertNull(result.plainText)
     }
 }
