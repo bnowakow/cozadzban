@@ -182,15 +182,14 @@ class EnrichmentServiceTest {
     }
 
     @Test
-    fun `recovers generic Facebook pfbid 400 as minimal post`() {
+    fun `does not recover generic Facebook pfbid 400 as minimal post`() {
         val result = recoverFacebookPostFromGenericError(
             url = "https://www.facebook.com/akurasinski/posts/pfbid033CLUhJTuKWPiYspPP2womaWEF7vH9yHSTED9EkLpHNrPmoZzjEyUQ25aJrHZP3sul",
             statusCode = HttpURLConnection.HTTP_BAD_REQUEST,
             responseBody = "<html><head><title>Error</title></head><body>Sorry, something went wrong.</body></html>",
         )
 
-        assertNotNull(result)
-        assertEquals("Facebook post", result?.title)
+        assertNull(result)
     }
 
     @Test

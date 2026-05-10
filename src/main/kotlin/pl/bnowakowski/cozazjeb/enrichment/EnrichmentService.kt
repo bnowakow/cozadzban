@@ -128,7 +128,16 @@ class EnrichmentService(
             fetchHtml(url)
         } catch (ex: RestClientResponseException) {
             fetchFacebookCrawlerFallback(url, ex.statusCode.value(), ex.responseBodyAsString)?.let { fallbackHtml ->
-                return enrichHtml(url, fallbackHtml)
+                val fallbackResult = enrichHtml(url, fallbackHtml)
+                if (hasUsableFacebookPostMetadata(url, fallbackResult, fallbackHtml)) {
+                    return fallbackResult
+                }
+                throw EnrichmentException(
+                    message = "URL enrichment failed: Facebook post is unavailable or requires login for '$url'",
+                    reason = EnrichmentException.Reason.NON_2XX,
+                    statusCode = ex.statusCode.value(),
+                    cause = ex,
+                )
             }
             fetchFacebookWatchFallback(url, ex.statusCode.value())?.let { fallbackHtml ->
                 return enrichHtml(url, fallbackHtml)
@@ -247,11 +256,11 @@ class EnrichmentService(
         fetchFacebookPostPluginFallbackIfIncomplete(url, result)
             ?.let { fallbackHtml ->
                 val fallbackResult = enrichHtml(url, fallbackHtml)
-                if (!isUnavailableFacebookResult(url, fallbackResult, fallbackHtml)) {
+                if (hasUsableFacebookPostMetadata(url, fallbackResult, fallbackHtml)) {
                     return fallbackResult
                 }
             }
-        if (isUnavailableFacebookResult(url, result, html)) {
+        if (!hasUsableFacebookPostMetadata(url, result, html)) {
             throw EnrichmentException(
                 message = "URL enrichment failed: Facebook post is unavailable or requires login for '$url'",
                 reason = EnrichmentException.Reason.NON_2XX,
@@ -831,12 +840,19 @@ class EnrichmentService(
 
     private fun isUnavailableFacebookResult(url: String, result: EnrichmentResult, html: String): Boolean {
         if (!isFacebookPfbidPostUrl(url)) return false
-        if (result.thumbnail != null || result.lead != null || result.publishedAt != null) return false
+        if (hasUsableFacebookPostMetadata(url, result, html)) return false
 
         val title = result.title?.trim().orEmpty()
         if (title.isNotBlank() && !title.equals("Facebook", ignoreCase = true)) return false
 
-        return FACEBOOK_UNAVAILABLE_MARKERS.any { html.contains(it, ignoreCase = true) }
+        return title.equals("Facebook", ignoreCase = true) ||
+            FACEBOOK_UNAVAILABLE_MARKERS.any { html.contains(it, ignoreCase = true) }
+    }
+
+    private fun hasUsableFacebookPostMetadata(url: String, result: EnrichmentResult, html: String): Boolean {
+        if (!isFacebookPfbidPostUrl(url)) return true
+
+        return result.lead != null || result.thumbnail != null || result.publishedAt != null
     }
 
     private fun parseFacebookPluginPostMessage(html: String): String? =
@@ -1087,8 +1103,8 @@ internal fun recoverFacebookPostFromGenericError(
     responseBody: String,
 ): EnrichmentResult? {
     if (statusCode != 400) return null
+    if (!isFacebookVideoOrReelUrl(url)) return null
     if (!isRecoverableFacebookUrl(url)) return null
-    if (!isFacebookVideoOrReelUrl(url) && !isFacebookGenericError(responseBody)) return null
 
     return EnrichmentResult(
         title = facebookFallbackTitle(url),
