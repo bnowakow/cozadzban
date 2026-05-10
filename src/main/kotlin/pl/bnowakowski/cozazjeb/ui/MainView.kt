@@ -375,10 +375,16 @@ class ArticleListView(
         urlField.width = "28rem"
         urlField.placeholder = "https://..."
 
-        val languageField = TextField("Language (BCP-47)")
+        val languageLabel = Span("Language (BCP-47)")
+        languageLabel.element.style.set("font-size", "var(--lumo-font-size-s)")
+        languageLabel.element.style.set("font-weight", "500")
+        languageLabel.element.style.set("color", "var(--lumo-secondary-text-color)")
+
+        val languageField = TextField()
         languageField.isRequired = true
         languageField.width = "28rem"
         languageField.placeholder = "e.g. en, pl, de"
+        languageField.ariaLabel = "Language (BCP-47)"
 
         val languageSuggestions = HorizontalLayout()
         languageSuggestions.isSpacing = true
@@ -389,6 +395,14 @@ class ArticleListView(
             suggestionButton.addClickListener { languageField.value = language }
             languageSuggestions.add(suggestionButton)
         }
+        val languageFieldGroup = if (languageSuggestions.componentCount > 0) {
+            VerticalLayout(languageLabel, languageSuggestions, languageField)
+        } else {
+            VerticalLayout(languageLabel, languageField)
+        }
+        languageFieldGroup.isPadding = false
+        languageFieldGroup.isSpacing = false
+        languageFieldGroup.width = "28rem"
 
         val quoteField = TextArea("Quote (optional)")
         quoteField.width = "28rem"
@@ -450,11 +464,7 @@ class ArticleListView(
         val actions = HorizontalLayout(submitButton, cancelButton)
         actions.defaultVerticalComponentAlignment = Alignment.END
 
-        val fields = if (languageSuggestions.componentCount > 0) {
-            VerticalLayout(urlField, languageSuggestions, languageField, quoteField, publishedAtPicker, actions)
-        } else {
-            VerticalLayout(urlField, languageField, quoteField, publishedAtPicker, actions)
-        }
+        val fields = VerticalLayout(urlField, languageFieldGroup, quoteField, publishedAtPicker, actions)
         dialog.add(fields)
         dialog.open()
     }
