@@ -132,12 +132,7 @@ class EnrichmentService(
                 if (hasUsableFacebookPostMetadata(url, fallbackResult, fallbackHtml)) {
                     return fallbackResult
                 }
-                throw EnrichmentException(
-                    message = "URL enrichment failed: Facebook post is unavailable or requires login for '$url'",
-                    reason = EnrichmentException.Reason.NON_2XX,
-                    statusCode = ex.statusCode.value(),
-                    cause = ex,
-                )
+                facebookUnavailablePostFallbackResult(url)?.let { return it }
             }
             fetchFacebookWatchFallback(url, ex.statusCode.value())?.let { fallbackHtml ->
                 return enrichHtml(url, fallbackHtml)
@@ -261,10 +256,7 @@ class EnrichmentService(
                 }
             }
         if (!hasUsableFacebookPostMetadata(url, result, html)) {
-            throw EnrichmentException(
-                message = "URL enrichment failed: Facebook post is unavailable or requires login for '$url'",
-                reason = EnrichmentException.Reason.NON_2XX,
-            )
+            facebookUnavailablePostFallbackResult(url)?.let { return it }
         }
         fetchInstagramCrawlerFallbackIfIncomplete(url, result)
             ?.let { return enrichHtml(url, it) }
