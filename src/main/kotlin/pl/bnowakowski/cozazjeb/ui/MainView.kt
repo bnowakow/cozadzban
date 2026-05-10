@@ -384,7 +384,7 @@ class ArticleListView(
         languageField.isRequired = true
         languageField.width = "28rem"
         languageField.placeholder = "e.g. en, pl, de"
-        languageField.ariaLabel = "Language (BCP-47)"
+        languageField.setAriaLabel("Language (BCP-47)")
 
         val languageSuggestions = HorizontalLayout()
         languageSuggestions.isSpacing = true
