@@ -23,7 +23,10 @@ import pl.bnowakowski.cozazjeb.article.ArticleService
 import pl.bnowakowski.cozazjeb.user.AppUserRepository
 import pl.bnowakowski.cozazjeb.user.AppUserStatus
 import pl.bnowakowski.cozazjeb.user.Role
+import com.sun.net.httpserver.HttpServer
+import java.net.InetSocketAddress
 import java.time.Instant
+import java.util.Optional
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 @AutoConfigureMockMvc
@@ -143,10 +146,40 @@ class RssControllerTest {
             .andExpect {
                 status { isOk() }
                 content {
-                    string(org.hamcrest.Matchers.containsString("""<media:thumbnail url="https://example.com/thumb-one.jpg?width=640&amp;height=360" />"""))
-                    string(org.hamcrest.Matchers.containsString("""<media:content url="https://example.com/thumb-one.jpg?width=640&amp;height=360" medium="image" />"""))
+                    string(org.hamcrest.Matchers.containsString("""<media:thumbnail url="https://cozazjeb.pl/rss/image/1" />"""))
+                    string(org.hamcrest.Matchers.containsString("""<media:content url="https://cozazjeb.pl/rss/image/1" medium="image" />"""))
                 }
             }
+    }
+
+    @Test
+    fun `GET rss image proxies article thumbnail as image`() {
+        withImageServer("image/jpeg", byteArrayOf(1, 2, 3, 4)) { thumbnailUrl ->
+            whenever(articleRepository.findById(1L)).thenReturn(
+                Optional.of(sampleArticles[0].copy(thumbnail = thumbnailUrl)),
+            )
+
+            mockMvc.get("/rss/image/1")
+                .andExpect {
+                    status { isOk() }
+                    content { contentType("image/jpeg") }
+                    content { bytes(byteArrayOf(1, 2, 3, 4)) }
+                }
+        }
+    }
+
+    @Test
+    fun `GET rss image rejects non image upstream response`() {
+        withImageServer("text/html", "<html>not an image</html>".toByteArray()) { thumbnailUrl ->
+            whenever(articleRepository.findById(1L)).thenReturn(
+                Optional.of(sampleArticles[0].copy(thumbnail = thumbnailUrl)),
+            )
+
+            mockMvc.get("/rss/image/1")
+                .andExpect {
+                    status { isBadGateway() }
+                }
+        }
     }
 
     @Test
@@ -206,6 +239,21 @@ class RssControllerTest {
         }
         assert(indexHtml.contains("""href="/rss"""")) {
             "index.html should contain href=\"/rss\" for RSS discovery"
+        }
+    }
+
+    private fun withImageServer(contentType: String, body: ByteArray, block: (String) -> Unit) {
+        val server = HttpServer.create(InetSocketAddress(0), 0)
+        server.createContext("/thumbnail.jpg") { exchange ->
+            exchange.responseHeaders.add("Content-Type", contentType)
+            exchange.sendResponseHeaders(200, body.size.toLong())
+            exchange.responseBody.use { it.write(body) }
+        }
+        server.start()
+        try {
+            block("http://localhost:${server.address.port}/thumbnail.jpg")
+        } finally {
+            server.stop(0)
         }
     }
 }

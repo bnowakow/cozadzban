@@ -9,6 +9,7 @@ import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
+import org.springframework.http.client.SimpleClientHttpRequestFactory
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.RequestParam
@@ -31,6 +32,12 @@ class RssController(
 ) {
 
     private val imageRestClient: RestClient = restClientBuilder
+        .requestFactory(
+            SimpleClientHttpRequestFactory().apply {
+                setConnectTimeout(IMAGE_CONNECT_TIMEOUT_MS)
+                setReadTimeout(IMAGE_READ_TIMEOUT_MS)
+            }
+        )
         .defaultHeader(HttpHeaders.USER_AGENT, IMAGE_FETCH_USER_AGENT)
         .defaultHeader(HttpHeaders.ACCEPT, "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
         .build()
@@ -138,6 +145,8 @@ class RssController(
 
     companion object {
         private const val SITE_URL = "https://cozazjeb.pl"
+        private const val IMAGE_CONNECT_TIMEOUT_MS = 3_000
+        private const val IMAGE_READ_TIMEOUT_MS = 5_000
         private const val IMAGE_FETCH_USER_AGENT =
             "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
         private val RFC_822_FORMATTER: DateTimeFormatter =

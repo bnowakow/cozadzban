@@ -36,7 +36,7 @@ class SecurityConfig(
             .cors { it.configurationSource(corsConfigurationSource()) }
             .csrf { csrf ->
                 // API and RSS are stateless — no CSRF needed (BR-16)
-                csrf.ignoringRequestMatchers("/api/**", "/rss")
+                csrf.ignoringRequestMatchers("/api/**", "/rss", "/rss/**")
                 // Vaadin UI routes retain CSRF protection
             }
             .with(VaadinSecurityConfigurer.vaadin()) { vaadin ->
@@ -71,7 +71,7 @@ class SecurityConfig(
                     AuthorizationDecision(allowlist.checkSessionOrBearer(authentication.get()))
                 }
                 // Public REST read endpoints (BR-10)
-                auth.requestMatchers(HttpMethod.GET, "/api/articles", "/api/articles/**", "/rss").permitAll()
+                auth.requestMatchers(HttpMethod.GET, "/api/articles", "/api/articles/**", "/rss", "/rss/**").permitAll()
 
                 // Protected article write endpoints: token must be valid and email allowlisted (BR-11, BR-13)
                 auth.requestMatchers(HttpMethod.POST, "/api/articles").access(allowlist)
@@ -86,7 +86,7 @@ class SecurityConfig(
 
                 // Deny-by-default for remaining API/RSS paths not matched above.
                 auth.requestMatchers("/api/**").denyAll()
-                auth.requestMatchers("/rss").denyAll()
+                auth.requestMatchers("/rss", "/rss/**").denyAll()
                 // Vaadin request matchers are contributed by the configurer above.
             }
             .exceptionHandling { exceptions ->
