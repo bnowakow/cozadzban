@@ -52,6 +52,9 @@ interface ArticleRepositoryCustom {
     /** Returns the distinct normalized language codes currently stored in the article table, sorted alphabetically. */
     fun findDistinctLanguages(): List<String>
 
+    /** Returns the most frequently used normalized language codes, most-used first. */
+    fun findTopLanguages(limit: Int): List<String>
+
     companion object {
         /**
          * Allowlist mapping from API sort field name to SQL column name (BR-26).
@@ -155,6 +158,20 @@ class ArticleRepositoryCustomImpl(
             String::class.java,
         )
 
+    override fun findTopLanguages(limit: Int): List<String> =
+        jdbc.queryForList(
+            """
+                SELECT language
+                  FROM article
+                 WHERE language IS NOT NULL
+                 GROUP BY language
+                 ORDER BY COUNT(*) DESC, language ASC
+                 LIMIT :limit
+            """.trimIndent(),
+            mapOf("limit" to limit.coerceAtLeast(0)),
+            String::class.java,
+        )
+
     /**
      * Builds a parameterised WHERE clause from the given filters.
      * Column names are hardcoded — only parameter values come from user input (BR-09).
@@ -212,4 +229,3 @@ class ArticleRepositoryCustomImpl(
         }
     }
 }
-

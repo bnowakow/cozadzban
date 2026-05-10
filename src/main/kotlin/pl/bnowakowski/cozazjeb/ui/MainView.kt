@@ -380,6 +380,16 @@ class ArticleListView(
         languageField.width = "28rem"
         languageField.placeholder = "e.g. en, pl, de"
 
+        val languageSuggestions = HorizontalLayout()
+        languageSuggestions.isSpacing = true
+        languageSuggestions.defaultVerticalComponentAlignment = Alignment.CENTER
+        articleRepository.findTopLanguages(LANGUAGE_SUGGESTION_LIMIT).forEach { language ->
+            val suggestionButton = Button(language)
+            suggestionButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY)
+            suggestionButton.addClickListener { languageField.value = language }
+            languageSuggestions.add(suggestionButton)
+        }
+
         val quoteField = TextArea("Quote (optional)")
         quoteField.width = "28rem"
         quoteField.maxHeight = "8rem"
@@ -440,7 +450,12 @@ class ArticleListView(
         val actions = HorizontalLayout(submitButton, cancelButton)
         actions.defaultVerticalComponentAlignment = Alignment.END
 
-        dialog.add(VerticalLayout(urlField, languageField, quoteField, publishedAtPicker, actions))
+        val fields = if (languageSuggestions.componentCount > 0) {
+            VerticalLayout(urlField, languageSuggestions, languageField, quoteField, publishedAtPicker, actions)
+        } else {
+            VerticalLayout(urlField, languageField, quoteField, publishedAtPicker, actions)
+        }
+        dialog.add(fields)
         dialog.open()
     }
 
@@ -603,6 +618,7 @@ class ArticleListView(
     }
 
     companion object {
+        private const val LANGUAGE_SUGGESTION_LIMIT = 3
         private val DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneOffset.UTC)
         private val SHORT_DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneOffset.UTC)
 

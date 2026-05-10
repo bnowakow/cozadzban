@@ -7,6 +7,7 @@ import com.sun.net.httpserver.HttpServer
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.springframework.web.client.RestClient
 import java.net.InetSocketAddress
@@ -268,6 +269,50 @@ class EnrichmentServiceTest {
     }
 
     @Test
+    fun `uses Facebook pfbid post text as title and cached content`() {
+        val postText = "Michał Zimny opisuje sytuację w długim poście, który powinien zostać tytułem i treścią cache."
+        val html = """
+            <!doctype html>
+            <html>
+              <head>
+                <title>Facebook</title>
+                <meta property="og:description" content="${postText.escapeHtmlAttribute()}">
+                <meta property="og:image" content="https://scontent-waw2-1.xx.fbcdn.net/v/t39.30808-6/thumb.jpg">
+                <meta property="article:published_time" content="2026-05-09T12:30:00Z">
+              </head>
+              <body>Facebook logged-out page chrome</body>
+            </html>
+        """.trimIndent()
+
+        val result = enrichHtml(
+            "https://www.facebook.com/mzimu/posts/pfbid02ouRUuuRuoF5KnkqjiyyyvDGKWGqRWSWEjA7Tmf1Tw9XZZbNP8dd3YTh6LXNtgrU7l",
+            html,
+        )
+
+        assertEquals(postText, result.title)
+        assertEquals(postText, result.lead)
+        assertEquals(postText, result.plainText)
+        assertEquals("https://scontent-waw2-1.xx.fbcdn.net/v/t39.30808-6/thumb.jpg", result.thumbnail)
+        assertEquals(Instant.parse("2026-05-09T12:30:00Z"), result.publishedAt)
+    }
+
+    @Test
+    fun `rejects unavailable Facebook pfbid shell instead of caching it`() {
+        val html = """
+            <!doctype html>
+            <html>
+              <head><title>Facebook</title></head>
+              <body>Te materiały nie są teraz dostępne</body>
+            </html>
+        """.trimIndent()
+
+        val facebookUrl = "https://www.facebook.com/mzimu/posts/pfbid02ouRUuuRuoF5KnkqjiyyyvDGKWGqRWSWEjA7Tmf1Tw9XZZbNP8dd3YTh6LXNtgrU7l"
+        val result = enrichHtml(facebookUrl, html)
+
+        assertTrue(isUnavailableFacebookResult(facebookUrl, result, html))
+    }
+
+    @Test
     fun `builds Facebook watch fallback URL for reels and videos`() {
         assertEquals(
             "https://www.facebook.com/watch/?v=1648200636595572",
@@ -497,6 +542,30 @@ class EnrichmentServiceTest {
             "In a social media post, President Trump said he was replacing Ms. Bondi with Todd Blanche, her deputy, on an interim basis.",
             result.lead,
         )
+    }
+
+    @Test
+    fun `parses NYTimes oEmbed fallback title published date thumbnail and cached summary`() {
+        val thumbnail =
+            "https://static01.nyt.com/images/2026/04/28/multimedia/28biz-ai-trial-ledeall-musk-kblp/28biz-ai-trial-ledeall-musk-kblp-largeHorizontalJumbo.jpg"
+        val summary = "In the trial’s first day of testimony, Elon Musk said greed led co-founder Sam Altman to pull the A.I. lab away from its nonprofit roots. OpenAI says that’s nonsense."
+        val result = parseNytOEmbedResult(
+            """
+                {
+                  "title": "OpenAI Trial Starts With Two Very Different Tales of a Company’s Early Years",
+                  "summary": "$summary",
+                  "publication_date": "April 28, 2026",
+                  "thumbnail_url": "$thumbnail"
+                }
+            """.trimIndent(),
+        )
+
+        assertNotNull(result)
+        assertEquals("OpenAI Trial Starts With Two Very Different Tales of a Company’s Early Years", result?.title)
+        assertEquals(Instant.parse("2026-04-28T00:00:00Z"), result?.publishedAt)
+        assertEquals(thumbnail, result?.thumbnail)
+        assertEquals(summary, result?.lead)
+        assertEquals(summary, result?.plainText)
     }
 
     @Test
@@ -898,6 +967,28 @@ class EnrichmentServiceTest {
         )
         method.isAccessible = true
         return method.invoke(service, url, html) as EnrichmentResult
+    }
+
+    private fun isUnavailableFacebookResult(url: String, result: EnrichmentResult, html: String): Boolean {
+        val service = EnrichmentService(RestClient.builder())
+        val method = EnrichmentService::class.java.getDeclaredMethod(
+            "isUnavailableFacebookResult",
+            String::class.java,
+            EnrichmentResult::class.java,
+            String::class.java,
+        )
+        method.isAccessible = true
+        return method.invoke(service, url, result, html) as Boolean
+    }
+
+    private fun parseNytOEmbedResult(response: String): EnrichmentResult? {
+        val service = EnrichmentService(RestClient.builder())
+        val method = EnrichmentService::class.java.getDeclaredMethod(
+            "parseNytOEmbedResult",
+            String::class.java,
+        )
+        method.isAccessible = true
+        return method.invoke(service, response) as EnrichmentResult?
     }
 }
 

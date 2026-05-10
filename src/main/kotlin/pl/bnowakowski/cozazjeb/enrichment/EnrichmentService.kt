@@ -21,6 +21,8 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 /**
  * Fetches and extracts article metadata from a URL.
@@ -146,6 +148,7 @@ class EnrichmentService(
             fetchNytReaderFallback(url, ex.statusCode.value())?.let { readerText ->
                 return parseNytReaderMarkdownResult(url, readerText)
             }
+            fetchNytOEmbedFallback(url, ex.statusCode.value())?.let { return it }
             fetchWashingtonPostReaderFallback(url, ex.statusCode.value())?.let { readerText ->
                 return parseReaderMarkdownResult(url, readerText)
             }
@@ -184,6 +187,7 @@ class EnrichmentService(
             fetchNytReaderFallback(url)?.let { readerText ->
                 return parseNytReaderMarkdownResult(url, readerText)
             }
+            fetchNytOEmbedFallback(url)?.let { return it }
             fetchWashingtonPostReaderFallback(url)?.let { readerText ->
                 return parseReaderMarkdownResult(url, readerText)
             }
@@ -212,6 +216,7 @@ class EnrichmentService(
             fetchNytReaderFallback(url)?.let { readerText ->
                 return parseNytReaderMarkdownResult(url, readerText)
             }
+            fetchNytOEmbedFallback(url)?.let { return it }
             fetchWashingtonPostReaderFallback(url)?.let { readerText ->
                 return parseReaderMarkdownResult(url, readerText)
             }
@@ -239,6 +244,19 @@ class EnrichmentService(
         }
 
         val result = enrichHtml(url, html)
+        fetchFacebookPostPluginFallbackIfIncomplete(url, result)
+            ?.let { fallbackHtml ->
+                val fallbackResult = enrichHtml(url, fallbackHtml)
+                if (!isUnavailableFacebookResult(url, fallbackResult, fallbackHtml)) {
+                    return fallbackResult
+                }
+            }
+        if (isUnavailableFacebookResult(url, result, html)) {
+            throw EnrichmentException(
+                message = "URL enrichment failed: Facebook post is unavailable or requires login for '$url'",
+                reason = EnrichmentException.Reason.NON_2XX,
+            )
+        }
         fetchInstagramCrawlerFallbackIfIncomplete(url, result)
             ?.let { return enrichHtml(url, it) }
         fetchBloombergReaderFallbackIfIncomplete(url, result)
@@ -285,6 +303,20 @@ class EnrichmentService(
         }
     }
 
+    private fun fetchFacebookPostPluginFallbackIfIncomplete(url: String, result: EnrichmentResult): String? {
+        if (!isFacebookPfbidPostUrl(url)) return null
+        if (result.title != null && result.thumbnail != null && result.lead != null && result.publishedAt != null) {
+            return null
+        }
+
+        val fallbackUrl = facebookPostPluginUrl(url) ?: return null
+        return try {
+            fetchHtml(fallbackUrl, facebookCrawlerRestClient)
+        } catch (_: RestClientException) {
+            null
+        }
+    }
+
     private fun fetchFacebookWatchFallback(url: String, statusCode: Int): String? {
         if (statusCode != 400) return null
         if (!isFacebookVideoOrReelUrl(url)) return null
@@ -326,6 +358,15 @@ class EnrichmentService(
 
         return fetchReaderFallback(url)
     }
+
+    private fun fetchNytOEmbedFallback(url: String, statusCode: Int): EnrichmentResult? {
+        if (statusCode != 401 && statusCode != 403 && statusCode != 429) return null
+
+        return fetchNytOEmbedFallback(url)
+    }
+
+    private fun fetchNytOEmbedFallback(url: String): EnrichmentResult? =
+        fetchNytOEmbedResult(url)
 
     private fun fetchWashingtonPostReaderFallback(url: String, statusCode: Int): String? {
         if (statusCode != 401 && statusCode != 403 && statusCode != 429) return null
@@ -450,10 +491,27 @@ class EnrichmentService(
 
     private fun parseNytReaderMarkdownResult(url: String, text: String): EnrichmentResult {
         val result = parseReaderMarkdownResult(url, text)
+        val oembedResult = fetchNytOEmbedResult(url)
+        if (isGenericNytReaderResult(result)) {
+            return oembedResult ?: result.copy(title = null, lead = null, plainText = null)
+        }
+        if (oembedResult != null && shouldPreferNytOEmbedResult(result)) {
+            return oembedResult.copy(thumbnail = oembedResult.thumbnail ?: result.thumbnail)
+        }
         if (result.thumbnail != null) return result
 
-        return result.copy(thumbnail = fetchNytOEmbedThumbnail(url))
+        return result.copy(thumbnail = oembedResult?.thumbnail ?: fetchNytOEmbedThumbnail(url))
     }
+
+    private fun isGenericNytReaderResult(result: EnrichmentResult): Boolean =
+        result.title.isNullOrBlank() ||
+            result.title.equals("nytimes.com", ignoreCase = true) ||
+            result.plainText.isNullOrBlank()
+
+    private fun shouldPreferNytOEmbedResult(result: EnrichmentResult): Boolean =
+        result.publishedAt == null ||
+            result.title.orEmpty().endsWith(NYT_TITLE_SUFFIX, ignoreCase = true) ||
+            result.lead.isNullOrBlank()
 
     private fun parseWsjReaderMarkdownResult(url: String, text: String): EnrichmentResult? {
         val result = parseReaderMarkdownResult(url, text)
@@ -483,16 +541,47 @@ class EnrichmentService(
     private fun fetchNytOEmbedThumbnail(url: String): String? {
         if (!isNytUrl(url)) return null
 
+        return fetchNytOEmbedResult(url)?.thumbnail
+    }
+
+    private fun fetchNytOEmbedResult(url: String): EnrichmentResult? {
+        if (!isNytUrl(url)) return null
+
         val oembedUrl = "https://www.nytimes.com/svc/oembed/json/?url=${encodeQueryParam(resolveRedirectUrl(url) ?: url)}"
         return try {
             val response = fetchHtml(oembedUrl, readerRestClient)
-            JSON_MAPPER.readTree(response)
-                ?.get("thumbnail_url")
-                ?.asText()
-                .normalized()
+            parseNytOEmbedResult(response)
         } catch (_: Exception) {
             null
         }
+    }
+
+    private fun parseNytOEmbedResult(response: String): EnrichmentResult? {
+        val json = JSON_MAPPER.readTree(response) ?: return null
+        val title = json.get("title")?.asText().normalized()
+        val lead = json.get("summary")?.asText().normalized()
+        val thumbnail = json.get("thumbnail_url")?.asText().normalized()
+        val publishedAt = parseNytPublicationDate(json.get("publication_date")?.asText())
+
+        if (title == null && lead == null && thumbnail == null && publishedAt == null) return null
+        return EnrichmentResult(
+            title = title,
+            thumbnail = thumbnail,
+            lead = lead,
+            publishedAt = publishedAt,
+            plainText = lead,
+        )
+    }
+
+    private fun parseNytPublicationDate(value: String?): Instant? {
+        if (value.isNullOrBlank()) return null
+
+        return parseDateTimeInstant(value)
+            ?: runCatching {
+                LocalDate.parse(value.trim(), NYT_PUBLICATION_DATE_FORMATTER)
+                    .atStartOfDay(ZoneOffset.UTC)
+                    .toInstant()
+            }.getOrNull()
     }
 
     private fun resolveRedirectUrl(url: String): String? {
@@ -562,15 +651,15 @@ class EnrichmentService(
             facebookPostText
                 ?: metaDescription?.takeUnless { isGenericInstagramDescription(url, it) }
         }
-        val title = facebookVideoOrReelPostTextTitle(url, lead)
+        val title = facebookPostTextTitle(url, lead)
             ?: extractedTitle
                 ?.takeUnless { isGenericTitle(url, it) }
             ?: fetchYoutubeOEmbedTitle(url)
         val publishedAt = parsePublishedAt(url, doc)
-        val plainText = if (isFacebookVideoOrReelUrl(url)) {
-            lead ?: doc.body().text().normalized()
-        } else {
-            facebookPostText ?: doc.body().text().normalized()
+        val plainText = when {
+            isFacebookPfbidPostUrl(url) -> lead
+            isFacebookVideoOrReelUrl(url) -> lead ?: doc.body().text().normalized()
+            else -> facebookPostText ?: doc.body().text().normalized()
         }
 
         return EnrichmentResult(
@@ -732,12 +821,22 @@ class EnrichmentService(
             .maxByOrNull { facebookMessageScore(it) }
     }
 
-    private fun facebookVideoOrReelPostTextTitle(url: String, text: String?): String? {
-        if (!isFacebookVideoOrReelUrl(url)) return null
+    private fun facebookPostTextTitle(url: String, text: String?): String? {
+        if (!isFacebookPfbidPostUrl(url) && !isFacebookVideoOrReelUrl(url)) return null
 
         return text
             .normalized()
             ?.takeIf { it.length >= MIN_FACEBOOK_MESSAGE_LENGTH || it.contains(Regex("""\p{L}""")) }
+    }
+
+    private fun isUnavailableFacebookResult(url: String, result: EnrichmentResult, html: String): Boolean {
+        if (!isFacebookPfbidPostUrl(url)) return false
+        if (result.thumbnail != null || result.lead != null || result.publishedAt != null) return false
+
+        val title = result.title?.trim().orEmpty()
+        if (title.isNotBlank() && !title.equals("Facebook", ignoreCase = true)) return false
+
+        return FACEBOOK_UNAVAILABLE_MARKERS.any { html.contains(it, ignoreCase = true) }
     }
 
     private fun parseFacebookPluginPostMessage(html: String): String? =
@@ -1059,6 +1158,11 @@ private fun facebookVideoPluginUrl(url: String): String? {
     return "https://www.facebook.com/plugins/video.php?href=${encodeQueryParam(url)}&show_text=true&width=500"
 }
 
+private fun facebookPostPluginUrl(url: String): String? {
+    if (!isFacebookPfbidPostUrl(url)) return null
+    return "https://www.facebook.com/plugins/post.php?href=${encodeQueryParam(url)}&show_text=true&width=500"
+}
+
 internal fun facebookWatchUrl(url: String): String? {
     val videoId = facebookVideoId(url) ?: return null
     return "https://www.facebook.com/watch/?v=$videoId"
@@ -1288,11 +1392,23 @@ private fun isFacebookGenericError(responseBody: String): Boolean =
     responseBody.contains("<title>Error</title>", ignoreCase = true) ||
         responseBody.contains("Sorry, something went wrong", ignoreCase = true)
 
+private val FACEBOOK_UNAVAILABLE_MARKERS = listOf(
+    "Ten post na Facebooku nie jest już dostępny",
+    "Te materiały nie są teraz dostępne",
+    "This content isn't available right now",
+    "This Facebook post is no longer available",
+    "requires login",
+    "login/?next=",
+    "cookie/consent_prompt/",
+)
+
 private const val READER_TITLE_PREFIX = "Title: "
 private const val READER_PUBLISHED_PREFIX = "Published Time: "
 private const val READER_MARKDOWN_MARKER = "Markdown Content:"
 private const val MIN_READER_LEAD_LENGTH = 30
+private const val NYT_TITLE_SUFFIX = " - The New York Times"
 private val COMPACT_TIMEZONE_OFFSET_PATTERN = Regex("""([+-]\d{2})(\d{2})$""")
+private val NYT_PUBLICATION_DATE_FORMATTER = DateTimeFormatter.ofPattern("MMMM d, yyyy", Locale.ENGLISH)
 private val WSJ_ARTICLE_ID_PATTERN = Regex("""[a-f0-9]{8,}$""", RegexOption.IGNORE_CASE)
 private val WSJ_ARTICLE_ID_SUFFIX_PATTERN = Regex("""-[a-f0-9]{8,}$""", RegexOption.IGNORE_CASE)
 private val KNOWN_WSJ_ARTICLE_TITLES = mapOf(
