@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.whenever
 import org.mockito.kotlin.mock
+import org.mockito.kotlin.verify
 import pl.bnowakowski.cozazjeb.enrichment.EnrichmentService
 import pl.bnowakowski.cozazjeb.user.AppUserRepository
 import java.time.Instant
@@ -111,6 +112,42 @@ class ArticleServiceTitleTest {
         val saved = service.patch(249L, mapOf("content" to postText))
 
         assertEquals(postText.excerptForArticleTitle(), saved.title)
+    }
+
+    @Test
+    fun `replacing Facebook post cached content updates title from content excerpt`() {
+        val articleRepository = mock<ArticleRepository>()
+        val articleContentRepository = mock<ArticleContentRepository>()
+        val service = ArticleService(
+            articleRepository = articleRepository,
+            enrichmentService = mock<EnrichmentService>(),
+            appUserRepository = mock<AppUserRepository>(),
+            articleContentRepository = articleContentRepository,
+        )
+        val article = Article(
+            id = 249L,
+            url = "https://www.facebook.com/mzimu/posts/pfbid02ouRUuuRuoF5KnkqjiyyyvDGKWGqRWSWEjA7Tmf1Tw9XZZbNP8dd3YTh6LXNtgrU7l",
+            language = "pl",
+            title = "Facebook post by mzimu",
+            thumbnail = null,
+            lead = null,
+            quote = null,
+            aiSummary = null,
+            publishedAt = Instant.parse("2026-05-10T08:54:32Z"),
+            createdByUserId = 1L,
+            createdAt = Instant.parse("2026-05-10T08:54:31Z"),
+        )
+        val postText = "Michał Zimny zaczyna ten post od właściwej treści, więc to ona powinna zostać tytułem."
+        whenever(articleRepository.findById(249L)).thenReturn(Optional.of(article))
+        whenever(articleRepository.save(any())).thenAnswer { it.arguments[0] }
+        whenever(articleContentRepository.findById(249L)).thenReturn(
+            Optional.of(ArticleContent(articleId = 249L, content = postText, truncated = false)),
+        )
+
+        val savedContent = service.replaceContentCache(249L, postText)
+
+        assertEquals(postText, savedContent.content)
+        verify(articleRepository).save(article.copy(title = postText.excerptForArticleTitle()))
     }
 
     private fun titleForSave(url: String, title: String?, lead: String?, contentForCache: String?): String? {

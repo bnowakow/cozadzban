@@ -242,7 +242,17 @@ class ArticleService(
         val contentForCache = selectContentForCache(existing.url, enrichment.plainText, enrichment.lead, enrichment.title)
             ?: throw NoSuchElementException("No cacheable content found on the article page")
 
-        preserveContent(id, contentForCache)
+        preserveContentAndFacebookPostTitle(existing, contentForCache)
+        return articleContentRepository.findById(id)
+            .orElseThrow { NoSuchElementException("Content cache was not stored for article $id") }
+    }
+
+    fun replaceContentCache(id: Long, content: String): ArticleContent {
+        val existing = findById(id)
+        val contentForCache = content.trim().takeIf { it.isNotBlank() }
+            ?: throw IllegalArgumentException("content must not be blank")
+
+        preserveContentAndFacebookPostTitle(existing, contentForCache)
         return articleContentRepository.findById(id)
             .orElseThrow { NoSuchElementException("Content cache was not stored for article $id") }
     }
@@ -267,6 +277,16 @@ class ArticleService(
         // Upsert: replace any existing content row for this article
         articleContentRepository.deleteByArticleId(articleId)
         articleContentRepository.insert(ArticleContent(articleId = articleId, content = storedText, truncated = truncated, capturedAt = java.time.Instant.now()))
+    }
+
+    private fun preserveContentAndFacebookPostTitle(article: Article, contentForCache: String) {
+        preserveContent(article.id!!, contentForCache)
+        if (isFacebookPostUrl(article.url)) {
+            val title = titleForSave(article.url, article.title, article.lead, contentForCache)
+            if (title != article.title) {
+                articleRepository.save(article.copy(title = title))
+            }
+        }
     }
 
     private fun selectContentForCache(url: String, plainText: String?, lead: String?, title: String?): String? {

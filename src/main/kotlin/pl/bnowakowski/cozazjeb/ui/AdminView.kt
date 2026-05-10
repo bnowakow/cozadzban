@@ -416,9 +416,8 @@ class AdminView(
         urlField.isReadOnly = true
         urlField.width = "100%"
 
-        val textArea = TextArea("Content (read-only)")
+        val textArea = TextArea("Content")
         textArea.value = entry.content
-        textArea.isReadOnly = true
         textArea.setSizeFull()
         textArea.minHeight = "400px"
 
@@ -431,6 +430,8 @@ class AdminView(
 
         val refreshButton = Button("Refresh cache from website")
         refreshButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY)
+        val saveButton = Button("Save content")
+        saveButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY)
 
         val dialog = Dialog()
         dialog.headerTitle = "Preserved content — article ${entry.articleId}"
@@ -453,8 +454,21 @@ class AdminView(
                 refreshButton.isEnabled = true
             }
         }
+        saveButton.addClickListener {
+            saveButton.isEnabled = false
+            try {
+                val saved = articleService.replaceContentCache(entry.articleId, textArea.value)
+                textArea.value = saved.content
+                refreshContentGrid()
+                showSuccess("Content cache saved")
+            } catch (ex: Exception) {
+                showError(ex.message ?: "Failed to save content cache")
+            } finally {
+                saveButton.isEnabled = true
+            }
+        }
         closeButton.addClickListener { dialog.close() }
-        dialog.footer.add(refreshButton, closeButton)
+        dialog.footer.add(saveButton, refreshButton, closeButton)
         dialog.open()
     }
 
