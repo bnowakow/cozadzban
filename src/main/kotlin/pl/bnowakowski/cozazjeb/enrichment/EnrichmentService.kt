@@ -1106,8 +1106,8 @@ internal fun recoverFacebookPostFromGenericError(
     responseBody: String,
 ): EnrichmentResult? {
     if (statusCode != 400) return null
-    if (!isFacebookVideoOrReelUrl(url)) return null
     if (!isRecoverableFacebookUrl(url)) return null
+    if (!isFacebookVideoOrReelUrl(url) && !isFacebookGenericError(responseBody)) return null
 
     return EnrichmentResult(
         title = facebookFallbackTitle(url),
@@ -1119,7 +1119,7 @@ internal fun recoverFacebookPostFromGenericError(
 }
 
 private fun isRecoverableFacebookUrl(url: String): Boolean =
-    isFacebookPfbidPostUrl(url) || isFacebookVideoOrReelUrl(url)
+    isFacebookVideoOrReelUrl(url) || isFacebookShareUrl(url)
 
 private fun isFacebookPfbidPostUrl(url: String): Boolean {
     val uri = runCatching { URI(url) }.getOrNull() ?: return false
@@ -1148,6 +1148,15 @@ private fun isFacebookVideoOrReelUrl(url: String): Boolean {
 
     return (host == "facebook.com" || host.endsWith(".facebook.com")) &&
         (path.contains("/videos/") || path.contains("/reel/"))
+}
+
+private fun isFacebookShareUrl(url: String): Boolean {
+    val uri = runCatching { URI(url) }.getOrNull() ?: return false
+    val host = uri.host?.lowercase() ?: return false
+    val path = uri.path ?: return false
+
+    return (host == "facebook.com" || host.endsWith(".facebook.com")) &&
+        path.contains("/share/")
 }
 
 private fun isYoutubeUrl(url: String): Boolean {
@@ -1219,7 +1228,11 @@ private fun encodeQueryParam(value: String): String =
     java.net.URLEncoder.encode(value, Charsets.UTF_8)
 
 private fun facebookFallbackTitle(url: String): String =
-    if (isFacebookVideoOrReelUrl(url)) "Facebook reel" else "Facebook post"
+    when {
+        isFacebookVideoOrReelUrl(url) -> "Facebook reel"
+        isFacebookShareUrl(url) -> "Facebook share"
+        else -> "Facebook post"
+    }
 
 private fun facebookMbasicUrl(url: String): String? {
     val uri = runCatching { URI(url) }.getOrNull() ?: return null

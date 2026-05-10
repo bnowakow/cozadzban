@@ -21,6 +21,9 @@ If tests fail, fix the failures before finishing.
 - No DDL (CREATE TABLE, ALTER TABLE, etc.) outside Flyway migration scripts (BR-06).
 - Migration scripts live in `src/main/resources/db/migration/` and follow the naming convention
   `V<version>__<snake_case_description>.sql`.
+- Never edit an already-applied Flyway migration. Add a new `V<next_version>__...sql` migration
+  instead, then verify it through the Kotlin/Spring runtime by running the test suite so Flyway
+  validation and migration execution are exercised before finishing.
 
 ### Security
 - Frontend JavaScript MUST NEVER receive OAuth access tokens or ID tokens; the OAuth callback is

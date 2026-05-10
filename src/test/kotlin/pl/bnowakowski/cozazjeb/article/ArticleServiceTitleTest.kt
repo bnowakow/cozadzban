@@ -71,6 +71,19 @@ class ArticleServiceTitleTest {
     }
 
     @Test
+    fun `Facebook share fallback title is replaced with cached post excerpt`() {
+        val postText = "Treść wpisu z udostępnionego linku Facebooka powinna stać się tytułem po ręcznym zapisaniu cache."
+        val title = titleForSave(
+            url = "https://www.facebook.com/share/18e3PrKAEK/",
+            title = "Facebook share",
+            lead = null,
+            contentForCache = postText,
+        )
+
+        assertEquals(postText.excerptForArticleTitle(), title)
+    }
+
+    @Test
     fun `Facebook profile fallback title is not cached as content`() {
         val content = selectContentForCache(
             url = "https://www.facebook.com/mzimu/posts/pfbid02ouRUuuRuoF5KnkqjiyyyvDGKWGqRWSWEjA7Tmf1Tw9XZZbNP8dd3YTh6LXNtgrU7l",

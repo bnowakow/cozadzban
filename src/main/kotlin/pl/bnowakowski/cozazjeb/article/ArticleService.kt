@@ -335,6 +335,7 @@ class ArticleService(
     private fun isGenericFacebookTitle(title: String?): Boolean =
         title == GENERIC_FACEBOOK_PAGE_TITLE ||
             title == GENERIC_FACEBOOK_POST_TITLE ||
+            title == GENERIC_FACEBOOK_SHARE_TITLE ||
             title == GENERIC_FACEBOOK_REEL_TITLE ||
             title?.startsWith("$GENERIC_FACEBOOK_POST_TITLE by ") == true
 
@@ -372,7 +373,7 @@ class ArticleService(
         val uri = runCatching { URI(url) }.getOrNull() ?: return false
         val path = uri.path ?: return false
 
-        return isFacebookUrl(url) && path.contains("/posts/")
+        return isFacebookUrl(url) && (path.contains("/posts/") || path.contains("/share/"))
     }
 
     private fun isFacebookUrl(url: String): Boolean {
@@ -398,6 +399,7 @@ class ArticleService(
         private val BCP47_PATTERN = Regex("^[a-z]{2,3}(-[a-z0-9]{2,8})*\$")
         private const val GENERIC_FACEBOOK_PAGE_TITLE = "Facebook"
         private const val GENERIC_FACEBOOK_POST_TITLE = "Facebook post"
+        private const val GENERIC_FACEBOOK_SHARE_TITLE = "Facebook share"
         private const val GENERIC_FACEBOOK_REEL_TITLE = "Facebook reel"
         private const val ARTICLE_TITLE_EXCERPT_LENGTH = 120
         private const val OTHER98_HEGSETH_FACEBOOK_URL =

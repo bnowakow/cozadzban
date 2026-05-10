@@ -205,6 +205,22 @@ class EnrichmentServiceTest {
     }
 
     @Test
+    fun `recovers Facebook share 400 as minimal share`() {
+        val result = recoverFacebookPostFromGenericError(
+            url = "https://www.facebook.com/share/18e3PrKAEK/",
+            statusCode = HttpURLConnection.HTTP_BAD_REQUEST,
+            responseBody = "<html><head><title>Error</title></head><body>Sorry, something went wrong.</body></html>",
+        )
+
+        assertNotNull(result)
+        assertEquals("Facebook share", result?.title)
+        assertNull(result?.thumbnail)
+        assertNull(result?.lead)
+        assertNull(result?.publishedAt)
+        assertNull(result?.plainText)
+    }
+
+    @Test
     fun `extracts Facebook plugin post message as lead`() {
         val expected = "White House press secretary Karoline Leavitt told reporters " +
             "\"Americans will see oil and gas prices drop rapidly\" once the U.S. military's national security objectives are \"fully achieved\" in Iran."

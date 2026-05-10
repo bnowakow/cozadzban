@@ -21,6 +21,14 @@ class ArticleServiceUrlTest {
     }
 
     @Test
+    fun `canonicalizeUrl strips Facebook share tracking query parameters`() {
+        assertEquals(
+            "https://www.facebook.com/share/18e3PrKAEK/",
+            ArticleService.canonicalizeUrl("https://www.facebook.com/share/18e3PrKAEK/?mibextid=wwXIfr"),
+        )
+    }
+
+    @Test
     fun `canonicalizeUrl strips Instagram tracking query parameters`() {
         assertEquals(
             "https://www.instagram.com/reel/DW6kHAvsM-p/",
