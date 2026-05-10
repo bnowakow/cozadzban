@@ -320,7 +320,7 @@ class EnrichmentServiceTest {
         assertEquals("Facebook post by mzimu", result?.title)
         assertNull(result?.thumbnail)
         assertNull(result?.lead)
-        assertNull(result?.publishedAt)
+        assertNotNull(result?.publishedAt)
         assertNull(result?.plainText)
     }
 

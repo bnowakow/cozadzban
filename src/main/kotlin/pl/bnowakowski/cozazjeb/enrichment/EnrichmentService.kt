@@ -853,7 +853,7 @@ class EnrichmentService(
             title = "Facebook post by $profile",
             thumbnail = null,
             lead = null,
-            publishedAt = null,
+            publishedAt = Instant.now(),
             plainText = null,
         )
     }
