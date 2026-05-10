@@ -296,7 +296,7 @@ class EnrichmentServiceTest {
     }
 
     @Test
-    fun `rejects unavailable Facebook pfbid shell instead of caching it`() {
+    fun `recognizes unavailable Facebook pfbid shell`() {
         val html = """
             <!doctype html>
             <html>
@@ -309,6 +309,19 @@ class EnrichmentServiceTest {
         val result = enrichHtml(facebookUrl, html)
 
         assertTrue(isUnavailableFacebookResult(facebookUrl, result, html))
+    }
+
+    @Test
+    fun `uses profile fallback for unavailable Facebook pfbid post`() {
+        val result = facebookUnavailablePostFallbackResult(
+            "https://www.facebook.com/mzimu/posts/pfbid02ouRUuuRuoF5KnkqjiyyyvDGKWGqRWSWEjA7Tmf1Tw9XZZbNP8dd3YTh6LXNtgrU7l",
+        )
+
+        assertEquals("Facebook post by mzimu", result?.title)
+        assertNull(result?.thumbnail)
+        assertNull(result?.lead)
+        assertNull(result?.publishedAt)
+        assertNull(result?.plainText)
     }
 
     @Test
@@ -978,6 +991,16 @@ class EnrichmentServiceTest {
         )
         method.isAccessible = true
         return method.invoke(service, url, result, html) as Boolean
+    }
+
+    private fun facebookUnavailablePostFallbackResult(url: String): EnrichmentResult? {
+        val service = EnrichmentService(RestClient.builder())
+        val method = EnrichmentService::class.java.getDeclaredMethod(
+            "facebookUnavailablePostFallbackResult",
+            String::class.java,
+        )
+        method.isAccessible = true
+        return method.invoke(service, url) as EnrichmentResult?
     }
 
     private fun parseNytOEmbedResult(response: String): EnrichmentResult? {

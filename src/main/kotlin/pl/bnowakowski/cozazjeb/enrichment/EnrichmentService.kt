@@ -847,6 +847,17 @@ class EnrichmentService(
         return result.lead != null || result.thumbnail != null || result.publishedAt != null
     }
 
+    private fun facebookUnavailablePostFallbackResult(url: String): EnrichmentResult? {
+        val profile = facebookProfileSlug(url) ?: return null
+        return EnrichmentResult(
+            title = "Facebook post by $profile",
+            thumbnail = null,
+            lead = null,
+            publishedAt = null,
+            plainText = null,
+        )
+    }
+
     private fun parseFacebookPluginPostMessage(html: String): String? =
         FACEBOOK_PLUGIN_POST_MESSAGE_PATTERN.find(html)
             ?.groupValues
@@ -1117,6 +1128,17 @@ private fun isFacebookPfbidPostUrl(url: String): Boolean {
 
     return (host == "facebook.com" || host.endsWith(".facebook.com")) &&
         path.contains("/posts/pfbid")
+}
+
+private fun facebookProfileSlug(url: String): String? {
+    val uri = runCatching { URI(url) }.getOrNull() ?: return null
+    if (!isFacebookPfbidPostUrl(url)) return null
+
+    return uri.path
+        ?.trim('/')
+        ?.split('/')
+        ?.firstOrNull()
+        ?.takeIf { it.isNotBlank() && it != "profile.php" }
 }
 
 private fun isFacebookVideoOrReelUrl(url: String): Boolean {
