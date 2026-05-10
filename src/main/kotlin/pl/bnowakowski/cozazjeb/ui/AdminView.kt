@@ -9,6 +9,7 @@ import com.vaadin.flow.component.confirmdialog.ConfirmDialog
 import com.vaadin.flow.component.datetimepicker.DateTimePicker
 import com.vaadin.flow.component.dialog.Dialog
 import com.vaadin.flow.component.grid.Grid
+import com.vaadin.flow.component.html.Anchor
 import com.vaadin.flow.component.html.H2
 import com.vaadin.flow.component.html.H3
 import com.vaadin.flow.component.html.Paragraph
@@ -363,8 +364,13 @@ class AdminView(
             createdToPicker.clear()
         }
         clearButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY, ButtonVariant.LUMO_SMALL)
+        val createCacheButton = Button("Add cache")
+        createCacheButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY, ButtonVariant.LUMO_SMALL)
+        createCacheButton.addClickListener {
+            openCreateContentDialog(contentArticleIdFilter?.takeIf { it != NO_MATCHING_ARTICLE_ID })
+        }
 
-        val searchRow = HorizontalLayout(articleIdField, articleUrlField, contentTotalInfo)
+        val searchRow = HorizontalLayout(articleIdField, articleUrlField, createCacheButton, contentTotalInfo)
         searchRow.defaultVerticalComponentAlignment = Alignment.END
 
         val dateRow = HorizontalLayout(
@@ -381,6 +387,69 @@ class AdminView(
         filters.isSpacing = false
         filters.width = "100%"
         return filters
+    }
+
+    private fun openCreateContentDialog(initialArticleId: Long? = null) {
+        val articleIdField = TextField("Article ID")
+        articleIdField.value = initialArticleId?.toString().orEmpty()
+        articleIdField.isRequired = true
+        articleIdField.width = "12rem"
+
+        val urlLink = Anchor()
+        urlLink.text = "Open source"
+        urlLink.setTarget("_blank")
+        urlLink.element.setAttribute("rel", "noopener noreferrer")
+        urlLink.isVisible = false
+
+        fun refreshUrlLink() {
+            val articleId = articleIdField.value.trim().toLongOrNull()
+            val url = articleId?.let { articleRepository.findById(it).map { article -> article.url }.orElse(null) }
+            urlLink.href = url.orEmpty()
+            urlLink.isVisible = !url.isNullOrBlank()
+        }
+        articleIdField.addValueChangeListener { refreshUrlLink() }
+        refreshUrlLink()
+
+        val textArea = TextArea("Content")
+        textArea.setSizeFull()
+        textArea.minHeight = "400px"
+
+        val saveButton = Button("Save content")
+        saveButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY)
+        val closeButton = Button("Close")
+        closeButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY)
+
+        val dialog = Dialog()
+        dialog.headerTitle = "Add content cache"
+        dialog.setWidth("80vw")
+        dialog.setHeight("80vh")
+        val fields = HorizontalLayout(articleIdField, urlLink)
+        fields.defaultVerticalComponentAlignment = Alignment.END
+        val content = VerticalLayout(fields, textArea)
+        content.setSizeFull()
+        dialog.add(content)
+
+        saveButton.addClickListener {
+            val articleId = articleIdField.value.trim().toLongOrNull()
+            if (articleId == null) {
+                showError("Article ID must be a number")
+                return@addClickListener
+            }
+            saveButton.isEnabled = false
+            try {
+                articleService.replaceContentCache(articleId, textArea.value)
+                refreshContentGrid()
+                showSuccess("Content cache saved")
+                dialog.close()
+            } catch (ex: Exception) {
+                showError(ex.message ?: "Failed to save content cache")
+            } finally {
+                saveButton.isEnabled = true
+            }
+        }
+        closeButton.addClickListener { dialog.close() }
+        dialog.footer.add(saveButton, closeButton)
+        dialog.open()
     }
 
     private fun contentActionButtons(entry: ArticleContent): HorizontalLayout {

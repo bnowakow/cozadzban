@@ -82,6 +82,17 @@ class AdminViewTest {
         assertTrue(buttons.any { it.text == "Add user" })
     }
 
+    @Test
+    fun `admin content cache controls include add cache button`() {
+        whenever(appUserService.list()).thenReturn(emptyList())
+        whenever(articleContentRepository.findAll()).thenReturn(emptyList())
+
+        val view = AdminView(appUserService, articleService, articleRepository, articleContentRepository)
+
+        val buttons = findComponents(view, Button::class.java)
+        assertTrue(buttons.any { it.text == "Add cache" })
+    }
+
     private fun <T : Component> findComponents(root: Component, type: Class<T>): List<T> {
         val found = mutableListOf<T>()
 
