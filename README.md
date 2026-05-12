@@ -38,6 +38,40 @@ Edit `.env`:
 
 > `.env` is gitignored and must never be committed.
 
+### Optional Facebook profile import
+
+The app can run a one-shot Selenium import for posts on
+`https://www.facebook.com/bartek.dobrowolski.nowakowski` that contain the marker phrase
+`co za zjeb`. It is disabled by default and only runs at startup when explicitly enabled.
+
+Minimum configuration:
+
+```sh
+APP_FACEBOOK_IMPORT_ENABLED=true
+APP_FACEBOOK_IMPORT_CREATOR_EMAIL=you@example.com
+APP_FACEBOOK_IMPORT_SCROLLS=8
+```
+
+Optional automatic login:
+
+```sh
+APP_FACEBOOK_IMPORT_USERNAME=facebook-login@example.com
+APP_FACEBOOK_IMPORT_PASSWORD=...
+```
+
+Prefer putting the login values in `.env` using `APP_FACEBOOK_IMPORT_USERNAME`,
+`APP_FACEBOOK_IMPORT_PASSWORD`, and `APP_FACEBOOK_IMPORT_HEADLESS`. If those keys are absent, the
+app falls back to `src/main/resources/facebook.properties`.
+
+Alternatively, copy `src/main/resources/facebook.properties.sample` to
+`src/main/resources/facebook.properties` and put `username` and `password` there. That file is
+gitignored because it contains the Facebook password.
+
+If no Facebook credentials are configured, a non-headless Selenium browser opens and waits for
+manual login. For each marked post, the importer uses the first non-Facebook link in the post as
+the article URL; if none is found, it stores the Facebook post URL and caches the post text as the
+article content.
+
 ### 2. Start infrastructure
 
 ```sh

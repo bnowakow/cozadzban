@@ -29,6 +29,27 @@ class ArticleServiceUrlTest {
     }
 
     @Test
+    fun `canonicalizeUrl keeps Facebook photo identity query parameters while stripping tracking`() {
+        assertEquals(
+            "https://www.facebook.com/photo/?fbid=2957148791343834&set=a.359995211059218",
+            ArticleService.canonicalizeUrl(
+                "https://www.facebook.com/photo/?fbid=2957148791343834&set=a.359995211059218" +
+                    "&__cft__[0]=AZbDN214kWeuGMkjcsTNlGxjqoCh5ThiBa&__tn__=EH-y-R",
+            ),
+        )
+    }
+
+    @Test
+    fun `canonicalizeUrl keeps Facebook story identity query parameters while stripping tracking`() {
+        assertEquals(
+            "https://www.facebook.com/story.php?story_fbid=123&id=456",
+            ArticleService.canonicalizeUrl(
+                "https://www.facebook.com/story.php?story_fbid=123&id=456&__cft__[0]=AZb&__tn__=%2CO%2CP-R",
+            ),
+        )
+    }
+
+    @Test
     fun `canonicalizeUrl strips Instagram tracking query parameters`() {
         assertEquals(
             "https://www.instagram.com/reel/DW6kHAvsM-p/",
