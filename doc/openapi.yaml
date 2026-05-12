@@ -18,10 +18,15 @@ info:
     5. **Vaadin UI** — server-side paginated view of articles (separate from
        this REST spec; rendered at the root path `/`).
 
-     6. **Frontend authentication** — Vaadin UI starts OAuth Authorization Code + PKCE
+    6. **Frontend authentication** — Vaadin UI starts OAuth Authorization Code + PKCE
        via backend redirect (`GET /auth/login`) and uses server-side session cookie.
-     7. **Admin panel** — Vaadin UI at `/admin` for ADMIN users to manage allowlist
+    7. **Admin panel** — Vaadin UI at `/admin` for ADMIN users to manage allowlist
        (add/soft-delete/restore/update users) using server-side service calls.
+    8. **Facebook import job** — admin-only REST endpoints and UI button trigger a
+       long-lived Selenium job that reuses one browser session, verifies Facebook
+       login state before each run, and re-authenticates when necessary.
+    9. **Machine-to-machine writes** — the Facebook importer may write articles to
+       the remote API using a dedicated API key tied to an allowlisted bot user.
     ## Implementation notes
     - Language is normalized to lowercase and validated against a conservative
       BCP-47-like pattern (e.g. `pl`, `en`, `en-gb`).
@@ -69,13 +74,21 @@ x-security-policy:
   clockSkewSeconds: 60
   denyByDefault: true
   audienceSource: spring.security.oauth2.resourceserver.jwt.audiences
-  allowlist:
-    enabled: true
-    table: app_user
-    roleColumn: role
-    statusColumn: status
-    activeStatus: ACTIVE
-    emailNormalization: trim+lowercase
+    allowlist:
+      enabled: true
+      table: app_user
+      roleColumn: role
+      statusColumn: status
+      activeStatus: ACTIVE
+      emailNormalization: trim+lowercase
+    machineToMachine:
+      enabled: true
+      headerName: X-CoZaZjeb-M2M-Key
+      apiKeyEnvVar: APP_MACHINE_AUTH_API_KEY
+      principalEmailEnvVar: APP_MACHINE_AUTH_PRINCIPAL_EMAIL
+      allowedForEndpoints:
+        - POST /api/articles
+        - PATCH /api/articles/{id}
   bootstrap:
     adminEmailEnvVar: COZAZJEB_BOOTSTRAP_ADMIN_EMAIL
     enforcedOnlyWhenNoAdminsExist: true
@@ -114,6 +127,14 @@ x-problem-types:
     uri: https://cozazjeb.pl/problems/last-admin-required
     status: 409
     title: Last Admin Required
+  facebookImportBusy:
+    uri: https://cozazjeb.pl/problems/facebook-import-busy
+    status: 409
+    title: Facebook Import Already Running
+  facebookImportNotRunning:
+    uri: https://cozazjeb.pl/problems/facebook-import-not-running
+    status: 409
+    title: No Active Facebook Import
 
 tags:
   - name: Articles
@@ -124,6 +145,8 @@ tags:
     description: Allowlist management endpoints
   - name: Authentication
     description: UI authentication and session endpoints
+  - name: Facebook Import
+    description: Admin-triggered Facebook post import job endpoints
 
 paths:
 
@@ -225,6 +248,8 @@ paths:
       operationId: createArticle
       security:
         - googleOidc: []
+        - machineApiKey: []
+        - machineApiKey: []
       description: >
         Accepts a URL and a BCP-47 language tag.
         The server fetches the page at the given URL and automatically
@@ -316,6 +341,53 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /api/admin/facebook-import/run:
+
+    post:
+      tags: [Facebook Import]
+      summary: Trigger the Facebook import job
+      operationId: runFacebookImport
+      x-required-role: ADMIN
+      security:
+        - googleOidc: []
+      description: >
+        Starts the Facebook import job if no other import is currently running.
+        The job reuses a long-lived Selenium browser session, opens the browser
+        on demand, and verifies Facebook login before scanning posts. Returns
+        202 Accepted when the job is launched.
+      responses:
+        '202':
+          description: Facebook import job accepted for execution
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/admin/facebook-import/terminate:
+
+    post:
+      tags: [Facebook Import]
+      summary: Terminate the active Facebook import job
+      operationId: terminateFacebookImport
+      x-required-role: ADMIN
+      security:
+        - googleOidc: []
+      description: >
+        Interrupts the active Facebook import job if one is running. The Selenium
+        browser window is intentionally kept alive so the next run can reuse the
+        logged-in session. Returns 202 Accepted when termination is accepted.
+      responses:
+        '202':
+          description: Facebook import job termination accepted
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
   /api/articles/{id}:
 
     parameters:
@@ -378,6 +450,8 @@ paths:
       operationId: patchArticle
       security:
         - googleOidc: []
+        - machineApiKey: []
+        - machineApiKey: []
       description: >
         Updates only the provided fields. Updatable fields: url, language, quote, publishedAt.
         Setting quote to null explicitly clears it; omitting quote leaves it unchanged.
@@ -591,6 +665,12 @@ components:
     googleOidc:
       type: openIdConnect
       openIdConnectUrl: https://accounts.google.com/.well-known/openid-configuration
+
+    machineApiKey:
+      type: apiKey
+      in: header
+      name: X-CoZaZjeb-M2M-Key
+      description: Machine credential used by the remote Facebook importer to write articles
 
     cookieAuth:
       type: apiKey
@@ -970,6 +1050,22 @@ components:
                 detail: Operation would leave the system without an ADMIN user.
                 instance: /api/users/1
                 remainingAdmins: 0
+            facebookImportBusy:
+              summary: Facebook import already running
+              value:
+                type: https://cozazjeb.pl/problems/facebook-import-busy
+                title: Facebook Import Already Running
+                status: 409
+                detail: Facebook import is already running.
+                instance: /api/admin/facebook-import/run
+            facebookImportNotRunning:
+              summary: No Facebook import to terminate
+              value:
+                type: https://cozazjeb.pl/problems/facebook-import-not-running
+                title: No Active Facebook Import
+                status: 409
+                detail: No Facebook import job is currently running.
+                instance: /api/admin/facebook-import/terminate
 
     Unauthorized:
       description: Missing or invalid OAuth2 Bearer token

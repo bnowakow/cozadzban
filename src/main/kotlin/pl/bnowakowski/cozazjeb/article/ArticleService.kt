@@ -449,18 +449,34 @@ class ArticleService(
                 uri.path == "/" -> ""
                 else -> uri.path
             }
-            val query = if (isTrackingOnlySocialHost(host)) "" else uri.rawQuery?.let { "?$it" } ?: ""
+            val query = canonicalQuery(uri, host)
             return "$scheme://$authority$path$query"
         }
 
-        private fun isTrackingOnlySocialHost(host: String): Boolean =
-            isFacebookHost(host) || isInstagramHost(host)
+        private fun canonicalQuery(uri: URI, host: String): String {
+            val query = uri.rawQuery ?: return ""
+            if (isFacebookHost(host)) {
+                return query
+                    .split("&")
+                    .filter { rawParam ->
+                        val name = rawParam.substringBefore("=", "")
+                        name in FACEBOOK_SEMANTIC_QUERY_PARAMS
+                    }
+                    .takeIf { it.isNotEmpty() }
+                    ?.joinToString(separator = "&", prefix = "?")
+                    ?: ""
+            }
+            if (isInstagramHost(host)) return ""
+            return "?$query"
+        }
 
         private fun isFacebookHost(host: String): Boolean =
             host == "facebook.com" || host.endsWith(".facebook.com")
 
         private fun isInstagramHost(host: String): Boolean =
             host == "instagram.com" || host.endsWith(".instagram.com")
+
+        private val FACEBOOK_SEMANTIC_QUERY_PARAMS = setOf("fbid", "set", "story_fbid", "id")
 
         private fun parseSortParam(sort: String): Pair<String, String> {
             val parts = sort.split(",")

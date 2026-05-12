@@ -10,15 +10,21 @@ A news article aggregator with Google OIDC authentication.
 
 ## Local environment setup
 
-### 1. Create `.env`
+### 1. Pick the right env template
 
-Copy the sample and fill in your values:
+The project now keeps two templates:
+
+- `.env.sample-server` for the public server
+- `.env.sample-worker` for the local Facebook import worker
+
+Copy the one you need to the private env file you will actually run with:
 
 ```sh
-cp .env.sample .env
+cp .env.sample-server .env.server
+cp .env.sample-worker .env.worker
 ```
 
-Edit `.env`:
+Then edit the matching file for the role you are setting up:
 
 | Variable | Description | Default |
 |---|---|---|
@@ -28,6 +34,7 @@ Edit `.env`:
 | `POSTGRES_PORT` | Host port for PostgreSQL | `5432` |
 | `APP_PORT` | Host port for the Dockerized Spring Boot app | `8080` |
 | `SPRING_PROFILES_ACTIVE` | Spring profile (`local` or `prod`) | `local` |
+| `SPRING_DEVTOOLS_RESTART_ENABLED` | Enables Spring Boot DevTools restarts. Use `true` for the server and `false` for the worker so Selenium imports are not interrupted. | server: `true`, worker: `false` |
 | `SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_AUDIENCES` | Google OAuth2 client ID (used to validate JWT `aud` claim) | _(required for auth to work)_ |
 | `SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_ID` | Google OAuth2 client ID (used by UI login) | _(required for UI login)_ |
 | `SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_SECRET` | Google OAuth2 client secret (used by UI login) | _(required for UI login)_ |
@@ -36,7 +43,71 @@ Edit `.env`:
 | `STATCOUNTER_PROJECT_ID` | StatCounter project ID. Leave blank to disable StatCounter. | _(optional)_ |
 | `STATCOUNTER_SECURITY_ID` | StatCounter security code for the project. Required when `STATCOUNTER_PROJECT_ID` is set. | _(optional)_ |
 
-> `.env` is gitignored and must never be committed.
+> `.env`, `.env.server`, and `.env.worker` are gitignored and must never be committed.
+
+### Optional Facebook profile import
+
+The app can run a Selenium import for posts on
+`https://www.facebook.com/bartek.dobrowolski.nowakowski` that contain the marker phrase
+`co za zjeb`. It is disabled by default and only runs when explicitly triggered.
+
+Minimum configuration:
+
+```sh
+APP_FACEBOOK_IMPORT_ENABLED=true
+APP_FACEBOOK_IMPORT_USERNAME=you@example.com
+APP_FACEBOOK_IMPORT_SCROLLS=8
+```
+
+Optional automatic login:
+
+```sh
+APP_FACEBOOK_IMPORT_USERNAME=facebook-login@example.com
+APP_FACEBOOK_IMPORT_PASSWORD=...
+```
+
+Prefer putting the login values in `.env.worker` using `APP_FACEBOOK_IMPORT_USERNAME`,
+`APP_FACEBOOK_IMPORT_PASSWORD`, and `APP_FACEBOOK_IMPORT_HEADLESS`. The same username is also used
+to resolve the local app user that owns imported articles. If those keys are absent, the app falls
+back to `src/main/resources/facebook.properties`.
+
+If you run the importer locally but want it to create articles on the public server instead of the
+local database, configure the remote API target and machine key:
+
+```sh
+APP_FACEBOOK_IMPORT_TARGET_API_BASE_URL=https://cozazjeb.pl
+APP_FACEBOOK_IMPORT_TARGET_API_KEY=...
+APP_FACEBOOK_IMPORT_TARGET_API_KEY_HEADER=X-CoZaZjeb-M2M-Key
+APP_FACEBOOK_IMPORT_TARGET_ARTICLE_PATH=/api/articles
+```
+
+On the server, configure the matching machine-to-machine credential:
+
+```sh
+APP_MACHINE_AUTH_ENABLED=true
+APP_MACHINE_AUTH_HEADER_NAME=X-CoZaZjeb-M2M-Key
+APP_MACHINE_AUTH_API_KEY=...
+APP_MACHINE_AUTH_PRINCIPAL_EMAIL=facebook-import-bot@cozazjeb.pl
+```
+
+Generate the shared secret once, then paste the same value into both places. A simple option is:
+
+```sh
+openssl rand -hex 32
+```
+
+Alternatively, copy `src/main/resources/facebook.properties.sample` to
+`src/main/resources/facebook.properties` and put `username` and `password` there. That file is
+gitignored because it contains the Facebook password.
+
+If you run the app through `docker compose`, keep the worker values in the active `.env` file as
+well. The Compose file forwards them into the container, while a local JVM run reads them directly
+from `.env`.
+
+If no Facebook credentials are configured, a non-headless Selenium browser opens and waits for
+manual login. For each marked post, the importer uses the first non-Facebook link in the post as
+the article URL; if none is found, it stores the Facebook post URL and caches the post text as the
+article content.
 
 ### 2. Start infrastructure
 

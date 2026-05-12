@@ -259,43 +259,61 @@ Phases 4 and 5 are independent and can be developed in parallel.
 
 ---
 
-## Phase 19 — Analytics and consent (NEW)
+## Phase 19 — Facebook import job orchestration (NEW)
 
-58. **Analytics configuration** — add env-backed properties
+58. **`FacebookProfileArticleImporter` service** — own a long-lived Selenium WebDriver,
+    start imports on demand, reuse the browser between runs, verify Facebook login before
+    each scan, and keep at most one active import thread at a time. In remote mode, the
+    worker posts new articles to the target server's article API and uses a machine key
+    for create/patch requests instead of calling `ArticleService` directly.
+59. **`FacebookImportController`** — expose admin-only `POST /api/admin/facebook-import/run`
+    and `POST /api/admin/facebook-import/terminate` endpoints for manual or cron-triggered
+    job control; return `202` on accepted start/terminate and `409` for busy/not-running.
+60. **`ArticleListView` admin action** — add an admin-only "Import Facebook Posts" button
+    next to "Add Article" that calls the import trigger endpoint/service from the UI.
+61. **Lifecycle cleanup** — remove startup auto-run and stop closing the Selenium browser
+    after every import; keep the window alive until application shutdown.
+
+---
+
+## Phase 20 — Analytics and consent (NEW)
+
+62. **Analytics configuration** — add env-backed properties
     `GOOGLE_ANALYTICS_MEASUREMENT_ID`, `STATCOUNTER_PROJECT_ID`, and
-    `STATCOUNTER_SECURITY_ID`; update `.env.sample`, README, and Compose passthrough.
-59. **Conditional script rendering** — render Google Analytics and StatCounter scripts only
+    `STATCOUNTER_SECURITY_ID`; update `.env.sample-server`, `.env.sample-worker`,
+    README, and Compose passthrough.
+63. **Conditional script rendering** — render Google Analytics and StatCounter scripts only
     when their required IDs are configured and the user has accepted analytics cookies.
-60. **Analytics-only cookie consent** — add a consent banner explaining that tracking is for
+64. **Analytics-only cookie consent** — add a consent banner explaining that tracking is for
     analytics only. Store consent in browser storage/cookie, provide accept/reject controls,
     and provide a way to change/revoke the decision later.
 
 ---
 
-## Phase 20 — Article content preservation cache (FUTURE CONSIDERATION)
+## Phase 21 — Article content preservation cache (FUTURE CONSIDERATION)
 
-61. **Article content preservation** — article text/content is captured at creation and
+65. **Article content preservation** — article text/content is captured at creation and
     update time into the `article_content` table (`V5__article_content.sql`). Content is
     stored for archival/preservation only (max 50 000 chars, `truncated` flag). NOT used
     for UI rendering, source fallback, or AI summary.
-62. **Potential future uses** — preserved content may later support article display when
+66. **Potential future uses** — preserved content may later support article display when
     source URL stops responding, AI summary generation, or audit/debugging. Requires
     separate product/legal decisions first.
-63. **Content cache constraints** — sanitization/readability extraction, access control,
+67. **Content cache constraints** — sanitization/readability extraction, access control,
     copyright/privacy posture, and purge behavior must be decided before any use beyond
     archival.
 
 ---
 
-## Phase 21 — Regression tests for ownership, metadata, filters, RSS discovery, and analytics (NEW)
+## Phase 22 — Regression tests for ownership, metadata, filters, RSS discovery, analytics, and Facebook import (NEW)
 
-64. **Migration tests** — verify creator backfill to oldest user, migration failure when
+68. **Migration tests** — verify creator backfill to oldest user, migration failure when
     articles exist without users, `created_by_user_id NOT NULL`, and nullable `published_at`.
-65. **Auth/user tests** — verify soft-deleted users cannot log in or authorize writes, admins
+69. **Auth/user tests** — verify soft-deleted users cannot log in or authorize writes, admins
     can restore users, and final active admin cannot be deleted or demoted.
-66. **Article tests** — verify creator immutability, authenticated-only creator exposure,
+70. **Article tests** — verify creator immutability, authenticated-only creator exposure,
     RSS creator omission, publication date parsing/override/clearing, thumbnail extraction,
     language normalization/validation, filters, and sorting.
-67. **UI/manual tests** — verify language dropdown, date filters, publication date picker/time
+71. **UI/manual tests** — verify language dropdown, date filters, publication date picker/time
     picker, creator visibility rules, RSS `<link rel="alternate">` discovery + visible RSS
-    link, and analytics consent/script rendering.
+    link, analytics consent/script rendering, and the Facebook import admin button/job flow.

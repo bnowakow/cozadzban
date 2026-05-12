@@ -1,0 +1,203 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 https://bnowakowski.pl
+
+package pl.bnowakowski.cozazjeb.facebookimport
+
+import org.junit.jupiter.api.Assertions.assertDoesNotThrow
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+import org.mockito.kotlin.any
+import org.mockito.kotlin.doNothing
+import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.mock
+import org.mockito.kotlin.never
+import org.mockito.kotlin.spy
+import org.mockito.kotlin.verify
+import org.mockito.kotlin.whenever
+import pl.bnowakowski.cozazjeb.article.ArticleService
+import pl.bnowakowski.cozazjeb.user.AppUser
+import pl.bnowakowski.cozazjeb.user.AppUserRepository
+import pl.bnowakowski.cozazjeb.user.Role
+import java.time.Duration
+import org.openqa.selenium.Cookie
+import org.openqa.selenium.WebDriver
+import org.springframework.http.HttpHeaders
+import org.springframework.http.HttpStatus
+import org.springframework.web.client.HttpClientErrorException
+import java.nio.charset.StandardCharsets
+
+class FacebookProfileArticleImporterJobTest {
+
+    private val articleService: ArticleService = mock()
+    private val appUserRepository: AppUserRepository = mock()
+
+    @Test
+    fun `startImport launches a background job and reuses the opened driver`() {
+        val importer = spy(
+            FacebookProfileArticleImporter(
+                FacebookImportProperties(
+                    username = "admin@example.com",
+                    password = "secret",
+                    scrolls = 0,
+                    waitAfterPageOpen = Duration.ZERO,
+                    waitAfterScroll = Duration.ZERO,
+                    manualLoginTimeout = Duration.ofSeconds(1),
+                ),
+                appUserRepository,
+                articleService,
+            ),
+        )
+        val driver = mock<WebDriver>()
+        val options = mock<WebDriver.Options>()
+
+        whenever(appUserRepository.findByEmail("admin@example.com")).thenReturn(
+            AppUser(1L, "admin@example.com", Role.ADMIN),
+        )
+        whenever(driver.manage()).thenReturn(options)
+        whenever(options.getCookieNamed("c_user")).thenReturn(Cookie("c_user", "123"))
+        whenever(options.getCookieNamed("xs")).thenReturn(Cookie("xs", "abc"))
+        whenever(driver.currentUrl).thenReturn("https://www.facebook.com/admin.example")
+        whenever(driver.windowHandles).thenReturn(setOf("main"))
+        doNothing().whenever(driver).get(any())
+        whenever(driver.findElements(any())).thenReturn(emptyList())
+        doReturn(driver).whenever(importer).openDriver()
+
+        importer.startImport()
+
+        waitUntil("facebook import to finish") { !importer.isImportRunning() }
+
+        assertDoesNotThrow { importer.startImport() }
+        waitUntil("second facebook import to finish") { !importer.isImportRunning() }
+        verify(importer).openDriver()
+    }
+
+    @Test
+    fun `terminateImport cancels the active job without closing the browser`() {
+        val importer = spy(
+            FacebookProfileArticleImporter(
+                FacebookImportProperties(
+                    username = "admin@example.com",
+                    password = "",
+                    scrolls = 0,
+                    waitAfterPageOpen = Duration.ZERO,
+                    waitAfterScroll = Duration.ZERO,
+                    manualLoginTimeout = Duration.ofSeconds(10),
+                ),
+                appUserRepository,
+                articleService,
+            ),
+        )
+        val driver = mock<WebDriver>()
+        val options = mock<WebDriver.Options>()
+
+        whenever(appUserRepository.findByEmail("admin@example.com")).thenReturn(
+            AppUser(1L, "admin@example.com", Role.ADMIN),
+        )
+        whenever(driver.manage()).thenReturn(options)
+        whenever(options.getCookieNamed("c_user")).thenReturn(null)
+        whenever(options.getCookieNamed("xs")).thenReturn(null)
+        whenever(driver.currentUrl).thenReturn("https://www.facebook.com/login")
+        whenever(driver.windowHandles).thenReturn(setOf("main"))
+        doNothing().whenever(driver).get(any())
+        doReturn(driver).whenever(importer).openDriver()
+
+        importer.startImport()
+        waitUntil("facebook import to start") { importer.isImportRunning() }
+
+        importer.terminateImport()
+        waitUntil("facebook import to stop") { !importer.isImportRunning() }
+
+        verify(importer).openDriver()
+        verify(driver, never()).quit()
+    }
+
+    @Test
+    fun `startImport rejects a second run while the first is still active`() {
+        val importer = spy(
+            FacebookProfileArticleImporter(
+                FacebookImportProperties(
+                    username = "admin@example.com",
+                    password = "",
+                    scrolls = 0,
+                    waitAfterPageOpen = Duration.ZERO,
+                    waitAfterScroll = Duration.ZERO,
+                    manualLoginTimeout = Duration.ofSeconds(10),
+                ),
+                appUserRepository,
+                articleService,
+            ),
+        )
+        val driver = mock<WebDriver>()
+        val options = mock<WebDriver.Options>()
+
+        whenever(appUserRepository.findByEmail("admin@example.com")).thenReturn(
+            AppUser(1L, "admin@example.com", Role.ADMIN),
+        )
+        whenever(driver.manage()).thenReturn(options)
+        whenever(options.getCookieNamed("c_user")).thenReturn(null)
+        whenever(options.getCookieNamed("xs")).thenReturn(null)
+        whenever(driver.currentUrl).thenReturn("https://www.facebook.com/login")
+        whenever(driver.windowHandles).thenReturn(setOf("main"))
+        doNothing().whenever(driver).get(any())
+        doReturn(driver).whenever(importer).openDriver()
+
+        importer.startImport()
+        waitUntil("facebook import to start") { importer.isImportRunning() }
+
+        assertTrue(
+            runCatching { importer.startImport() }
+                .exceptionOrNull() is FacebookImportAlreadyRunningException,
+        )
+
+        importer.terminateImport()
+        waitUntil("facebook import to stop") { !importer.isImportRunning() }
+    }
+
+    @Test
+    fun `article creation retries only transient facebook enrichment failures`() {
+        val importer = FacebookProfileArticleImporter(
+            FacebookImportProperties(),
+            appUserRepository,
+            articleService,
+        )
+        val method = importer.javaClass.getDeclaredMethod(
+            "retryDelayForArticleCreateFailure",
+            org.springframework.web.client.RestClientResponseException::class.java,
+            Int::class.javaPrimitiveType,
+        )
+        method.isAccessible = true
+        val transientFailure = HttpClientErrorException.create(
+            HttpStatus.UNPROCESSABLE_ENTITY,
+            "Unprocessable Content",
+            HttpHeaders.EMPTY,
+            """{"detail":"URL enrichment failed: target returned HTTP 400 for 'https://www.facebook.com/photo/?fbid=1'"}"""
+                .toByteArray(StandardCharsets.UTF_8),
+            StandardCharsets.UTF_8,
+        )
+        val permanentFailure = HttpClientErrorException.create(
+            HttpStatus.UNPROCESSABLE_ENTITY,
+            "Unprocessable Content",
+            HttpHeaders.EMPTY,
+            """{"detail":"URL enrichment failed: target returned HTTP 404 for 'https://example.com/missing'"}"""
+                .toByteArray(StandardCharsets.UTF_8),
+            StandardCharsets.UTF_8,
+        )
+
+        assertEquals(Duration.ofSeconds(10), method.invoke(importer, transientFailure, 1))
+        assertEquals(Duration.ofSeconds(60), method.invoke(importer, transientFailure, 2))
+        assertNull(method.invoke(importer, transientFailure, 3))
+        assertNull(method.invoke(importer, permanentFailure, 1))
+    }
+
+    private fun waitUntil(label: String, predicate: () -> Boolean) {
+        val deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos()
+        while (System.nanoTime() < deadline) {
+            if (predicate()) return
+            Thread.sleep(25)
+        }
+        throw AssertionError("Timed out waiting for $label")
+    }
+}

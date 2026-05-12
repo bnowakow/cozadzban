@@ -1,0 +1,5 @@
+# Optional fallback only.
+# Values in .env / environment variables take precedence when present.
+username=
+password=
+browser.headless=false

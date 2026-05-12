@@ -39,6 +39,7 @@ dependencies {
 	implementation("org.springframework.boot:spring-boot-starter-validation")
 	implementation("org.springframework.boot:spring-boot-starter-security")
 	implementation("org.jsoup:jsoup:1.18.3")
+	implementation("org.seleniumhq.selenium:selenium-java:4.32.0")
 	implementation("org.springframework.boot:spring-boot-starter-oauth2-client")
 	implementation("org.springframework.boot:spring-boot-starter-oauth2-resource-server")
 	implementation("org.springframework.boot:spring-boot-starter-zipkin")

@@ -34,12 +34,16 @@ import java.time.Instant
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 @AutoConfigureMockMvc
-@TestPropertySource(
-    properties = [
-        "app.build.timestamp=2026-05-04T10:00:00Z",
-        NO_DATABASE_AUTOCONFIGURATION,
-    ],
-)
+    @TestPropertySource(
+        properties = [
+            "app.build.timestamp=2026-05-04T10:00:00Z",
+            "app.machine-auth.enabled=true",
+            "app.machine-auth.header-name=X-CoZaZjeb-M2M-Key",
+            "app.machine-auth.api-key=test-machine-key",
+            "app.machine-auth.principal-email=bot@cozazjeb.pl",
+            NO_DATABASE_AUTOCONFIGURATION,
+        ],
+    )
 class ArticleControllerTest {
 
     @Autowired private lateinit var mockMvc: MockMvc
@@ -53,6 +57,7 @@ class ArticleControllerTest {
     private val userEmail = "user@test.com"
     private val adminEmail = "admin@test.com"
     private val strangerEmail = "stranger@test.com"
+    private val machineEmail = "bot@cozazjeb.pl"
 
     private val sampleArticle = Article(
         id = 1L,
@@ -87,6 +92,7 @@ class ArticleControllerTest {
         whenever(appUserRepository.countByRoleAndStatus(Role.ADMIN, AppUserStatus.ACTIVE)).thenReturn(1L)
         whenever(appUserRepository.findByEmail(userEmail)).thenReturn(AppUser(1L, userEmail, Role.USER))
         whenever(appUserRepository.findByEmail(adminEmail)).thenReturn(AppUser(2L, adminEmail, Role.ADMIN))
+        whenever(appUserRepository.findByEmail(machineEmail)).thenReturn(AppUser(3L, machineEmail, Role.USER))
         whenever(appUserRepository.findByEmail(strangerEmail)).thenReturn(null)
     }
 
@@ -158,6 +164,20 @@ class ArticleControllerTest {
             status { isCreated() }
             jsonPath("$.id") { value(1) }
             jsonPath("$.url") { value("https://example.com/article") }
+        }
+    }
+
+    @Test
+    fun `POST article returns 201 for machine to machine api key`() {
+        whenever(articleService.create(any(), any())).thenReturn(sampleArticle)
+
+        mockMvc.post("/api/articles") {
+            header("X-CoZaZjeb-M2M-Key", "test-machine-key")
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"url":"https://example.com/article","language":"en"}"""
+        }.andExpect {
+            status { isCreated() }
+            jsonPath("$.id") { value(1) }
         }
     }
 
@@ -325,6 +345,20 @@ class ArticleControllerTest {
             with(jwt().jwt { it.subject(userEmail) })
             contentType = MediaType("application", "merge-patch+json")
             content = """{"language":"pl"}"""
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.id") { value(1) }
+        }
+    }
+
+    @Test
+    fun `PATCH article returns 200 for machine to machine api key`() {
+        whenever(articleService.patch(eq(1L), any())).thenReturn(sampleArticle)
+
+        mockMvc.patch("/api/articles/1") {
+            header("X-CoZaZjeb-M2M-Key", "test-machine-key")
+            contentType = MediaType("application", "merge-patch+json")
+            content = """{"content":"remote imported text"}"""
         }.andExpect {
             status { isOk() }
             jsonPath("$.id") { value(1) }
