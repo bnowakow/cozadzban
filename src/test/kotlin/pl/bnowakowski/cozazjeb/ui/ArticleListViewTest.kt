@@ -1,0 +1,130 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 https://bnowakowski.pl
+
+package pl.bnowakowski.cozazjeb.ui
+
+import com.vaadin.flow.component.Component
+import com.vaadin.flow.component.button.Button
+import com.vaadin.flow.component.UI
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+import org.mockito.kotlin.mock
+import org.mockito.kotlin.verify
+import org.mockito.kotlin.whenever
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken
+import org.springframework.security.core.authority.SimpleGrantedAuthority
+import org.springframework.security.core.context.SecurityContextHolder
+import pl.bnowakowski.cozazjeb.article.ArticleRepository
+import pl.bnowakowski.cozazjeb.article.ArticleService
+import pl.bnowakowski.cozazjeb.facebookimport.FacebookProfileArticleImporter
+import pl.bnowakowski.cozazjeb.user.AppUser
+import pl.bnowakowski.cozazjeb.user.AppUserRepository
+import pl.bnowakowski.cozazjeb.user.AppUserStatus
+import pl.bnowakowski.cozazjeb.user.Role
+
+class ArticleListViewTest {
+
+    private val articleRepository: ArticleRepository = mock()
+    private val articleService: ArticleService = mock()
+    private val facebookProfileArticleImporter: FacebookProfileArticleImporter = mock()
+    private val appUserRepository: AppUserRepository = mock()
+
+    @AfterEach
+    fun tearDown() {
+        UI.setCurrent(null)
+        SecurityContextHolder.clearContext()
+    }
+
+    @Test
+    fun `admin users see the facebook import button and can trigger it`() {
+        val adminEmail = "admin@example.com"
+        authenticateAs(adminEmail)
+        UI.setCurrent(UI())
+        stubArticles()
+        whenever(appUserRepository.findByEmail(adminEmail)).thenReturn(
+            AppUser(1L, adminEmail, Role.ADMIN, AppUserStatus.ACTIVE),
+        )
+
+        val view = ArticleListView(
+            articleRepository,
+            articleService,
+            facebookProfileArticleImporter,
+            appUserRepository,
+        )
+
+        val buttons = findComponents(view, Button::class.java)
+        val importButton = buttons.firstOrNull { it.text == "Import Facebook Posts" }
+
+        assertTrue(buttons.any { it.text == "Add Article" })
+        assertTrue(importButton != null, "Expected admin import button to be present")
+
+        importButton!!.click()
+
+        verify(facebookProfileArticleImporter).startImport()
+    }
+
+    @Test
+    fun `non-admin users do not see the facebook import button`() {
+        val userEmail = "user@example.com"
+        authenticateAs(userEmail)
+        stubArticles()
+        whenever(appUserRepository.findByEmail(userEmail)).thenReturn(
+            AppUser(2L, userEmail, Role.USER, AppUserStatus.ACTIVE),
+        )
+
+        val view = ArticleListView(
+            articleRepository,
+            articleService,
+            facebookProfileArticleImporter,
+            appUserRepository,
+        )
+
+        val buttons = findComponents(view, Button::class.java)
+
+        assertTrue(buttons.any { it.text == "Add Article" })
+        assertFalse(buttons.any { it.text == "Import Facebook Posts" })
+    }
+
+    private fun authenticateAs(email: String) {
+        SecurityContextHolder.getContext().authentication =
+            UsernamePasswordAuthenticationToken(
+                email,
+                "n/a",
+                listOf(SimpleGrantedAuthority("ROLE_USER")),
+            )
+    }
+
+    private fun stubArticles() {
+        whenever(
+            articleRepository.findPage(
+                0,
+                20,
+                "createdAt",
+                "desc",
+                null,
+                null,
+                null,
+                null,
+                null,
+            ),
+        ).thenReturn(emptyList())
+        whenever(articleRepository.countFiltered(null, null, null, null, null)).thenReturn(0L)
+        whenever(articleRepository.findDistinctLanguages()).thenReturn(emptyList())
+    }
+
+    private fun <T : Component> findComponents(root: Component, type: Class<T>): List<T> {
+        val found = mutableListOf<T>()
+
+        fun walk(component: Component) {
+            if (type.isInstance(component)) {
+                found.add(type.cast(component))
+            }
+            component.children.forEach { walk(it) }
+        }
+
+        walk(root)
+        return found
+    }
+}

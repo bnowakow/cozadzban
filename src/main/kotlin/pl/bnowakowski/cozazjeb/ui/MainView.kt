@@ -36,6 +36,7 @@ import pl.bnowakowski.cozazjeb.article.Article
 import pl.bnowakowski.cozazjeb.article.ArticleInput
 import pl.bnowakowski.cozazjeb.article.ArticleRepository
 import pl.bnowakowski.cozazjeb.article.ArticleService
+import pl.bnowakowski.cozazjeb.facebookimport.FacebookProfileArticleImporter
 import pl.bnowakowski.cozazjeb.security.AllowlistAuthorizationManager
 import pl.bnowakowski.cozazjeb.user.AppUser
 import pl.bnowakowski.cozazjeb.user.AppUserRepository
@@ -51,6 +52,7 @@ import java.time.format.DateTimeFormatter
 class ArticleListView(
     private val articleRepository: ArticleRepository,
     private val articleService: ArticleService,
+    private val facebookProfileArticleImporter: FacebookProfileArticleImporter,
     private val appUserRepository: AppUserRepository,
 ) : VerticalLayout() {
 
@@ -136,11 +138,15 @@ class ArticleListView(
             addArticleButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY)
             addArticleButton.addClickListener { openAddArticleDialog() }
             if (authenticatedUser?.role == Role.ADMIN) {
+                val importFacebookButton = Button("Import Facebook Posts", VaadinIcon.DOWNLOAD.create())
+                importFacebookButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY)
+                importFacebookButton.addClickListener { triggerFacebookImport() }
+
                 val manageUsersButton = Button("Manage users")
                 manageUsersButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY)
                 val manageUsersLink = Anchor("/admin")
                 manageUsersLink.add(manageUsersButton)
-                HorizontalLayout(title, rssAnchor, addArticleButton, manageUsersLink, authButton)
+                HorizontalLayout(title, rssAnchor, addArticleButton, importFacebookButton, manageUsersLink, authButton)
             } else {
                 HorizontalLayout(title, rssAnchor, addArticleButton, authButton)
             }
@@ -467,6 +473,15 @@ class ArticleListView(
         val fields = VerticalLayout(urlField, languageFieldGroup, quoteField, publishedAtPicker, actions)
         dialog.add(fields)
         dialog.open()
+    }
+
+    private fun triggerFacebookImport() {
+        try {
+            facebookProfileArticleImporter.startImport()
+            showSuccess("Facebook import started")
+        } catch (ex: Exception) {
+            showError(ex.message ?: "Failed to start Facebook import")
+        }
     }
 
     private fun confirmDeleteArticle(article: Article) {

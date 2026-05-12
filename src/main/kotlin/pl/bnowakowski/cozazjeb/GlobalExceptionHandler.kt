@@ -12,6 +12,8 @@ import org.springframework.web.bind.MethodArgumentNotValidException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
 import pl.bnowakowski.cozazjeb.article.ArticleUrlConflictException
+import pl.bnowakowski.cozazjeb.facebookimport.FacebookImportAlreadyRunningException
+import pl.bnowakowski.cozazjeb.facebookimport.FacebookImportNotRunningException
 import pl.bnowakowski.cozazjeb.enrichment.EnrichmentException
 import pl.bnowakowski.cozazjeb.user.AllowlistEmailConflictException
 import pl.bnowakowski.cozazjeb.user.LastAdminRequiredException
@@ -73,6 +75,28 @@ class GlobalExceptionHandler {
         )
         pd.type = URI.create("https://cozazjeb.pl/problems/article-url-conflict")
         pd.title = "Article URL Already Exists"
+        return pd
+    }
+
+    @ExceptionHandler(FacebookImportAlreadyRunningException::class)
+    fun handleFacebookImportBusy(ex: FacebookImportAlreadyRunningException): ProblemDetail {
+        val pd = ProblemDetail.forStatusAndDetail(
+            HttpStatus.CONFLICT,
+            ex.message ?: "Facebook import is already running",
+        )
+        pd.type = URI.create("https://cozazjeb.pl/problems/facebook-import-busy")
+        pd.title = "Facebook Import Already Running"
+        return pd
+    }
+
+    @ExceptionHandler(FacebookImportNotRunningException::class)
+    fun handleFacebookImportNotRunning(ex: FacebookImportNotRunningException): ProblemDetail {
+        val pd = ProblemDetail.forStatusAndDetail(
+            HttpStatus.CONFLICT,
+            ex.message ?: "No Facebook import job is currently running",
+        )
+        pd.type = URI.create("https://cozazjeb.pl/problems/facebook-import-not-running")
+        pd.title = "No Active Facebook Import"
         return pd
     }
 

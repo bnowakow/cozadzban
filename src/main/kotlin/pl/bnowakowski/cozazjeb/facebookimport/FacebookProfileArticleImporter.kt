@@ -3,6 +3,7 @@
 
 package pl.bnowakowski.cozazjeb.facebookimport
 
+import jakarta.annotation.PreDestroy
 import org.openqa.selenium.By
 import org.openqa.selenium.JavascriptExecutor
 import org.openqa.selenium.Keys
@@ -14,64 +15,106 @@ import org.openqa.selenium.firefox.FirefoxDriver
 import org.openqa.selenium.firefox.FirefoxOptions
 import org.openqa.selenium.firefox.FirefoxProfile
 import org.slf4j.LoggerFactory
-import org.springframework.boot.ApplicationArguments
-import org.springframework.boot.ApplicationRunner
-import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.stereotype.Component
 import pl.bnowakowski.cozazjeb.article.ArticleInput
+import pl.bnowakowski.cozazjeb.article.ArticleResponse
 import pl.bnowakowski.cozazjeb.article.ArticleService
 import pl.bnowakowski.cozazjeb.article.ArticleUrlConflictException
 import pl.bnowakowski.cozazjeb.user.AppUserRepository
 import java.io.File
 import java.net.URI
 import java.net.URLDecoder
+import java.net.http.HttpClient
 import java.nio.charset.StandardCharsets
 import java.time.Duration
 import kotlin.math.max
+import org.springframework.http.HttpStatus
+import org.springframework.http.MediaType
+import org.springframework.http.client.JdkClientHttpRequestFactory
+import org.springframework.web.client.RestClient
+import org.springframework.web.client.RestClientResponseException
 
 @Component
-@ConditionalOnProperty(prefix = "app.facebook-import", name = ["enabled"], havingValue = "true")
-@ConditionalOnExpression("#{systemProperties['org.gradle.test.worker'] == null}")
 class FacebookProfileArticleImporter(
     private val properties: FacebookImportProperties,
     private val appUserRepository: AppUserRepository,
     private val articleService: ArticleService,
-) : ApplicationRunner {
+) {
 
     private val logger = LoggerFactory.getLogger(javaClass)
     private val facebookProperties = FacebookLoginPropertiesReader()
     private val dotEnvValues = loadDotEnvValues()
+    private val stateLock = Any()
+    @Volatile private var activeImportThread: Thread? = null
+    @Volatile private var driver: WebDriver? = null
 
-    override fun run(args: ApplicationArguments) {
-        require(properties.creatorEmail.isNotBlank()) {
-            "app.facebook-import.creator-email must point to an existing app user"
+    fun startImport() {
+        require(properties.username.isNotBlank()) {
+            "app.facebook-import.username must point to an existing app user"
         }
-        val creator = appUserRepository.findByEmail(properties.creatorEmail)
-            ?: throw IllegalArgumentException("No app user exists for ${properties.creatorEmail}")
+        val creator = appUserRepository.findByEmail(properties.username)
+            ?: throw IllegalArgumentException("No app user exists for ${properties.username}")
 
-        openDriver().use { driver ->
-            login(driver)
-            waitForSecondFactorConfirmation()
-            waitForLogin(driver)
-            driver.get(properties.profileUrl)
-            sleep(properties.waitAfterPageOpen)
-            repeat(max(properties.scrolls, 0)) { index ->
-                driver.findElement(By.tagName("body")).sendKeys(Keys.PAGE_DOWN)
-                logger.info("Facebook import scroll {}/{}", index + 1, properties.scrolls)
-                sleep(properties.waitAfterScroll)
+        synchronized(stateLock) {
+            if (activeImportThread?.isAlive == true) {
+                throw FacebookImportAlreadyRunningException()
             }
-            expandSeeOriginalLinks(driver)
 
-            val candidates = findCandidatePosts(driver)
-            logger.info("Facebook import found {} marked posts", candidates.size)
-            candidates.forEach { candidate ->
-                importCandidate(candidate, creator.id!!)
+            val importThread = Thread {
+                try {
+                    runImport(creator.id!!)
+                } catch (ex: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    logger.info("Facebook import was interrupted")
+                } catch (ex: Exception) {
+                    logger.warn("Facebook import job failed", ex)
+                } finally {
+                    synchronized(stateLock) {
+                        if (activeImportThread === Thread.currentThread()) {
+                            activeImportThread = null
+                        }
+                    }
+                }
+            }.apply {
+                name = "facebook-import-job"
+                isDaemon = true
             }
+            activeImportThread = importThread
+            importThread.start()
         }
     }
 
-    private fun openDriver(): CloseableWebDriver {
+    fun terminateImport() {
+        val thread = synchronized(stateLock) {
+            activeImportThread?.takeIf { it.isAlive } ?: throw FacebookImportNotRunningException()
+        }
+        thread.interrupt()
+    }
+
+    fun isImportRunning(): Boolean =
+        synchronized(stateLock) {
+            activeImportThread?.isAlive == true
+        }
+
+    private fun runImport(creatorId: Long) {
+        val driver = ensureDriver()
+        prepareProfileAndLogin(driver)
+        sleep(properties.waitAfterPageOpen)
+        repeat(max(properties.scrolls, 0)) { index ->
+            driver.findElement(By.tagName("body")).sendKeys(Keys.PAGE_DOWN)
+            logger.info("Facebook import scroll {}/{}", index + 1, properties.scrolls)
+            sleep(properties.waitAfterScroll)
+        }
+        expandSeeOriginalLinks(driver)
+
+        val candidates = findCandidatePosts(driver)
+        logger.info("Facebook import found {} marked posts", candidates.size)
+        candidates.forEach { candidate ->
+            importCandidate(candidate, creatorId)
+        }
+    }
+
+    fun openDriver(): WebDriver {
         val driver = when (properties.browser) {
             FacebookImportProperties.Browser.FIREFOX -> FirefoxDriver(
                 FirefoxOptions().apply {
@@ -91,7 +134,22 @@ class FacebookProfileArticleImporter(
         if (!browserHeadless()) {
             driver.manage().window().position = org.openqa.selenium.Point(900, 0)
         }
-        return CloseableWebDriver(driver)
+        return driver
+    }
+
+    fun prepareProfileAndLogin(driver: WebDriver) {
+        driver.get(properties.profileUrl)
+        sleep(properties.waitAfterPageOpen)
+
+        if (isLoggedIn(driver)) {
+            logger.info("Facebook already appears to be logged in")
+            return
+        }
+
+        login(driver)
+        waitForLogin(driver)
+        driver.get(properties.profileUrl)
+        sleep(properties.waitAfterPageOpen)
     }
 
     private fun login(driver: WebDriver) {
@@ -100,14 +158,9 @@ class FacebookProfileArticleImporter(
 
         logger.debug("trying to open facebook page")
         driver.get("https://www.facebook.com/login")
-        if (isLoggedIn(driver)) {
-            logger.info("Facebook already appears to be logged in")
-            return
-        }
 
         if (username.isBlank() || password.isBlank()) {
             logger.info("No Facebook credentials configured; waiting for manual login in the Selenium window")
-            waitForLogin(driver)
             return
         }
 
@@ -136,91 +189,7 @@ class FacebookProfileArticleImporter(
         if (!loginClicked) {
             throw NoSuchElementException("Unable to locate Facebook login button")
         }
-        // TODO: insert stdin "continue" gate here after the user completes second factor in the Selenium browser.
         sleep(properties.waitAfterLogin)
-    }
-
-    private fun waitForSecondFactorConfirmation() {
-        print(
-            """
-            If Facebook showed a second factor / challenge, finish it now in the Selenium window.
-            If it did not appear, just press Enter to continue.
-            Continue? [Y/n]: 
-            """.trimIndent(),
-        )
-        System.out.flush()
-        val response = runCatching {
-            System.`in`.bufferedReader().readLine()
-        }.getOrNull()
-        if (response.isNullOrBlank() || response.equals("y", ignoreCase = true) || response.equals("yes", ignoreCase = true)) {
-            logger.info("Continuing after manual second factor confirmation")
-            return
-        }
-        throw IllegalStateException("Facebook import aborted by user response: $response")
-    }
-
-    private fun waitForScanInspectionConfirmation() {
-        print(
-            """
-            Facebook profile is loaded.
-            Inspect the Selenium window if you want, then press Enter to dump post blocks and continue.
-            Continue? [Y/n]: 
-            """.trimIndent(),
-        )
-        System.out.flush()
-        val response = runCatching {
-            System.`in`.bufferedReader().readLine()
-        }.getOrNull()
-        if (response.isNullOrBlank() || response.equals("y", ignoreCase = true) || response.equals("yes", ignoreCase = true)) {
-            logger.info("Continuing with Facebook article scan")
-            return
-        }
-        throw IllegalStateException("Facebook import aborted by user response: $response")
-    }
-
-    private fun dumpArticleBoundaries(driver: WebDriver) {
-        val selectors = listOf(
-            "[data-pagelet^='FeedUnit_']",
-            "[role='article']",
-            "div[aria-posinset]",
-            "[data-ad-preview='message']",
-        )
-
-        selectors.forEach { selector ->
-            val blocks = driver.findElements(By.cssSelector(selector))
-            logger.info("Debug selector {} matched {} blocks", selector, blocks.size)
-            blocks.take(8).forEachIndexed { index, element ->
-                val text = runCatching { element.text.cleanText() }.getOrNull().orEmpty()
-                val hrefs = runCatching {
-                    element.findElements(By.cssSelector("a[href]"))
-                        .mapNotNull { it.getAttribute("href") }
-                        .distinct()
-                        .take(6)
-                }.getOrDefault(emptyList())
-                val htmlSnippet = runCatching {
-                    val js = driver as? JavascriptExecutor ?: return@runCatching null
-                    js.executeScript(
-                        """
-                        const post = arguments[0];
-                        return (post.outerHTML || post.innerHTML || '').slice(0, 900);
-                        """.trimIndent(),
-                        element,
-                    ) as? String
-                }.getOrNull().orEmpty()
-
-                logger.info(
-                    "SEL {} ITEM {} text='{}' hrefs={} html='{}'",
-                    selector,
-                    index + 1,
-                    text.take(260),
-                    hrefs.joinToString(separator = " | "),
-                    htmlSnippet.replace(Regex("\\s+"), " ").take(360),
-                )
-            }
-            if (blocks.size > 8) {
-                logger.info("Skipping {} additional blocks for selector {}", blocks.size - 8, selector)
-            }
-        }
     }
 
     private fun facebookCredential(key: String): String =
@@ -414,24 +383,69 @@ class FacebookProfileArticleImporter(
     }
 
     private fun findPostUrl(driver: WebDriver, element: WebElement): String? {
+        val text = element.text
         val links = element.findElements(By.cssSelector("a[href]"))
             .mapNotNull { it.getAttribute("href")?.decodeHtmlEntities()?.toCleanFacebookUrl() }
+            .filterNot { isMediaOrThumbnailUrl(it) }
+            .filterNot { isMarkupNoiseUrl(it) }
             .distinct()
 
-        links.firstOrNull { isExternalArticleUrl(it) }?.let { return it }
-        extractExternalArticleUrlFromText(element.text)?.let { return it }
-        extractExternalArticleUrlFromHtml(driver, element)?.let { return it }
+        val facebookPostUrls = buildList {
+            extractFacebookPostUrlFromText(text)?.let(::add)
+            addAll(links.filter { isFacebookPostUrl(it) })
+        }.distinct()
+        val htmlPostUrl = extractPostUrlFromHtml(driver, element)
+            ?.takeIf { !isConfiguredProfilePostUrl(it) }
+            ?.takeIf { !isFacebookPhotoUrl(it) || isImportableSharedFacebookPhotoUrl(it, text) }
 
-        links.asSequence()
-            .filter { isFacebookPostUrl(it) }
-            .mapNotNull { extractExternalArticleUrlFromFacebookPost(driver, it) }
+        extractExternalArticleUrlFromText(text)?.let {
+            logPostUrlDecision("visible-text-url", it, text, facebookPostUrls, links)
+            return it
+        }
+        extractExternalArticleUrlFromHtml(driver, element)?.let {
+            logPostUrlDecision("html-url", it, text, facebookPostUrls, links)
+            return it
+        }
+
+        links.firstOrNull { isExternalArticleUrl(it) }?.let {
+            logPostUrlDecision("link-url", it, text, facebookPostUrls, links)
+            return it
+        }
+
+        if (htmlPostUrl != null && !isFacebookPhotoUrl(htmlPostUrl)) {
+            logPostUrlDecision("html-facebook-fallback", htmlPostUrl, text, facebookPostUrls, links)
+            return htmlPostUrl
+        }
+
+        val selectedFromOpenedPost = facebookPostUrls.asSequence()
+            .filterNot { isConfiguredProfilePostUrl(it) }
+            .mapNotNull { extractCandidateUrlFromFacebookPost(driver, it) }
             .firstOrNull()
-            ?.let { return it }
+            ?: facebookPostUrls.asSequence()
+                .filter { isConfiguredProfilePostUrl(it) }
+                .mapNotNull { extractCandidateUrlFromFacebookPost(driver, it) }
+                .firstOrNull()
+        if (selectedFromOpenedPost != null) {
+            logPostUrlDecision("opened-facebook-post", selectedFromOpenedPost, text, facebookPostUrls, links)
+            return selectedFromOpenedPost
+        }
 
-        links.firstOrNull { isFacebookPostUrl(it) }?.let { return it }
+        facebookPostUrls.firstOrNull { !isConfiguredProfilePostUrl(it) && isImportableFacebookArticleUrl(it) }?.let {
+            logPostUrlDecision("facebook-post-fallback", it, text, facebookPostUrls, links)
+            return it
+        }
 
-        extractPostUrlFromHtml(driver, element)?.let { return it }
+        facebookPostUrls.firstOrNull { isImportableSharedFacebookPhotoUrl(it, text) }?.let {
+            logPostUrlDecision("facebook-photo-fallback", it, text, facebookPostUrls, links)
+            return it
+        }
 
+        htmlPostUrl?.let {
+            logPostUrlDecision("html-facebook-fallback", it, text, facebookPostUrls, links)
+            return it
+        }
+
+        logPostUrlDecision("none", null, text, facebookPostUrls, links)
         return null
     }
 
@@ -444,7 +458,12 @@ class FacebookProfileArticleImporter(
             .firstOrNull { isExternalArticleUrl(it) }
     }
 
-    private fun extractExternalArticleUrlFromFacebookPost(driver: WebDriver, postUrl: String): String? {
+    private fun extractCandidateUrlFromFacebookPost(
+        driver: WebDriver,
+        postUrl: String,
+        visited: Set<String> = emptySet(),
+    ): String? {
+        if (postUrl in visited) return null
         val originalWindow = driver.windowHandle
         val originalHandles = driver.windowHandles
         val js = driver as? JavascriptExecutor ?: return null
@@ -458,12 +477,57 @@ class FacebookProfileArticleImporter(
             sleep(properties.waitAfterPageOpen)
             expandSeeOriginalLinks(driver)
             val pageSource = driver.pageSource.orEmpty()
-            extractExternalArticleUrlFromText(driver.findElement(By.tagName("body")).text)
-                ?: extractExternalArticleUrlFromText(pageSource)
-                ?: HREF_VALUE_REGEX.findAll(pageSource)
-                    .mapNotNull { it.groupValues[1].decodeHtmlEntities().toCleanFacebookUrl() }
-                    .distinct()
-                    .firstOrNull { isExternalArticleUrl(it) }
+            val bodyText = driver.findElement(By.tagName("body")).text
+            val facebookCandidates = facebookPostCandidatesFromOpenedPage(driver, bodyText, pageSource)
+
+            val nestedCandidate = facebookCandidates.asSequence()
+                .mapNotNull { candidate ->
+                    extractCandidateUrlFromFacebookPost(driver, candidate, visited = visited + postUrl)
+                }
+                .firstOrNull()
+            val bodyTextArticleUrl = extractExternalArticleUrlFromText(bodyText)
+            val linkArticleUrls = externalArticleUrlsFromLinks(driver, bodyText)
+            val pageTextArticleUrl = extractExternalArticleUrlFromText(pageSource, visibleText = bodyText)
+            val pageHrefArticleUrls = HREF_VALUE_REGEX.findAll(pageSource)
+                .mapNotNull { it.groupValues[1].decodeHtmlEntities().toCleanFacebookUrl() }
+                .distinct()
+                .filter { isExternalArticleUrl(it) && isUrlHostMentionedInText(it, bodyText) }
+                .toList()
+            val facebookFallbackUrl = selectBestFacebookPostUrl(facebookCandidates.asSequence(), postUrl)
+            val unsafeSelected = nestedCandidate
+                ?: bodyTextArticleUrl
+                ?: linkArticleUrls.firstOrNull()
+                ?: pageTextArticleUrl
+                ?: pageHrefArticleUrls.firstOrNull()
+                ?: facebookFallbackUrl
+            val selected = unsafeSelected?.takeUnless {
+                isConfiguredProfilePostUrl(postUrl) &&
+                    isExternalArticleUrl(it) &&
+                    isGenericFacebookFeedPage(bodyText)
+            }
+            val selectedSource = when (selected) {
+                null -> "none"
+                nestedCandidate -> "nested-facebook-post"
+                bodyTextArticleUrl -> "visible-text-url"
+                linkArticleUrls.firstOrNull() -> "visible-link-url"
+                pageTextArticleUrl -> "page-source-visible-url"
+                pageHrefArticleUrls.firstOrNull() -> "page-source-href-visible-url"
+                facebookFallbackUrl -> "facebook-post-fallback"
+                else -> "unknown"
+            }
+            logOpenedPostUrlDecision(
+                postUrl = postUrl,
+                selectedSource = selectedSource,
+                selectedUrl = selected,
+                bodyText = bodyText,
+                facebookCandidates = facebookCandidates,
+                bodyTextArticleUrl = bodyTextArticleUrl,
+                linkArticleUrls = linkArticleUrls,
+                pageTextArticleUrl = pageTextArticleUrl,
+                pageHrefArticleUrls = pageHrefArticleUrls,
+                facebookFallbackUrl = facebookFallbackUrl,
+            )
+            selected
         }.getOrNull().also {
             runCatching {
                 openedWindow?.let { window ->
@@ -475,27 +539,139 @@ class FacebookProfileArticleImporter(
         }
     }
 
+    private fun extractFacebookPostUrlFromFacebookPost(driver: WebDriver, postUrl: String): String? {
+        val originalWindow = driver.windowHandle
+        val originalHandles = driver.windowHandles
+        val js = driver as? JavascriptExecutor ?: return null
+        var openedWindow: String? = null
+
+        return runCatching {
+            js.executeScript("window.open(arguments[0], '_blank');", postUrl)
+            val newWindow = driver.windowHandles.firstOrNull { it !in originalHandles } ?: return@runCatching null
+            openedWindow = newWindow
+            driver.switchTo().window(newWindow)
+            sleep(properties.waitAfterPageOpen)
+            expandSeeOriginalLinks(driver)
+            val pageSource = driver.pageSource.orEmpty()
+            val bodyText = driver.findElement(By.tagName("body")).text
+            selectBestFacebookPostUrl(extractFacebookPostUrlCandidates(bodyText), postUrl)
+                ?: selectBestFacebookPostUrl(extractFacebookPostUrlCandidatesFromLinks(driver), postUrl)
+                ?: selectBestFacebookPostUrl(extractFacebookPostUrlCandidates(pageSource), postUrl)
+                ?: selectBestFacebookPostUrl(
+                    HREF_VALUE_REGEX.findAll(pageSource)
+                        .mapNotNull { it.groupValues[1].decodeHtmlEntities().toCleanFacebookUrl() }
+                        .distinct()
+                        .filter { isFacebookPostUrl(it) },
+                    postUrl,
+                )
+        }.getOrNull().also {
+            runCatching {
+                openedWindow?.let { window ->
+                    driver.switchTo().window(window)
+                    driver.close()
+                }
+                driver.switchTo().window(originalWindow)
+            }
+        }
+    }
+
+    private fun extractExternalArticleUrlFromLinks(driver: WebDriver, visibleText: String? = null): String? =
+        externalArticleUrlsFromLinks(driver, visibleText).firstOrNull()
+
+    private fun externalArticleUrlsFromLinks(driver: WebDriver, visibleText: String? = null): List<String> =
+        driver.findElements(By.cssSelector("a[href]"))
+            .asSequence()
+            .mapNotNull { it.getAttribute("href")?.decodeHtmlEntities()?.toCleanFacebookUrl() }
+            .filter { isExternalArticleUrl(it) }
+            .filter { visibleText == null || isUrlHostMentionedInText(it, visibleText) }
+            .distinct()
+            .toList()
+
+    private fun extractFacebookPostUrlFromLinks(driver: WebDriver): String? =
+        selectBestFacebookPostUrl(extractFacebookPostUrlCandidatesFromLinks(driver))
+
+    private fun facebookPostCandidatesFromOpenedPage(
+        driver: WebDriver,
+        bodyText: String,
+        pageSource: String,
+    ): List<String> =
+        buildList {
+            addAll(extractFacebookPostUrlCandidates(bodyText))
+            addAll(extractFacebookPostUrlCandidatesFromLinks(driver))
+            addAll(extractFacebookPostUrlCandidates(pageSource))
+            addAll(
+                HREF_VALUE_REGEX.findAll(pageSource)
+                    .mapNotNull { it.groupValues[1].decodeHtmlEntities().toCleanFacebookUrl() }
+                    .filter { isFacebookPostUrl(it) },
+            )
+        }
+            .distinct()
+
     private fun extractPostUrlFromHtml(driver: WebDriver, element: WebElement): String? {
         val html = elementOuterHtml(driver, element) ?: return null
 
-        val candidates = mutableListOf<String>()
-        candidates += listOf(
+        val candidates = listOf(
             FACEBOOK_POST_URL_REGEX,
             FACEBOOK_RELATIVE_POST_URL_REGEX,
             FACEBOOK_STORY_URL_REGEX,
             FACEBOOK_RELATIVE_STORY_URL_REGEX,
             FACEBOOK_PHOTO_URL_REGEX,
             FACEBOOK_RELATIVE_PHOTO_URL_REGEX,
-        ).flatMap { regex ->
-            regex.findAll(html).map { it.value }
-        }
-        candidates += HREF_VALUE_REGEX.findAll(html)
-            .map { it.groupValues[1].replace("&amp;", "&") }
-            .toList()
+        ).flatMap { regex -> regex.findAll(html).map { it.value } } +
+            HREF_VALUE_REGEX.findAll(html)
+                .map { it.groupValues[1].replace("&amp;", "&") }
 
-        return candidates.asSequence()
+        val cleanedCandidates = candidates.asSequence()
             .mapNotNull { it.toCleanFacebookUrl() }
-            .firstOrNull { isFacebookPostUrl(it) }
+            .distinct()
+
+        return selectBestSharedFacebookPostUrl(cleanedCandidates.filter { isFacebookPostUrl(it) })
+            ?: cleanedCandidates.firstOrNull { isExternalArticleUrl(it) }
+    }
+
+    private fun extractFacebookPostUrlCandidates(text: String): Sequence<String> =
+        TEXT_URL_REGEX.findAll(text)
+            .mapNotNull { it.value.decodeHtmlEntities().trimUrlBoundaryCharacters().toCleanFacebookUrl() }
+            .filter { isFacebookPostUrl(it) }
+
+    private fun extractFacebookPostUrlCandidatesFromLinks(driver: WebDriver): Sequence<String> =
+        driver.findElements(By.cssSelector("a[href]"))
+            .asSequence()
+            .mapNotNull { it.getAttribute("href")?.decodeHtmlEntities()?.toCleanFacebookUrl() }
+            .filter { isFacebookPostUrl(it) }
+
+    private fun selectBestFacebookPostUrl(candidates: Sequence<String>, excludedUrl: String? = null): String? =
+        candidates
+            .filterNot { it == excludedUrl }
+            .mapNotNull { candidate ->
+                facebookPostUrlPriority(candidate)?.let { candidate to it }
+            }
+            .minWithOrNull(compareBy<Pair<String, Int>>({ it.second }, { it.first.length }))
+            ?.first
+
+    private fun selectBestSharedFacebookPostUrl(candidates: Sequence<String>, excludedUrl: String? = null): String? {
+        val distinctCandidates = candidates.distinct().toList()
+        return selectBestFacebookPostUrl(
+            distinctCandidates.asSequence().filterNot { isConfiguredProfilePostUrl(it) },
+            excludedUrl,
+        ) ?: selectBestFacebookPostUrl(distinctCandidates.asSequence(), excludedUrl)
+    }
+
+    private fun facebookPostUrlPriority(url: String): Int? {
+        val uri = runCatching { URI(url) }.getOrNull() ?: return null
+        val path = uri.path ?: return null
+        val query = uri.rawQuery.orEmpty()
+        return when {
+            path.contains("/posts/") -> 0
+            path.contains("/reel/") || path.contains("/reels/") -> 1
+            path.contains("/share/") -> 2
+            path.contains("/permalink/") -> 2
+            ((path.contains("/photo") || path.contains("/photo.php")) &&
+                query.contains("fbid=") &&
+                (query.contains("set=") || query.contains("story_fbid="))) ||
+                query.contains("story_fbid=") -> 3
+            else -> 4
+        }
     }
 
     private fun elementOuterHtml(driver: WebDriver, element: WebElement): String? {
@@ -513,13 +689,156 @@ class FacebookProfileArticleImporter(
     }
 
     private fun extractExternalArticleUrlFromText(text: String): String? =
+        extractExternalArticleUrlFromText(text, visibleText = null)
+
+    private fun extractExternalArticleUrlFromText(text: String, visibleText: String?): String? =
         TEXT_URL_REGEX.findAll(text)
             .mapNotNull { it.value.decodeHtmlEntities().trimUrlBoundaryCharacters().toCleanFacebookUrl() }
             .distinct()
+            .filter { visibleText == null || isUrlHostMentionedInText(it, visibleText) }
             .firstOrNull { isExternalArticleUrl(it) }
+
+    private fun isUrlHostMentionedInText(url: String, text: String): Boolean {
+        val host = runCatching { URI(url).host?.lowercase() }.getOrNull() ?: return false
+        val normalizedHost = host.removePrefix("www.")
+        val normalizedText = text.lowercase()
+        return normalizedText.contains(host) || normalizedText.contains(normalizedHost)
+    }
+
+    private fun isGenericFacebookFeedPage(text: String): Boolean {
+        val normalizedText = text.lowercase()
+        return (
+            normalizedText.contains("create a post") ||
+                normalizedText.contains("what's on your mind") ||
+                normalizedText.contains("feed posts")
+            ) &&
+            normalizedText.contains("home")
+    }
+
+    private fun extractFacebookPostUrlFromText(text: String): String? =
+        selectBestFacebookPostUrl(extractFacebookPostUrlCandidates(text).distinct())
+
+    private fun logPostUrlDecision(
+        selectedSource: String,
+        selectedUrl: String?,
+        text: String,
+        facebookPostUrls: List<String>,
+        links: List<String>,
+    ) {
+        logger.info(
+            "FB_IMPORT_POST_URL_DECISION source={} selected={} facebookPostUrls={} externalLinks={} textPreview={}",
+            selectedSource,
+            selectedUrl ?: "<none>",
+            formatUrls(facebookPostUrls),
+            formatUrls(links.filter { isExternalArticleUrl(it) }),
+            text.cleanText().abbreviateForLog(),
+        )
+    }
+
+    private fun logOpenedPostUrlDecision(
+        postUrl: String,
+        selectedSource: String,
+        selectedUrl: String?,
+        bodyText: String,
+        facebookCandidates: List<String>,
+        bodyTextArticleUrl: String?,
+        linkArticleUrls: List<String>,
+        pageTextArticleUrl: String?,
+        pageHrefArticleUrls: List<String>,
+        facebookFallbackUrl: String?,
+    ) {
+        logger.info(
+            "FB_IMPORT_OPENED_POST_DECISION postUrl={} source={} selected={} facebookCandidates={} " +
+                "bodyTextArticleUrl={} linkArticleUrls={} pageTextArticleUrl={} pageHrefArticleUrls={} " +
+                "facebookFallbackUrl={} bodyTextPreview={}",
+            postUrl,
+            selectedSource,
+            selectedUrl ?: "<none>",
+            formatUrls(facebookCandidates),
+            bodyTextArticleUrl ?: "<none>",
+            formatUrls(linkArticleUrls),
+            pageTextArticleUrl ?: "<none>",
+            formatUrls(pageHrefArticleUrls),
+            facebookFallbackUrl ?: "<none>",
+            bodyText.cleanText().abbreviateForLog(),
+        )
+    }
+
+    private fun formatUrls(urls: Iterable<String>): String =
+        urls.distinct()
+            .take(LOG_URL_LIMIT)
+            .joinToString(prefix = "[", postfix = "]")
+            .ifBlank { "[]" }
+
+    private fun String.abbreviateForLog(limit: Int = LOG_TEXT_PREVIEW_LIMIT): String =
+        if (length <= limit) this else take(limit) + "..."
 
     private fun importCandidate(candidate: FacebookPostCandidate, creatorId: Long) {
         try {
+            if (!isImportableCandidateUrl(candidate.url, candidate.text)) {
+                logger.info("Skipping non-importable Facebook candidate URL {}", candidate.url)
+                return
+            }
+            val article = createArticleWithRetry(candidate, creatorId)
+            if (isFacebookPostUrl(candidate.url)) {
+                if (isRemoteArticleApiConfigured()) {
+                    patchRemoteContent(article.id!!, candidate.text)
+                } else {
+                    articleService.replaceContentCache(article.id!!, candidate.text)
+                }
+            }
+            logger.info("Imported Facebook-marked post {}", candidate.url)
+        } catch (ex: InterruptedException) {
+            Thread.currentThread().interrupt()
+            throw ex
+        } catch (ex: ArticleUrlConflictException) {
+            logger.info("Skipping already imported post {}", candidate.url)
+        } catch (ex: Exception) {
+            logger.warn("Could not import Facebook-marked post {}", candidate.url, ex)
+        }
+    }
+
+    private fun createArticleWithRetry(candidate: FacebookPostCandidate, creatorId: Long): ArticleResponse {
+        var attempt = 1
+        while (true) {
+            try {
+                return createArticle(candidate, creatorId)
+            } catch (ex: RestClientResponseException) {
+                val retryDelay = retryDelayForArticleCreateFailure(ex, attempt) ?: throw ex
+                logger.warn(
+                    "Facebook import article creation failed for {} on attempt {}; retrying in {} seconds",
+                    candidate.url,
+                    attempt,
+                    retryDelay.seconds,
+                    ex,
+                )
+                sleep(retryDelay)
+                attempt++
+            }
+        }
+    }
+
+    private fun retryDelayForArticleCreateFailure(ex: RestClientResponseException, attempt: Int): Duration? {
+        if (!isRetryableArticleCreateFailure(ex)) return null
+        return when (attempt) {
+            1 -> Duration.ofSeconds(10)
+            2 -> Duration.ofSeconds(60)
+            else -> null
+        }
+    }
+
+    private fun isRetryableArticleCreateFailure(ex: RestClientResponseException): Boolean =
+        ex.statusCode.value() == HttpStatus.UNPROCESSABLE_ENTITY.value() &&
+            ex.responseBodyAsString.contains("URL enrichment failed: target returned HTTP 400")
+
+    private fun createArticle(candidate: FacebookPostCandidate, creatorId: Long): ArticleResponse {
+        if (!isRemoteArticleApiConfigured()) {
+            if (properties.targetApiBaseUrl.isNotBlank() || properties.targetApiKey.isNotBlank()) {
+                throw IllegalStateException(
+                    "Remote Facebook import is misconfigured: set both " +
+                        "APP_FACEBOOK_IMPORT_TARGET_API_BASE_URL and APP_FACEBOOK_IMPORT_TARGET_API_KEY",
+                )
+            }
             val article = articleService.create(
                 ArticleInput(
                     url = candidate.url,
@@ -528,15 +847,51 @@ class FacebookProfileArticleImporter(
                 ),
                 creatorId,
             )
-            if (isFacebookPostUrl(candidate.url)) {
-                articleService.replaceContentCache(article.id!!, candidate.text)
-            }
-            logger.info("Imported Facebook-marked post {}", candidate.url)
-        } catch (ex: ArticleUrlConflictException) {
-            logger.info("Skipping already imported post {}", candidate.url)
-        } catch (ex: Exception) {
-            logger.warn("Could not import Facebook-marked post {}", candidate.url, ex)
+            return ArticleResponse.from(article, null)
         }
+
+        try {
+            return remoteArticleClient()
+                .post()
+                .uri(properties.targetArticlePath)
+                .contentType(MediaType.APPLICATION_JSON)
+                .header(properties.targetApiKeyHeader, properties.targetApiKey)
+                .body(
+                    ArticleInput(
+                        url = candidate.url,
+                        language = properties.language,
+                        quote = properties.markerPhrase,
+                    )
+                )
+                .retrieve()
+                .body(ArticleResponse::class.java)
+                ?: throw IllegalStateException("Remote article API did not return a created article")
+        } catch (ex: RestClientResponseException) {
+            if (ex.statusCode.value() == HttpStatus.CONFLICT.value()) {
+                throw ArticleUrlConflictException(candidate.url)
+            }
+            if (ex.statusCode.value() == HttpStatus.FORBIDDEN.value()) {
+                throw IllegalStateException(
+                    "Remote article API rejected the Facebook import machine credential. " +
+                        "Check APP_FACEBOOK_IMPORT_TARGET_API_KEY on the worker, " +
+                        "APP_MACHINE_AUTH_API_KEY on the server, and that " +
+                        "APP_MACHINE_AUTH_PRINCIPAL_EMAIL is an active allowlisted user.",
+                    ex,
+                )
+            }
+            throw ex
+        }
+    }
+
+    private fun patchRemoteContent(articleId: Long, content: String) {
+        remoteArticleClient()
+            .patch()
+            .uri("/api/articles/{id}", articleId)
+            .contentType(MediaType.valueOf("application/merge-patch+json"))
+            .header(properties.targetApiKeyHeader, properties.targetApiKey)
+            .body(mapOf("content" to content))
+            .retrieve()
+            .toBodilessEntity()
     }
 
     private fun String.cleanText(): String =
@@ -594,7 +949,90 @@ class FacebookProfileArticleImporter(
         val uri = runCatching { URI(url) }.getOrNull() ?: return false
         val host = uri.host?.lowercase() ?: return false
         if (uri.scheme !in setOf("http", "https")) return false
+        if (isVisiblyTruncatedUrl(uri)) return false
         if (host == "facebook.com" || host.endsWith(".facebook.com")) return false
+        if (host == "youtube.com" || host.endsWith(".youtube.com")) return false
+        if (host == "youtu.be") return false
+        if (host == "meta.ai" || host.endsWith(".meta.ai")) return false
+        if (isMediaOrThumbnailUrl(url)) return false
+        if (isMarkupNoiseUrl(url)) return false
+        if (host == "messenger.com" || host.endsWith(".messenger.com")) return false
+        return true
+    }
+
+    private fun isVisiblyTruncatedUrl(uri: URI): Boolean {
+        val path = uri.rawPath.orEmpty()
+        val query = uri.rawQuery.orEmpty()
+        return path.contains("...") ||
+            path.contains("%E2%80%A6", ignoreCase = true) ||
+            query.contains("...") ||
+            query.contains("%E2%80%A6", ignoreCase = true)
+    }
+
+    private fun isMediaOrThumbnailUrl(url: String): Boolean {
+        val uri = runCatching { URI(url) }.getOrNull() ?: return false
+        val host = uri.host?.lowercase() ?: return false
+        if (host == "fbcdn.net" || host.endsWith(".fbcdn.net")) return true
+        if (host.startsWith("scontent-") && host.contains(".fbcdn.net")) return true
+        return false
+    }
+
+    private fun isMarkupNoiseUrl(url: String): Boolean {
+        val uri = runCatching { URI(url) }.getOrNull() ?: return false
+        val host = uri.host?.lowercase() ?: return false
+        val path = (uri.path ?: "").trimEnd('/')
+        return (host == "www.w3.org" && path.startsWith("/2000/svg")) ||
+            ((host == "fbsbx.com" || host.endsWith(".fbsbx.com")) && path == "/maw_proxy_page")
+    }
+
+    private fun isImportableCandidateUrl(url: String, postText: String): Boolean =
+        isExternalArticleUrl(url) ||
+            isImportableFacebookArticleUrl(url) ||
+            isImportableSharedFacebookPhotoUrl(url, postText)
+
+    private fun isImportableFacebookArticleUrl(url: String): Boolean =
+        isFacebookPostUrl(url) && !isFacebookPhotoUrl(url)
+
+    private fun isImportableSharedFacebookPhotoUrl(url: String, postText: String): Boolean =
+        isFacebookPhotoUrl(url) && !containsExternalUrl(postText)
+
+    private fun isConfiguredProfilePostUrl(url: String): Boolean {
+        val configuredSlug = configuredProfileSlug() ?: return false
+        val uri = runCatching { URI(url) }.getOrNull() ?: return false
+        val host = uri.host?.lowercase() ?: return false
+        if (host != "facebook.com" && !host.endsWith(".facebook.com")) return false
+        val firstPathSegment = uri.path
+            ?.trim('/')
+            ?.substringBefore('/')
+            ?.lowercase()
+            ?: return false
+        return firstPathSegment == configuredSlug
+    }
+
+    private fun configuredProfileSlug(): String? {
+        val uri = runCatching { URI(properties.profileUrl) }.getOrNull() ?: return null
+        return uri.path
+            ?.trim('/')
+            ?.substringBefore('/')
+            ?.lowercase()
+            ?.takeIf { it.isNotBlank() }
+    }
+
+    private fun containsExternalUrl(text: String): Boolean =
+        TEXT_URL_REGEX.findAll(text)
+            .mapNotNull { it.value.decodeHtmlEntities().trimUrlBoundaryCharacters().toCleanFacebookUrl() }
+            .any { isExternalUrlLike(it) }
+
+    private fun isExternalUrlLike(url: String): Boolean {
+        val uri = runCatching { URI(url) }.getOrNull() ?: return false
+        val host = uri.host?.lowercase() ?: return false
+        if (uri.scheme !in setOf("http", "https")) return false
+        if (host == "facebook.com" || host.endsWith(".facebook.com")) return false
+        if (host == "youtube.com" || host.endsWith(".youtube.com")) return false
+        if (host == "youtu.be") return false
+        if (host == "meta.ai" || host.endsWith(".meta.ai")) return false
+        if (isMediaOrThumbnailUrl(url)) return false
+        if (isMarkupNoiseUrl(url)) return false
         if (host == "messenger.com" || host.endsWith(".messenger.com")) return false
         return true
     }
@@ -604,11 +1042,37 @@ class FacebookProfileArticleImporter(
         val host = uri.host?.lowercase() ?: return false
         val path = uri.path ?: ""
         if (host != "facebook.com" && !host.endsWith(".facebook.com")) return false
+        val query = uri.rawQuery.orEmpty()
+        if (isFacebookNotificationNoiseUrl(query)) return false
         return path.contains("/posts/") ||
+            isFacebookReelPath(path) ||
             path.contains("/share/") ||
             path.contains("/permalink/") ||
-            path.contains("/photo") ||
-            (uri.query ?: "").contains("story_fbid=")
+            ((path.contains("/photo") || path.contains("/photo.php")) &&
+                query.contains("fbid=") &&
+                (query.contains("set=") || query.contains("story_fbid="))) ||
+            query.contains("story_fbid=")
+    }
+
+    private fun isFacebookReelPath(path: String): Boolean {
+        val normalized = path.trimEnd('/')
+        if (!(normalized.startsWith("/reel/") || normalized.startsWith("/reels/"))) return false
+        val id = normalized.substringAfterLast('/')
+        return id.isNotBlank() && id != "reel" && id != "reels"
+    }
+
+    private fun isFacebookNotificationNoiseUrl(query: String): Boolean =
+        query.contains("notif_id=") ||
+            query.contains("notif_t=") ||
+            query.contains("ref=notif") ||
+            query.contains("feedback_reaction_generic")
+
+    private fun isFacebookPhotoUrl(url: String): Boolean {
+        val uri = runCatching { URI(url) }.getOrNull() ?: return false
+        val host = uri.host?.lowercase() ?: return false
+        if (host != "facebook.com" && !host.endsWith(".facebook.com")) return false
+        val path = uri.path ?: ""
+        return path.contains("/photo") || path.contains("/photo.php")
     }
 
     private fun sleep(duration: Duration) {
@@ -637,11 +1101,51 @@ class FacebookProfileArticleImporter(
             Regex("""href=["']([^"']+)["']""", RegexOption.IGNORE_CASE)
         private val TEXT_URL_REGEX =
             Regex("""https?://[^\s"'<>]+""", RegexOption.IGNORE_CASE)
+        private const val LOG_URL_LIMIT = 12
+        private const val LOG_TEXT_PREVIEW_LIMIT = 500
+        private const val REMOTE_API_CONNECT_TIMEOUT_MS = 3_000
+        private const val REMOTE_API_READ_TIMEOUT_MS = 5_000
     }
 
-    private class CloseableWebDriver(private val delegate: WebDriver) : WebDriver by delegate, AutoCloseable {
-        override fun close() {
-            delegate.quit()
+    private fun ensureDriver(): WebDriver = synchronized(stateLock) {
+        val existing = driver
+        if (existing != null && isDriverAlive(existing)) {
+            return existing
+        }
+
+        runCatching { existing?.quit() }
+        val created = openDriver()
+        driver = created
+        created
+    }
+
+    private fun isDriverAlive(driver: WebDriver): Boolean =
+        runCatching { driver.windowHandles }.isSuccess
+
+    private fun isRemoteArticleApiConfigured(): Boolean =
+        properties.targetApiBaseUrl.isNotBlank() && properties.targetApiKey.isNotBlank()
+
+    private fun remoteArticleClient(): RestClient =
+        RestClient.builder()
+            .requestFactory(
+                JdkClientHttpRequestFactory(
+                    HttpClient.newBuilder()
+                        .connectTimeout(Duration.ofMillis(REMOTE_API_CONNECT_TIMEOUT_MS.toLong()))
+                        .build(),
+                ).apply {
+                    setReadTimeout(Duration.ofMillis(REMOTE_API_READ_TIMEOUT_MS.toLong()))
+                }
+            )
+            .baseUrl(properties.targetApiBaseUrl)
+            .build()
+
+    @PreDestroy
+    fun shutdown() {
+        synchronized(stateLock) {
+            activeImportThread?.interrupt()
+            activeImportThread = null
+            runCatching { driver?.quit() }
+            driver = null
         }
     }
 }

@@ -18,6 +18,7 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity
 import org.springframework.security.config.Customizer
 import org.springframework.security.web.SecurityFilterChain
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter
 import org.springframework.web.cors.CorsConfiguration
 import org.springframework.web.cors.CorsConfigurationSource
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource
@@ -28,6 +29,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource
 class SecurityConfig(
     private val allowlist: AllowlistAuthorizationManager,
     private val uiRoleAuthoritiesMapper: UiRoleAuthoritiesMapper,
+    private val machineToMachineAuthenticationFilter: MachineToMachineAuthenticationFilter,
 ) {
 
     @Bean
@@ -74,10 +76,20 @@ class SecurityConfig(
                 auth.requestMatchers(HttpMethod.GET, "/api/articles", "/api/articles/**", "/rss", "/rss/**").permitAll()
 
                 // Protected article write endpoints: token must be valid and email allowlisted (BR-11, BR-13)
-                auth.requestMatchers(HttpMethod.POST, "/api/articles").access(allowlist)
+                // POST and PATCH also accept the dedicated machine credential used by the Facebook importer.
+                auth.requestMatchers(HttpMethod.POST, "/api/articles").access { authentication, _ ->
+                    AuthorizationDecision(allowlist.check(authentication.get()) || allowlist.checkMachine(authentication.get()))
+                }
                 auth.requestMatchers(HttpMethod.PUT, "/api/articles/**").access(allowlist)
-                auth.requestMatchers(HttpMethod.PATCH, "/api/articles/**").access(allowlist)
+                auth.requestMatchers(HttpMethod.PATCH, "/api/articles/**").access { authentication, _ ->
+                    AuthorizationDecision(allowlist.check(authentication.get()) || allowlist.checkMachine(authentication.get()))
+                }
                 auth.requestMatchers(HttpMethod.DELETE, "/api/articles/**").access(allowlist)
+
+                // Facebook import endpoints are ADMIN-only.
+                auth.requestMatchers("/api/admin/facebook-import/**").access { authentication, _ ->
+                    AuthorizationDecision(allowlist.checkAdmin(authentication.get()))
+                }
 
                 // Allowlist management endpoints are ADMIN-only (BR-17, BR-21)
                 auth.requestMatchers("/api/users/**").access { authentication, _ ->
@@ -119,6 +131,7 @@ class SecurityConfig(
                     userInfo.userAuthoritiesMapper(uiRoleAuthoritiesMapper)
                 }
             }
+        http.addFilterBefore(machineToMachineAuthenticationFilter, BearerTokenAuthenticationFilter::class.java)
         return http.build()
     }
 

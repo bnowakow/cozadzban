@@ -54,6 +54,13 @@ class AllowlistAuthorizationManager(
     fun checkAdmin(auth: Authentication): Boolean = isAllowlisted(auth, Role.ADMIN)
 
     /**
+     * Checks allowlist membership for article writes performed through the machine-to-machine
+     * importer. This accepts either the usual JWT flow or the dedicated machine credential.
+     */
+    fun checkMachine(auth: Authentication, requiredRole: Role? = null): Boolean =
+        isAllowlistedMachine(auth, requiredRole)
+
+    /**
      * Checks allowlist membership for either bearer-token auth or OAuth2 login session auth.
      * This is used for UI/session-protected routes like selected actuator endpoints.
      */
@@ -73,11 +80,23 @@ class AllowlistAuthorizationManager(
         return requiredRole == null || user.role == requiredRole
     }
 
+    private fun isAllowlistedMachine(auth: Authentication?, requiredRole: Role?): Boolean {
+        if (auth == null || !auth.isAuthenticated) return false
+        if (auth !is JwtAuthenticationToken && auth !is MachineToMachineAuthenticationToken) return false
+
+        val email = normalizeEmail(auth.name) ?: return false
+        val user = appUserRepository.findByEmail(email) ?: return false
+        if (user.status != AppUserStatus.ACTIVE) return false
+
+        return requiredRole == null || user.role == requiredRole
+    }
+
     private fun isAllowlistedSessionOrBearer(auth: Authentication?, requiredRole: Role?): Boolean {
         if (auth == null || !auth.isAuthenticated) return false
 
         val email = when {
             auth is JwtAuthenticationToken -> normalizeEmail(auth.name)
+            auth is MachineToMachineAuthenticationToken -> normalizeEmail(auth.name)
             auth.principal is OAuth2AuthenticatedPrincipal -> {
                 normalizeEmail((auth.principal as OAuth2AuthenticatedPrincipal).attributes["email"] as? String)
             }

@@ -13,7 +13,6 @@ data class FacebookImportProperties(
     val markerPhrase: String = "co za zjeb",
     val translatedMarkerPhrase: String = "what a fucker",
     val language: String = "pl",
-    val creatorEmail: String = "",
     val username: String = "",
     val password: String = "",
     val browser: Browser = Browser.FIREFOX,
@@ -23,6 +22,10 @@ data class FacebookImportProperties(
     val waitAfterPageOpen: Duration = Duration.ofSeconds(5),
     val waitAfterScroll: Duration = Duration.ofSeconds(2),
     val manualLoginTimeout: Duration = Duration.ofMinutes(3),
+    val targetApiBaseUrl: String = "",
+    val targetApiKey: String = "",
+    val targetApiKeyHeader: String = "X-CoZaZjeb-M2M-Key",
+    val targetArticlePath: String = "/api/articles",
 ) {
     enum class Browser {
         FIREFOX,

@@ -38,6 +38,8 @@ x-architecture:
         Authorization model has two roles: USER and ADMIN.
         USER can perform article write operations.
         ADMIN can perform all operations, including allowlist management.
+        A dedicated machine-to-machine API key may also be accepted for article
+        create and article content patch requests used by the Facebook importer.
     - name: Database
       technology: PostgreSQL + Spring Data JDBC
       description: >
@@ -132,6 +134,17 @@ x-architecture:
         ADMIN-only view with user table, add user form, soft-delete/restore/update role actions.
         View invokes application services server-side from Vaadin event handlers;
         no browser-side token forwarding is used.
+    - name: Facebook import orchestration
+      technology: Spring-managed Selenium WebDriver + admin REST trigger + Vaadin action
+      description: >
+        A long-lived Selenium browser session is owned by the app and reused across
+        import runs. The job is triggered manually or by cron via admin-only REST
+        endpoints or the admin-only UI button on ArticleListView. Each run opens the
+        browser on demand if needed, verifies the Facebook login state, performs
+        login again when the session is no longer authenticated, and processes at
+        most one import at a time. In remote mode the worker writes imported
+        articles to the server-side article API over HTTPS and patches preserved
+        Facebook post content using a dedicated machine credential.
     - name: Analytics and consent
       technology: Vaadin UI + configurable tracking IDs
       description: >
@@ -602,6 +615,29 @@ x-business-rules:
       archival/preservation only. Do NOT use for UI rendering, source fallback,
       or AI summary generation without separate product/legal decisions on
       sanitization, access control, copyright/privacy posture, and purge behavior.
+  - id: BR-46
+    name: Facebook import job orchestration
+    description: >
+      Facebook import is an admin-controlled, on-demand job. A single long-lived
+      Selenium browser session is reused across runs. The app must verify whether
+      Facebook is already logged in before each import; if not, it must run the
+      login flow again. Only one import may run at a time, and the browser window
+      remains open until application shutdown.
+  - id: BR-47
+    name: Facebook import admin access
+    description: >
+      The Facebook import trigger endpoints and the ArticleListView button are
+      visible and usable only by authenticated ADMIN users. Non-admin users must
+      not see the control in the UI and must receive 403/Forbidden when calling
+      the admin endpoints directly.
+  - id: BR-48
+    name: Machine-to-machine article writes
+    description: >
+      The Facebook importer may write to the remote article API using a dedicated
+      machine credential. The machine credential is limited to article create and
+      article content patch requests and must not grant access to allowlist or
+      admin endpoints. The remote server treats the machine credential as the
+      allowlisted bot user configured for the importer.
 # ──────────────────────────────────────────────────────────────
 # VAADIN UI SPEC  (x-vaadin-ui)
 # ──────────────────────────────────────────────────────────────
@@ -629,6 +665,7 @@ x-vaadin-ui:
         - "Logout button click -> invalidates server session, clears security context, redirects to /"
         - "Login button click -> navigates to GET /auth/login (OAuth flow)"
         - "If authenticated: Add Article button below grid or in toolbar"
+        - "If authenticated and ADMIN: Import Facebook Posts button next to Add Article triggers the Facebook import job"
         - "Click Add Article -> modal with form (url, language, quote, optional publishedAt date/time)"
         - "Form validation: url required (^https?://.+), language required and normalized lowercase, quote optional, publishedAt optional"
         - "Submit server-side via ArticleService with loading spinner; on success close modal + refresh grid + success toast"
@@ -719,6 +756,14 @@ x-security-policy:
     statusColumn: status
     activeStatus: ACTIVE
     emailNormalization: trim+lowercase
+  machineToMachine:
+    enabled: true
+    headerName: X-CoZaZjeb-M2M-Key
+    apiKeyEnvVar: APP_MACHINE_AUTH_API_KEY
+    principalEmailEnvVar: APP_MACHINE_AUTH_PRINCIPAL_EMAIL
+    allowedForEndpoints:
+      - POST /api/articles
+      - PATCH /api/articles/{id}
   bootstrap:
     adminEmailEnvVar: COZAZJEB_BOOTSTRAP_ADMIN_EMAIL
     enforcedOnlyWhenNoAdminsExist: true
