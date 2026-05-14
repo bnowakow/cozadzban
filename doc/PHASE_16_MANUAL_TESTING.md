@@ -6,7 +6,7 @@ App and Postgres must be running:
 ```bash
 docker compose up -d
 ./gradlew bootRun --args='--spring.profiles.active=local'
-# OR just use the docker compose app service if already built
+# OR just use the docker compose springboot service if already built
 ```
 
 You need at least one allowlisted user with ADMIN role.  

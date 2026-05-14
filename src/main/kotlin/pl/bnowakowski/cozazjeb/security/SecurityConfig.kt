@@ -5,7 +5,9 @@
 package pl.bnowakowski.cozazjeb.security
 
 import com.vaadin.flow.spring.security.VaadinSecurityConfigurer
+import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
+import org.slf4j.LoggerFactory
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.http.HttpStatus
@@ -17,6 +19,7 @@ import org.springframework.security.config.annotation.method.configuration.Enabl
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity
 import org.springframework.security.config.Customizer
+import org.springframework.security.core.Authentication
 import org.springframework.security.web.SecurityFilterChain
 import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter
 import org.springframework.web.cors.CorsConfiguration
@@ -77,12 +80,12 @@ class SecurityConfig(
 
                 // Protected article write endpoints: token must be valid and email allowlisted (BR-11, BR-13)
                 // POST and PATCH also accept the dedicated machine credential used by the Facebook importer.
-                auth.requestMatchers(HttpMethod.POST, "/api/articles").access { authentication, _ ->
-                    AuthorizationDecision(allowlist.check(authentication.get()) || allowlist.checkMachine(authentication.get()))
+                auth.requestMatchers(HttpMethod.POST, "/api/articles").access { authentication, context ->
+                    articleWriteAuthorizationDecision(authentication.get(), context.request, "POST /api/articles")
                 }
                 auth.requestMatchers(HttpMethod.PUT, "/api/articles/**").access(allowlist)
-                auth.requestMatchers(HttpMethod.PATCH, "/api/articles/**").access { authentication, _ ->
-                    AuthorizationDecision(allowlist.check(authentication.get()) || allowlist.checkMachine(authentication.get()))
+                auth.requestMatchers(HttpMethod.PATCH, "/api/articles/**").access { authentication, context ->
+                    articleWriteAuthorizationDecision(authentication.get(), context.request, "PATCH /api/articles/**")
                 }
                 auth.requestMatchers(HttpMethod.DELETE, "/api/articles/**").access(allowlist)
 
@@ -109,14 +112,16 @@ class SecurityConfig(
                     req.requestURI.startsWith("/api/")
                 }
                 exceptions.defaultAuthenticationEntryPointFor(
-                    org.springframework.security.web.AuthenticationEntryPoint { _, response, ex ->
+                    org.springframework.security.web.AuthenticationEntryPoint { request, response, ex ->
+                        logArticleWriteSecurityProblem(request, HttpStatus.UNAUTHORIZED, ex.localizedMessage)
                         writeProblem(response, HttpStatus.UNAUTHORIZED, "Unauthorized",
                             ex.localizedMessage ?: "Authentication is required")
                     },
                     apiMatcher,
                 )
                 exceptions.defaultAccessDeniedHandlerFor(
-                    org.springframework.security.web.access.AccessDeniedHandler { _, response, ex ->
+                    org.springframework.security.web.access.AccessDeniedHandler { request, response, ex ->
+                        logArticleWriteSecurityProblem(request, HttpStatus.FORBIDDEN, ex.localizedMessage)
                         writeProblem(response, HttpStatus.FORBIDDEN, "Forbidden",
                             ex.localizedMessage ?: "Access is denied")
                     },
@@ -160,6 +165,50 @@ class SecurityConfig(
             .replace("\r", "\\r")
             .replace("\t", "\\t")
 
+    private fun articleWriteAuthorizationDecision(
+        authentication: Authentication,
+        request: HttpServletRequest,
+        route: String,
+    ): AuthorizationDecision {
+        val userAllowed = allowlist.check(authentication)
+        val machineAllowed = allowlist.checkMachine(authentication)
+        val allowed = userAllowed || machineAllowed
+
+        LOG.warn(
+            "Article write authorization decision; route={}; method={}; uri={}; allowed={}; " +
+                "userAllowed={}; machineAllowed={}; auth={}",
+            route,
+            request.method,
+            request.requestURI,
+            allowed,
+            userAllowed,
+            machineAllowed,
+            authenticationDiagnostic(authentication),
+        )
+
+        return AuthorizationDecision(allowed)
+    }
+
+    private fun authenticationDiagnostic(authentication: Authentication): String =
+        "name='${authentication.name}',authenticated=${authentication.isAuthenticated},type=${authentication.javaClass.simpleName}," +
+            "authorities=${authentication.authorities.joinToString(",") { it.authority ?: "unknown" }}"
+
+    private fun logArticleWriteSecurityProblem(request: HttpServletRequest, status: HttpStatus, detail: String?) {
+        if (!isArticleWrite(request)) return
+
+        LOG.warn(
+            "Article write security problem; method={}; uri={}; status={}; detail='{}'",
+            request.method,
+            request.requestURI,
+            status.value(),
+            detail,
+        )
+    }
+
+    private fun isArticleWrite(request: HttpServletRequest): Boolean =
+        (request.method == "POST" || request.method == "PATCH") &&
+            (request.requestURI == "/api/articles" || request.requestURI.startsWith("/api/articles/"))
+
     @Bean
     fun corsConfigurationSource(): CorsConfigurationSource {
         val config = CorsConfiguration().apply {
@@ -173,5 +222,9 @@ class SecurityConfig(
             registerCorsConfiguration("/api/**", config)
             registerCorsConfiguration("/rss", config)
         }
+    }
+
+    companion object {
+        private val LOG = LoggerFactory.getLogger(SecurityConfig::class.java)
     }
 }

@@ -1,5 +1,5 @@
 
-.PHONY: help docker-up docker-down docker-pg-nuke docker-pg-backup build run run-local run-prod test clean docker-logs docker-pg-shell docker-upgrade bump-version bump-patch bump-minor
+.PHONY: help docker-up docker-down docker-pg-nuke docker-pg-backup build run run-local run-prod test clean docker-logs docker-pg-shell docker-upgrade bump-version bump-patch bump-minor install-git-hooks
 
 -include .env
 
@@ -22,6 +22,7 @@ help:
 	@echo "  bump-version    Set project version in build.gradle.kts (use VERSION=x.y.z[-SNAPSHOT])"
 	@echo "  bump-patch      Auto-increment patch for x.y.z-SNAPSHOT versions"
 	@echo "  bump-minor      Auto-increment minor and reset patch for x.y.z-SNAPSHOT versions"
+	@echo "  install-git-hooks Configure repository git hooks"
 	@echo "  docker-logs     Show compose logs (follow mode)"
 	@echo "  docker-pg-shell Open PostgreSQL shell inside docker container"
 	@echo "  docker-upgrade  Pull latest code, rebuild image, restart containers, follow logs"
@@ -93,6 +94,12 @@ run-prod:
 test:
 	./gradlew test
 
+# Configure repository-local git hooks.
+install-git-hooks:
+	git config core.hooksPath .githooks
+	chmod +x .githooks/pre-commit
+	@echo "✓ Git hooks installed"
+
 # Clean build artifacts
 clean:
 	./gradlew clean
@@ -142,7 +149,7 @@ docker-logs:
 # Pull latest code, rebuild, restart, and follow logs
 docker-upgrade:
 	git pull --ff-only
-	docker compose -f compose.yaml build --pull --no-cache app
+	docker compose -f compose.yaml build --pull --no-cache springboot
 	docker compose -f compose.yaml down --remove-orphans
 	docker compose -f compose.yaml up -d --force-recreate
 	docker compose -f compose.yaml ps

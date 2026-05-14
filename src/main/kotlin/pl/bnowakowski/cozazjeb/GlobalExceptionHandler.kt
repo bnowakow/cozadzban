@@ -3,6 +3,8 @@
 
 package pl.bnowakowski.cozazjeb
 
+import jakarta.servlet.http.HttpServletRequest
+import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
 import org.springframework.http.ProblemDetail
 import org.springframework.http.converter.HttpMessageNotReadableException
@@ -23,52 +25,67 @@ import java.net.URI
 class GlobalExceptionHandler {
 
     @ExceptionHandler(MethodArgumentNotValidException::class)
-    fun handleValidation(ex: MethodArgumentNotValidException): ProblemDetail {
+    fun handleValidation(ex: MethodArgumentNotValidException, request: HttpServletRequest): ProblemDetail {
         val detail = ex.bindingResult.fieldErrors
             .joinToString("; ") { "${it.field}: ${it.defaultMessage}" }
+        logArticleWriteException(request, HttpStatus.BAD_REQUEST, "validation", detail)
         return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, detail)
     }
 
     @ExceptionHandler(HttpMessageNotReadableException::class)
-    fun handleUnreadable(ex: HttpMessageNotReadableException): ProblemDetail =
-        ProblemDetail.forStatusAndDetail(
+    fun handleUnreadable(ex: HttpMessageNotReadableException, request: HttpServletRequest): ProblemDetail {
+        val detail = "Malformed request body: ${ex.mostSpecificCause.message}"
+        logArticleWriteException(request, HttpStatus.BAD_REQUEST, "unreadable-body", detail)
+        return ProblemDetail.forStatusAndDetail(
             HttpStatus.BAD_REQUEST,
-            "Malformed request body: ${ex.mostSpecificCause.message}",
+            detail,
         )
+    }
 
     @ExceptionHandler(IllegalArgumentException::class)
-    fun handleBadRequest(ex: IllegalArgumentException): ProblemDetail =
-        ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.message ?: "Bad request")
+    fun handleBadRequest(ex: IllegalArgumentException, request: HttpServletRequest): ProblemDetail {
+        val detail = ex.message ?: "Bad request"
+        logArticleWriteException(request, HttpStatus.BAD_REQUEST, "bad-request", detail)
+        return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, detail)
+    }
 
     @ExceptionHandler(AuthenticationException::class)
-    fun handleAuthentication(ex: AuthenticationException): ProblemDetail {
+    fun handleAuthentication(ex: AuthenticationException, request: HttpServletRequest): ProblemDetail {
+        val detail = ex.message ?: "Authentication is required"
+        logArticleWriteException(request, HttpStatus.UNAUTHORIZED, "authentication", detail)
         val pd = ProblemDetail.forStatusAndDetail(
             HttpStatus.UNAUTHORIZED,
-            ex.message ?: "Authentication is required",
+            detail,
         )
         pd.title = "Unauthorized"
         return pd
     }
 
     @ExceptionHandler(AccessDeniedException::class)
-    fun handleAccessDenied(ex: AccessDeniedException): ProblemDetail {
+    fun handleAccessDenied(ex: AccessDeniedException, request: HttpServletRequest): ProblemDetail {
+        val detail = ex.message ?: "Access is denied"
+        logArticleWriteException(request, HttpStatus.FORBIDDEN, "access-denied", detail)
         val pd = ProblemDetail.forStatusAndDetail(
             HttpStatus.FORBIDDEN,
-            ex.message ?: "Access is denied",
+            detail,
         )
         pd.title = "Forbidden"
         return pd
     }
 
     @ExceptionHandler(EnrichmentException::class)
-    fun handleEnrichment(ex: EnrichmentException): ProblemDetail =
-        ProblemDetail.forStatusAndDetail(
+    fun handleEnrichment(ex: EnrichmentException, request: HttpServletRequest): ProblemDetail {
+        val detail = ex.message ?: "URL enrichment failed"
+        logArticleWriteException(request, HttpStatus.UNPROCESSABLE_ENTITY, "enrichment", detail)
+        return ProblemDetail.forStatusAndDetail(
             HttpStatus.UNPROCESSABLE_ENTITY,
-            ex.message ?: "URL enrichment failed",
+            detail,
         )
+    }
 
     @ExceptionHandler(ArticleUrlConflictException::class)
-    fun handleArticleConflict(ex: ArticleUrlConflictException): ProblemDetail {
+    fun handleArticleConflict(ex: ArticleUrlConflictException, request: HttpServletRequest): ProblemDetail {
+        logArticleWriteException(request, HttpStatus.CONFLICT, "article-url-conflict", ex.url)
         val pd = ProblemDetail.forStatusAndDetail(
             HttpStatus.CONFLICT,
             "An article with URL '${ex.url}' already exists",
@@ -123,6 +140,35 @@ class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(NoSuchElementException::class)
-    fun handleNotFound(ex: NoSuchElementException): ProblemDetail =
-        ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.message ?: "Resource not found")
+    fun handleNotFound(ex: NoSuchElementException, request: HttpServletRequest): ProblemDetail {
+        val detail = ex.message ?: "Resource not found"
+        logArticleWriteException(request, HttpStatus.NOT_FOUND, "not-found", detail)
+        return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, detail)
+    }
+
+    private fun logArticleWriteException(
+        request: HttpServletRequest,
+        status: HttpStatus,
+        reason: String,
+        detail: String,
+    ) {
+        if (!isArticleWrite(request)) return
+
+        LOG.warn(
+            "Article write exception response; method={}; uri={}; status={}; reason={}; detail='{}'",
+            request.method,
+            request.requestURI,
+            status.value(),
+            reason,
+            detail,
+        )
+    }
+
+    private fun isArticleWrite(request: HttpServletRequest): Boolean =
+        (request.method == "POST" || request.method == "PATCH") &&
+            (request.requestURI == "/api/articles" || request.requestURI.startsWith("/api/articles/"))
+
+    companion object {
+        private val LOG = LoggerFactory.getLogger(GlobalExceptionHandler::class.java)
+    }
 }

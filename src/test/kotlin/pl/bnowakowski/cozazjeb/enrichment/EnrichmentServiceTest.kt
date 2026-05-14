@@ -5,15 +5,21 @@ package pl.bnowakowski.cozazjeb.enrichment
 
 import com.sun.net.httpserver.HttpServer
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.extension.ExtendWith
+import org.springframework.boot.test.system.CapturedOutput
+import org.springframework.boot.test.system.OutputCaptureExtension
 import org.springframework.web.client.RestClient
 import java.net.InetSocketAddress
 import java.net.HttpURLConnection
 import java.time.Instant
 
+@ExtendWith(OutputCaptureExtension::class)
 class EnrichmentServiceTest {
 
     @Test
@@ -221,6 +227,37 @@ class EnrichmentServiceTest {
     }
 
     @Test
+    fun `does not recover Facebook photo 400 as minimal photo`() {
+        val result = recoverFacebookPostFromGenericError(
+            url = "https://www.facebook.com/photo/?fbid=1386997413458759&set=a.473737708118072",
+            statusCode = HttpURLConnection.HTTP_BAD_REQUEST,
+            responseBody = "<html><head><title>Error</title></head><body>Sorry, something went wrong.</body></html>",
+        )
+
+        assertNull(result)
+    }
+
+    @Test
+    fun `logs upstream response details when enrichment fails after fallbacks`(output: CapturedOutput) {
+        val body = "<html><head><title>Error</title></head><body>Sorry, something went wrong.</body></html>"
+        withFailingServer(HttpURLConnection.HTTP_BAD_REQUEST, body, "/photo/") { url ->
+            val exception = assertThrows(EnrichmentException::class.java) {
+                EnrichmentService(RestClient.builder()).enrich(url)
+            }
+
+            assertEquals(EnrichmentException.Reason.NON_2XX, exception.reason)
+            assertEquals(HttpURLConnection.HTTP_BAD_REQUEST, exception.statusCode)
+            assertTrue(output.all.contains("URL enrichment failed after fallbacks; target returned HTTP 400"))
+            assertTrue(output.all.contains("path=/photo/"))
+            assertTrue(output.all.contains("genericFacebookError=true"))
+            assertTrue(output.all.contains("canonical=absent"))
+            assertTrue(output.all.contains("ogImage=absent"))
+            assertTrue(output.all.contains("facebookPhotoImageCandidates=0"))
+            assertTrue(output.all.contains("textSnippet='Error Sorry, something went wrong.'"))
+        }
+    }
+
+    @Test
     fun `extracts Facebook plugin post message as lead`() {
         val expected = "White House press secretary Karoline Leavitt told reporters " +
             "\"Americans will see oil and gas prices drop rapidly\" once the U.S. military's national security objectives are \"fully achieved\" in Iran."
@@ -240,6 +277,230 @@ class EnrichmentServiceTest {
 
         assertEquals(expected, result.lead)
         assertEquals(expected, result.plainText)
+    }
+
+    @Test
+    fun `uses Facebook photo text as title and extracts hidden photo thumbnail`() {
+        val lead = "Trybunał Konstytucyjny orzekł, że niezgodne z konstytucją jest takie rozumienie ustawy o statusie sędziów TK."
+        val photoUrl = "https://scontent-waw2-2.xx.fbcdn.net/v/t39.30808-6/696046748_1386997416792092_8876111525600838529_n.jpg?_nc_cat=100&ccb=1-7"
+        val profileUrl = "https://scontent-waw2-1.xx.fbcdn.net/v/t1.30497-1/85215299_479381239411958_7755129104415850496_n.jpg?stp=s80x80"
+        val html = """
+            <!doctype html>
+            <html>
+              <head>
+                <title>Facebook</title>
+                <meta name="description" content="$lead">
+              </head>
+              <body>
+                <script>
+                  {"profile":"${profileUrl.escapeJsonUrl()}","photo":"${photoUrl.escapeJsonUrl()}"}
+                </script>
+              </body>
+            </html>
+        """.trimIndent()
+
+        val result = enrichHtml(
+            "https://www.facebook.com/photo/?fbid=1386997413458759&set=a.473737708118072",
+            html,
+        )
+
+        assertEquals(lead, result.title)
+        assertEquals(lead, result.lead)
+        assertEquals(photoUrl, result.thumbnail)
+        assertNull(result.publishedAt)
+    }
+
+    @Test
+    fun `extracts Facebook plugin data utime as photo published date`() {
+        val lead = "Okoliczności przyjazdu Zbigniewa Ziobry do USA budzą wiele pytań nie tylko w Polsce, ale i za oceanem."
+        val photoUrl = "https://scontent.xx.fbcdn.net/v/t39.30808-6/696716887_1306021974962836_1714098974916358250_n.jpg?stp=dst-jpg_p403x403_tt6&ccb=1-7"
+        val html = """
+            <!doctype html>
+            <html>
+              <head><title>Facebook</title></head>
+              <body class="plugin">
+                <a href="/tokfm/posts/1306022001629500?ref=embed_post">
+                  <abbr data-utime="1778583617" data-tooltip-content="Wtorek, 12 maja 2026 o 04:00" class="timestamp">
+                    <span class="timestampContent">we wtorek</span>
+                  </abbr>
+                </a>
+                <img src="${photoUrl.escapeHtmlAttribute()}" alt="">
+                <div data-testid="post_message">
+                  <p>$lead</p>
+                </div>
+              </body>
+            </html>
+        """.trimIndent()
+
+        val result = enrichHtml(
+            "https://www.facebook.com/photo/?fbid=1306021968296170&set=a.567191575512550",
+            html,
+        )
+
+        assertEquals(lead, result.title)
+        assertEquals(lead, result.lead)
+        assertEquals(photoUrl, result.thumbnail)
+        assertEquals(Instant.parse("2026-05-12T11:00:17Z"), result.publishedAt)
+    }
+
+    @Test
+    fun `extracts permalink story_fbid post text as Facebook post metadata`() {
+        val postText = "To jest właściwa treść posta z permalink.php i story_fbid, a nie tekst powłoki Facebooka."
+        val html = """
+            <!doctype html>
+            <html>
+              <head>
+                <title>Facebook</title>
+                <meta property="og:description" content="Zobacz posty, zdjęcia i nie tylko na Facebooku.">
+              </head>
+              <body class="plugin">
+                <a href="/permalink.php?story_fbid=pfbid02cm7v6Fc2x2irAtxjbvkdh7cUQ22mKtQxadh4z7VRezhDFZfiNuC944cZiXYRnyFal&amp;id=100068095113051">
+                  <abbr data-utime="1778583617" class="timestamp">we wtorek</abbr>
+                </a>
+                <div data-testid="post_message">
+                  <p>$postText</p>
+                </div>
+              </body>
+            </html>
+        """.trimIndent()
+
+        val result = enrichHtml(
+            "https://www.facebook.com/permalink.php?story_fbid=pfbid02cm7v6Fc2x2irAtxjbvkdh7cUQ22mKtQxadh4z7VRezhDFZfiNuC944cZiXYRnyFal&id=100068095113051",
+            html,
+        )
+
+        assertEquals(postText, result.title)
+        assertEquals(postText, result.lead)
+        assertEquals(postText, result.plainText)
+        assertEquals(Instant.parse("2026-05-12T11:00:17Z"), result.publishedAt)
+    }
+
+    @Test
+    fun `does not cache Facebook shell description as post metadata`() {
+        val html = """
+            <!doctype html>
+            <html>
+              <head>
+                <title>Facebook</title>
+                <meta property="og:description" content="Zobacz posty, zdjęcia i nie tylko na Facebooku.">
+              </head>
+              <body>Facebook</body>
+            </html>
+        """.trimIndent()
+
+        val result = enrichHtml(
+            "https://www.facebook.com/permalink.php?story_fbid=pfbid02cm7v6Fc2x2irAtxjbvkdh7cUQ22mKtQxadh4z7VRezhDFZfiNuC944cZiXYRnyFal&id=100068095113051",
+            html,
+        )
+
+        assertNull(result.title)
+        assertNull(result.lead)
+        assertNull(result.plainText)
+    }
+
+    @Test
+    fun `does not treat Facebook login shell text as photo post text`(output: CapturedOutput) {
+        val loginShellText = "Przesyłanie listy kontaktów i osób niebędących użytkownikami"
+        val html = """
+            <!doctype html>
+            <html>
+              <head>
+                <title>Facebook</title>
+                <link rel="canonical" href="https://pl-pl.facebook.com/login">
+              </head>
+              <body>
+                <form action="/login/" method="post"></form>
+                <main>
+                  <h1>Zaloguj się do Facebooka</h1>
+                  <script>{"message":{"text":"$loginShellText"}}</script>
+                </main>
+              </body>
+            </html>
+        """.trimIndent()
+
+        val result = enrichHtml(
+            "https://www.facebook.com/photo/?fbid=1306021968296170&set=a.567191575512550",
+            html,
+        )
+
+        assertNull(result.title)
+        assertNull(result.lead)
+        assertNull(result.plainText)
+        assertNull(result.thumbnail)
+        assertNull(result.publishedAt)
+        assertTrue(output.all.contains("documentKind=facebook-login"))
+        assertTrue(output.all.contains("facebookLoginDocument=true"))
+        assertTrue(output.all.contains("facebookPostText=absent"))
+    }
+
+    @Test
+    fun `does not treat Facebook login access title as photo title`() {
+        val html = """
+            <!doctype html>
+            <html>
+              <head>
+                <title>Zaloguj się lub zarejestruj, aby wyświetlić</title>
+              </head>
+              <body>Facebook</body>
+            </html>
+        """.trimIndent()
+
+        val result = enrichHtml(
+            "https://www.facebook.com/photo/?fbid=1386997413458759&set=a.473737708118072",
+            html,
+        )
+
+        assertNull(result.title)
+        assertNull(result.lead)
+        assertNull(result.plainText)
+    }
+
+    @Test
+    fun `cleans Facebook embedded message CDATA markers before using it as photo title`() {
+        val html = """
+            <!doctype html>
+            <html>
+              <head>
+                <title>Facebook</title>
+              </head>
+              <body>
+                <script>
+                  {"message":{"text":"Mili Państwo, patrzcie na to: ]]>&#x1f4b8;<![CDATA[Tylko w latach 2021-2024 UE zapłaciła fortunę."}}
+                </script>
+              </body>
+            </html>
+        """.trimIndent()
+
+        val result = enrichHtml(
+            "https://www.facebook.com/photo/?fbid=1496190555209039&set=a.248625223298918",
+            html,
+        )
+
+        assertEquals("Mili Państwo, patrzcie na to: 💸 Tylko w latach 2021-2024 UE zapłaciła fortunę.", result.title)
+        assertEquals(result.title, result.lead)
+    }
+
+    @Test
+    fun `cleans Facebook CDATA markers from meta description`() {
+        val html = """
+            <!doctype html>
+            <html>
+              <head>
+                <title>RMF24.pl</title>
+                <meta property="og:description" content="Pentagon ogłasza: Stany Zjednoczone wycofują tysiące żołnierzy z Niemiec ]]&gt;&amp;#x1f447;&lt;![CDATA[">
+              </head>
+              <body>Facebook logged-out page chrome</body>
+            </html>
+        """.trimIndent()
+
+        val result = enrichHtml(
+            "https://www.facebook.com/rmf24/posts/pfbid02uCJeLfen5QD4ZMexNhcd1J3ALgqobpS84BLfZ8xEdeW1jJAXYfvbevbPRz1AvgrTl",
+            html,
+        )
+
+        assertEquals("Pentagon ogłasza: Stany Zjednoczone wycofują tysiące żołnierzy z Niemiec 👇", result.title)
+        assertEquals(result.title, result.lead)
+        assertEquals(result.title, result.plainText)
     }
 
     @Test
@@ -312,6 +573,32 @@ class EnrichmentServiceTest {
     }
 
     @Test
+    fun `extracts Facebook pfbid post thumbnail from embedded image payload when meta image is missing`() {
+        val postText = "Post ma właściwą treść oraz zdjęcie ukryte w payloadzie Facebooka."
+        val photoUrl = "https://scontent-waw2-1.xx.fbcdn.net/v/t39.30808-6/post-thumb.jpg?stp=dst-jpg&_nc_cat=100"
+        val html = """
+            <!doctype html>
+            <html>
+              <head>
+                <title>Facebook</title>
+                <meta property="og:description" content="${postText.escapeHtmlAttribute()}">
+              </head>
+              <body>
+                <script>{"image":{"uri":"${photoUrl.escapeJsonUrl()}"}}</script>
+              </body>
+            </html>
+        """.trimIndent()
+
+        val result = enrichHtml(
+            "https://www.facebook.com/mzimu/posts/pfbid02ouRUuuRuoF5KnkqjiyyyvDGKWGqRWSWEjA7Tmf1Tw9XZZbNP8dd3YTh6LXNtgrU7l",
+            html,
+        )
+
+        assertEquals(postText, result.title)
+        assertEquals(photoUrl, result.thumbnail)
+    }
+
+    @Test
     fun `recognizes unavailable Facebook pfbid shell`() {
         val html = """
             <!doctype html>
@@ -328,16 +615,46 @@ class EnrichmentServiceTest {
     }
 
     @Test
-    fun `uses profile fallback for unavailable Facebook pfbid post`() {
-        val result = facebookUnavailablePostFallbackResult(
-            "https://www.facebook.com/mzimu/posts/pfbid02ouRUuuRuoF5KnkqjiyyyvDGKWGqRWSWEjA7Tmf1Tw9XZZbNP8dd3YTh6LXNtgrU7l",
+    fun `does not treat profile fallback label as usable Facebook post text`() {
+        val facebookUrl = "https://www.facebook.com/mzimu/posts/pfbid02ouRUuuRuoF5KnkqjiyyyvDGKWGqRWSWEjA7Tmf1Tw9XZZbNP8dd3YTh6LXNtgrU7l"
+        val result = EnrichmentResult(
+            title = "Facebook post by mzimu",
+            thumbnail = null,
+            lead = null,
+            publishedAt = Instant.now(),
+            plainText = null,
         )
 
-        assertEquals("Facebook post by mzimu", result?.title)
-        assertNull(result?.thumbnail)
-        assertNull(result?.lead)
-        assertNotNull(result?.publishedAt)
-        assertNull(result?.plainText)
+        assertFalse(hasUsableFacebookPostMetadata(facebookUrl, result, "<html></html>"))
+    }
+
+    @Test
+    fun `extracts numeric Facebook permalink fallback from plugin shell ids`() {
+        val pluginShell = """
+            <html>
+              <head><title>Facebook</title></head>
+              <body>
+                <script>
+                  ServerJSQueue.add({
+                    "require":[
+                      ["PluginDefaultLink","register",[],[{},"embedded_post","S:_I100068095113051:1287890776824081:1287890776824081",null,false,""]],
+                      ["PluginFeedFooterActionLogger","initializeClickLoggers",[],[{},"_2165","_22v4","_1p4p","_50sk","embedded_post","S:_I100068095113051:1287890776824081:1287890776824081",null,false,"https:\/\/www.facebook.com\/permalink.php?story_fbid=1287890776824081&id=100068095113051"]]
+                    ]
+                  });
+                </script>
+              </body>
+            </html>
+        """.trimIndent()
+
+        val fallbackUrls = facebookPostNumericPermalinkFallbackUrls(pluginShell)
+        val diagnostics = facebookPostPluginShellDiagnostics(pluginShell)
+
+        assertEquals(
+            listOf("https://www.facebook.com/permalink.php?story_fbid=1287890776824081&id=100068095113051"),
+            fallbackUrls,
+        )
+        assertTrue(diagnostics.contains("pluginEmbeddedIds=owner=100068095113051,story=1287890776824081"))
+        assertTrue(diagnostics.contains("numericPermalinkCandidates=1"))
     }
 
     @Test
@@ -959,6 +1276,23 @@ class EnrichmentServiceTest {
         }
     }
 
+    private fun withFailingServer(statusCode: Int, body: String, path: String = "/", block: (String) -> Unit) {
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext(path) { exchange ->
+            val bytes = body.toByteArray(Charsets.UTF_8)
+            exchange.responseHeaders.add("Content-Type", "text/html; charset=utf-8")
+            exchange.sendResponseHeaders(statusCode, bytes.size.toLong())
+            exchange.responseBody.use { it.write(bytes) }
+        }
+
+        try {
+            server.start()
+            block("http://127.0.0.1:${server.address.port}$path")
+        } finally {
+            server.stop(0)
+        }
+    }
+
     private fun withHeaderCheckingServer(body: String, block: (String) -> Unit) {
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         server.createContext("/") { exchange ->
@@ -1009,14 +1343,37 @@ class EnrichmentServiceTest {
         return method.invoke(service, url, result, html) as Boolean
     }
 
-    private fun facebookUnavailablePostFallbackResult(url: String): EnrichmentResult? {
+    private fun hasUsableFacebookPostMetadata(url: String, result: EnrichmentResult, html: String): Boolean {
         val service = EnrichmentService(RestClient.builder())
         val method = EnrichmentService::class.java.getDeclaredMethod(
-            "facebookUnavailablePostFallbackResult",
+            "hasUsableFacebookPostMetadata",
+            String::class.java,
+            EnrichmentResult::class.java,
             String::class.java,
         )
         method.isAccessible = true
-        return method.invoke(service, url) as EnrichmentResult?
+        return method.invoke(service, url, result, html) as Boolean
+    }
+
+    private fun facebookPostNumericPermalinkFallbackUrls(html: String): List<String> {
+        val service = EnrichmentService(RestClient.builder())
+        val method = EnrichmentService::class.java.getDeclaredMethod(
+            "facebookPostNumericPermalinkFallbackUrls",
+            String::class.java,
+        )
+        method.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
+        return method.invoke(service, html) as List<String>
+    }
+
+    private fun facebookPostPluginShellDiagnostics(html: String): String {
+        val service = EnrichmentService(RestClient.builder())
+        val method = EnrichmentService::class.java.getDeclaredMethod(
+            "facebookPostPluginShellDiagnostics",
+            String::class.java,
+        )
+        method.isAccessible = true
+        return method.invoke(service, html) as String
     }
 
     private fun parseNytOEmbedResult(response: String): EnrichmentResult? {
@@ -1033,3 +1390,7 @@ class EnrichmentServiceTest {
 private fun String.escapeHtmlAttribute(): String =
     replace("&", "&amp;")
         .replace("\"", "&quot;")
+
+private fun String.escapeJsonUrl(): String =
+    replace("/", "\\/")
+        .replace("&", "\\u0026")

@@ -16,7 +16,7 @@ class MachineToMachineAuthenticationFilter(
     private val properties: MachineToMachineProperties,
 ) : OncePerRequestFilter() {
 
-    private val logger = LoggerFactory.getLogger(javaClass)
+    private val log = LoggerFactory.getLogger(javaClass)
 
     override fun shouldNotFilter(request: HttpServletRequest): Boolean =
         !properties.enabled || !request.requestURI.startsWith("/api/")
@@ -28,25 +28,57 @@ class MachineToMachineAuthenticationFilter(
     ) {
         val apiKey = request.getHeader(properties.headerName)
         if (apiKey == null) {
-            logger.debug("M2M auth header {} not present for {} {}", properties.headerName, request.method, request.requestURI)
+            logArticleWriteDecision(request, headerPresent = false, serverConfigured = serverConfigured(), headerMatched = false)
+            log.debug("M2M auth header {} not present for {} {}", properties.headerName, request.method, request.requestURI)
             filterChain.doFilter(request, response)
             return
         }
 
         if (properties.apiKey.isBlank() || properties.principalEmail.isBlank()) {
-            logger.debug("M2M auth configured to accept header {} on {} {}, but server api key or principal email is blank", properties.headerName, request.method, request.requestURI)
+            logArticleWriteDecision(request, headerPresent = true, serverConfigured = false, headerMatched = false)
+            log.debug("M2M auth configured to accept header {} on {} {}, but server api key or principal email is blank", properties.headerName, request.method, request.requestURI)
             filterChain.doFilter(request, response)
             return
         }
 
         if (apiKey == properties.apiKey) {
-            logger.debug("M2M auth accepted header {} on {} {} for {}", properties.headerName, request.method, request.requestURI, properties.principalEmail)
+            logArticleWriteDecision(request, headerPresent = true, serverConfigured = true, headerMatched = true)
+            log.debug("M2M auth accepted header {} on {} {} for {}", properties.headerName, request.method, request.requestURI, properties.principalEmail)
             val auth = MachineToMachineAuthenticationToken(properties.principalEmail)
             SecurityContextHolder.getContext().authentication = auth
         } else {
-            logger.debug("M2M auth header {} present but value did not match on {} {}", properties.headerName, request.method, request.requestURI)
+            logArticleWriteDecision(request, headerPresent = true, serverConfigured = true, headerMatched = false)
+            log.debug("M2M auth header {} present but value did not match on {} {}", properties.headerName, request.method, request.requestURI)
         }
 
         filterChain.doFilter(request, response)
     }
+
+    private fun logArticleWriteDecision(
+        request: HttpServletRequest,
+        headerPresent: Boolean,
+        serverConfigured: Boolean,
+        headerMatched: Boolean,
+    ) {
+        if (!isArticleWrite(request)) return
+
+        log.warn(
+            "M2M auth article write decision; method={}; uri={}; headerName='{}'; headerPresent={}; " +
+                "serverConfigured={}; headerMatched={}; principalEmailConfigured={}",
+            request.method,
+            request.requestURI,
+            properties.headerName,
+            headerPresent,
+            serverConfigured,
+            headerMatched,
+            properties.principalEmail.isNotBlank(),
+        )
+    }
+
+    private fun serverConfigured(): Boolean =
+        properties.apiKey.isNotBlank() && properties.principalEmail.isNotBlank()
+
+    private fun isArticleWrite(request: HttpServletRequest): Boolean =
+        (request.method == "POST" || request.method == "PATCH") &&
+            (request.requestURI == "/api/articles" || request.requestURI.startsWith("/api/articles/"))
 }

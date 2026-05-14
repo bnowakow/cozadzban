@@ -185,7 +185,7 @@ Phases 4 and 5 are independent and can be developed in parallel.
     non-root user
 36. **`.dockerignore`** — keep local secrets, build outputs, IDE files, and Docker volume data
     out of the image build context
-37. **`compose.yaml` app service** — build the app image and run it beside PostgreSQL, using
+37. **`compose.yaml` springboot service** — build the app image and run it beside PostgreSQL, using
     `jdbc:postgresql://postgres:5432/${POSTGRES_DB}` plus `JDBC_DATABASE_USERNAME` and
     `JDBC_DATABASE_PASSWORD` derived from the existing `POSTGRES_*` variables
 38. **PostgreSQL healthcheck** — make the app wait for PostgreSQL readiness through
@@ -305,15 +305,29 @@ Phases 4 and 5 are independent and can be developed in parallel.
 
 ---
 
-## Phase 22 — Regression tests for ownership, metadata, filters, RSS discovery, analytics, and Facebook import (NEW)
+## Phase 22 — Failed enrichment retry queue (FUTURE CONSIDERATION)
 
-68. **Migration tests** — verify creator backfill to oldest user, migration failure when
+68. **TODO: Kafka-backed enrichment failure retry queue** — capture failed article
+    create/import requests when URL enrichment returns 422, including cases such as Facebook
+    photo URLs where the remote API reports `URL enrichment failed: target returned HTTP 400`.
+    A future server-side Kafka queue should persist the original request context and retry on
+    a regular schedule once enrichment handling improves. The current synchronous atomic
+    behavior remains unchanged: failed enrichment still returns 422 and writes no article at
+    request time. Admin/debug notifications should surface recurring failures with URL,
+    source/import context, failure reason, attempt count, and last failure timestamp so the
+    cases can be investigated and enrichment fixes can be prioritized.
+
+---
+
+## Phase 23 — Regression tests for ownership, metadata, filters, RSS discovery, analytics, and Facebook import (NEW)
+
+69. **Migration tests** — verify creator backfill to oldest user, migration failure when
     articles exist without users, `created_by_user_id NOT NULL`, and nullable `published_at`.
-69. **Auth/user tests** — verify soft-deleted users cannot log in or authorize writes, admins
+70. **Auth/user tests** — verify soft-deleted users cannot log in or authorize writes, admins
     can restore users, and final active admin cannot be deleted or demoted.
-70. **Article tests** — verify creator immutability, authenticated-only creator exposure,
+71. **Article tests** — verify creator immutability, authenticated-only creator exposure,
     RSS creator omission, publication date parsing/override/clearing, thumbnail extraction,
     language normalization/validation, filters, and sorting.
-71. **UI/manual tests** — verify language dropdown, date filters, publication date picker/time
+72. **UI/manual tests** — verify language dropdown, date filters, publication date picker/time
     picker, creator visibility rules, RSS `<link rel="alternate">` discovery + visible RSS
     link, analytics consent/script rendering, and the Facebook import admin button/job flow.

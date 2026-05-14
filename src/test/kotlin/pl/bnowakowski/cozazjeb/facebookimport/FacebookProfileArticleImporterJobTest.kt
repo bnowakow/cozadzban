@@ -192,6 +192,30 @@ class FacebookProfileArticleImporterJobTest {
         assertNull(method.invoke(importer, permanentFailure, 1))
     }
 
+    @Test
+    fun `import failure reason includes remote problem detail`() {
+        val importer = FacebookProfileArticleImporter(
+            FacebookImportProperties(),
+            appUserRepository,
+            articleService,
+        )
+        val method = importer.javaClass.getDeclaredMethod("importFailureReason", Exception::class.java)
+        method.isAccessible = true
+        val failure = HttpClientErrorException.create(
+            HttpStatus.UNPROCESSABLE_ENTITY,
+            "Unprocessable Content",
+            HttpHeaders.EMPTY,
+            """{"detail":"URL enrichment failed: target returned HTTP 400 for 'https://www.facebook.com/photo/?fbid=1'"}"""
+                .toByteArray(StandardCharsets.UTF_8),
+            StandardCharsets.UTF_8,
+        )
+
+        assertEquals(
+            "remote API returned HTTP 422 - URL enrichment failed: target returned HTTP 400 for 'https://www.facebook.com/photo/?fbid=1'",
+            method.invoke(importer, failure),
+        )
+    }
+
     private fun waitUntil(label: String, predicate: () -> Boolean) {
         val deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos()
         while (System.nanoTime() < deadline) {

@@ -15,6 +15,10 @@ FROM eclipse-temurin:21-jre-jammy
 
 WORKDIR /app
 
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN groupadd --system spring && useradd --system --gid spring spring
 
 COPY --from=build /workspace/app.jar app.jar

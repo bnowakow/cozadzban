@@ -5,6 +5,11 @@ package pl.bnowakowski.cozazjeb.article
 
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.slf4j.LoggerFactory
+import org.springframework.security.core.context.SecurityContextHolder
+import org.springframework.web.context.request.RequestContextHolder
+import org.springframework.web.context.request.ServletRequestAttributes
+import pl.bnowakowski.cozazjeb.enrichment.EnrichmentResult
 import pl.bnowakowski.cozazjeb.enrichment.EnrichmentService
 import pl.bnowakowski.cozazjeb.user.AppUserRepository
 import java.net.URI
@@ -78,16 +83,38 @@ class ArticleService(
     fun create(input: ArticleInput, creatorId: Long): Article {
         val url = canonicalizeUrl(input.url)
         val language = normalizeLanguage(input.language)
-        if (articleRepository.existsByUrl(url)) throw ArticleUrlConflictException(url)
+        logFacebookPhotoServiceInvocation(
+            operation = "create",
+            url = url,
+            detail = "inputUrl='${input.url}',creatorId=$creatorId,language='$language'," +
+                "quote=${valueDiagnostic(input.quote)},inputPublishedAt=${input.publishedAt}," +
+                "contentInputSupported=false",
+        )
+        if (articleRepository.existsByUrl(url)) {
+            logFacebookPhotoDuplicateUrlConflict("create", url, input.url, articleRepository.findByUrl(url))
+            throw ArticleUrlConflictException(url)
+        }
         val enrichment = enrichmentService.enrich(url)
         val publishedAt = input.publishedAt ?: enrichment.publishedAt
         val contentForCache = selectContentForCache(url, enrichment.plainText, enrichment.lead, enrichment.title)
+        val title = titleForSave(url, enrichment.title, enrichment.lead, contentForCache)
+        logFacebookPhotoSaveDecision(url, enrichment, contentForCache, title, publishedAt)
+        logFacebookPhotoFieldSourceDecision(
+            operation = "create",
+            url = url,
+            inputPublishedAt = input.publishedAt,
+            enrichment = enrichment,
+            contentForCache = contentForCache,
+            titleForSave = title,
+            publishedAtForSave = publishedAt,
+            contentPatchScheduled = false,
+        )
         val article = articleRepository.save(
             Article(
                 url = url,
                 language = language,
                 quote = input.quote,
-                title = titleForSave(url, enrichment.title, enrichment.lead, contentForCache),
+                title = title,
                 thumbnail = enrichment.thumbnail,
                 lead = enrichment.lead,
                 publishedAt = publishedAt,
@@ -95,6 +122,9 @@ class ArticleService(
             )
         )
         preserveContent(article.id!!, contentForCache)
+        logFacebookPhotoPersistenceState("create", article, contentForCache)
+        val persistedArticle = logFacebookPhotoReloadedPersistenceState("create", article, contentForCache)
+        logFacebookPhotoDegradedOutcome("create", input, persistedArticle, enrichment, contentForCache, title, publishedAt)
         return article
     }
 
@@ -102,22 +132,46 @@ class ArticleService(
         val existing = findById(id)
         val url = canonicalizeUrl(input.url)
         val language = normalizeLanguage(input.language)
-        if (url != existing.url && articleRepository.existsByUrl(url)) throw ArticleUrlConflictException(url)
+        logFacebookPhotoServiceInvocation(
+            operation = "replace",
+            url = url,
+            detail = "articleId=$id,inputUrl='${input.url}',existingUrl='${existing.url}',language='$language'," +
+                "quote=${valueDiagnostic(input.quote)},inputPublishedAt=${input.publishedAt}",
+        )
+        if (url != existing.url && articleRepository.existsByUrl(url)) {
+            logFacebookPhotoDuplicateUrlConflict("replace", url, input.url, articleRepository.findByUrl(url))
+            throw ArticleUrlConflictException(url)
+        }
         val enrichment = enrichmentService.enrich(url)
         val publishedAt = input.publishedAt ?: enrichment.publishedAt
         val contentForCache = selectContentForCache(url, enrichment.plainText, enrichment.lead, enrichment.title)
+        val title = titleForSave(url, enrichment.title, enrichment.lead, contentForCache)
+        logFacebookPhotoSaveDecision(url, enrichment, contentForCache, title, publishedAt)
+        logFacebookPhotoFieldSourceDecision(
+            operation = "replace",
+            url = url,
+            inputPublishedAt = input.publishedAt,
+            enrichment = enrichment,
+            contentForCache = contentForCache,
+            titleForSave = title,
+            publishedAtForSave = publishedAt,
+            contentPatchScheduled = false,
+        )
         val article = articleRepository.save(
             existing.copy(
                 url = url,
                 language = language,
                 quote = input.quote,
-                title = titleForSave(url, enrichment.title, enrichment.lead, contentForCache),
+                title = title,
                 thumbnail = enrichment.thumbnail,
                 lead = enrichment.lead,
                 publishedAt = publishedAt,
             )
         )
         preserveContent(article.id!!, contentForCache)
+        logFacebookPhotoPersistenceState("replace", article, contentForCache)
+        val persistedArticle = logFacebookPhotoReloadedPersistenceState("replace", article, contentForCache)
+        logFacebookPhotoDegradedOutcome("replace", input, persistedArticle, enrichment, contentForCache, title, publishedAt)
         return article
     }
 
@@ -174,7 +228,10 @@ class ArticleService(
 
         val urlChanged = urlPresent && newUrl != existing.url
         val enrichmentForChangedUrl = if (urlChanged) {
-            if (articleRepository.existsByUrl(newUrl)) throw ArticleUrlConflictException(newUrl)
+            if (articleRepository.existsByUrl(newUrl)) {
+                logFacebookPhotoDuplicateUrlConflict("patch", newUrl, patch["url"] as? String, articleRepository.findByUrl(newUrl))
+                throw ArticleUrlConflictException(newUrl)
+            }
             enrichmentService.enrich(newUrl)
         } else {
             null
@@ -187,6 +244,13 @@ class ArticleService(
         } else {
             null
         }
+        logFacebookPhotoServiceInvocation(
+            operation = "patch",
+            url = newUrl,
+            detail = "articleId=$id,patchKeys=${patch.keys.sorted().joinToString(",")}," +
+                "urlPresent=$urlPresent,urlChanged=$urlChanged,contentPresent=$contentPresent," +
+                "contentValue=${patchValueDiagnostic(patch["content"])},existingTitle=${valueDiagnostic(existing.title)}",
+        )
         val (newTitle, newThumbnail, newLead) = if (enrichmentForChangedUrl != null) {
             Triple(
                 titleForSave(newUrl, enrichmentForChangedUrl.title, enrichmentForChangedUrl.lead, contentForChangedUrl),
@@ -200,6 +264,17 @@ class ArticleService(
                 existing.lead,
             )
         }
+        logFacebookPhotoPatchDecision(
+            existing = existing,
+            newUrl = newUrl,
+            contentPresent = contentPresent,
+            urlChanged = urlChanged,
+            contentPatchForTitle = contentPatchForTitle,
+            contentValue = patch["content"],
+            newTitle = newTitle,
+            newThumbnail = newThumbnail,
+            newPublishedAt = newPublishedAt,
+        )
 
         val saved = articleRepository.save(
             existing.copy(
@@ -224,6 +299,7 @@ class ArticleService(
             preserveContent(saved.id!!, contentForChangedUrl)
         }
 
+        logFacebookPhotoPersistenceState("patch", saved, contentPatchForTitle ?: contentForChangedUrl)
         return saved
     }
 
@@ -258,8 +334,11 @@ class ArticleService(
     }
 
     fun delete(id: Long) {
-        if (!articleRepository.existsById(id)) throw NoSuchElementException("Article $id not found")
+        val existing = articleRepository.findById(id).orElse(null)
+            ?: throw NoSuchElementException("Article $id not found")
+        logFacebookPhotoDeleteDecision(existing)
         articleRepository.deleteById(id)
+        logFacebookPhotoDeleteCompleted(existing)
     }
 
     // ── private helpers ───────────────────────────────────────────────────────
@@ -281,12 +360,17 @@ class ArticleService(
 
     private fun preserveContentAndFacebookPostTitle(article: Article, contentForCache: String) {
         preserveContent(article.id!!, contentForCache)
+        var finalTitle = article.title
+        var titleUpdated = false
         if (isFacebookPostUrl(article.url)) {
             val title = titleForSave(article.url, article.title, article.lead, contentForCache)
             if (title != article.title) {
                 articleRepository.save(article.copy(title = title))
+                finalTitle = title
+                titleUpdated = true
             }
         }
+        logFacebookPhotoContentReplacementState(article, contentForCache, finalTitle, titleUpdated)
     }
 
     private fun selectContentForCache(url: String, plainText: String?, lead: String?, title: String?): String? {
@@ -303,7 +387,7 @@ class ArticleService(
             return bodyCandidates.maxByOrNull { contentQualityScore(it) }
         }
 
-        return title?.trim()?.takeIf { it.isNotBlank() && !isGenericFacebookTitle(it) }
+        return title?.trim()?.takeIf { it.isNotBlank() && !isUnusableFacebookTitle(url, it) }
     }
 
     private fun titleForSave(url: String, title: String?, lead: String?, contentForCache: String?): String? {
@@ -311,12 +395,12 @@ class ArticleService(
         val leadExcerpt = lead
             ?.replace(Regex("\\s+"), " ")
             ?.trim()
-            ?.takeIf { it.isNotBlank() && !isGenericFacebookTitle(it) }
+            ?.takeIf { it.isNotBlank() && !isUnusableFacebookTitle(url, it) }
             ?.let { excerpt(it, ARTICLE_TITLE_EXCERPT_LENGTH) }
         val cacheExcerpt = contentForCache
             ?.replace(Regex("\\s+"), " ")
             ?.trim()
-            ?.takeIf { it.isNotBlank() && !isGenericFacebookTitle(it) }
+            ?.takeIf { it.isNotBlank() && !isUnusableFacebookTitle(url, it) }
             ?.let { excerpt(it, ARTICLE_TITLE_EXCERPT_LENGTH) }
 
         if (isFacebookPostUrl(url)) {
@@ -327,6 +411,7 @@ class ArticleService(
             leadExcerpt?.let { return it }
             cacheExcerpt?.let { return it }
         }
+        if (isFacebookLoginAccessTitle(normalizedTitle)) return cacheExcerpt
         if (!isGenericFacebookTitle(normalizedTitle)) return normalizedTitle
 
         return cacheExcerpt ?: normalizedTitle
@@ -337,10 +422,22 @@ class ArticleService(
             title == GENERIC_FACEBOOK_POST_TITLE ||
             title == GENERIC_FACEBOOK_SHARE_TITLE ||
             title == GENERIC_FACEBOOK_REEL_TITLE ||
+            title == GENERIC_FACEBOOK_PHOTO_TITLE ||
             title?.startsWith("$GENERIC_FACEBOOK_POST_TITLE by ") == true
 
+    private fun isUnusableFacebookTitle(url: String, title: String?): Boolean =
+        isFacebookUrl(url) && (isGenericFacebookTitle(title) || isFacebookLoginAccessTitle(title))
+
+    private fun isFacebookLoginAccessTitle(title: String?): Boolean {
+        val normalized = title?.trim()?.replace(LOG_WHITESPACE_PATTERN, " ").orEmpty()
+        return normalized.contains("zaloguj", ignoreCase = true) ||
+            normalized.contains("zarejestruj", ignoreCase = true) ||
+            normalized.contains("log in", ignoreCase = true) ||
+            normalized.contains("sign up", ignoreCase = true)
+    }
+
     private fun shouldUseFacebookLeadTitle(title: String?): Boolean =
-        isGenericFacebookTitle(title) || title?.contains(" | ") == true
+        isGenericFacebookTitle(title) || isFacebookLoginAccessTitle(title) || title?.contains(" | ") == true
 
     private fun excerpt(text: String, maxLength: Int): String =
         if (text.length <= maxLength) {
@@ -373,14 +470,473 @@ class ArticleService(
         val uri = runCatching { URI(url) }.getOrNull() ?: return false
         val path = uri.path ?: return false
 
-        return isFacebookUrl(url) && (path.contains("/posts/") || path.contains("/share/"))
+        return isFacebookUrl(url) &&
+            (path.contains("/posts/") || path.contains("/share/") || path.contains("/photo/") || path.contains("/photo.php"))
     }
+
+    private fun isFacebookPhotoUrl(url: String): Boolean {
+        val uri = runCatching { URI(url) }.getOrNull() ?: return false
+        val path = uri.path ?: return false
+
+        return isFacebookUrl(url) && (path.contains("/photo/") || path.contains("/photo.php"))
+    }
+
+    private fun logFacebookPhotoSaveDecision(
+        url: String,
+        enrichment: EnrichmentResult,
+        contentForCache: String?,
+        titleForSave: String?,
+        publishedAtForSave: Instant?,
+    ) {
+        if (!isFacebookUrl(url)) return
+
+        LOG.debug(
+            "Facebook article save decision for url='{}'; kind={}; enrichmentTitle={}; enrichmentLead={}; enrichmentPlainText={}; " +
+                "contentForCache={}; savedTitle={}; thumbnail={}; enrichmentPublishedAt={}; savedPublishedAt={}",
+            url,
+            facebookUrlKind(url),
+            valueDiagnostic(enrichment.title),
+            valueDiagnostic(enrichment.lead),
+            valueDiagnostic(enrichment.plainText),
+            valueDiagnostic(contentForCache),
+            valueDiagnostic(titleForSave),
+            valueDiagnostic(enrichment.thumbnail),
+            enrichment.publishedAt,
+            publishedAtForSave,
+        )
+    }
+
+    private fun logFacebookPhotoFieldSourceDecision(
+        operation: String,
+        url: String,
+        inputPublishedAt: Instant?,
+        enrichment: EnrichmentResult,
+        contentForCache: String?,
+        titleForSave: String?,
+        publishedAtForSave: Instant?,
+        contentPatchScheduled: Boolean,
+    ) {
+        if (!isFacebookUrl(url)) return
+
+        LOG.debug(
+            "Facebook field source decision during {}; url='{}'; kind={}; titleSource={}; cacheSource={}; " +
+                "thumbnailSource={}; publishedAtSource={}; postCreatePatchScheduled={}; " +
+                "enrichmentTitle={}; enrichmentLead={}; enrichmentPlainText={}; enrichmentThumbnail={}; " +
+                "enrichmentPublishedAt={}; inputPublishedAt={}; savedTitle={}; savedPublishedAt={}",
+            operation,
+            url,
+            facebookUrlKind(url),
+            facebookPhotoTitleSource(enrichment, contentForCache, titleForSave),
+            facebookPhotoCacheSource(url, enrichment, contentForCache),
+            facebookPhotoThumbnailSource(enrichment),
+            facebookPhotoPublishedAtSource(inputPublishedAt, enrichment.publishedAt, publishedAtForSave),
+            contentPatchScheduled,
+            valueDiagnostic(enrichment.title),
+            valueDiagnostic(enrichment.lead),
+            valueDiagnostic(enrichment.plainText),
+            valueDiagnostic(enrichment.thumbnail),
+            enrichment.publishedAt,
+            inputPublishedAt,
+            valueDiagnostic(titleForSave),
+            publishedAtForSave,
+        )
+    }
+
+    private fun logFacebookPhotoPatchDecision(
+        existing: Article,
+        newUrl: String,
+        contentPresent: Boolean,
+        urlChanged: Boolean,
+        contentPatchForTitle: String?,
+        contentValue: Any?,
+        newTitle: String?,
+        newThumbnail: String?,
+        newPublishedAt: Instant?,
+    ) {
+        if (!isFacebookUrl(newUrl)) return
+
+        LOG.debug(
+            "Facebook article patch decision for url='{}'; kind={}; articleId={}; contentPresent={}; urlChanged={}; " +
+                "existingTitle={}; contentValue={}; contentPatchForTitle={}; savedTitle={}; savedThumbnail={}; " +
+                "existingPublishedAt={}; savedPublishedAt={}",
+            newUrl,
+            facebookUrlKind(newUrl),
+            existing.id,
+            contentPresent,
+            urlChanged,
+            valueDiagnostic(existing.title),
+            patchValueDiagnostic(contentValue),
+            valueDiagnostic(contentPatchForTitle),
+            valueDiagnostic(newTitle),
+            valueDiagnostic(newThumbnail),
+            existing.publishedAt,
+            newPublishedAt,
+        )
+    }
+
+    private fun logFacebookPhotoServiceInvocation(
+        operation: String,
+        url: String,
+        detail: String,
+    ) {
+        if (!isFacebookUrl(url)) return
+
+        LOG.debug(
+            "Facebook ArticleService {} invoked; url='{}'; kind={}; detail={}; request={}; auth={}; caller={}",
+            operation,
+            url,
+            facebookUrlKind(url),
+            detail,
+            requestDiagnostic(),
+            authenticationDiagnostic(),
+            callerDiagnostic(),
+        )
+    }
+
+    private fun logFacebookPhotoDuplicateUrlConflict(
+        operation: String,
+        canonicalUrl: String,
+        inputUrl: String?,
+        existing: Article?,
+    ) {
+        if (!isFacebookUrl(canonicalUrl)) return
+
+        LOG.warn(
+            "Facebook duplicate URL conflict during {}; inputUrl='{}'; canonicalUrl='{}'; kind={}; existingArticle={}; " +
+                "request={}; auth={}; caller={}",
+            operation,
+            inputUrl,
+            canonicalUrl,
+            facebookUrlKind(canonicalUrl),
+            existing?.let { articleDiagnostic(it) } ?: "absent",
+            requestDiagnostic(),
+            authenticationDiagnostic(),
+            callerDiagnostic(),
+        )
+    }
+
+    private fun logFacebookPhotoPersistenceState(
+        operation: String,
+        article: Article,
+        requestedContent: String?,
+    ) {
+        if (!isFacebookUrl(article.url)) return
+
+        LOG.debug(
+            "Facebook article persisted state after {}; url='{}'; kind={}; articleId={}; savedTitle={}; thumbnail={}; " +
+                "lead={}; publishedAt={}; requestedContent={}; contentCache={}; requiresContentPatchForRealTitle={}; " +
+                "expectedPatchEndpoint='{}'; postCreatePatchScheduledByService={}; contentPatchSource={}",
+            operation,
+            article.url,
+            facebookUrlKind(article.url),
+            article.id,
+            valueDiagnostic(article.title),
+            valueDiagnostic(article.thumbnail),
+            valueDiagnostic(article.lead),
+            article.publishedAt,
+            valueDiagnostic(requestedContent),
+            contentCacheDiagnostic(article.id),
+            operation == "create" && isGenericFacebookTitle(article.title) && requestedContent.isNullOrBlank(),
+            "/api/articles/${article.id}",
+            false,
+            contentPatchSourceDiagnostic(operation, requestedContent),
+        )
+    }
+
+    private fun logFacebookPhotoReloadedPersistenceState(
+        operation: String,
+        saveReturnedArticle: Article,
+        requestedContent: String?,
+    ): Article {
+        if (!isFacebookUrl(saveReturnedArticle.url)) return saveReturnedArticle
+
+        val reloadedArticle = saveReturnedArticle.id
+            ?.let { articleRepository.findById(it).orElse(null) }
+
+        LOG.debug(
+            "Facebook article DB reload after {}; articleId={}; kind={}; reloadFound={}; " +
+                "saveReturnedArticle={}; reloadedArticle={}; requestedContent={}; contentCache={}; " +
+                "createdAtSource=saveReturned:{},reloaded:{}",
+            operation,
+            saveReturnedArticle.id,
+            facebookUrlKind(saveReturnedArticle.url),
+            reloadedArticle != null,
+            articleDiagnostic(saveReturnedArticle),
+            reloadedArticle?.let { articleDiagnostic(it) } ?: "absent",
+            valueDiagnostic(requestedContent),
+            contentCacheDiagnostic(saveReturnedArticle.id),
+            saveReturnedArticle.createdAt,
+            reloadedArticle?.createdAt,
+        )
+
+        return reloadedArticle ?: saveReturnedArticle
+    }
+
+    private fun logFacebookPhotoDegradedOutcome(
+        operation: String,
+        input: ArticleInput,
+        article: Article,
+        enrichment: EnrichmentResult,
+        requestedContent: String?,
+        titleForSave: String?,
+        publishedAtForSave: Instant?,
+    ) {
+        if (!isFacebookUrl(article.url)) return
+
+        val contentCachePresent = article.id?.let { articleContentRepository.existsById(it) } ?: false
+        val reasons = facebookPhotoDegradedReasons(article, enrichment, requestedContent, contentCachePresent)
+        if (reasons.isEmpty()) return
+
+        LOG.warn(
+            "Facebook degraded {} outcome summary; url='{}'; kind={}; articleId={}; reasons={}; " +
+                "inputFacts=ArticleInputHasContentField=false,inputPublishedAt={},inputQuote={}; " +
+                "fetchFacts=title={},lead={},plainText={},thumbnail={},publishedAt={}; " +
+                "sourceFacts=titleSource={},cacheSource={},thumbnailSource={},publishedAtSource={}; " +
+                "persistedFacts={},contentCachePresent={},contentCache={}; " +
+                "serviceFacts=postCreatePatchScheduled=false,contentPatchSource={},manualRecoveryPatchEndpoint='{}'",
+            operation,
+            article.url,
+            facebookUrlKind(article.url),
+            article.id,
+            reasons.joinToString(","),
+            input.publishedAt,
+            valueDiagnostic(input.quote),
+            valueDiagnostic(enrichment.title),
+            valueDiagnostic(enrichment.lead),
+            valueDiagnostic(enrichment.plainText),
+            valueDiagnostic(enrichment.thumbnail),
+            enrichment.publishedAt,
+            facebookPhotoTitleSource(enrichment, requestedContent, titleForSave),
+            facebookPhotoCacheSource(article.url, enrichment, requestedContent),
+            facebookPhotoThumbnailSource(enrichment),
+            facebookPhotoPublishedAtSource(input.publishedAt, enrichment.publishedAt, publishedAtForSave),
+            articleDiagnostic(article),
+            contentCachePresent,
+            contentCacheDiagnostic(article.id),
+            contentPatchSourceDiagnostic(operation, requestedContent),
+            "/api/articles/${article.id}",
+        )
+    }
+
+    private fun logFacebookPhotoDeleteDecision(article: Article) {
+        if (!isFacebookUrl(article.url)) return
+
+        LOG.debug(
+            "Facebook delete decision; article={}; contentCache={}; request={}; auth={}; caller={}",
+            articleDiagnostic(article),
+            contentCacheDiagnostic(article.id),
+            requestDiagnostic(),
+            authenticationDiagnostic(),
+            callerDiagnostic(),
+        )
+    }
+
+    private fun logFacebookPhotoDeleteCompleted(article: Article) {
+        if (!isFacebookUrl(article.url)) return
+
+        LOG.debug(
+            "Facebook delete completed; articleId={}; url='{}'; kind={}; existsAfterDelete={}; contentCacheAfterDelete={}",
+            article.id,
+            article.url,
+            facebookUrlKind(article.url),
+            article.id?.let { articleRepository.existsById(it) },
+            contentCacheDiagnostic(article.id),
+        )
+    }
+
+    private fun contentPatchSourceDiagnostic(operation: String, requestedContent: String?): String =
+        when {
+            !requestedContent.isNullOrBlank() -> "provided-to-$operation"
+            operation == "create" -> "none-ArticleInput-has-no-content-field"
+            else -> "none"
+        }
+
+    private fun articleDiagnostic(article: Article): String =
+        "id=${article.id},url='${article.url}',title=${valueDiagnostic(article.title)}," +
+            "thumbnail=${valueDiagnostic(article.thumbnail)},lead=${valueDiagnostic(article.lead)}," +
+            "publishedAt=${article.publishedAt},createdAt=${article.createdAt},createdByUserId=${article.createdByUserId}"
+
+    private fun facebookPhotoTitleSource(
+        enrichment: EnrichmentResult,
+        contentForCache: String?,
+        titleForSave: String?,
+    ): String =
+        when {
+            !enrichment.lead.isNullOrBlank() && titleForSave == excerpt(enrichment.lead.replace(LOG_WHITESPACE_PATTERN, " ").trim(), ARTICLE_TITLE_EXCERPT_LENGTH) ->
+                "lead-excerpt"
+            !contentForCache.isNullOrBlank() && titleForSave == excerpt(contentForCache.replace(LOG_WHITESPACE_PATTERN, " ").trim(), ARTICLE_TITLE_EXCERPT_LENGTH) ->
+                "content-cache-excerpt"
+            isGenericFacebookTitle(titleForSave) ->
+                "generic-facebook-fallback(no-lead,no-content-cache)"
+            titleForSave.isNullOrBlank() ->
+                "absent"
+            else ->
+                "enrichment-title"
+        }
+
+    private fun facebookPhotoCacheSource(
+        url: String,
+        enrichment: EnrichmentResult,
+        contentForCache: String?,
+    ): String =
+        when {
+            !contentForCache.isNullOrBlank() -> "selected(${valueDiagnostic(contentForCache)})"
+            knownContentForUrl(url) != null -> "known-content"
+            !enrichment.lead.isNullOrBlank() -> "lead"
+            !facebookVideoTitleContent(url, enrichment.title).isNullOrBlank() -> "facebook-video-title-content"
+            !enrichment.plainText.isNullOrBlank() && isFacebookUrl(url) ->
+                "absent-facebook-plaintext-intentionally-not-cached"
+            isUnusableFacebookTitle(url, enrichment.title) ->
+                "absent-generic-facebook-title-not-cacheable"
+            enrichment.title.isNullOrBlank() ->
+                "absent-no-title-lead-or-plaintext"
+            else ->
+                "absent-no-cacheable-body-content"
+        }
+
+    private fun facebookPhotoThumbnailSource(enrichment: EnrichmentResult): String =
+        if (enrichment.thumbnail.isNullOrBlank()) {
+            "absent-enrichment-thumbnail-absent"
+        } else {
+            "enrichment-thumbnail"
+        }
+
+    private fun facebookPhotoDegradedReasons(
+        article: Article,
+        enrichment: EnrichmentResult,
+        requestedContent: String?,
+        contentCachePresent: Boolean,
+    ): List<String> {
+        val reasons = mutableListOf<String>()
+
+        if (isUnusableFacebookTitle(article.url, article.title)) {
+            reasons += "stored-unusable-facebook-title"
+        }
+        if (requestedContent.isNullOrBlank() && !contentCachePresent) {
+            reasons += "no-content-cache-written"
+        }
+        if (article.thumbnail.isNullOrBlank()) {
+            reasons += "stored-thumbnail-absent"
+        }
+        if (article.lead.isNullOrBlank()) {
+            reasons += "stored-lead-absent"
+        }
+        if (article.publishedAt == null) {
+            reasons += "stored-publishedAt-absent"
+        }
+        if (
+            isUnusableFacebookTitle(article.url, enrichment.title) &&
+            enrichment.lead.isNullOrBlank() &&
+            enrichment.plainText.isNullOrBlank()
+        ) {
+            reasons += "enrichment-returned-only-generic-facebook-metadata"
+        }
+
+        return reasons
+    }
+
+    private fun facebookPhotoPublishedAtSource(
+        inputPublishedAt: Instant?,
+        enrichmentPublishedAt: Instant?,
+        publishedAtForSave: Instant?,
+    ): String =
+        when {
+            inputPublishedAt != null && publishedAtForSave == inputPublishedAt -> "input-publishedAt"
+            enrichmentPublishedAt != null && publishedAtForSave == enrichmentPublishedAt -> "enrichment-publishedAt"
+            publishedAtForSave == null -> "absent-input-and-enrichment"
+            else -> "unknown"
+        }
+
+    private fun requestDiagnostic(): String {
+        val attributes = RequestContextHolder.getRequestAttributes() as? ServletRequestAttributes
+            ?: return "absent"
+        val request = attributes.request
+        return "method=${request.method},uri=${request.requestURI},query=${request.queryString ?: "absent"}," +
+            "dispatcher=${request.dispatcherType},contentType=${request.contentType ?: "absent"}"
+    }
+
+    private fun authenticationDiagnostic(): String {
+        val authentication = SecurityContextHolder.getContext().authentication ?: return "absent"
+        return "name='${authentication.name}',authenticated=${authentication.isAuthenticated}," +
+            "type=${authentication.javaClass.simpleName}"
+    }
+
+    private fun callerDiagnostic(): String =
+        Thread.currentThread()
+            .stackTrace
+            .firstOrNull { frame ->
+                val className = frame.className
+                className.startsWith("pl.bnowakowski.cozazjeb.") &&
+                    !className.contains("ArticleService") &&
+                    !className.contains("ArticleWriteRequestLoggingFilter")
+            }
+            ?.let { "${it.className}.${it.methodName}:${it.lineNumber}" }
+            ?: "unknown"
+
+    private fun logFacebookPhotoContentReplacementState(
+        article: Article,
+        contentForCache: String,
+        finalTitle: String?,
+        titleUpdated: Boolean,
+    ) {
+        if (!isFacebookUrl(article.url)) return
+
+        LOG.debug(
+            "Facebook content cache replacement state; url='{}'; kind={}; articleId={}; previousTitle={}; finalTitle={}; " +
+                "titleUpdated={}; requestedContent={}; contentCache={}",
+            article.url,
+            facebookUrlKind(article.url),
+            article.id,
+            valueDiagnostic(article.title),
+            valueDiagnostic(finalTitle),
+            titleUpdated,
+            valueDiagnostic(contentForCache),
+            contentCacheDiagnostic(article.id),
+        )
+    }
+
+    private fun contentCacheDiagnostic(articleId: Long?): String {
+        articleId ?: return "article-id-absent"
+
+        return articleContentRepository.findById(articleId)
+            .map {
+                "present(len=${it.content.length},truncated=${it.truncated},capturedAt=${it.capturedAt}," +
+                    "excerpt='${it.content.replace(LOG_WHITESPACE_PATTERN, " ").trim().take(MAX_LOGGED_VALUE_CHARS)}')"
+            }
+            .orElse("absent")
+    }
+
+    private fun valueDiagnostic(value: String?): String =
+        value
+            ?.replace(LOG_WHITESPACE_PATTERN, " ")
+            ?.trim()
+            ?.let { "present(len=${it.length},excerpt='${it.take(MAX_LOGGED_VALUE_CHARS)}')" }
+            ?: "absent"
+
+    private fun patchValueDiagnostic(value: Any?): String =
+        when (value) {
+            null -> "null"
+            is String -> valueDiagnostic(value)
+            else -> "non-string(type=${value.javaClass.simpleName})"
+        }
 
     private fun isFacebookUrl(url: String): Boolean {
         val uri = runCatching { URI(url) }.getOrNull() ?: return false
         val host = uri.host?.lowercase() ?: return false
 
         return host == "facebook.com" || host.endsWith(".facebook.com")
+    }
+
+    private fun facebookUrlKind(url: String): String {
+        if (!isFacebookUrl(url)) return "non-facebook"
+        val path = runCatching { URI(url).path.orEmpty().lowercase() }.getOrDefault("")
+        return when {
+            path.contains("/photo/") || path.contains("/photo.php") -> "photo"
+            path.contains("/posts/") || path.contains("/permalink.php") || path.contains("/story.php") -> "post"
+            path.contains("/videos/") || path.contains("/watch/") || path.contains("/reel/") -> "video-or-reel"
+            path.contains("/share/") || path.contains("/shares/") -> "share"
+            else -> "facebook-other"
+        }
     }
 
     private fun contentQualityScore(text: String): Int {
@@ -396,12 +952,16 @@ class ArticleService(
     }
 
     companion object {
+        private val LOG = LoggerFactory.getLogger(ArticleService::class.java)
         private val BCP47_PATTERN = Regex("^[a-z]{2,3}(-[a-z0-9]{2,8})*\$")
         private const val GENERIC_FACEBOOK_PAGE_TITLE = "Facebook"
         private const val GENERIC_FACEBOOK_POST_TITLE = "Facebook post"
         private const val GENERIC_FACEBOOK_SHARE_TITLE = "Facebook share"
         private const val GENERIC_FACEBOOK_REEL_TITLE = "Facebook reel"
+        private const val GENERIC_FACEBOOK_PHOTO_TITLE = "Facebook photo"
         private const val ARTICLE_TITLE_EXCERPT_LENGTH = 120
+        private const val MAX_LOGGED_VALUE_CHARS = 180
+        private val LOG_WHITESPACE_PATTERN = Regex("""\s+""")
         private const val OTHER98_HEGSETH_FACEBOOK_URL =
             "https://www.facebook.com/TheOther98/posts/pfbid0yidDpVT2Xxb2cM56G33f91qTRSSYW1bpixPNNQ7DLkHdCUD5oEhRL58Mjmo3ierxl"
         private val OTHER98_HEGSETH_FACEBOOK_CONTENT = """

@@ -119,7 +119,7 @@ Starts the Docker Compose stack from `compose.yaml`. PostgreSQL is exposed on
 `localhost:${POSTGRES_PORT}` and the Dockerized Spring Boot app is exposed on
 `http://localhost:${APP_PORT:-8080}`.
 
-The `app` container runs with the `prod` Spring profile and connects to PostgreSQL through the
+The `springboot` container runs with the `prod` Spring profile and connects to PostgreSQL through the
 Compose network using:
 
 ```text
@@ -175,7 +175,7 @@ WordPress and MySQL containers:
 
 | Service | CPU limit | Memory limit |
 |---|---:|---:|
-| `app` | `1.25` CPUs | `1536m` |
+| `springboot` | `1.25` CPUs | `1536m` |
 | `postgres` | `0.75` CPUs | `1024m` |
 | `zipkin` | `0.25` CPUs | `384m` |
 

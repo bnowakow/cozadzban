@@ -2,6 +2,7 @@ node_modules
 HELP.md
 .DS_Store
 .gradle
+.vaadin/
 build/
 target/
 !gradle/wrapper/gradle-wrapper.jar
@@ -48,4 +49,6 @@ out/
 
 ### Secrets ###
 .env
+.env.server
+.env.worker
 src/main/resources/facebook.properties

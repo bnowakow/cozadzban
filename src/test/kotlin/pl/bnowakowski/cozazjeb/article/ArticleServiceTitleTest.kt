@@ -84,6 +84,68 @@ class ArticleServiceTitleTest {
     }
 
     @Test
+    fun `Facebook photo fallback title is replaced with cached post excerpt`() {
+        val postText = "Trybunał Konstytucyjny orzekł, że niezgodne z konstytucją jest takie rozumienie ustawy o statusie sędziów TK."
+        val title = titleForSave(
+            url = "https://www.facebook.com/photo/?fbid=1386997413458759&set=a.473737708118072",
+            title = "Facebook photo",
+            lead = null,
+            contentForCache = postText,
+        )
+
+        assertEquals(postText.excerptForArticleTitle(), title)
+    }
+
+    @Test
+    fun `Facebook photo login title is replaced with cached post excerpt`() {
+        val postText = "Trybunał Konstytucyjny orzekł, że niezgodne z konstytucją jest takie rozumienie ustawy o statusie sędziów TK."
+        val title = titleForSave(
+            url = "https://www.facebook.com/photo/?fbid=1386997413458759&set=a.473737708118072",
+            title = "Zaloguj się lub zarejestruj, aby wyświetlić",
+            lead = null,
+            contentForCache = postText,
+        )
+
+        assertEquals(postText.excerptForArticleTitle(), title)
+    }
+
+    @Test
+    fun `Facebook photo login title is not saved when no post text exists`() {
+        val title = titleForSave(
+            url = "https://www.facebook.com/photo/?fbid=1386997413458759&set=a.473737708118072",
+            title = "Zaloguj się lub zarejestruj, aby wyświetlić",
+            lead = null,
+            contentForCache = null,
+        )
+
+        assertEquals(null, title)
+    }
+
+    @Test
+    fun `Facebook photo fallback title is not cached as content`() {
+        val content = selectContentForCache(
+            url = "https://www.facebook.com/photo/?fbid=1386997413458759&set=a.473737708118072",
+            plainText = null,
+            lead = null,
+            title = "Facebook photo",
+        )
+
+        assertEquals(null, content)
+    }
+
+    @Test
+    fun `Facebook photo login title is not cached as content`() {
+        val content = selectContentForCache(
+            url = "https://www.facebook.com/photo/?fbid=1386997413458759&set=a.473737708118072",
+            plainText = null,
+            lead = null,
+            title = "Zaloguj się lub zarejestruj, aby wyświetlić",
+        )
+
+        assertEquals(null, content)
+    }
+
+    @Test
     fun `Facebook profile fallback title is not cached as content`() {
         val content = selectContentForCache(
             url = "https://www.facebook.com/mzimu/posts/pfbid02ouRUuuRuoF5KnkqjiyyyvDGKWGqRWSWEjA7Tmf1Tw9XZZbNP8dd3YTh6LXNtgrU7l",

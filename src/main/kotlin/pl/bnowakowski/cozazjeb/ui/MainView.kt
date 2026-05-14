@@ -28,6 +28,7 @@ import com.vaadin.flow.data.provider.DataProvider
 import com.vaadin.flow.data.provider.SortDirection
 import com.vaadin.flow.router.Route
 import com.vaadin.flow.server.VaadinServletRequest
+import org.slf4j.LoggerFactory
 import com.vaadin.flow.server.auth.AnonymousAllowed
 import org.springframework.security.access.AccessDeniedException
 import org.springframework.security.core.context.SecurityContextHolder
@@ -42,6 +43,7 @@ import pl.bnowakowski.cozazjeb.user.AppUser
 import pl.bnowakowski.cozazjeb.user.AppUserRepository
 import pl.bnowakowski.cozazjeb.user.AppUserStatus
 import pl.bnowakowski.cozazjeb.user.Role
+import java.net.URI
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneOffset
@@ -75,6 +77,7 @@ class ArticleListView(
 
     // Creator email cache: populated in batch per page fetch (keyed by createdByUserId)
     private val creatorCache = mutableMapOf<Long, String>()
+    private var lastFacebookCreatedId: Long? = null
 
     private val dataProvider = DataProvider.fromCallbacks<Article>(
         { query ->
@@ -89,6 +92,14 @@ class ArticleListView(
             val articles = articleRepository.findPage(
                 page, requestedLimit, sortField, sortDirection,
                 languageFilter, publishedFromFilter, publishedToFilter, createdFromFilter, createdToFilter,
+            )
+            logFacebookPhotoGridFetch(
+                page = page,
+                requestedLimit = requestedLimit,
+                requestedOffset = requestedOffset,
+                sortField = sortField,
+                sortDirection = sortDirection,
+                articles = articles,
             )
 
             if (isAuthenticated && articles.isNotEmpty()) {
@@ -444,20 +455,30 @@ class ArticleListView(
             submitButton.isEnabled = false
             try {
                 val creator = authenticatedUser
+                logFacebookPhotoUiCreateAttempt(url, creator, language, quote, publishedAt)
                 if (creator == null || creator.status != AppUserStatus.ACTIVE) {
                     showLoginOverlay(dialog)
                     return@addClickListener
                 }
-                articleService.create(
+                val created = articleService.create(
                     ArticleInput(url = url, language = language, quote = quote, publishedAt = publishedAt),
                     creator.id!!,
                 )
+                logFacebookPhotoUiCreateResult(url, created)
+                logFacebookPhotoUiPostCreateRecoveryDecision(url, created)
+                if (isFacebookUrl(created.url)) {
+                    lastFacebookCreatedId = created.id
+                    logFacebookPhotoUiCreatedDbState(created.id, "after-create-before-refresh")
+                }
                 refreshData()
+                logFacebookPhotoUiCreatedDbState(created.id, "after-refresh-request")
                 dialog.close()
                 showSuccess("Article added")
             } catch (ex: AccessDeniedException) {
+                logFacebookPhotoUiCreateException(url, ex)
                 showLoginOverlay(dialog)
             } catch (ex: Exception) {
+                logFacebookPhotoUiCreateException(url, ex)
                 showError(ex.message ?: "Failed to add article")
             } finally {
                 submitButton.isEnabled = true
@@ -492,8 +513,15 @@ class ArticleListView(
         dialog.setConfirmButtonTheme("error primary")
         dialog.setCancelable(true)
         dialog.addConfirmListener {
-            articleService.delete(article.id!!)
-            refreshData()
+            logFacebookPhotoUiDeleteAttempt(article)
+            try {
+                articleService.delete(article.id!!)
+                logFacebookPhotoUiDeleteResult(article)
+                refreshData()
+            } catch (ex: Exception) {
+                logFacebookPhotoUiDeleteException(article, ex)
+                throw ex
+            }
         }
         dialog.open()
     }
@@ -564,7 +592,9 @@ class ArticleListView(
                     "publishedAt" to publishedAt?.toString(),
                     "content" to content,
                 )
-                articleService.patch(article.id!!, patch)
+                logFacebookPhotoUiPatchAttempt(article, patch)
+                val updated = articleService.patch(article.id!!, patch)
+                logFacebookPhotoUiPatchResult(updated, patch)
                 refreshData()
                 dialog.close()
                 showSuccess("Article updated")
@@ -642,7 +672,277 @@ class ArticleListView(
         dataProvider.refreshAll()
     }
 
+    private fun logFacebookPhotoGridFetch(
+        page: Int,
+        requestedLimit: Int,
+        requestedOffset: Int,
+        sortField: String,
+        sortDirection: String,
+        articles: List<Article>,
+    ) {
+        val facebookRows = articles
+            .filter { isFacebookUrl(it.url) }
+            .filter { isProblemFacebookRow(it) || it.id == lastFacebookCreatedId }
+        if (facebookRows.isEmpty()) return
+
+        LOG.debug(
+            "Facebook UI grid fetch state; page={}; requestedLimit={}; requestedOffset={}; sort={}; " +
+                "filters={}; lastFacebookCreatedId={}; rows={}",
+            page,
+            requestedLimit,
+            requestedOffset,
+            "$sortField,$sortDirection",
+            currentFilterDiagnostic(),
+            lastFacebookCreatedId,
+            facebookRows.joinToString(" | ") { facebookRowDiagnostic(it) },
+        )
+    }
+
+    private fun logFacebookPhotoUiCreatedDbState(articleId: Long?, phase: String) {
+        articleId ?: return
+        val article = runCatching { articleRepository.findById(articleId).orElse(null) }.getOrNull() ?: return
+        if (!isFacebookUrl(article.url)) return
+
+        LOG.debug(
+            "Facebook UI created DB state {}; articleId={}; row={}",
+            phase,
+            articleId,
+            facebookRowDiagnostic(article),
+        )
+    }
+
+    private fun logFacebookPhotoUiCreateAttempt(
+        url: String,
+        creator: AppUser?,
+        language: String,
+        quote: String?,
+        publishedAt: Instant?,
+    ) {
+        if (!isFacebookUrl(url)) return
+
+        LOG.debug(
+            "Facebook UI create attempt; url='{}'; kind={}; language='{}'; quote={}; publishedAt={}; creator={}; " +
+                "request={}; contentInputAvailable=false; browserPostTextAvailable=false; postCreatePatchScheduled=false; " +
+                "reason=ui-add-dialog-submits-url-language-quote-publishedAt-only",
+            url,
+            facebookUrlKind(url),
+            language,
+            valueDiagnostic(quote),
+            publishedAt,
+            creatorDiagnostic(creator),
+            currentRequestDiagnostic(),
+        )
+    }
+
+    private fun logFacebookPhotoUiCreateResult(inputUrl: String, article: Article) {
+        if (!isFacebookUrl(inputUrl) && !isFacebookUrl(article.url)) return
+
+        LOG.debug(
+            "Facebook UI create result; inputUrl='{}'; kind={}; articleId={}; savedUrl='{}'; title={}; thumbnail={}; " +
+                "lead={}; publishedAt={}; contentInputAvailable=false; postCreatePatchScheduled=false; " +
+                "requiresManualContentPatchForRealTitle={}",
+            inputUrl,
+            facebookUrlKind(article.url),
+            article.id,
+            article.url,
+            valueDiagnostic(article.title),
+            valueDiagnostic(article.thumbnail),
+            valueDiagnostic(article.lead),
+            article.publishedAt,
+            article.title == "Facebook photo" && article.thumbnail == null && article.lead == null && article.publishedAt == null,
+        )
+    }
+
+    private fun logFacebookPhotoUiPostCreateRecoveryDecision(inputUrl: String, article: Article) {
+        if (!isFacebookUrl(inputUrl) && !isFacebookUrl(article.url)) return
+
+        val degraded = isProblemFacebookRow(article)
+        if (!degraded) return
+
+        LOG.warn(
+            "Facebook UI post-create degraded decision; inputUrl='{}'; kind={}; articleId={}; savedUrl='{}'; " +
+                "degraded=true; automaticPatchAvailable=false; patchAttempted=false; " +
+                "problemReason={}; reason=add-dialog-has-no-content-thumbnail-or-browser-post-text-source; " +
+                "availableSubmitFields=url,language,quote,publishedAt; missingSubmitFields=content,thumbnail,facebookPhotoImage,publishedAtFromFacebook; " +
+                "manualPatchEndpoint='{}'; row={}; request={}",
+            inputUrl,
+            facebookUrlKind(article.url),
+            article.id,
+            article.url,
+            facebookProblemReason(article),
+            "/api/articles/${article.id}",
+            facebookRowDiagnostic(article),
+            currentRequestDiagnostic(),
+        )
+    }
+
+    private fun logFacebookPhotoUiCreateException(inputUrl: String, ex: Exception) {
+        if (!isFacebookUrl(inputUrl)) return
+
+        val canonicalUrl = runCatching { ArticleService.canonicalizeUrl(inputUrl) }.getOrNull()
+        val existing = canonicalUrl?.let { articleRepository.findByUrl(it) }
+
+        LOG.warn(
+            "Facebook UI create exception; inputUrl='{}'; kind={}; canonicalUrl='{}'; exception={}: {}; existingArticle={}; request={}",
+            inputUrl,
+            facebookUrlKind(canonicalUrl ?: inputUrl),
+            canonicalUrl ?: "canonicalization-failed",
+            ex.javaClass.simpleName,
+            ex.message,
+            existing?.let { facebookRowDiagnostic(it) } ?: "absent",
+            currentRequestDiagnostic(),
+        )
+    }
+
+    private fun logFacebookPhotoUiPatchAttempt(article: Article, patch: Map<String, Any?>) {
+        if (!isFacebookUrl(article.url)) return
+
+        LOG.debug(
+            "Facebook UI patch attempt; articleId={}; url='{}'; kind={}; existingTitle={}; patchKeys={}; content={}; " +
+                "publishedAtPatch={}; request={}",
+            article.id,
+            article.url,
+            facebookUrlKind(article.url),
+            valueDiagnostic(article.title),
+            patch.keys.sorted().joinToString(","),
+            valueDiagnostic(patch["content"] as? String),
+            patch["publishedAt"],
+            currentRequestDiagnostic(),
+        )
+    }
+
+    private fun logFacebookPhotoUiPatchResult(article: Article, patch: Map<String, Any?>) {
+        if (!isFacebookUrl(article.url)) return
+
+        LOG.debug(
+            "Facebook UI patch result; articleId={}; url='{}'; kind={}; savedTitle={}; thumbnail={}; lead={}; " +
+                "publishedAt={}; contentPatch={}",
+            article.id,
+            article.url,
+            facebookUrlKind(article.url),
+            valueDiagnostic(article.title),
+            valueDiagnostic(article.thumbnail),
+            valueDiagnostic(article.lead),
+            article.publishedAt,
+            valueDiagnostic(patch["content"] as? String),
+        )
+    }
+
+    private fun logFacebookPhotoUiDeleteAttempt(article: Article) {
+        if (!isFacebookUrl(article.url)) return
+
+        LOG.debug(
+            "Facebook UI delete attempt; row={}; request={}",
+            facebookRowDiagnostic(article),
+            currentRequestDiagnostic(),
+        )
+    }
+
+    private fun logFacebookPhotoUiDeleteResult(article: Article) {
+        if (!isFacebookUrl(article.url)) return
+
+        LOG.debug(
+            "Facebook UI delete result; articleId={}; url='{}'; kind={}; existsAfterDelete={}",
+            article.id,
+            article.url,
+            facebookUrlKind(article.url),
+            article.id?.let { articleRepository.existsById(it) },
+        )
+    }
+
+    private fun logFacebookPhotoUiDeleteException(article: Article, ex: Exception) {
+        if (!isFacebookUrl(article.url)) return
+
+        LOG.warn(
+            "Facebook UI delete exception; row={}; exception={}: {}; request={}",
+            facebookRowDiagnostic(article),
+            ex.javaClass.simpleName,
+            ex.message,
+            currentRequestDiagnostic(),
+        )
+    }
+
+    private fun creatorDiagnostic(creator: AppUser?): String =
+        creator?.let { "id=${it.id},email='${it.email}',status=${it.status},role=${it.role}" } ?: "absent"
+
+    private fun facebookRowDiagnostic(article: Article): String =
+        "id=${article.id},kind=${facebookUrlKind(article.url)},url='${article.url}',title=${valueDiagnostic(article.title)}," +
+            "thumbnail=${valueDiagnostic(article.thumbnail)},lead=${valueDiagnostic(article.lead)}," +
+            "publishedAt=${article.publishedAt},contentCache=${valueDiagnostic(article.id?.let { articleService.getContent(it) })}," +
+            "problemReason=${facebookProblemReason(article)}"
+
+    private fun isProblemFacebookRow(article: Article): Boolean =
+        facebookProblemReason(article) != "none"
+
+    private fun facebookProblemReason(article: Article): String {
+        val reasons = mutableListOf<String>()
+        if (isGenericFacebookTitle(article.title)) reasons += "generic-title"
+        if (isFacebookLoginAccessTitle(article.title)) reasons += "login-or-access-title"
+        if (article.thumbnail.isNullOrBlank()) reasons += "missing-thumbnail"
+        if (article.publishedAt == null) reasons += "missing-publishedAt"
+        if (article.lead.isNullOrBlank()) reasons += "missing-lead"
+        if (article.id?.let { articleService.getContent(it) }.isNullOrBlank()) reasons += "missing-content-cache"
+        return reasons.takeIf { it.isNotEmpty() }?.joinToString(",") ?: "none"
+    }
+
+    private fun currentFilterDiagnostic(): String =
+        "language=${languageFilter ?: "absent"},publishedFrom=${publishedFromFilter ?: "absent"}," +
+            "publishedTo=${publishedToFilter ?: "absent"},createdFrom=${createdFromFilter ?: "absent"}," +
+            "createdTo=${createdToFilter ?: "absent"}"
+
+    private fun currentRequestDiagnostic(): String {
+        val request = VaadinServletRequest.getCurrent()?.httpServletRequest ?: return "absent"
+        return "method=${request.method},uri=${request.requestURI},query=${request.queryString ?: "absent"}"
+    }
+
+    private fun isFacebookUrl(url: String?): Boolean {
+        if (url == null) return false
+        val uri = runCatching { URI(url) }.getOrNull() ?: return false
+        val host = uri.host?.lowercase() ?: return false
+
+        return host == "facebook.com" || host.endsWith(".facebook.com")
+    }
+
+    private fun facebookUrlKind(url: String?): String {
+        if (!isFacebookUrl(url)) return "non-facebook"
+        val path = runCatching { URI(url ?: return "invalid").path.orEmpty().lowercase() }.getOrDefault("")
+        return when {
+            path.contains("/photo/") || path.contains("/photo.php") -> "photo"
+            path.contains("/posts/") || path.contains("/permalink.php") || path.contains("/story.php") -> "post"
+            path.contains("/videos/") || path.contains("/watch/") || path.contains("/reel/") -> "video-or-reel"
+            path.contains("/share/") || path.contains("/shares/") -> "share"
+            else -> "facebook-other"
+        }
+    }
+
+    private fun isGenericFacebookTitle(title: String?): Boolean =
+        title == "Facebook" ||
+            title == "Facebook photo" ||
+            title == "Facebook post" ||
+            title == "Facebook share" ||
+            title == "Facebook reel" ||
+            title?.startsWith("Facebook post by ") == true
+
+    private fun isFacebookLoginAccessTitle(title: String?): Boolean {
+        val normalized = title?.replace(LOG_WHITESPACE_PATTERN, " ")?.trim().orEmpty()
+        return normalized.contains("zaloguj", ignoreCase = true) ||
+            normalized.contains("zarejestruj", ignoreCase = true) ||
+            normalized.contains("log in", ignoreCase = true) ||
+            normalized.contains("sign up", ignoreCase = true)
+    }
+
+    private fun valueDiagnostic(value: String?): String =
+        value
+            ?.replace(LOG_WHITESPACE_PATTERN, " ")
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?.let { "present(len=${it.length},excerpt='${it.take(MAX_LOGGED_VALUE_CHARS)}')" }
+            ?: "absent"
+
     companion object {
+        private val LOG = LoggerFactory.getLogger(ArticleListView::class.java)
+        private val LOG_WHITESPACE_PATTERN = Regex("""\s+""")
+        private const val MAX_LOGGED_VALUE_CHARS = 300
         private const val LANGUAGE_SUGGESTION_LIMIT = 3
         private val DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneOffset.UTC)
         private val SHORT_DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneOffset.UTC)
