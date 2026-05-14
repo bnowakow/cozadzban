@@ -216,6 +216,29 @@ class FacebookProfileArticleImporterJobTest {
         )
     }
 
+    @Test
+    fun `failed url summary prints unique urls on separate lines`() {
+        val importer = FacebookProfileArticleImporter(
+            FacebookImportProperties(),
+            appUserRepository,
+            articleService,
+        )
+        val method = importer.javaClass.getDeclaredMethod("formatFailedUrls", List::class.java)
+        method.isAccessible = true
+
+        assertEquals(
+            "https://example.com/a\nhttps://example.com/b",
+            method.invoke(
+                importer,
+                listOf(
+                    "https://example.com/a",
+                    "https://example.com/b",
+                    "https://example.com/a",
+                ),
+            ),
+        )
+    }
+
     private fun waitUntil(label: String, predicate: () -> Boolean) {
         val deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos()
         while (System.nanoTime() < deadline) {

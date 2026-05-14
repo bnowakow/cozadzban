@@ -134,7 +134,7 @@ class FacebookProfileArticleImporter(
                 candidates.size,
             )
             candidates.forEachIndexed { index, candidate ->
-                summary.record(importCandidate(candidate, creatorId, index + 1, candidates.size))
+                summary.record(importCandidate(candidate, creatorId, index + 1, candidates.size), candidate.url)
             }
             logger.info(
                 "Facebook import discovery pass {}/{} finished: {} processed, {} imported, {} already imported, {} skipped, {} failed so far",
@@ -147,14 +147,26 @@ class FacebookProfileArticleImporter(
                 summary.failed,
             )
         }
-        logger.info(
-            "Facebook import finished: {} processed, {} imported, {} already imported, {} skipped, {} failed",
-            summary.processed,
-            summary.imported,
-            summary.alreadyImported,
-            summary.skipped,
-            summary.failed,
-        )
+        if (summary.failedUrls.isEmpty()) {
+            logger.info(
+                "Facebook import finished: {} processed, {} imported, {} already imported, {} skipped, {} failed",
+                summary.processed,
+                summary.imported,
+                summary.alreadyImported,
+                summary.skipped,
+                summary.failed,
+            )
+        } else {
+            logger.info(
+                "Facebook import finished: {} processed, {} imported, {} already imported, {} skipped, {} failed; failed URLs:\n{}",
+                summary.processed,
+                summary.imported,
+                summary.alreadyImported,
+                summary.skipped,
+                summary.failed,
+                formatFailedUrls(summary.failedUrls),
+            )
+        }
     }
 
     fun openDriver(): WebDriver {
@@ -1010,6 +1022,18 @@ class FacebookProfileArticleImporter(
             .joinToString(prefix = "[", postfix = "]")
             .ifBlank { "[]" }
 
+    private fun formatFailedUrls(urls: List<String>): String {
+        if (urls.isEmpty()) return "[]"
+        val uniqueUrls = urls.distinct()
+        val shownUrls = uniqueUrls.take(LOG_URL_LIMIT).joinToString(separator = "\n")
+        val omittedCount = uniqueUrls.size - LOG_URL_LIMIT
+        return if (omittedCount > 0) {
+            "$shownUrls\n... ($omittedCount more)"
+        } else {
+            shownUrls
+        }
+    }
+
     private fun String.abbreviateForLog(limit: Int = LOG_TEXT_PREVIEW_LIMIT): String =
         if (length <= limit) this else take(limit) + "..."
 
@@ -1104,14 +1128,18 @@ class FacebookProfileArticleImporter(
         var alreadyImported: Int = 0,
         var skipped: Int = 0,
         var failed: Int = 0,
+        val failedUrls: MutableList<String> = mutableListOf(),
     ) {
-        fun record(outcome: ImportOutcome) {
+        fun record(outcome: ImportOutcome, url: String) {
             processed++
             when (outcome) {
                 ImportOutcome.IMPORTED -> imported++
                 ImportOutcome.ALREADY_IMPORTED -> alreadyImported++
                 ImportOutcome.SKIPPED -> skipped++
-                ImportOutcome.FAILED -> failed++
+                ImportOutcome.FAILED -> {
+                    failed++
+                    failedUrls += url
+                }
             }
         }
     }
