@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import org.mockito.kotlin.any
 import org.mockito.kotlin.doNothing
 import org.mockito.kotlin.doReturn
@@ -23,14 +24,19 @@ import pl.bnowakowski.cozazjeb.user.AppUserRepository
 import pl.bnowakowski.cozazjeb.user.Role
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
+import java.nio.file.Files
+import java.nio.file.Path
 import java.net.InetSocketAddress
 import java.net.URLDecoder
 import java.time.Duration
+import java.time.Instant
 import org.openqa.selenium.Cookie
 import org.openqa.selenium.WebDriver
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
 import org.springframework.web.client.HttpClientErrorException
+import org.springframework.web.client.ResourceAccessException
+import org.springframework.web.client.RestClientException
 import java.nio.charset.StandardCharsets
 
 class FacebookProfileArticleImporterJobTest {
@@ -197,6 +203,26 @@ class FacebookProfileArticleImporterJobTest {
     }
 
     @Test
+    fun `article creation retries transient remote transport failures`() {
+        val importer = FacebookProfileArticleImporter(
+            FacebookImportProperties(),
+            appUserRepository,
+            articleService,
+        )
+        val method = importer.javaClass.getDeclaredMethod(
+            "retryDelayForArticleCreateFailure",
+            RestClientException::class.java,
+            Int::class.javaPrimitiveType,
+        )
+        method.isAccessible = true
+        val timeoutFailure = ResourceAccessException("I/O error on POST request: Request cancelled")
+
+        assertEquals(Duration.ofSeconds(10), method.invoke(importer, timeoutFailure, 1))
+        assertEquals(Duration.ofSeconds(60), method.invoke(importer, timeoutFailure, 2))
+        assertNull(method.invoke(importer, timeoutFailure, 3))
+    }
+
+    @Test
     fun `import failure reason includes remote problem detail`() {
         val importer = FacebookProfileArticleImporter(
             FacebookImportProperties(),
@@ -244,6 +270,174 @@ class FacebookProfileArticleImporterJobTest {
     }
 
     @Test
+    fun `rejected artifact filename contains timestamp import id and candidate id`() {
+        val importer = FacebookProfileArticleImporter(
+            FacebookImportProperties(),
+            appUserRepository,
+            articleService,
+        )
+        val method = importer.javaClass.getDeclaredMethod(
+            "rejectedCandidateArtifactFilename",
+            Instant::class.java,
+            String::class.java,
+            String::class.java,
+        )
+        method.isAccessible = true
+
+        val filename = method.invoke(
+            importer,
+            Instant.parse("2026-05-15T19:42:31.123Z"),
+            "facebook-import-20260515T194231Z-7",
+            "facebook-import-candidate-42",
+        ) as String
+
+        assertTrue(filename.startsWith("20260515T194231123Z_"))
+        assertTrue(filename.contains("facebook-import-20260515T194231Z-7"))
+        assertTrue(filename.contains("facebook-import-candidate-42"))
+        assertTrue(filename.endsWith("_rejected-url.json"))
+        assertFalse(filename.contains(":"))
+        assertFalse(filename.contains("/"))
+    }
+
+    @Test
+    fun `rejected candidate writes one debug artifact`(@TempDir tempDir: Path) {
+        val importer = FacebookProfileArticleImporter(
+            FacebookImportProperties(rejectionArtifactDir = tempDir.toString()),
+            appUserRepository,
+            articleService,
+        )
+        val candidateClass = Class.forName(
+            "pl.bnowakowski.cozazjeb.facebookimport.FacebookProfileArticleImporter\$FacebookPostCandidate",
+        )
+        val constructor = candidateClass.getDeclaredConstructor(
+            String::class.java,
+            String::class.java,
+            String::class.java,
+        )
+        constructor.isAccessible = true
+        val candidate = constructor.newInstance(
+            "https://example.com/rejected",
+            "full candidate text\nwith useful diagnostics",
+            "https://www.facebook.com/source/posts/123",
+        )
+        val entry = candidateApprovalEntry(candidate, 3, "facebook-import-candidate-42")
+        val method = importer.javaClass.getDeclaredMethod(
+            "writeRejectedCandidateArtifact",
+            String::class.java,
+            Instant::class.java,
+            Int::class.javaPrimitiveType,
+            Int::class.javaPrimitiveType,
+            Int::class.javaPrimitiveType,
+            Int::class.javaPrimitiveType,
+            Class.forName(
+                "pl.bnowakowski.cozazjeb.facebookimport.FacebookProfileArticleImporter\$CandidateApprovalEntry",
+            ),
+        )
+        method.isAccessible = true
+
+        method.invoke(
+            importer,
+            "facebook-import-20260515T194231Z-7",
+            Instant.parse("2026-05-15T19:42:31.123Z"),
+            2,
+            4,
+            3,
+            5,
+            entry,
+        )
+
+        val artifacts = Files.list(tempDir).use { stream -> stream.toList() }
+        assertEquals(1, artifacts.size)
+        val artifact = artifacts.single()
+        assertTrue(artifact.fileName.toString().contains("facebook-import-20260515T194231Z-7"))
+        assertTrue(artifact.fileName.toString().contains("facebook-import-candidate-42"))
+        val json = Files.readString(artifact)
+        assertTrue(json.contains("\"facebookImportId\": \"facebook-import-20260515T194231Z-7\""))
+        assertTrue(json.contains("\"candidateId\": \"facebook-import-candidate-42\""))
+        assertTrue(json.contains("\"url\": \"https://example.com/rejected\""))
+        assertTrue(json.contains("\"sourcePostUrl\": \"https://www.facebook.com/source/posts/123\""))
+        assertTrue(json.contains("\"candidateText\": \"full candidate text\\nwith useful diagnostics\""))
+        assertTrue(json.contains("\"reason\": \"USER_REJECTED\""))
+        assertTrue(json.contains("\"discoveryPass\": 2"))
+        assertTrue(json.contains("\"discoveryIndex\": 3"))
+    }
+
+    @Test
+    fun `accepted candidate filtering does not write rejection artifacts`(@TempDir tempDir: Path) {
+        val importer = FacebookProfileArticleImporter(
+            FacebookImportProperties(rejectionArtifactDir = tempDir.toString()),
+            appUserRepository,
+            articleService,
+        )
+        val candidateClass = Class.forName(
+            "pl.bnowakowski.cozazjeb.facebookimport.FacebookProfileArticleImporter\$FacebookPostCandidate",
+        )
+        val constructor = candidateClass.getDeclaredConstructor(String::class.java, String::class.java)
+        constructor.isAccessible = true
+        val candidate = constructor.newInstance("https://example.com/a", "accepted text")
+        val entries = listOf(candidateApprovalEntry(candidate, 1, "facebook-import-candidate-1"))
+        val method = importer.javaClass.getDeclaredMethod(
+            "approveCandidates",
+            List::class.java,
+            FacebookCandidateApprovalHandler::class.java,
+        )
+        method.isAccessible = true
+
+        val approved = method.invoke(
+            importer,
+            entries,
+            FacebookCandidateApprovalHandler { approvals -> approvals },
+        ) as List<*>
+
+        assertEquals(1, approved.size)
+        assertEquals(0, Files.list(tempDir).use { stream -> stream.count() })
+    }
+
+    @Test
+    fun `rejected artifact write failure does not throw`(@TempDir tempDir: Path) {
+        val notDirectory = tempDir.resolve("not-directory")
+        Files.writeString(notDirectory, "blocks directory creation")
+        val importer = FacebookProfileArticleImporter(
+            FacebookImportProperties(rejectionArtifactDir = notDirectory.toString()),
+            appUserRepository,
+            articleService,
+        )
+        val candidateClass = Class.forName(
+            "pl.bnowakowski.cozazjeb.facebookimport.FacebookProfileArticleImporter\$FacebookPostCandidate",
+        )
+        val constructor = candidateClass.getDeclaredConstructor(String::class.java, String::class.java)
+        constructor.isAccessible = true
+        val candidate = constructor.newInstance("https://example.com/rejected", "candidate text")
+        val entry = candidateApprovalEntry(candidate, 1, "facebook-import-candidate-1")
+        val method = importer.javaClass.getDeclaredMethod(
+            "writeRejectedCandidateArtifact",
+            String::class.java,
+            Instant::class.java,
+            Int::class.javaPrimitiveType,
+            Int::class.javaPrimitiveType,
+            Int::class.javaPrimitiveType,
+            Int::class.javaPrimitiveType,
+            Class.forName(
+                "pl.bnowakowski.cozazjeb.facebookimport.FacebookProfileArticleImporter\$CandidateApprovalEntry",
+            ),
+        )
+        method.isAccessible = true
+
+        assertDoesNotThrow {
+            method.invoke(
+                importer,
+                "facebook-import-20260515T194231Z-7",
+                Instant.parse("2026-05-15T19:42:31.123Z"),
+                1,
+                1,
+                1,
+                1,
+                entry,
+            )
+        }
+    }
+
+    @Test
     fun `candidate approval rejects candidates before import`() {
         val importer = FacebookProfileArticleImporter(
             FacebookImportProperties(language = "pl"),
@@ -285,6 +479,39 @@ class FacebookProfileArticleImporterJobTest {
         assertEquals(1, approved.size)
         assertEquals("https://example.com/a", candidateUrl(approved.single()!!))
     }
+
+    @Test
+    fun `candidate approval carries changed language into approved candidate`() {
+        val importer = FacebookProfileArticleImporter(
+            FacebookImportProperties(language = "pl"),
+            appUserRepository,
+            articleService,
+        )
+        val candidateClass = Class.forName(
+            "pl.bnowakowski.cozazjeb.facebookimport.FacebookProfileArticleImporter\$FacebookPostCandidate",
+        )
+        val constructor = candidateClass.getDeclaredConstructor(String::class.java, String::class.java)
+        constructor.isAccessible = true
+        val candidate = constructor.newInstance("https://example.com/a", "accepted text")
+        val entries = listOf(candidateApprovalEntry(candidate, 1, "facebook-import-candidate-1"))
+        val method = importer.javaClass.getDeclaredMethod(
+            "approveCandidates",
+            List::class.java,
+            FacebookCandidateApprovalHandler::class.java,
+        )
+        method.isAccessible = true
+
+        val approved = method.invoke(
+            importer,
+            entries,
+            FacebookCandidateApprovalHandler { approvals ->
+                approvals.map { approval -> approval.copy(language = "en") }
+            },
+        ) as List<*>
+
+        assertEquals("en", candidateLanguage(approved.single()!!))
+    }
+
 
     @Test
     fun `candidate duplicate precheck uses article service`() {
@@ -377,6 +604,12 @@ class FacebookProfileArticleImporterJobTest {
 
     private fun candidateUrl(candidate: Any): String {
         val getter = candidate.javaClass.getDeclaredMethod("getUrl")
+        getter.isAccessible = true
+        return getter.invoke(candidate) as String
+    }
+
+    private fun candidateLanguage(candidate: Any): String {
+        val getter = candidate.javaClass.getDeclaredMethod("getLanguage")
         getter.isAccessible = true
         return getter.invoke(candidate) as String
     }

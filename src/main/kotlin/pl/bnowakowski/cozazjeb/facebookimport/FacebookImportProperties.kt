@@ -26,6 +26,7 @@ data class FacebookImportProperties(
     val targetApiKey: String = "",
     val targetApiKeyHeader: String = "X-CoZaZjeb-M2M-Key",
     val targetArticlePath: String = "/api/articles",
+    val rejectionArtifactDir: String = "logs/facebook-import-rejections",
 ) {
     enum class Browser {
         FIREFOX,

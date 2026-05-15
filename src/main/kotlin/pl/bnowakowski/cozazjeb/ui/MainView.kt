@@ -558,7 +558,7 @@ class ArticleListView(
         dialog.isCloseOnOutsideClick = false
         dialog.setWidth("80vw")
 
-        val rows = mutableListOf<Pair<FacebookCandidateApproval, RadioButtonGroup<FacebookCandidateApprovalDecision>>>()
+        val rows = mutableListOf<FacebookCandidateApprovalRow>()
         val content = VerticalLayout()
         content.width = "100%"
         val header = facebookCandidateApprovalGridRow(
@@ -601,22 +601,28 @@ class ArticleListView(
             sourcePost.element.style.set("line-height", "1.3")
             sourcePost.element.style.set("min-width", "0")
 
-            val language = Span(candidate.language)
-            language.element.style.set("text-align", "center")
+            val language = TextField()
+            language.value = candidate.language
+            language.placeholder = "pl"
+            language.setWidth("6rem")
+            language.element.style.set("min-width", "0")
 
             val decision = facebookCandidateDecisionGroup()
             decision.value = FacebookCandidateApprovalDecision.ACCEPT
 
             val row = facebookCandidateApprovalGridRow(candidateId, url, sourcePost, language, decision)
             content.add(row)
-            rows += candidate to decision
+            rows += FacebookCandidateApprovalRow(candidate, language, decision)
         }
 
         val submitButton = Button("Submit") {
             if (approvalFuture.isDone) return@Button
             approvalFuture.complete(
-                rows.map { (candidate, decision) ->
-                    candidate.copy(decision = decision.value ?: FacebookCandidateApprovalDecision.ACCEPT)
+                rows.map { row ->
+                    row.candidate.copy(
+                        language = row.language.value.trim().ifBlank { row.candidate.language },
+                        decision = row.decision.value ?: FacebookCandidateApprovalDecision.ACCEPT,
+                    )
                 },
             )
             dialog.close()
@@ -641,7 +647,7 @@ class ArticleListView(
         val row = Div(candidateId, url, sourcePost, language, decision)
         row.width = "100%"
         row.element.style.set("display", "grid")
-        row.element.style.set("grid-template-columns", "6rem minmax(22rem, 1fr) minmax(8rem, 12rem) 4.5rem 10.5rem")
+        row.element.style.set("grid-template-columns", "6rem minmax(22rem, 1fr) minmax(8rem, 12rem) 6rem 10.5rem")
         row.element.style.set("column-gap", "var(--lumo-space-m)")
         row.element.style.set("align-items", "center")
         return row
@@ -677,6 +683,12 @@ class ArticleListView(
         }
         return decision
     }
+
+    private data class FacebookCandidateApprovalRow(
+        val candidate: FacebookCandidateApproval,
+        val language: TextField,
+        val decision: RadioButtonGroup<FacebookCandidateApprovalDecision>,
+    )
 
     private fun confirmDeleteArticle(article: Article) {
         val dialog = ConfirmDialog()

@@ -27,11 +27,17 @@ import java.net.URLDecoder
 import java.net.http.HttpClient
 import java.nio.charset.StandardCharsets
 import java.time.Duration
+import java.time.Instant
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+import java.nio.file.Files
+import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicLong
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.http.client.JdkClientHttpRequestFactory
 import org.springframework.web.client.RestClient
+import org.springframework.web.client.RestClientException
 import org.springframework.web.client.RestClientResponseException
 
 @Component
@@ -104,10 +110,12 @@ class FacebookProfileArticleImporter(
         val driver = ensureDriver()
         prepareProfileAndLogin(driver)
         sleep(properties.waitAfterPageOpen)
+        val facebookImportId = facebookImportId()
         val summary = ImportSummary()
         val passCount = (2 until properties.scrolls step 2).count()
         logger.info(
-            "Facebook import starting {} discovery passes with up to {} configured scrolls",
+            "Facebook import {} starting {} discovery passes with up to {} configured scrolls",
+            facebookImportId,
             passCount,
             properties.scrolls,
         )
@@ -140,7 +148,7 @@ class FacebookProfileArticleImporter(
             )
             val candidateApprovalEntries = candidates.mapIndexed { index, candidate ->
                 CandidateApprovalEntry(
-                    candidate = candidate,
+                    candidate = candidate.copy(language = properties.language),
                     discoveryIndex = index + 1,
                     approval = FacebookCandidateApproval(
                         url = candidate.url,
@@ -168,25 +176,37 @@ class FacebookProfileArticleImporter(
                 }
                 !alreadyImported
             }
-            val approvedCandidates = approveCandidates(approvalEntries, approvalHandler)
+            val approvalsByUrl = approveCandidateDecisions(approvalEntries, approvalHandler)
+            val approvedCandidates = approvedCandidates(approvalEntries, approvalsByUrl)
             val approvedUrls = approvedCandidates.map { it.url }.toSet()
             approvalEntries.forEachIndexed { index, entry ->
                 val candidate = entry.candidate
+                val approval = approvalsByUrl[candidate.url] ?: entry.approval
                 val approved = candidate.url in approvedUrls
                 logger.info(
-                    "Facebook import discovery pass {}/{} candidate {}/{} candidateId={} url={} sourcePostUrl={} language={} alreadyImported=false approved={}",
+                    "Facebook import discovery pass {}/{} candidate {}/{} importId={} candidateId={} url={} sourcePostUrl={} language={} alreadyImported=false approved={}",
                     passIndex + 1,
                     passCount,
                     index + 1,
                     approvalEntries.size,
+                    facebookImportId,
                     entry.approval.candidateId,
                     candidate.url,
                     candidate.sourcePostUrl ?: "<none>",
-                    properties.language,
+                    approval.language,
                     approved,
                 )
                 if (!approved) {
                     summary.recordRejected(candidate.url)
+                    writeRejectedCandidateArtifact(
+                        facebookImportId = facebookImportId,
+                        generatedAt = Instant.now(),
+                        passIndex = passIndex + 1,
+                        passCount = passCount,
+                        candidateIndex = index + 1,
+                        candidateCount = approvalEntries.size,
+                        entry = entry.copy(approval = approval),
+                    )
                 }
             }
             approvedCandidates.forEachIndexed { index, candidate ->
@@ -1202,11 +1222,27 @@ class FacebookProfileArticleImporter(
         approvalHandler: FacebookCandidateApprovalHandler,
     ): List<FacebookPostCandidate> {
         if (entries.isEmpty()) return emptyList()
-        val approvedUrls = approvalHandler.approve(entries.map { it.approval })
-            .filter { it.decision == FacebookCandidateApprovalDecision.ACCEPT }
-            .map { it.url }
-            .toSet()
-        return entries.map { it.candidate }.filter { it.url in approvedUrls }
+        return approvedCandidates(entries, approveCandidateDecisions(entries, approvalHandler))
+    }
+
+    private fun approveCandidateDecisions(
+        entries: List<CandidateApprovalEntry>,
+        approvalHandler: FacebookCandidateApprovalHandler,
+    ): Map<String, FacebookCandidateApproval> =
+        approvalHandler.approve(entries.map { it.approval })
+            .associateBy { it.url }
+
+    private fun approvedCandidates(
+        entries: List<CandidateApprovalEntry>,
+        approvalsByUrl: Map<String, FacebookCandidateApproval>,
+    ): List<FacebookPostCandidate> {
+        val approvedByUrl = approvalsByUrl.filterValues {
+            it.decision == FacebookCandidateApprovalDecision.ACCEPT
+        }
+        return entries.mapNotNull { entry ->
+            val approval = approvedByUrl[entry.candidate.url] ?: return@mapNotNull null
+            entry.candidate.copy(language = approval.language)
+        }
     }
 
     private fun isAlreadyImportedCandidateUrl(url: String): Boolean =
@@ -1251,6 +1287,145 @@ class FacebookProfileArticleImporter(
 
     private fun candidateApprovalId(): String =
         "facebook-import-candidate-${CANDIDATE_APPROVAL_ID_SEQUENCE.incrementAndGet()}"
+
+    private fun facebookImportId(generatedAt: Instant = Instant.now()): String =
+        "facebook-import-${IMPORT_ARTIFACT_TIMESTAMP_FORMATTER.format(generatedAt)}-" +
+            IMPORT_ID_SEQUENCE.incrementAndGet()
+
+    private fun writeRejectedCandidateArtifact(
+        facebookImportId: String,
+        generatedAt: Instant,
+        passIndex: Int,
+        passCount: Int,
+        candidateIndex: Int,
+        candidateCount: Int,
+        entry: CandidateApprovalEntry,
+    ) {
+        runCatching {
+            val directory = rejectionArtifactDirectory()
+            Files.createDirectories(directory)
+            val filename = rejectedCandidateArtifactFilename(
+                generatedAt = generatedAt,
+                facebookImportId = facebookImportId,
+                candidateId = entry.approval.candidateId,
+            )
+            val artifactPath = directory.resolve(filename)
+            Files.writeString(
+                artifactPath,
+                rejectedCandidateArtifactJson(
+                    facebookImportId = facebookImportId,
+                    generatedAt = generatedAt,
+                    passIndex = passIndex,
+                    passCount = passCount,
+                    candidateIndex = candidateIndex,
+                    candidateCount = candidateCount,
+                    entry = entry,
+                ),
+                StandardCharsets.UTF_8,
+            )
+            logger.info(
+                "Facebook import rejected URL artifact written: importId={} candidateId={} url={} artifact={}",
+                facebookImportId,
+                entry.approval.candidateId,
+                entry.candidate.url,
+                artifactPath,
+            )
+        }.onFailure { ex ->
+            logger.warn(
+                "Facebook import could not write rejected URL artifact: importId={} candidateId={} url={} reason={}",
+                facebookImportId,
+                entry.approval.candidateId,
+                entry.candidate.url,
+                ex.message ?: ex.javaClass.simpleName,
+                ex,
+            )
+        }
+    }
+
+    private fun rejectionArtifactDirectory(): Path =
+        Path.of(properties.rejectionArtifactDir.ifBlank { "logs/facebook-import-rejections" })
+
+    private fun rejectedCandidateArtifactFilename(
+        generatedAt: Instant,
+        facebookImportId: String,
+        candidateId: String,
+    ): String =
+        listOf(
+            REJECTION_ARTIFACT_TIMESTAMP_FORMATTER.format(generatedAt),
+            facebookImportId,
+            candidateId,
+            "rejected-url",
+        )
+            .joinToString("_") { it.toFilenameToken() } + ".json"
+
+    private fun rejectedCandidateArtifactJson(
+        facebookImportId: String,
+        generatedAt: Instant,
+        passIndex: Int,
+        passCount: Int,
+        candidateIndex: Int,
+        candidateCount: Int,
+        entry: CandidateApprovalEntry,
+    ): String {
+        val candidate = entry.candidate
+        return """
+            {
+              "facebookImportId": ${jsonString(facebookImportId)},
+              "candidateId": ${jsonString(entry.approval.candidateId)},
+              "generatedAt": ${jsonString(generatedAt.toString())},
+              "decision": ${jsonString(FacebookCandidateApprovalDecision.REJECT.name)},
+              "reason": "USER_REJECTED",
+              "url": ${jsonString(candidate.url)},
+              "sourcePostUrl": ${jsonNullableString(candidate.sourcePostUrl)},
+              "language": ${jsonString(entry.approval.language)},
+              "discoveryPass": $passIndex,
+              "discoveryPassCount": $passCount,
+              "discoveryIndex": ${entry.discoveryIndex},
+              "candidateIndex": $candidateIndex,
+              "candidateCount": $candidateCount,
+              "candidateTextPreview": ${jsonString(candidate.text.cleanText().abbreviateForLog())},
+              "candidateText": ${jsonString(candidate.text)},
+              "urlSelectionDiagnostics": {
+                "selectedUrl": ${jsonString(candidate.url)},
+                "sourcePostUrl": ${jsonNullableString(candidate.sourcePostUrl)},
+                "candidateTextLength": ${candidate.text.length}
+              }
+            }
+        """.trimIndent() + "\n"
+    }
+
+    private fun String.toFilenameToken(): String =
+        replace(Regex("[^A-Za-z0-9._-]"), "_")
+            .trim('_')
+            .ifBlank { "unknown" }
+
+    private fun jsonNullableString(value: String?): String =
+        value?.let(::jsonString) ?: "null"
+
+    private fun jsonString(value: String): String =
+        buildString {
+            append('"')
+            value.forEach { char ->
+                when (char) {
+                    '\\' -> append("\\\\")
+                    '"' -> append("\\\"")
+                    '\b' -> append("\\b")
+                    '\u000C' -> append("\\f")
+                    '\n' -> append("\\n")
+                    '\r' -> append("\\r")
+                    '\t' -> append("\\t")
+                    else -> {
+                        if (char.code < 0x20) {
+                            append("\\u")
+                            append(char.code.toString(16).padStart(4, '0'))
+                        } else {
+                            append(char)
+                        }
+                    }
+                }
+            }
+            append('"')
+        }
 
     private fun String.abbreviateForLog(limit: Int = LOG_TEXT_PREVIEW_LIMIT): String =
         if (length <= limit) this else take(limit) + "..."
@@ -1409,7 +1584,7 @@ class FacebookProfileArticleImporter(
         while (true) {
             try {
                 return createArticle(candidate, creatorId)
-            } catch (ex: RestClientResponseException) {
+            } catch (ex: RestClientException) {
                 val retryDelay = retryDelayForArticleCreateFailure(ex, attempt) ?: throw ex
                 logger.warn(
                     "{} Facebook import article creation failed for {} on attempt {}: {}; retrying in {} seconds",
@@ -1425,6 +1600,12 @@ class FacebookProfileArticleImporter(
         }
     }
 
+    private fun retryDelayForArticleCreateFailure(ex: RestClientException, attempt: Int): Duration? =
+        when (ex) {
+            is RestClientResponseException -> retryDelayForArticleCreateFailure(ex, attempt)
+            else -> retryDelayForTransportArticleCreateFailure(attempt)
+        }
+
     private fun retryDelayForArticleCreateFailure(ex: RestClientResponseException, attempt: Int): Duration? {
         if (!isRetryableArticleCreateFailure(ex)) return null
         return when (attempt) {
@@ -1433,6 +1614,13 @@ class FacebookProfileArticleImporter(
             else -> null
         }
     }
+
+    private fun retryDelayForTransportArticleCreateFailure(attempt: Int): Duration? =
+        when (attempt) {
+            1 -> Duration.ofSeconds(10)
+            2 -> Duration.ofSeconds(60)
+            else -> null
+        }
 
     private fun isRetryableArticleCreateFailure(ex: RestClientResponseException): Boolean =
         ex.statusCode.value() == HttpStatus.UNPROCESSABLE_ENTITY.value() &&
@@ -1450,7 +1638,7 @@ class FacebookProfileArticleImporter(
             val article = articleService.create(
                 ArticleInput(
                     url = candidate.url,
-                    language = properties.language,
+                    language = candidate.language,
                     quote = properties.markerPhrase,
                 ),
                 creatorId,
@@ -1486,7 +1674,7 @@ class FacebookProfileArticleImporter(
                 .body(
                     ArticleInput(
                         url = candidate.url,
-                        language = properties.language,
+                        language = candidate.language,
                         quote = properties.markerPhrase,
                     )
                 )
@@ -1789,8 +1977,10 @@ class FacebookProfileArticleImporter(
         val url: String,
         val text: String,
         val sourcePostUrl: String? = null,
+        val language: String = "",
     ) {
-        constructor(url: String, text: String) : this(url, text, null)
+        constructor(url: String, text: String) : this(url, text, null, "")
+        constructor(url: String, text: String, sourcePostUrl: String?) : this(url, text, sourcePostUrl, "")
     }
 
     private data class CandidateApprovalEntry(
@@ -1865,8 +2055,12 @@ class FacebookProfileArticleImporter(
         private const val LOG_DIAGNOSTIC_LIMIT = 24
         private const val LOG_TEXT_PREVIEW_LIMIT = 500
         private const val REMOTE_API_CONNECT_TIMEOUT_MS = 3_000
-        private const val REMOTE_API_READ_TIMEOUT_MS = 5_000
+        private const val REMOTE_API_READ_TIMEOUT_MS = 60_000
         private const val MAX_NESTED_FACEBOOK_POSTS_TO_OPEN = 2
+        private val IMPORT_ARTIFACT_TIMESTAMP_FORMATTER: DateTimeFormatter =
+            DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'").withZone(ZoneOffset.UTC)
+        private val REJECTION_ARTIFACT_TIMESTAMP_FORMATTER: DateTimeFormatter =
+            DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmssSSS'Z'").withZone(ZoneOffset.UTC)
         private val FACEBOOK_NESTED_POST_DEDUPE_QUERY_PARAMS = setOf(
             "__tn__",
             "comment_id",
@@ -1883,6 +2077,7 @@ class FacebookProfileArticleImporter(
             "shares",
         )
         private val CANDIDATE_APPROVAL_ID_SEQUENCE = AtomicLong()
+        private val IMPORT_ID_SEQUENCE = AtomicLong()
     }
 
     private fun ensureDriver(): WebDriver = synchronized(stateLock) {

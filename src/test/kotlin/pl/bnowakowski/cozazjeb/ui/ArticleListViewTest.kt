@@ -10,6 +10,7 @@ import com.vaadin.flow.component.dialog.Dialog
 import com.vaadin.flow.component.html.Anchor
 import com.vaadin.flow.component.html.Span
 import com.vaadin.flow.component.radiobutton.RadioButtonGroup
+import com.vaadin.flow.component.textfield.TextField
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -125,6 +126,7 @@ class ArticleListViewTest {
         )
         method.isAccessible = true
 
+        val approvalFuture = CompletableFuture<List<FacebookCandidateApproval>>()
         val dialog = method.invoke(
             view,
             listOf(
@@ -135,11 +137,12 @@ class ArticleListViewTest {
                     sourcePostUrl = "https://www.facebook.com/source/posts/123",
                 ),
             ),
-            CompletableFuture<List<FacebookCandidateApproval>>(),
+            approvalFuture,
         ) as Dialog
 
         val anchors = findComponents(dialog, Anchor::class.java)
         val spans = findComponents(dialog, Span::class.java)
+        val languages = findComponents(dialog, TextField::class.java)
         val decisions = findComponents(dialog, RadioButtonGroup::class.java)
             .filterIsInstance<RadioButtonGroup<FacebookCandidateApprovalDecision>>()
         val buttons = findComponents(dialog, Button::class.java)
@@ -152,8 +155,14 @@ class ArticleListViewTest {
         assertTrue(spans.any { it.text == "Source Facebook post" })
         assertTrue(spans.any { it.text == "Language" })
         assertTrue(spans.any { it.text == "Decision" })
+        assertEquals("pl", languages.single().value)
         assertEquals(FacebookCandidateApprovalDecision.ACCEPT, decisions.single().value)
         assertTrue(buttons.any { it.text == "Submit" })
+
+        languages.single().value = "en"
+        buttons.single { it.text == "Submit" }.click()
+
+        assertEquals("en", approvalFuture.get().single().language)
     }
 
     @Test
