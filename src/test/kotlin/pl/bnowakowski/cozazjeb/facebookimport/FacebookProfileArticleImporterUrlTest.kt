@@ -382,6 +382,76 @@ class FacebookProfileArticleImporterUrlTest {
     }
 
     @Test
+    fun `nested facebook post search ignores photos comments profile links and caps fan out`() {
+        val importer = FacebookProfileArticleImporter(
+            FacebookImportProperties(),
+            mock<AppUserRepository>(),
+            mock<ArticleService>(),
+        )
+
+        val method = importer.javaClass.getDeclaredMethod(
+            "nestedFacebookPostCandidatesToOpen",
+            List::class.java,
+            String::class.java,
+            Set::class.java,
+        )
+        method.isAccessible = true
+
+        val postUrl = "https://www.facebook.com/photo/?fbid=1&set=a.1"
+        val candidates = listOf(
+            postUrl,
+            "https://www.facebook.com/photo/?fbid=2&set=a.2",
+            "https://www.facebook.com/aljazeera/posts/pfbid1?comment_id=123",
+            "https://www.facebook.com/bartek.dobrowolski.nowakowski/posts/pfbid-profile",
+            "https://www.facebook.com/aljazeera/posts/pfbid1?__tn__=*F",
+            "https://www.facebook.com/aljazeera/posts/pfbid1#",
+            "https://www.facebook.com/donaldpl/posts/pfbid2",
+            "https://www.facebook.com/third/posts/pfbid3",
+        )
+
+        assertEquals(
+            listOf(
+                "https://www.facebook.com/aljazeera/posts/pfbid1?__tn__=*F",
+                "https://www.facebook.com/donaldpl/posts/pfbid2",
+            ),
+            method.invoke(importer, candidates, postUrl, emptySet<String>()),
+        )
+        assertEquals(
+            emptyList<String>(),
+            method.invoke(importer, candidates, postUrl, setOf(postUrl)),
+        )
+    }
+
+    @Test
+    fun `profile matched external article urls outrank unrelated opened facebook page links`() {
+        val importer = FacebookProfileArticleImporter(
+            FacebookImportProperties(),
+            mock<AppUserRepository>(),
+            mock<ArticleService>(),
+        )
+
+        val method = importer.javaClass.getDeclaredMethod(
+            "preferredExternalArticleUrlForFacebookPost",
+            String::class.java,
+            Iterable::class.java,
+        )
+        method.isAccessible = true
+
+        assertEquals(
+            "https://thenextweb.com/news/palantir-retail-sell-off-germany-military-rejection?fbclid=abc",
+            method.invoke(
+                importer,
+                "https://www.facebook.com/thenextweb/posts/pfbid029YvfVCrCbZmEBmhf6H7Kdg1Sw6Y1ojKhwgD522v9emzXjFnQ736SxKVM3SWrhmMkl",
+                listOf(
+                    "https://www.bankobranie.pl/2026/04/erste-konto-smart-z-bonusem.html",
+                    "https://podyplomowestudia.eu/",
+                    "https://thenextweb.com/news/palantir-retail-sell-off-germany-military-rejection?fbclid=abc",
+                ),
+            ),
+        )
+    }
+
+    @Test
     fun `youtube noise does not outrank a nested shared facebook post`() {
         val importer = FacebookProfileArticleImporter(
             FacebookImportProperties(),
@@ -941,6 +1011,110 @@ class FacebookProfileArticleImporterUrlTest {
         whenever(driver.findElement(any())).thenReturn(body)
         whenever(body.text).thenReturn("Only Facebook photo content\n$photoUrl")
         whenever(driver.pageSource).thenReturn("Only Facebook photo content\n$photoUrl")
+
+        assertEquals(photoUrl, method.invoke(importer, driver, element))
+    }
+
+    @Test
+    fun `opened photo posts fall back to the photo when nested facebook posts do not expose article urls`() {
+        val importer = FacebookProfileArticleImporter(
+            FacebookImportProperties(waitAfterPageOpen = Duration.ZERO),
+            mock<AppUserRepository>(),
+            mock<ArticleService>(),
+        )
+
+        val method = importer.javaClass.getDeclaredMethod("findPostUrl", WebDriver::class.java, WebElement::class.java)
+        method.isAccessible = true
+
+        val driver = mockitoMock(
+            WebDriver::class.java,
+            withSettings().extraInterfaces(JavascriptExecutor::class.java),
+        ) as WebDriver
+        val targetLocator = mock<TargetLocator>()
+        val element = mock<WebElement>()
+        val photoLink = mock<WebElement>()
+        val body = mock<WebElement>()
+        val photoUrl = "https://www.facebook.com/photo/?fbid=1501965407964887&set=a.248625223298918"
+        val sharedPostUrl =
+            "https://www.facebook.com/jakub.wiech.mikroblog/posts/pfbid0F2BWZwcZ74V6pkiR9cHashJnKhJtYCY3Ein4PXhYE2RJCsR4H55JzazBJqfv8jusl"
+        val escapedSharedPostUrl = sharedPostUrl
+            .replace("/", "\\/")
+            .replace("?", "\\u003F")
+            .replace("&", "\\u0026")
+        val pageSource = """
+            <script>
+              ["CometFeedStory", "$escapedSharedPostUrl?__cft__[0]=ignored\u0026__tn__=%2CO%2CP-y-R"]
+            </script>
+            <a href="https://patronite.pl/jakubwiech?fbclid=ignored">patronite.pl/jakubwiech</a>
+        """.trimIndent()
+
+        whenever(element.text).thenReturn("Co za zjeb Jakub Wiech pisze - mikroblog")
+        whenever(element.findElements(any())).thenReturn(listOf(photoLink))
+        whenever(photoLink.getAttribute("href")).thenReturn(photoUrl)
+        whenever(driver.windowHandle).thenReturn("main")
+        whenever(driver.windowHandles).thenReturn(setOf("main"), setOf("main", "popup"), setOf("main"))
+        whenever(driver.switchTo()).thenReturn(targetLocator)
+        whenever(targetLocator.window(any())).thenReturn(driver)
+        whenever(driver.findElements(any())).thenReturn(emptyList())
+        whenever(driver.findElement(any())).thenReturn(body)
+        whenever(body.text).thenReturn(
+            "Jakub Wiech pisze - mikroblog\nMili Państwo, ten artykuł Rzeczpospolitej jest manipulacją.\npatronite.pl",
+        )
+        whenever(driver.pageSource).thenReturn(pageSource)
+
+        assertEquals(photoUrl, method.invoke(importer, driver, element))
+    }
+
+    @Test
+    fun `opened photo posts do not import unrelated nested facebook posts when original text has no url`() {
+        val importer = FacebookProfileArticleImporter(
+            FacebookImportProperties(waitAfterPageOpen = Duration.ZERO),
+            mock<AppUserRepository>(),
+            mock<ArticleService>(),
+        )
+
+        val method = importer.javaClass.getDeclaredMethod("findPostUrl", WebDriver::class.java, WebElement::class.java)
+        method.isAccessible = true
+
+        val driver = mockitoMock(
+            WebDriver::class.java,
+            withSettings().extraInterfaces(JavascriptExecutor::class.java),
+        ) as WebDriver
+        val targetLocator = mock<TargetLocator>()
+        val element = mock<WebElement>()
+        val photoLink = mock<WebElement>()
+        val body = mock<WebElement>()
+        val photoUrl = "https://www.facebook.com/photo/?fbid=26658416310482918&set=a.174617535956156"
+        val originalPostUrl =
+            "https://www.facebook.com/akurasinski/posts/pfbid02SS6xH6AQX2ejwDB3AvUwhSEV7XhcjkxNFPMPxWwu2hxUCcuSFuUMSVJij9VL8hssl"
+        val unrelatedNestedPostUrl =
+            "https://www.facebook.com/Indynxt/posts/pfbid0347R7fEt3GSP6LgYk87pwvjVHj46t6SrdL333S6jFZs8TwrxeZbt6xxoHLa4gJBBZl"
+
+        whenever(element.text).thenReturn(
+            "Bartek Dobrowolski-Nowakowski · Co za zjeb What a fucker · Artur Kurasiński · To jest porażka obecnego rządu.",
+        )
+        whenever(element.findElements(any())).thenReturn(listOf(photoLink))
+        whenever(photoLink.getAttribute("href")).thenReturn(photoUrl)
+        whenever(driver.windowHandle).thenReturn("main")
+        whenever(driver.windowHandles).thenReturn(
+            setOf("main"),
+            setOf("main", "popup-photo"),
+            setOf("main"),
+            setOf("main", "popup-original"),
+            setOf("main"),
+        )
+        whenever(driver.switchTo()).thenReturn(targetLocator)
+        whenever(targetLocator.window(any())).thenReturn(driver)
+        whenever(driver.findElements(any())).thenReturn(emptyList())
+        whenever(driver.findElement(any())).thenReturn(body)
+        whenever(body.text).thenReturn(
+            "Artur Kurasiński · To jest porażka obecnego rządu.",
+            "INDY NXT · Six races in and the fight for the championship could not be closer",
+        )
+        whenever(driver.pageSource).thenReturn(
+            "$originalPostUrl $photoUrl",
+            "$unrelatedNestedPostUrl",
+        )
 
         assertEquals(photoUrl, method.invoke(importer, driver, element))
     }

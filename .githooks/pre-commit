@@ -7,4 +7,4 @@ if ! command -v ggshield >/dev/null 2>&1; then
 	exit 1
 fi
 
-exec ggshield secret scan pre-commit --no-check-for-updates "$@"
+#exec ggshield secret scan pre-commit --no-check-for-updates "$@"

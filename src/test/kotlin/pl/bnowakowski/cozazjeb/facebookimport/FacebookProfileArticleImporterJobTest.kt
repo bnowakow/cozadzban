@@ -21,6 +21,10 @@ import pl.bnowakowski.cozazjeb.article.ArticleService
 import pl.bnowakowski.cozazjeb.user.AppUser
 import pl.bnowakowski.cozazjeb.user.AppUserRepository
 import pl.bnowakowski.cozazjeb.user.Role
+import com.sun.net.httpserver.HttpExchange
+import com.sun.net.httpserver.HttpServer
+import java.net.InetSocketAddress
+import java.net.URLDecoder
 import java.time.Duration
 import org.openqa.selenium.Cookie
 import org.openqa.selenium.WebDriver
@@ -237,6 +241,144 @@ class FacebookProfileArticleImporterJobTest {
                 ),
             ),
         )
+    }
+
+    @Test
+    fun `candidate approval rejects candidates before import`() {
+        val importer = FacebookProfileArticleImporter(
+            FacebookImportProperties(language = "pl"),
+            appUserRepository,
+            articleService,
+        )
+        val candidateClass = Class.forName(
+            "pl.bnowakowski.cozazjeb.facebookimport.FacebookProfileArticleImporter\$FacebookPostCandidate",
+        )
+        val constructor = candidateClass.getDeclaredConstructor(String::class.java, String::class.java)
+        constructor.isAccessible = true
+        val accepted = constructor.newInstance("https://example.com/a", "accepted text")
+        val rejected = constructor.newInstance("https://example.com/b", "rejected text")
+        val entries = listOf(
+            candidateApprovalEntry(accepted, 1, "facebook-import-candidate-1"),
+            candidateApprovalEntry(rejected, 2, "facebook-import-candidate-2"),
+        )
+        val method = importer.javaClass.getDeclaredMethod(
+            "approveCandidates",
+            List::class.java,
+            FacebookCandidateApprovalHandler::class.java,
+        )
+        method.isAccessible = true
+
+        val approved = method.invoke(
+            importer,
+            entries,
+            FacebookCandidateApprovalHandler { approvals ->
+                approvals.map { approval ->
+                    if (approval.url == "https://example.com/b") {
+                        approval.copy(decision = FacebookCandidateApprovalDecision.REJECT)
+                    } else {
+                        approval
+                    }
+                }
+            },
+        ) as List<*>
+
+        assertEquals(1, approved.size)
+        assertEquals("https://example.com/a", candidateUrl(approved.single()!!))
+    }
+
+    @Test
+    fun `candidate duplicate precheck uses article service`() {
+        val importer = FacebookProfileArticleImporter(
+            FacebookImportProperties(language = "pl"),
+            appUserRepository,
+            articleService,
+        )
+        val method = importer.javaClass.getDeclaredMethod("isAlreadyImportedCandidateUrl", String::class.java)
+        method.isAccessible = true
+        whenever(articleService.existsByUrl("https://example.com/existing")).thenReturn(true)
+
+        assertTrue(method.invoke(importer, "https://example.com/existing") as Boolean)
+    }
+
+    @Test
+    fun `candidate duplicate precheck uses remote article api when configured`() {
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/api/articles") { exchange ->
+            val url = queryParameters(exchange).getValue("existsUrl")
+            assertEquals("https://www.facebook.com/photo/?fbid=1440551624785854&set=a.653758993465125", url)
+            assertEquals("test-machine-key", exchange.requestHeaders.getFirst("X-CoZaZjeb-M2M-Key"))
+            exchange.respondJson("""{"exists":true}""")
+        }
+        server.start()
+        try {
+            val importer = FacebookProfileArticleImporter(
+                FacebookImportProperties(
+                    language = "pl",
+                    targetApiBaseUrl = "http://127.0.0.1:${server.address.port}",
+                    targetApiKey = "test-machine-key",
+                ),
+                appUserRepository,
+                articleService,
+            )
+            val method = importer.javaClass.getDeclaredMethod("isAlreadyImportedCandidateUrl", String::class.java)
+            method.isAccessible = true
+
+            assertTrue(
+                method.invoke(
+                    importer,
+                    "https://www.facebook.com/photo/?fbid=1440551624785854&set=a.653758993465125",
+                ) as Boolean,
+            )
+            verify(articleService, never()).existsByUrl(any())
+        } finally {
+            server.stop(0)
+        }
+    }
+
+    private fun queryParameters(exchange: HttpExchange): Map<String, String> =
+        exchange.requestURI.rawQuery
+            .orEmpty()
+            .split("&")
+            .filter { it.isNotBlank() }
+            .associate { parameter ->
+                val parts = parameter.split("=", limit = 2)
+                val name = URLDecoder.decode(parts[0], StandardCharsets.UTF_8)
+                val value = URLDecoder.decode(parts.getOrElse(1) { "" }, StandardCharsets.UTF_8)
+                name to value
+            }
+
+    private fun HttpExchange.respondJson(body: String) {
+        val bytes = body.toByteArray(StandardCharsets.UTF_8)
+        responseHeaders.add("Content-Type", "application/json")
+        sendResponseHeaders(200, bytes.size.toLong())
+        responseBody.use { it.write(bytes) }
+    }
+
+    private fun candidateApprovalEntry(candidate: Any, discoveryIndex: Int, candidateId: String): Any {
+        val entryClass = Class.forName(
+            "pl.bnowakowski.cozazjeb.facebookimport.FacebookProfileArticleImporter\$CandidateApprovalEntry",
+        )
+        val constructor = entryClass.getDeclaredConstructor(
+            Class.forName("pl.bnowakowski.cozazjeb.facebookimport.FacebookProfileArticleImporter\$FacebookPostCandidate"),
+            Int::class.javaPrimitiveType,
+            FacebookCandidateApproval::class.java,
+        )
+        constructor.isAccessible = true
+        return constructor.newInstance(
+            candidate,
+            discoveryIndex,
+            FacebookCandidateApproval(
+                url = candidateUrl(candidate),
+                language = "pl",
+                candidateId = candidateId,
+            ),
+        )
+    }
+
+    private fun candidateUrl(candidate: Any): String {
+        val getter = candidate.javaClass.getDeclaredMethod("getUrl")
+        getter.isAccessible = true
+        return getter.invoke(candidate) as String
     }
 
     private fun waitUntil(label: String, predicate: () -> Boolean) {

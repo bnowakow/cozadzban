@@ -6,6 +6,7 @@ package pl.bnowakowski.cozazjeb.ui
 import com.vaadin.flow.component.button.Button
 import com.vaadin.flow.component.button.ButtonVariant
 import com.vaadin.flow.component.Key
+import com.vaadin.flow.component.UI
 import com.vaadin.flow.component.datetimepicker.DateTimePicker
 import com.vaadin.flow.component.confirmdialog.ConfirmDialog
 import com.vaadin.flow.component.dialog.Dialog
@@ -21,6 +22,7 @@ import com.vaadin.flow.component.notification.NotificationVariant
 import com.vaadin.flow.component.orderedlayout.FlexComponent.Alignment
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout
 import com.vaadin.flow.component.orderedlayout.VerticalLayout
+import com.vaadin.flow.component.radiobutton.RadioButtonGroup
 import com.vaadin.flow.component.select.Select
 import com.vaadin.flow.component.textfield.TextArea
 import com.vaadin.flow.component.textfield.TextField
@@ -37,6 +39,9 @@ import pl.bnowakowski.cozazjeb.article.Article
 import pl.bnowakowski.cozazjeb.article.ArticleInput
 import pl.bnowakowski.cozazjeb.article.ArticleRepository
 import pl.bnowakowski.cozazjeb.article.ArticleService
+import pl.bnowakowski.cozazjeb.facebookimport.FacebookCandidateApproval
+import pl.bnowakowski.cozazjeb.facebookimport.FacebookCandidateApprovalDecision
+import pl.bnowakowski.cozazjeb.facebookimport.FacebookCandidateApprovalHandler
 import pl.bnowakowski.cozazjeb.facebookimport.FacebookProfileArticleImporter
 import pl.bnowakowski.cozazjeb.security.AllowlistAuthorizationManager
 import pl.bnowakowski.cozazjeb.user.AppUser
@@ -48,6 +53,8 @@ import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ExecutionException
 
 @Route("")
 @AnonymousAllowed
@@ -498,11 +505,169 @@ class ArticleListView(
 
     private fun triggerFacebookImport() {
         try {
-            facebookProfileArticleImporter.startImport()
+            facebookProfileArticleImporter.startImport(buildFacebookCandidateApprovalHandler())
             showSuccess("Facebook import started")
         } catch (ex: Exception) {
             showError(ex.message ?: "Failed to start Facebook import")
         }
+    }
+
+    private fun buildFacebookCandidateApprovalHandler(): FacebookCandidateApprovalHandler {
+        val currentUi = ui.orElse(null) ?: UI.getCurrent() ?: throw
+            IllegalStateException("Facebook import approval requires an active admin UI")
+        currentUi.pollInterval = FACEBOOK_IMPORT_APPROVAL_POLL_INTERVAL_MS
+        return FacebookCandidateApprovalHandler { candidates ->
+            if (candidates.isEmpty()) return@FacebookCandidateApprovalHandler emptyList()
+            val approvalFuture = CompletableFuture<List<FacebookCandidateApproval>>()
+            currentUi.access {
+                buildFacebookCandidateApprovalDialog(candidates, approvalFuture).open()
+            }
+            awaitFacebookCandidateApprovals(approvalFuture)
+        }
+    }
+
+    private fun awaitFacebookCandidateApprovals(
+        approvalFuture: CompletableFuture<List<FacebookCandidateApproval>>,
+    ): List<FacebookCandidateApproval> =
+        try {
+            approvalFuture.get()
+        } catch (ex: InterruptedException) {
+            Thread.currentThread().interrupt()
+            throw ex
+        } catch (ex: ExecutionException) {
+            throw ex.cause?.let { cause ->
+                if (cause is RuntimeException) cause else IllegalStateException(cause)
+            } ?: ex
+        }
+
+    private fun buildFacebookCandidateApprovalDialog(
+        candidates: List<FacebookCandidateApproval>,
+        approvalFuture: CompletableFuture<List<FacebookCandidateApproval>>,
+    ): Dialog {
+        val dialog = Dialog()
+        dialog.headerTitle = "Approve Facebook import candidates"
+        dialog.isCloseOnEsc = false
+        dialog.isCloseOnOutsideClick = false
+        dialog.setWidth("80vw")
+
+        val rows = mutableListOf<Pair<FacebookCandidateApproval, RadioButtonGroup<FacebookCandidateApprovalDecision>>>()
+        val content = VerticalLayout()
+        content.width = "100%"
+        val header = facebookCandidateApprovalGridRow(
+            facebookCandidateApprovalHeader("Candidate ID"),
+            facebookCandidateApprovalHeader("Candidate URL"),
+            facebookCandidateApprovalHeader("Source Facebook post"),
+            facebookCandidateApprovalHeader("Language"),
+            facebookCandidateApprovalHeader("Decision"),
+        )
+        content.add(header)
+        candidates.forEach { candidate ->
+            val candidateId = Span(candidate.candidateId)
+            candidateId.element.style.set("font-family", "monospace")
+            candidateId.element.style.set("font-size", "var(--lumo-font-size-s)")
+            candidateId.element.style.set("overflow-wrap", "anywhere")
+            candidateId.element.style.set("word-break", "break-word")
+            candidateId.element.style.set("white-space", "normal")
+
+            val url = Anchor(candidate.url, candidate.url)
+            url.setTarget("_blank")
+            url.element.setAttribute("rel", "noopener noreferrer")
+            url.element.style.set("overflow-wrap", "anywhere")
+            url.element.style.set("word-break", "break-all")
+            url.element.style.set("white-space", "normal")
+            url.element.style.set("line-height", "1.3")
+            url.element.style.set("min-width", "0")
+
+            val sourcePostUrl = candidate.sourcePostUrl
+            val sourcePost: com.vaadin.flow.component.Component = if (sourcePostUrl.isNullOrBlank()) {
+                Span("—")
+            } else {
+                Anchor(sourcePostUrl, sourcePostUrl).apply {
+                    setTarget("_blank")
+                    element.setAttribute("rel", "noopener noreferrer")
+                }
+            }
+            sourcePost.element.style.set("overflow-wrap", "anywhere")
+            sourcePost.element.style.set("word-break", "break-all")
+            sourcePost.element.style.set("white-space", "normal")
+            sourcePost.element.style.set("line-height", "1.3")
+            sourcePost.element.style.set("min-width", "0")
+
+            val language = Span(candidate.language)
+            language.element.style.set("text-align", "center")
+
+            val decision = facebookCandidateDecisionGroup()
+            decision.value = FacebookCandidateApprovalDecision.ACCEPT
+
+            val row = facebookCandidateApprovalGridRow(candidateId, url, sourcePost, language, decision)
+            content.add(row)
+            rows += candidate to decision
+        }
+
+        val submitButton = Button("Submit") {
+            if (approvalFuture.isDone) return@Button
+            approvalFuture.complete(
+                rows.map { (candidate, decision) ->
+                    candidate.copy(decision = decision.value ?: FacebookCandidateApprovalDecision.ACCEPT)
+                },
+            )
+            dialog.close()
+        }
+        submitButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY)
+        submitButton.addClickShortcut(Key.ENTER)
+
+        val actions = HorizontalLayout(submitButton)
+        actions.defaultVerticalComponentAlignment = Alignment.CENTER
+        content.add(actions)
+        dialog.add(content)
+        return dialog
+    }
+
+    private fun facebookCandidateApprovalGridRow(
+        candidateId: com.vaadin.flow.component.Component,
+        url: com.vaadin.flow.component.Component,
+        sourcePost: com.vaadin.flow.component.Component,
+        language: com.vaadin.flow.component.Component,
+        decision: com.vaadin.flow.component.Component,
+    ): Div {
+        val row = Div(candidateId, url, sourcePost, language, decision)
+        row.width = "100%"
+        row.element.style.set("display", "grid")
+        row.element.style.set("grid-template-columns", "6rem minmax(22rem, 1fr) minmax(8rem, 12rem) 4.5rem 10.5rem")
+        row.element.style.set("column-gap", "var(--lumo-space-m)")
+        row.element.style.set("align-items", "center")
+        return row
+    }
+
+    private fun facebookCandidateApprovalHeader(text: String): Span {
+        val header = Span(text)
+        header.element.style.set("font-weight", "600")
+        header.element.style.set("font-size", "var(--lumo-font-size-s)")
+        header.element.style.set("color", "var(--lumo-secondary-text-color)")
+        header.element.style.set("white-space", "normal")
+        return header
+    }
+
+    private fun facebookCandidateDecisionGroup(): RadioButtonGroup<FacebookCandidateApprovalDecision> {
+        val decision = RadioButtonGroup<FacebookCandidateApprovalDecision>()
+        decision.setItems(FacebookCandidateApprovalDecision.ACCEPT, FacebookCandidateApprovalDecision.REJECT)
+        decision.setItemLabelGenerator {
+            when (it) {
+                FacebookCandidateApprovalDecision.ACCEPT -> "✓ Accept"
+                FacebookCandidateApprovalDecision.REJECT -> "✕ Reject"
+            }
+        }
+        decision.element.style.set("width", "10rem")
+        decision.element.style.set("min-width", "10rem")
+        decision.element.style.set("--vaadin-radio-button-label-color", "var(--lumo-success-text-color)")
+        decision.addValueChangeListener { event ->
+            val color = when (event.value) {
+                FacebookCandidateApprovalDecision.REJECT -> "var(--lumo-error-text-color)"
+                else -> "var(--lumo-success-text-color)"
+            }
+            decision.element.style.set("--vaadin-radio-button-label-color", color)
+        }
+        return decision
     }
 
     private fun confirmDeleteArticle(article: Article) {
@@ -944,6 +1109,7 @@ class ArticleListView(
         private val LOG_WHITESPACE_PATTERN = Regex("""\s+""")
         private const val MAX_LOGGED_VALUE_CHARS = 300
         private const val LANGUAGE_SUGGESTION_LIMIT = 3
+        private const val FACEBOOK_IMPORT_APPROVAL_POLL_INTERVAL_MS = 1_000
         private val DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneOffset.UTC)
         private val SHORT_DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneOffset.UTC)
 

@@ -6,10 +6,16 @@ package pl.bnowakowski.cozazjeb.ui
 import com.vaadin.flow.component.Component
 import com.vaadin.flow.component.button.Button
 import com.vaadin.flow.component.UI
+import com.vaadin.flow.component.dialog.Dialog
+import com.vaadin.flow.component.html.Anchor
+import com.vaadin.flow.component.html.Span
+import com.vaadin.flow.component.radiobutton.RadioButtonGroup
 import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.mockito.kotlin.any
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
@@ -18,11 +24,14 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority
 import org.springframework.security.core.context.SecurityContextHolder
 import pl.bnowakowski.cozazjeb.article.ArticleRepository
 import pl.bnowakowski.cozazjeb.article.ArticleService
+import pl.bnowakowski.cozazjeb.facebookimport.FacebookCandidateApproval
+import pl.bnowakowski.cozazjeb.facebookimport.FacebookCandidateApprovalDecision
 import pl.bnowakowski.cozazjeb.facebookimport.FacebookProfileArticleImporter
 import pl.bnowakowski.cozazjeb.user.AppUser
 import pl.bnowakowski.cozazjeb.user.AppUserRepository
 import pl.bnowakowski.cozazjeb.user.AppUserStatus
 import pl.bnowakowski.cozazjeb.user.Role
+import java.util.concurrent.CompletableFuture
 
 class ArticleListViewTest {
 
@@ -53,7 +62,6 @@ class ArticleListViewTest {
             facebookProfileArticleImporter,
             appUserRepository,
         )
-
         val buttons = findComponents(view, Button::class.java)
         val importButton = buttons.firstOrNull { it.text == "Import Facebook Posts" }
 
@@ -62,7 +70,7 @@ class ArticleListViewTest {
 
         importButton!!.click()
 
-        verify(facebookProfileArticleImporter).startImport()
+        verify(facebookProfileArticleImporter).startImport(any())
     }
 
     @Test
@@ -85,6 +93,59 @@ class ArticleListViewTest {
 
         assertTrue(buttons.any { it.text == "Add Article" })
         assertFalse(buttons.any { it.text == "Import Facebook Posts" })
+    }
+
+    @Test
+    fun `facebook approval dialog lists candidates with accept selected by default`() {
+        val adminEmail = "admin@example.com"
+        authenticateAs(adminEmail)
+        UI.setCurrent(UI())
+        stubArticles()
+        whenever(appUserRepository.findByEmail(adminEmail)).thenReturn(
+            AppUser(1L, adminEmail, Role.ADMIN, AppUserStatus.ACTIVE),
+        )
+        val view = ArticleListView(
+            articleRepository,
+            articleService,
+            facebookProfileArticleImporter,
+            appUserRepository,
+        )
+        val method = view.javaClass.getDeclaredMethod(
+            "buildFacebookCandidateApprovalDialog",
+            List::class.java,
+            CompletableFuture::class.java,
+        )
+        method.isAccessible = true
+
+        val dialog = method.invoke(
+            view,
+            listOf(
+                FacebookCandidateApproval(
+                    url = "https://example.com/post",
+                    language = "pl",
+                    candidateId = "facebook-import-candidate-42",
+                    sourcePostUrl = "https://www.facebook.com/source/posts/123",
+                ),
+            ),
+            CompletableFuture<List<FacebookCandidateApproval>>(),
+        ) as Dialog
+
+        val anchors = findComponents(dialog, Anchor::class.java)
+        val spans = findComponents(dialog, Span::class.java)
+        val decisions = findComponents(dialog, RadioButtonGroup::class.java)
+            .filterIsInstance<RadioButtonGroup<FacebookCandidateApprovalDecision>>()
+        val buttons = findComponents(dialog, Button::class.java)
+
+        assertTrue(anchors.any { it.href == "https://example.com/post" })
+        assertTrue(anchors.any { it.href == "https://www.facebook.com/source/posts/123" })
+        assertTrue(spans.any { it.text == "facebook-import-candidate-42" })
+        assertTrue(spans.any { it.text == "Candidate ID" })
+        assertTrue(spans.any { it.text == "Candidate URL" })
+        assertTrue(spans.any { it.text == "Source Facebook post" })
+        assertTrue(spans.any { it.text == "Language" })
+        assertTrue(spans.any { it.text == "Decision" })
+        assertEquals(FacebookCandidateApprovalDecision.ACCEPT, decisions.single().value)
+        assertTrue(buttons.any { it.text == "Submit" })
     }
 
     private fun authenticateAs(email: String) {

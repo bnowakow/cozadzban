@@ -638,6 +638,22 @@ x-business-rules:
       article content patch requests and must not grant access to allowlist or
       admin endpoints. The remote server treats the machine credential as the
       allowlisted bot user configured for the importer.
+  - id: BR-49
+    name: Facebook import candidate approval
+    description: >
+      When an ADMIN starts Facebook import from the Vaadin UI, each discovery pass
+      must pause after candidate discovery and show a modal only in that same
+      admin UI session. The modal lists every candidate URL as an external link,
+      shows the Facebook source post URL when known, shows the configured import
+      language, defaults each candidate to Accept, requires exactly one Accept/Reject
+      decision per candidate, and resumes only after Submit or Enter. URLs already
+      present in the article store must be filtered out before the modal and must
+      not be imported again. Rejected URLs must not be sent to the article server
+      and must be included in the final rejected URL summary. The modal and approval
+      log lines must include a runtime-unique candidateId and sourcePostUrl so a
+      decision can be correlated with discovery/import diagnostics without confusing
+      repeated URLs or later discovery passes.
+      REST-triggered admin imports remain non-interactive and accept all non-duplicate candidates.
 # ──────────────────────────────────────────────────────────────
 # VAADIN UI SPEC  (x-vaadin-ui)
 # ──────────────────────────────────────────────────────────────
@@ -666,6 +682,7 @@ x-vaadin-ui:
         - "Login button click -> navigates to GET /auth/login (OAuth flow)"
         - "If authenticated: Add Article button below grid or in toolbar"
         - "If authenticated and ADMIN: Import Facebook Posts button next to Add Article triggers the Facebook import job"
+        - "UI-started Facebook import shows an ADMIN-only candidate approval modal after each discovery pass; accepted candidates continue to import, rejected candidates are skipped and summarized"
         - "Click Add Article -> modal with form (url, language, quote, optional publishedAt date/time)"
         - "Form validation: url required (^https?://.+), language required and normalized lowercase, quote optional, publishedAt optional"
         - "Submit server-side via ArticleService with loading spinner; on success close modal + refresh grid + success toast"

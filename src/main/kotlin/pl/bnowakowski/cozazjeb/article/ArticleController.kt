@@ -32,6 +32,10 @@ class ArticleController(
     private val appUserRepository: AppUserRepository,
 ) {
 
+    @GetMapping(params = ["existsUrl"])
+    fun articleExistsByUrl(@RequestParam existsUrl: String): ArticleUrlExistsResponse =
+        ArticleUrlExistsResponse(articleService.existsByUrl(existsUrl))
+
     @GetMapping
     fun listArticles(
         @RequestParam(defaultValue = "0") page: Int,
@@ -231,3 +235,7 @@ class ArticleController(
         private const val LOG_EXCERPT_LENGTH = 500
     }
 }
+
+data class ArticleUrlExistsResponse(
+    val exists: Boolean,
+)

@@ -128,6 +128,9 @@ class ArticleService(
         return article
     }
 
+    fun existsByUrl(rawUrl: String): Boolean =
+        articleRepository.existsByUrl(canonicalizeUrl(rawUrl))
+
     fun replace(id: Long, input: ArticleInput): Article {
         val existing = findById(id)
         val url = canonicalizeUrl(input.url)

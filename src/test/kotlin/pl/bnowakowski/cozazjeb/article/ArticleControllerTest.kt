@@ -140,6 +140,18 @@ class ArticleControllerTest {
     }
 
     @Test
+    fun `GET article exists by url returns duplicate state`() {
+        whenever(articleService.existsByUrl("https://example.com/article")).thenReturn(true)
+
+        mockMvc.get("/api/articles?existsUrl=https://example.com/article")
+            .andExpect {
+                status { isOk() }
+                content { contentType(MediaType.APPLICATION_JSON) }
+                jsonPath("$.exists") { value(true) }
+            }
+    }
+
+    @Test
     fun `GET article by id returns 404 when not found`() {
         whenever(articleService.findById(999L)).thenThrow(NoSuchElementException("Article 999 not found"))
 

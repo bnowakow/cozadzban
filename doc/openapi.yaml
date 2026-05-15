@@ -24,7 +24,11 @@ info:
        (add/soft-delete/restore/update users) using server-side service calls.
     8. **Facebook import job** — admin-only REST endpoints and UI button trigger a
        long-lived Selenium job that reuses one browser session, verifies Facebook
-       login state before each run, and re-authenticates when necessary.
+       login state before each run, and re-authenticates when necessary. UI-started
+       imports pause after each discovery pass for same-session ADMIN approval of
+       candidate URLs after filtering out already-imported URLs. The UI approval
+       modal includes the source Facebook post URL when known; REST-triggered
+       imports remain non-interactive.
     9. **Machine-to-machine writes** — the Facebook importer may write articles to
        the remote API using a dedicated API key tied to an allowlisted bot user.
     ## Implementation notes
@@ -354,7 +358,10 @@ paths:
         Starts the Facebook import job if no other import is currently running.
         The job reuses a long-lived Selenium browser session, opens the browser
         on demand, and verifies Facebook login before scanning posts. Returns
-        202 Accepted when the job is launched.
+        202 Accepted when the job is launched. REST-triggered jobs are
+        non-interactive and accept all non-duplicate discovered candidates; the
+        Vaadin ADMIN UI start path adds a same-session candidate approval modal
+        before importing.
       responses:
         '202':
           description: Facebook import job accepted for execution

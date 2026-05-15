@@ -271,6 +271,13 @@ Phases 4 and 5 are independent and can be developed in parallel.
     job control; return `202` on accepted start/terminate and `409` for busy/not-running.
 60. **`ArticleListView` admin action** — add an admin-only "Import Facebook Posts" button
     next to "Add Article" that calls the import trigger endpoint/service from the UI.
+60a. **Facebook candidate approval modal** — when an ADMIN starts import from the
+    Vaadin UI, pause each discovery pass after candidate detection, show a modal
+    in that same admin UI session with candidate URL, source Facebook post URL,
+    configured language, and Accept/Reject radio options defaulting to Accept,
+    filter out already-imported URLs before approval, then import only accepted
+    URLs and include rejected URLs in the final summary. The modal and approval
+    logs include a runtime-unique `candidateId` and `sourcePostUrl` for diagnostics.
 61. **Lifecycle cleanup** — remove startup auto-run and stop closing the Selenium browser
     after every import; keep the window alive until application shutdown.
 
