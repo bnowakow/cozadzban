@@ -60,10 +60,24 @@ class ArticleServiceUrlTest {
     }
 
     @Test
-    fun `canonicalizeUrl keeps query parameters for non Facebook URLs`() {
+    fun `canonicalizeUrl strips generic tracking query parameters from external URLs`() {
+        assertEquals(
+            "https://thenextweb.com/news/palantir-retail-sell-off-germany-military-rejection",
+            ArticleService.canonicalizeUrl(
+                "https://thenextweb.com/news/palantir-retail-sell-off-germany-military-rejection" +
+                    "?fbclid=IwZXh0bgNhZW0CMTAAc3J0YwZhcHBfaWQQMjIyMDM5MTc4ODIwMDg5Mg" +
+                    "&utm_source=facebook&utm_medium=social",
+            ),
+        )
+    }
+
+    @Test
+    fun `canonicalizeUrl keeps non tracking query parameters for external URLs`() {
         assertEquals(
             "https://youtu.be/Xi-HcxcM3dc?is=5gYGOGAFM0CG2OQ8",
-            ArticleService.canonicalizeUrl("https://youtu.be/Xi-HcxcM3dc?is=5gYGOGAFM0CG2OQ8"),
+            ArticleService.canonicalizeUrl(
+                "https://youtu.be/Xi-HcxcM3dc?utm_source=facebook&is=5gYGOGAFM0CG2OQ8&fbclid=ignored",
+            ),
         )
     }
 }

@@ -707,7 +707,7 @@ components:
           minLength: 1
           maxLength: 2048
           pattern: '^https?://.+'
-          description: Full URL of the article page to fetch and store (http/https only)
+          description: Full URL of the article page to fetch and store (http/https only). The server persists the canonicalized URL and removes tracking-only query parameters such as fbclid, utm_*, gclid, dclid, and msclkid before uniqueness checks.
           example: https://example.com/some-article
         language:
           type: string

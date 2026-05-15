@@ -52,3 +52,6 @@ out/
 .env.server
 .env.worker
 src/main/resources/facebook.properties
+# misc
+logs/
+

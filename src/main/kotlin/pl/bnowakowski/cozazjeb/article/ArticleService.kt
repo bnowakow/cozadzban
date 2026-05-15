@@ -1030,7 +1030,15 @@ class ArticleService(
                     ?: ""
             }
             if (isInstagramHost(host)) return ""
-            return "?$query"
+            return query
+                .split("&")
+                .filter { rawParam ->
+                    val name = rawParam.substringBefore("=", "").lowercase()
+                    !isTrackingQueryParam(name)
+                }
+                .takeIf { it.isNotEmpty() }
+                ?.joinToString(separator = "&", prefix = "?")
+                ?: ""
         }
 
         private fun isFacebookHost(host: String): Boolean =
@@ -1039,7 +1047,13 @@ class ArticleService(
         private fun isInstagramHost(host: String): Boolean =
             host == "instagram.com" || host.endsWith(".instagram.com")
 
+        private fun isTrackingQueryParam(name: String): Boolean =
+            name == "fbclid" ||
+                name.startsWith("utm_") ||
+                name in GENERIC_TRACKING_QUERY_PARAMS
+
         private val FACEBOOK_SEMANTIC_QUERY_PARAMS = setOf("fbid", "set", "story_fbid", "id")
+        private val GENERIC_TRACKING_QUERY_PARAMS = setOf("gclid", "dclid", "msclkid")
 
         private fun parseSortParam(sort: String): Pair<String, String> {
             val parts = sort.split(",")
