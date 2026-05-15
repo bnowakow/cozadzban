@@ -390,7 +390,7 @@ class FacebookProfileArticleImporterJobTest {
         ) as List<*>
 
         assertEquals(1, approved.size)
-        assertEquals(0, Files.list(tempDir).use { stream -> stream.count() })
+        assertEquals(0L, Files.list(tempDir).use { stream -> stream.count() })
     }
 
     @Test
@@ -598,6 +598,7 @@ class FacebookProfileArticleImporterJobTest {
                 url = candidateUrl(candidate),
                 language = "pl",
                 candidateId = candidateId,
+                sourcePostUrl = candidateSourcePostUrl(candidate),
             ),
         )
     }
@@ -612,6 +613,12 @@ class FacebookProfileArticleImporterJobTest {
         val getter = candidate.javaClass.getDeclaredMethod("getLanguage")
         getter.isAccessible = true
         return getter.invoke(candidate) as String
+    }
+
+    private fun candidateSourcePostUrl(candidate: Any): String? {
+        val getter = candidate.javaClass.getDeclaredMethod("getSourcePostUrl")
+        getter.isAccessible = true
+        return getter.invoke(candidate) as String?
     }
 
     private fun waitUntil(label: String, predicate: () -> Boolean) {
