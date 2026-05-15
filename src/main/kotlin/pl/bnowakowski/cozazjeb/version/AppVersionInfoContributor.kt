@@ -18,7 +18,7 @@ class AppVersionInfoContributor(
             mapOf(
                 "version" to buildProperties.displayVersion,
                 "baseVersion" to buildProperties.version,
-                "commit" to buildProperties.commit,
+                "commit" to (buildProperties.resolvedCommit ?: buildProperties.commit),
                 "buildTimestamp" to buildProperties.timestamp,
             ),
         )
