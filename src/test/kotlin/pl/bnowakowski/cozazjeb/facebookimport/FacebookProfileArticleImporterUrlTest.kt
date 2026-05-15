@@ -937,6 +937,22 @@ class FacebookProfileArticleImporterUrlTest {
     }
 
     @Test
+    fun `instagram profile urls are ignored as article urls`() {
+        val importer = FacebookProfileArticleImporter(
+            FacebookImportProperties(),
+            mock<AppUserRepository>(),
+            mock<ArticleService>(),
+        )
+
+        val method = importer.javaClass.getDeclaredMethod("isExternalArticleUrl", String::class.java)
+        method.isAccessible = true
+
+        assertEquals(false, method.invoke(importer, "https://www.instagram.com/_u/potus?fbclid=ignored"))
+        assertEquals(false, method.invoke(importer, "https://www.instagram.com/potus?fbclid=ignored"))
+        assertEquals(true, method.invoke(importer, "https://www.instagram.com/reel/DW6kHAvsM-p/"))
+    }
+
+    @Test
     fun `facebook reel tab urls are not selected as post urls`() {
         val importer = FacebookProfileArticleImporter(
             FacebookImportProperties(),
@@ -1049,6 +1065,49 @@ class FacebookProfileArticleImporterUrlTest {
         whenever(driver.findElement(any())).thenReturn(body)
         whenever(body.text).thenReturn("Only Facebook photo content\n$photoUrl")
         whenever(driver.pageSource).thenReturn("Only Facebook photo content\n$photoUrl")
+
+        assertEquals(photoUrl, method.invoke(importer, driver, element))
+    }
+
+    @Test
+    fun `shared photo posts ignore instagram profile chrome and fall back to source post url`() {
+        val importer = FacebookProfileArticleImporter(
+            FacebookImportProperties(waitAfterPageOpen = Duration.ZERO),
+            mock<AppUserRepository>(),
+            mock<ArticleService>(),
+        )
+
+        val method = importer.javaClass.getDeclaredMethod("findPostUrl", WebDriver::class.java, WebElement::class.java)
+        method.isAccessible = true
+
+        val driver = mockitoMock(
+            WebDriver::class.java,
+            withSettings().extraInterfaces(JavascriptExecutor::class.java),
+        ) as WebDriver
+        val targetLocator = mock<TargetLocator>()
+        val element = mock<WebElement>()
+        val photoLink = mock<WebElement>()
+        val body = mock<WebElement>()
+        val photoUrl = "https://www.facebook.com/photo/?fbid=122175532688723345&set=a.122108345924723345"
+        val instagramProfileUrl = "https://www.instagram.com/_u/potus?fbclid=ignored"
+
+        whenever(element.text).thenReturn(
+            "Bartek Dobrowolski-Nowakowski · Co za zjeb · The White House is with President Donald J. Trump.",
+        )
+        whenever(element.findElements(any())).thenReturn(listOf(photoLink))
+        whenever(photoLink.getAttribute("href")).thenReturn(photoUrl)
+        whenever(driver.windowHandle).thenReturn("main")
+        whenever(driver.windowHandles).thenReturn(setOf("main"), setOf("main", "popup"), setOf("main"))
+        whenever(driver.switchTo()).thenReturn(targetLocator)
+        whenever(targetLocator.window(any())).thenReturn(driver)
+        whenever(driver.findElements(any())).thenReturn(emptyList())
+        whenever(driver.findElement(any())).thenReturn(body)
+        whenever(body.text).thenReturn(
+            "The White House is with President Donald J. Trump.\n$instagramProfileUrl",
+        )
+        whenever(driver.pageSource).thenReturn(
+            """<a href="$instagramProfileUrl">Instagram</a>""",
+        )
 
         assertEquals(photoUrl, method.invoke(importer, driver, element))
     }

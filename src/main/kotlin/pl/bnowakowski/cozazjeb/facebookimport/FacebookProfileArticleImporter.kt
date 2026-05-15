@@ -1848,6 +1848,7 @@ class FacebookProfileArticleImporter(
         if (host == "facebook.com" || host.endsWith(".facebook.com")) return false
         if (host == "youtube.com" || host.endsWith(".youtube.com")) return false
         if (host == "youtu.be") return false
+        if (isInstagramProfileUrl(uri)) return false
         if (host == "meta.ai" || host.endsWith(".meta.ai")) return false
         if (isMediaOrThumbnailUrl(url)) return false
         if (isMarkupNoiseUrl(url)) return false
@@ -1925,6 +1926,7 @@ class FacebookProfileArticleImporter(
         if (host == "facebook.com" || host.endsWith(".facebook.com")) return false
         if (host == "youtube.com" || host.endsWith(".youtube.com")) return false
         if (host == "youtu.be") return false
+        if (isInstagramProfileUrl(uri)) return false
         if (host == "meta.ai" || host.endsWith(".meta.ai")) return false
         if (isMediaOrThumbnailUrl(url)) return false
         if (isMarkupNoiseUrl(url)) return false
@@ -1947,6 +1949,18 @@ class FacebookProfileArticleImporter(
                 query.contains("fbid=") &&
                 (query.contains("set=") || query.contains("story_fbid="))) ||
             query.contains("story_fbid=")
+    }
+
+    private fun isInstagramProfileUrl(uri: URI): Boolean {
+        val host = uri.host?.lowercase() ?: return false
+        if (host != "instagram.com" && !host.endsWith(".instagram.com")) return false
+        val segments = uri.path
+            ?.trim('/')
+            ?.split('/')
+            ?.filter { it.isNotBlank() }
+            ?: emptyList()
+        if (segments.firstOrNull() == "_u" && segments.size == 2) return true
+        return segments.size == 1
     }
 
     private fun isFacebookReelPath(path: String): Boolean {
