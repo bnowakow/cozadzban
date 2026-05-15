@@ -1,5 +1,5 @@
 
-.PHONY: help docker-up docker-down docker-pg-nuke docker-pg-backup build run run-local run-prod test clean docker-logs docker-spring-shell docker-pg-shell docker-upgrade bump-version bump-patch bump-minor install-git-hooks
+.PHONY: help docker-up docker-down docker-pg-nuke docker-pg-backup build run run-local run-prod test clean docker-logs docker-spring-shell docker-pg-shell docker-upgrade bump-version bump-patch bump-minor install-git-hooks install-codex-skills
 
 -include .env
 
@@ -36,6 +36,7 @@ help:
 	@echo ""
 	@echo "  Repository"
 	@echo "    install-git-hooks  Configure repository git hooks"
+	@echo "    install-codex-skills Install project Codex skills into CODEX_HOME"
 	@echo ""
 
 # Active Spring profile used by the generic run target.
@@ -45,6 +46,7 @@ POSTGRES_PORT ?= 5432
 LOCAL_UID ?= $(shell id -u)
 LOCAL_GID ?= $(shell id -g)
 APP_BUILD_COMMIT ?= $(shell git rev-parse --short=8 HEAD 2>/dev/null || echo unknown)
+CODEX_HOME ?= $(HOME)/.codex
 export APP_BUILD_COMMIT
 
 # Start local development environment from compose.yaml
@@ -111,6 +113,12 @@ install-git-hooks:
 	git config core.hooksPath .githooks
 	chmod +x .githooks/pre-commit
 	@echo "✓ Git hooks installed"
+
+# Install repository-provided Codex skills into the local Codex home.
+install-codex-skills:
+	@mkdir -p "$(CODEX_HOME)/skills"
+	@cp -R doc/codex-skills/SKIL_attempt-to-fix-fb-import-rejections "$(CODEX_HOME)/skills/"
+	@echo "✓ Codex skills installed to $(CODEX_HOME)/skills"
 
 # Clean build artifacts
 clean:
