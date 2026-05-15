@@ -7,6 +7,7 @@ import jakarta.annotation.PreDestroy
 import org.openqa.selenium.By
 import org.openqa.selenium.JavascriptExecutor
 import org.openqa.selenium.Keys
+import org.openqa.selenium.StaleElementReferenceException
 import org.openqa.selenium.WebDriver
 import org.openqa.selenium.WebElement
 import org.openqa.selenium.chrome.ChromeDriver
@@ -454,7 +455,7 @@ class FacebookProfileArticleImporter(
         val posts = collectPostContainers(driver)
         val markers = candidateMarkerPhrases()
         val markedPosts = posts.mapNotNull { element ->
-            val text = element.text.cleanText()
+            val text = elementText(element)?.cleanText() ?: return@mapNotNull null
             if (markers.none { text.contains(it, ignoreCase = true) }) return@mapNotNull null
             MarkedFacebookPost(element, text)
         }
@@ -470,6 +471,7 @@ class FacebookProfileArticleImporter(
                 driver,
                 markedPost.element,
                 discoveryProgress(index + 1, markedPosts.size),
+                markedPost.text,
             )
                 ?: return@mapIndexedNotNull null
             FacebookPostCandidate(postUrl.url, markedPost.text, postUrl.sourcePostUrl)
@@ -544,10 +546,15 @@ class FacebookProfileArticleImporter(
         driver: WebDriver,
         element: WebElement,
         discoveryProgress: String?,
+        fallbackText: String? = null,
     ): PostUrlSelection? {
-        val text = element.text
-        val links = element.findElements(By.cssSelector("a[href]"))
-            .mapNotNull { it.getAttribute("href")?.decodeHtmlEntities()?.toCleanFacebookUrl() }
+        val text = fallbackText ?: elementText(element) ?: return null
+        val links = linkElements(element)
+            .mapNotNull { link ->
+                runCatching {
+                    link.getAttribute("href")?.decodeHtmlEntities()?.toCleanFacebookUrl()
+                }.getOrNull()
+            }
             .filterNot { isMediaOrThumbnailUrl(it) }
             .filterNot { isMarkupNoiseUrl(it) }
             .distinct()
@@ -1134,7 +1141,7 @@ class FacebookProfileArticleImporter(
         )
 
     private fun linkDiagnostics(element: WebElement): List<LinkDiagnostic> =
-        element.findElements(By.cssSelector("a[href]"))
+        linkElements(element)
             .mapNotNull { link ->
                 runCatching {
                     val href = link.getAttribute("href")?.decodeHtmlEntities()?.toCleanFacebookUrl()
@@ -1152,6 +1159,24 @@ class FacebookProfileArticleImporter(
                 }.getOrNull()
             }
             .distinctBy { "${it.href}:${it.text}:${it.ariaLabel}" }
+
+    private fun elementText(element: WebElement): String? =
+        runCatching { element.text }
+            .getOrElse { ex ->
+                if (ex is StaleElementReferenceException) {
+                    logger.debug("Skipped a stale Facebook post container while reading text")
+                }
+                null
+            }
+
+    private fun linkElements(element: WebElement): List<WebElement> =
+        runCatching { element.findElements(By.cssSelector("a[href]")) }
+            .getOrElse { ex ->
+                if (ex is StaleElementReferenceException) {
+                    logger.debug("Skipped links for a stale Facebook post container")
+                }
+                emptyList()
+            }
 
     private fun urlDiagnostics(source: String, urls: Iterable<String>): List<UrlDiagnostic> =
         urls.distinct().map { urlDiagnostic(source, it) }

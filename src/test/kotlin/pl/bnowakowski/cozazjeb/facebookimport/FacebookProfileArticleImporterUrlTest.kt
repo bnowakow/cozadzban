@@ -17,6 +17,7 @@ import pl.bnowakowski.cozazjeb.article.ArticleService
 import pl.bnowakowski.cozazjeb.user.AppUserRepository
 import org.openqa.selenium.JavascriptExecutor
 import org.openqa.selenium.By
+import org.openqa.selenium.StaleElementReferenceException
 import org.openqa.selenium.WebDriver
 import org.openqa.selenium.WebDriver.TargetLocator
 import org.openqa.selenium.WebElement
@@ -162,6 +163,43 @@ class FacebookProfileArticleImporterUrlTest {
             "https://www.donald.pl/artykuly/example",
             method.invoke(importer, driver, element),
         )
+    }
+
+    @Test
+    fun `stale post containers are skipped while finding post urls`() {
+        val importer = FacebookProfileArticleImporter(
+            FacebookImportProperties(),
+            mock<AppUserRepository>(),
+            mock<ArticleService>(),
+        )
+
+        val method = importer.javaClass.getDeclaredMethod("findPostUrl", WebDriver::class.java, WebElement::class.java)
+        method.isAccessible = true
+
+        val driver = mock<WebDriver>()
+        val element = mock<WebElement>()
+
+        whenever(element.text).thenThrow(StaleElementReferenceException("detached"))
+
+        assertNull(method.invoke(importer, driver, element))
+    }
+
+    @Test
+    fun `stale post containers do not break link diagnostics`() {
+        val importer = FacebookProfileArticleImporter(
+            FacebookImportProperties(),
+            mock<AppUserRepository>(),
+            mock<ArticleService>(),
+        )
+
+        val method = importer.javaClass.getDeclaredMethod("linkDiagnostics", WebElement::class.java)
+        method.isAccessible = true
+
+        val element = mock<WebElement>()
+
+        whenever(element.findElements(any())).thenThrow(StaleElementReferenceException("detached"))
+
+        assertEquals(emptyList<Any>(), method.invoke(importer, element))
     }
 
     @Test
