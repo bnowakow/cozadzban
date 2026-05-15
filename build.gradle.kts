@@ -110,8 +110,31 @@ fun isDockerAvailable(): Boolean =
 	}.getOrDefault(false)
 
 tasks.named<ProcessResources>("processResources") {
+	val timestamp = Instant.now().toString()
+	val versionName = project.version.toString().removeSuffix("-SNAPSHOT")
+	val commit = currentGitCommit()
+	inputs.property("appBuildTimestamp", timestamp)
+	inputs.property("appBuildVersion", versionName)
+	inputs.property("appBuildCommit", commit)
 	filesMatching("application.properties") {
-		val timestamp = Instant.now().toString()
-		filter { line -> line.replace("\${appBuildTimestamp}", timestamp) }
+		filter { line ->
+			line
+				.replace("\${appBuildTimestamp}", timestamp)
+				.replace("\${appBuildVersion}", versionName)
+				.replace("\${appBuildCommit}", commit)
+		}
 	}
 }
+
+fun currentGitCommit(): String =
+	runCatching {
+		val process = ProcessBuilder("git", "rev-parse", "--short=8", "HEAD")
+			.directory(rootDir)
+			.redirectErrorStream(true)
+			.start()
+		if (!process.waitFor(5, TimeUnit.SECONDS) || process.exitValue() != 0) {
+			"unknown"
+		} else {
+			process.inputStream.bufferedReader().readText().trim().ifBlank { "unknown" }
+		}
+	}.getOrDefault("unknown")

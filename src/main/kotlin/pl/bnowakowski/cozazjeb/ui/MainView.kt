@@ -48,6 +48,7 @@ import pl.bnowakowski.cozazjeb.user.AppUser
 import pl.bnowakowski.cozazjeb.user.AppUserRepository
 import pl.bnowakowski.cozazjeb.user.AppUserStatus
 import pl.bnowakowski.cozazjeb.user.Role
+import pl.bnowakowski.cozazjeb.version.AppBuildProperties
 import java.net.URI
 import java.time.Instant
 import java.time.LocalDateTime
@@ -63,6 +64,7 @@ class ArticleListView(
     private val articleService: ArticleService,
     private val facebookProfileArticleImporter: FacebookProfileArticleImporter,
     private val appUserRepository: AppUserRepository,
+    private val buildProperties: AppBuildProperties,
 ) : VerticalLayout() {
 
     private val pageSizes = listOf(10, 20, 40, 60, 80, 100)
@@ -375,7 +377,13 @@ class ArticleListView(
         grid.setSizeFull()
 
         refreshData()
-        add(topBar, controlsRow1, controlsRow2, grid)
+        val versionFooter = Span("v${buildProperties.displayVersion}")
+        versionFooter.element.style.set("font-size", "var(--lumo-font-size-xs)")
+        versionFooter.element.style.set("color", "var(--lumo-tertiary-text-color)")
+        versionFooter.element.style.set("align-self", "center")
+        versionFooter.element.style.set("padding-bottom", "var(--lumo-space-xs)")
+
+        add(topBar, controlsRow1, controlsRow2, grid, versionFooter)
         expand(grid)
     }
 

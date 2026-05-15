@@ -31,6 +31,7 @@ import pl.bnowakowski.cozazjeb.user.AppUser
 import pl.bnowakowski.cozazjeb.user.AppUserRepository
 import pl.bnowakowski.cozazjeb.user.AppUserStatus
 import pl.bnowakowski.cozazjeb.user.Role
+import pl.bnowakowski.cozazjeb.version.AppBuildProperties
 import java.util.concurrent.CompletableFuture
 
 class ArticleListViewTest {
@@ -39,6 +40,10 @@ class ArticleListViewTest {
     private val articleService: ArticleService = mock()
     private val facebookProfileArticleImporter: FacebookProfileArticleImporter = mock()
     private val appUserRepository: AppUserRepository = mock()
+    private val buildProperties = AppBuildProperties(
+        version = "0.8.0",
+        commit = "abc12345",
+    )
 
     @AfterEach
     fun tearDown() {
@@ -61,6 +66,7 @@ class ArticleListViewTest {
             articleService,
             facebookProfileArticleImporter,
             appUserRepository,
+            buildProperties,
         )
         val buttons = findComponents(view, Button::class.java)
         val importButton = buttons.firstOrNull { it.text == "Import Facebook Posts" }
@@ -87,6 +93,7 @@ class ArticleListViewTest {
             articleService,
             facebookProfileArticleImporter,
             appUserRepository,
+            buildProperties,
         )
 
         val buttons = findComponents(view, Button::class.java)
@@ -109,6 +116,7 @@ class ArticleListViewTest {
             articleService,
             facebookProfileArticleImporter,
             appUserRepository,
+            buildProperties,
         )
         val method = view.javaClass.getDeclaredMethod(
             "buildFacebookCandidateApprovalDialog",
@@ -146,6 +154,23 @@ class ArticleListViewTest {
         assertTrue(spans.any { it.text == "Decision" })
         assertEquals(FacebookCandidateApprovalDecision.ACCEPT, decisions.single().value)
         assertTrue(buttons.any { it.text == "Submit" })
+    }
+
+    @Test
+    fun `page footer shows app version`() {
+        stubArticles()
+
+        val view = ArticleListView(
+            articleRepository,
+            articleService,
+            facebookProfileArticleImporter,
+            appUserRepository,
+            buildProperties,
+        )
+
+        val spans = findComponents(view, Span::class.java)
+
+        assertTrue(spans.any { it.text == "v0.8.0+abc12345" })
     }
 
     private fun authenticateAs(email: String) {

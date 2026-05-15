@@ -56,6 +56,8 @@ import java.time.Instant
 @Import(TestcontainersConfiguration::class)
 @TestPropertySource(properties = [
     "app.build.timestamp=2026-05-04T10:00:00Z",
+    "app.build.version=0.8.0",
+    "app.build.commit=abc12345",
     "spring.security.oauth2.client.registration.google.client-id=test-client-id",
     "spring.security.oauth2.client.registration.google.client-secret=test-client-secret",
     "spring.security.oauth2.client.registration.google.scope=openid,profile,email",
@@ -184,6 +186,9 @@ class HybridAuthRegressionIT {
             with(oauth2Login().attributes { it["email"] = userEmail })
         }.andExpect {
             status { isOk() }
+            jsonPath("$.app.version") { value("0.8.0+abc12345") }
+            jsonPath("$.app.baseVersion") { value("0.8.0") }
+            jsonPath("$.app.commit") { value("abc12345") }
         }
     }
 
