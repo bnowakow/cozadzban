@@ -1,5 +1,5 @@
 
-.PHONY: help docker-up docker-down docker-pg-nuke docker-pg-backup build run run-local run-prod test clean docker-logs docker-pg-shell docker-upgrade bump-version bump-patch bump-minor install-git-hooks
+.PHONY: help docker-up docker-down docker-pg-nuke docker-pg-backup build run run-local run-prod test clean docker-logs docker-spring-shell docker-pg-shell docker-upgrade bump-version bump-patch bump-minor install-git-hooks
 
 -include .env
 
@@ -13,6 +13,7 @@ help:
 	@echo "    docker-up          Start local infrastructure from compose.yaml"
 	@echo "    docker-down        Stop and remove local infrastructure containers"
 	@echo "    docker-logs        Show compose logs (follow mode)"
+	@echo "    docker-spring-shell Open bash inside the running Spring Boot container"
 	@echo "    docker-upgrade     Pull latest code, rebuild image, restart containers, follow logs"
 	@echo ""
 	@echo "  PostgreSQL in Docker"
@@ -156,6 +157,10 @@ bump-minor:
 # Follow docker-compose logs
 docker-logs:
 	docker compose -f compose.yaml logs -f
+
+# Open bash inside the running Spring Boot container
+docker-spring-shell:
+	docker compose -f compose.yaml exec springboot bash
 
 # Pull latest code, rebuild, restart, and follow logs
 docker-upgrade:
