@@ -34,6 +34,8 @@ PROFILE ?= local
 POSTGRES_PORT ?= 5432
 LOCAL_UID ?= $(shell id -u)
 LOCAL_GID ?= $(shell id -g)
+APP_BUILD_COMMIT ?= $(shell git rev-parse --short=8 HEAD 2>/dev/null || echo unknown)
+export APP_BUILD_COMMIT
 
 # Start local development environment from compose.yaml
 docker-up:

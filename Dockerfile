@@ -1,12 +1,13 @@
 FROM eclipse-temurin:21-jdk-jammy AS build
 
 WORKDIR /workspace
+ARG APP_BUILD_COMMIT=unknown
 
 COPY gradle gradle
 COPY gradlew build.gradle.kts settings.gradle.kts ./
 COPY src src
 
-RUN ./gradlew bootJar --no-daemon
+RUN ./gradlew bootJar --no-daemon -PappBuildCommit="${APP_BUILD_COMMIT}"
 RUN set -eux; \
     jar="$(find build/libs -maxdepth 1 -name '*.jar' ! -name '*-plain.jar' -print -quit)"; \
     cp "$jar" app.jar

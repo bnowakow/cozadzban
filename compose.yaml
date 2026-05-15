@@ -2,6 +2,8 @@ services:
   springboot:
     build:
       context: .
+      args:
+        APP_BUILD_COMMIT: '${APP_BUILD_COMMIT:-unknown}'
     image: cozazjeb:local
     restart: unless-stopped
     cpus: '1.25'

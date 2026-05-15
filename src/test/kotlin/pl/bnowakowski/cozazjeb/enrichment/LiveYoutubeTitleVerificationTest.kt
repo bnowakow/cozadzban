@@ -5,8 +5,10 @@ package pl.bnowakowski.cozazjeb.enrichment
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable
 import org.springframework.web.client.RestClient
 
+@EnabledIfEnvironmentVariable(named = "RUN_LIVE_YOUTUBE_VERIFICATION", matches = "true")
 class LiveYoutubeTitleVerificationTest {
 
     @Test

@@ -56,8 +56,9 @@ Phases 4 and 5 are independent and can be developed in parallel.
 
 ## Phase 6 — Article API
 
-14. **`ArticleService`** — URL canonicalization (BR-14), enrichment orchestration, conflict
-    detection → 409 `ProblemDetail` with `articleUrlConflict` type URI
+14. **`ArticleService`** — URL canonicalization (BR-14), including removal of tracking-only
+    query parameters (`fbclid`, `utm_*`, `gclid`, `dclid`, `msclkid`), enrichment orchestration,
+    conflict detection → 409 `ProblemDetail` with `articleUrlConflict` type URI
 15. **`ArticleController`** — `POST`, `GET` list (pagination + sort allowlist), `GET /{id}`,
     `PUT`, `PATCH` (`application/merge-patch+json`), `DELETE`
 16. **`GlobalExceptionHandler`** — `@RestControllerAdvice` translating validation, enrichment,

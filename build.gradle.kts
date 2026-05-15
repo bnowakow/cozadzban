@@ -13,7 +13,7 @@ plugins {
 }
 
 group = "pl.bnowakowski"
-version = "0.10.0-SNAPSHOT"
+version = "0.11.0-SNAPSHOT"
 
 java {
 	toolchain {
@@ -112,7 +112,7 @@ fun isDockerAvailable(): Boolean =
 tasks.named<ProcessResources>("processResources") {
 	val timestamp = Instant.now().toString()
 	val versionName = project.version.toString().removeSuffix("-SNAPSHOT")
-	val commit = currentGitCommit()
+	val commit = explicitBuildCommit() ?: currentGitCommit()
 	inputs.property("appBuildTimestamp", timestamp)
 	inputs.property("appBuildVersion", versionName)
 	inputs.property("appBuildCommit", commit)
@@ -125,6 +125,13 @@ tasks.named<ProcessResources>("processResources") {
 		}
 	}
 }
+
+fun explicitBuildCommit(): String? =
+	providers.gradleProperty("appBuildCommit")
+		.orElse(providers.environmentVariable("APP_BUILD_COMMIT"))
+		.orNull
+		?.trim()
+		?.takeIf { it.isNotBlank() && it != "unknown" }
 
 fun currentGitCommit(): String =
 	runCatching {

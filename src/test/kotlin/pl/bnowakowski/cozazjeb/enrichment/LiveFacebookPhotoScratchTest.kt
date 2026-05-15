@@ -4,8 +4,10 @@
 package pl.bnowakowski.cozazjeb.enrichment
 
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable
 import org.springframework.web.client.RestClient
 
+@EnabledIfEnvironmentVariable(named = "RUN_LIVE_FACEBOOK_PHOTO_SCRATCH", matches = "true")
 class LiveFacebookPhotoScratchTest {
 
     @Test
