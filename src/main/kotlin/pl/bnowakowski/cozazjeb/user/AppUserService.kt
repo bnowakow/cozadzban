@@ -27,6 +27,7 @@ class AppUserService(
             AppUser(
                 email = normalizedEmail,
                 role = input.role,
+                status = input.status,
             )
         )
     }
@@ -58,18 +59,22 @@ class AppUserService(
         val existing = appUserRepository.findById(id)
             .orElseThrow { NoSuchElementException("User $id not found") }
 
-        if (existing.status == AppUserStatus.DELETED) {
-            throw NoSuchElementException("User $id not found")
+        if (patch.role == null && patch.status == null) {
+            throw IllegalArgumentException("role or status must be provided")
         }
 
-        if (existing.role == Role.ADMIN && patch.role != Role.ADMIN &&
+        val targetRole = patch.role ?: existing.role
+        val targetStatus = patch.status ?: existing.status
+
+        if (existing.role == Role.ADMIN && existing.status == AppUserStatus.ACTIVE &&
+            (targetRole != Role.ADMIN || targetStatus != AppUserStatus.ACTIVE) &&
             appUserRepository.countByRoleAndStatus(Role.ADMIN, AppUserStatus.ACTIVE) <= 1
         ) {
             throw LastAdminRequiredException()
         }
 
-        if (existing.role == patch.role) return existing
-        return appUserRepository.save(existing.copy(role = patch.role))
+        if (existing.role == targetRole && existing.status == targetStatus) return existing
+        return appUserRepository.save(existing.copy(role = targetRole, status = targetStatus))
     }
 
     private fun normalizeEmail(email: String): String =

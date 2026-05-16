@@ -4,5 +4,6 @@
 package pl.bnowakowski.cozazjeb.user
 
 data class AppUserRolePatch(
-    val role: Role,
+    val role: Role? = null,
+    val status: AppUserStatus? = null,
 )

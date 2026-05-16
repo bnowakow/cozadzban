@@ -7,4 +7,22 @@ if ! command -v ggshield >/dev/null 2>&1; then
 	exit 1
 fi
 
-#exec ggshield secret scan pre-commit --no-check-for-updates "$@"
+output=$(ggshield secret scan pre-commit --no-check-for-updates "$@" 2>&1) && {
+	if [ -n "$output" ]; then
+		printf '%s\n' "$output"
+	fi
+	exit 0
+}
+status=$?
+
+case "$output" in
+	*"Error: Could not perform the requested action: no more API calls available."*)
+		printf '\033[33mWarning: ggshield could not be completed: no more API calls available. Allowing commit to continue.\033[0m\n' >&2
+		exit 0
+		;;
+esac
+
+if [ -n "$output" ]; then
+	printf '%s\n' "$output" >&2
+fi
+exit "$status"

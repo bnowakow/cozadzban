@@ -14,5 +14,6 @@ data class AppUserInput(
     val email: String,
 
     val role: Role,
-)
 
+    val status: AppUserStatus = AppUserStatus.ACTIVE,
+)

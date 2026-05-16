@@ -1,0 +1,1 @@
+Use the check-sync-between-code-and-documentation skill to compare the code and docs.

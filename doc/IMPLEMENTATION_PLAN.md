@@ -302,7 +302,7 @@ Phases 4 and 5 are independent and can be developed in parallel.
 
 65. **Article content preservation** — article text/content is captured at creation and
     update time into the `article_content` table (`V5__article_content.sql`). Content is
-    stored for archival/preservation only (max 50 000 chars, `truncated` flag). NOT used
+    stored for archival/preservation only (max 5 MiB of UTF-8 text, `truncated` flag). NOT used
     for UI rendering, source fallback, or AI summary.
 66. **Potential future uses** — preserved content may later support article display when
     source URL stops responding, AI summary generation, or audit/debugging. Requires

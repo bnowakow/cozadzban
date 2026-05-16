@@ -78,21 +78,21 @@ x-security-policy:
   clockSkewSeconds: 60
   denyByDefault: true
   audienceSource: spring.security.oauth2.resourceserver.jwt.audiences
-    allowlist:
-      enabled: true
-      table: app_user
-      roleColumn: role
-      statusColumn: status
-      activeStatus: ACTIVE
-      emailNormalization: trim+lowercase
-    machineToMachine:
-      enabled: true
-      headerName: X-CoZaZjeb-M2M-Key
-      apiKeyEnvVar: APP_MACHINE_AUTH_API_KEY
-      principalEmailEnvVar: APP_MACHINE_AUTH_PRINCIPAL_EMAIL
-      allowedForEndpoints:
-        - POST /api/articles
-        - PATCH /api/articles/{id}
+  allowlist:
+    enabled: true
+    table: app_user
+    roleColumn: role
+    statusColumn: status
+    activeStatus: ACTIVE
+    emailNormalization: trim+lowercase
+  machineToMachine:
+    enabled: true
+    headerName: X-CoZaZjeb-M2M-Key
+    apiKeyEnvVar: APP_MACHINE_AUTH_API_KEY
+    principalEmailEnvVar: APP_MACHINE_AUTH_PRINCIPAL_EMAIL
+    allowedForEndpoints:
+      - POST /api/articles
+      - PATCH /api/articles/{id}
   bootstrap:
     adminEmailEnvVar: COZAZJEB_BOOTSTRAP_ADMIN_EMAIL
     enforcedOnlyWhenNoAdminsExist: true
@@ -158,10 +158,19 @@ paths:
 
     get:
       tags: [Articles]
-      summary: List articles (paginated)
+      summary: List articles (paginated) or check whether a URL exists
       operationId: listArticles
       security: []
       parameters:
+        - name: existsUrl
+          in: query
+          description: When present, returns only whether the canonicalized URL already exists.
+          required: false
+          schema:
+            type: string
+            format: uri
+            maxLength: 2048
+            pattern: '^https?://.+'
         - name: page
           in: query
           description: Zero-based page index
@@ -242,7 +251,9 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ArticlePage'
+                oneOf:
+                  - $ref: '#/components/schemas/ArticlePage'
+                  - $ref: '#/components/schemas/ArticleUrlExistsResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
 
@@ -252,7 +263,6 @@ paths:
       operationId: createArticle
       security:
         - googleOidc: []
-        - machineApiKey: []
         - machineApiKey: []
       description: >
         Accepts a URL and a BCP-47 language tag.
@@ -458,11 +468,12 @@ paths:
       security:
         - googleOidc: []
         - machineApiKey: []
-        - machineApiKey: []
       description: >
-        Updates only the provided fields. Updatable fields: url, language, quote, publishedAt.
+        Updates only the provided fields. Updatable fields: url, language, quote, publishedAt,
+        and internal preserved content.
         Setting quote to null explicitly clears it; omitting quote leaves it unchanged.
         Setting publishedAt to null explicitly clears it; omitting publishedAt leaves it unchanged unless url changes and no override is supplied.
+        Setting content stores/replaces the preserved content cache; setting content to null or blank clears it.
         If url is changed the server re-fetches the page to refresh the enriched
         fields. Fully atomic — if enrichment fails the server responds with 422
         and the existing record is left unchanged.
@@ -554,6 +565,33 @@ paths:
               schema:
                 type: string
 
+  /rss/image/{id}:
+
+    get:
+      tags: [RSS]
+      summary: Proxy an article thumbnail for RSS readers
+      operationId: getRssImage
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Thumbnail image bytes
+          content:
+            image/*:
+              schema:
+                type: string
+                format: binary
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '502':
+          description: Thumbnail could not be fetched or was not an image
+
   /api/users:
 
     get:
@@ -572,6 +610,51 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/AppUser'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/users/{id}/status:
+
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+        description: Allowed user identifier to update
+
+    patch:
+      tags: [Security]
+      summary: Compatibility endpoint for updating user status
+      operationId: updateAppUserStatus
+      x-required-role: ADMIN
+      security:
+        - googleOidc: []
+      description: Prefer PATCH /api/users/{id} with the status field for new clients.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AppUserStatusPatch'
+      responses:
+        '200':
+          description: User restored to ACTIVE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppUser'
+        '204':
+          description: User marked DELETED
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -730,6 +813,14 @@ components:
           description: Optional manual source publication timestamp. If omitted on create, enrichment attempts to populate it.
           example: "2026-05-02T08:30:00Z"
 
+    ArticleUrlExistsResponse:
+      type: object
+      required: [exists]
+      properties:
+        exists:
+          type: boolean
+          example: true
+
     ArticlePatch:
       type: object
       description: JSON Merge Patch document; omitted fields are left unchanged
@@ -761,6 +852,10 @@ components:
           nullable: true
           description: Source publication timestamp; null explicitly clears it
           example: "2026-05-02T08:30:00Z"
+        content:
+          type: string
+          nullable: true
+          description: Internal preserved content cache value; null or blank clears cached content. Not exposed in article responses or RSS.
 
     Article:
       type: object
@@ -895,6 +990,16 @@ components:
           minLength: 1
           description: New role to assign
           example: ADMIN
+        status:
+          type: string
+          enum: [ACTIVE, DELETED]
+          description: New lifecycle status to assign
+          example: ACTIVE
+
+    AppUserStatusPatch:
+      type: object
+      required: [status]
+      properties:
         status:
           type: string
           enum: [ACTIVE, DELETED]

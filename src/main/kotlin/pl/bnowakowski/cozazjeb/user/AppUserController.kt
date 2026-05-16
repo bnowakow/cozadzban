@@ -39,15 +39,19 @@ class AppUserController(
     }
 
     @PatchMapping("/{id}")
-    fun updateUserRole(@PathVariable id: Long, @Valid @RequestBody patch: AppUserRolePatch): AppUser =
-        appUserService.updateRole(id, patch)
+    fun updateUserRole(@PathVariable id: Long, @Valid @RequestBody patch: AppUserRolePatch): AppUser {
+        if (patch.role == null && patch.status == null) {
+            throw IllegalArgumentException("role or status must be provided")
+        }
+        return appUserService.updateRole(id, patch)
+    }
 
     @PatchMapping("/{id}/status")
     fun updateUserStatus(@PathVariable id: Long, @RequestBody patch: AppUserStatusPatch): ResponseEntity<AppUser> =
         when (patch.status) {
-            AppUserStatus.ACTIVE -> ResponseEntity.ok(appUserService.restore(id))
+            AppUserStatus.ACTIVE -> ResponseEntity.ok(appUserService.updateRole(id, AppUserRolePatch(status = AppUserStatus.ACTIVE)))
             AppUserStatus.DELETED -> {
-                appUserService.delete(id)
+                appUserService.updateRole(id, AppUserRolePatch(status = AppUserStatus.DELETED))
                 ResponseEntity.noContent().build()
             }
         }

@@ -36,7 +36,7 @@ help:
 	@echo ""
 	@echo "  Repository"
 	@echo "    install-git-hooks  Configure repository git hooks"
-	@echo "    install-codex-skills Install project Codex skills into CODEX_HOME"
+	@echo "    install-codex-skills Install all project Codex skills into CODEX_HOME"
 	@echo ""
 
 # Active Spring profile used by the generic run target.
@@ -117,7 +117,19 @@ install-git-hooks:
 # Install repository-provided Codex skills into the local Codex home.
 install-codex-skills:
 	@mkdir -p "$(CODEX_HOME)/skills"
-	@cp -R doc/codex-skills/SKIL_attempt-to-fix-fb-import-rejections "$(CODEX_HOME)/skills/"
+	@count=0; \
+	for skill in doc/codex-skills/SKIL_*; do \
+		if [ -d "$$skill" ]; then \
+			name=$$(basename "$$skill"); \
+			rm -rf "$(CODEX_HOME)/skills/$$name"; \
+			cp -R "$$skill" "$(CODEX_HOME)/skills/"; \
+			count=$$((count + 1)); \
+		fi; \
+	done; \
+	if [ "$$count" -eq 0 ]; then \
+		echo "No Codex skills found in doc/codex-skills/SKIL_*"; \
+		exit 1; \
+	fi
 	@echo "✓ Codex skills installed to $(CODEX_HOME)/skills"
 
 # Clean build artifacts
