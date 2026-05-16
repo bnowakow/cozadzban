@@ -490,6 +490,31 @@ class FacebookProfileArticleImporterUrlTest {
     }
 
     @Test
+    fun `host mention matches spaced publication names`() {
+        val importer = FacebookProfileArticleImporter(
+            FacebookImportProperties(),
+            mock<AppUserRepository>(),
+            mock<ArticleService>(),
+        )
+
+        val method = importer.javaClass.getDeclaredMethod(
+            "isUrlHostMentionedInText",
+            String::class.java,
+            String::class.java,
+        )
+        method.isAccessible = true
+
+        assertEquals(
+            true,
+            method.invoke(
+                importer,
+                "https://thenextweb.com/news/palantir-retail-sell-off-germany-military-rejection",
+                "The Next Web · Palantir grew 85%. Germany shortlisted 3 rivals instead.",
+            ),
+        )
+    }
+
+    @Test
     fun `youtube noise does not outrank a nested shared facebook post`() {
         val importer = FacebookProfileArticleImporter(
             FacebookImportProperties(),
@@ -1065,6 +1090,153 @@ class FacebookProfileArticleImporterUrlTest {
         whenever(driver.findElement(any())).thenReturn(body)
         whenever(body.text).thenReturn("Only Facebook photo content\n$photoUrl")
         whenever(driver.pageSource).thenReturn("Only Facebook photo content\n$photoUrl")
+
+        assertEquals(photoUrl, method.invoke(importer, driver, element))
+    }
+
+    @Test
+    fun `opened photo posts prefer visible article links over unrelated container links`() {
+        val importer = FacebookProfileArticleImporter(
+            FacebookImportProperties(waitAfterPageOpen = Duration.ZERO),
+            mock<AppUserRepository>(),
+            mock<ArticleService>(),
+        )
+
+        val method = importer.javaClass.getDeclaredMethod("findPostUrl", WebDriver::class.java, WebElement::class.java)
+        method.isAccessible = true
+
+        val driver = mockitoMock(
+            WebDriver::class.java,
+            withSettings().extraInterfaces(JavascriptExecutor::class.java),
+        ) as WebDriver
+        val targetLocator = mock<TargetLocator>()
+        val element = mock<WebElement>()
+        val photoLink = mock<WebElement>()
+        val unrelatedContainerLink = mock<WebElement>()
+        val articleLink = mock<WebElement>()
+        val body = mock<WebElement>()
+        val photoUrl = "https://www.facebook.com/photo/?fbid=1423580749810707&set=a.642107707958019"
+        val articleUrl = "https://thenextweb.com/news/palantir-retail-sell-off-germany-military-rejection"
+
+        whenever(element.text).thenReturn(
+            "Bartek Dobrowolski-Nowakowski · Co za zjeb · The Next Web · Palantir grew 85%.",
+        )
+        whenever(element.findElements(any())).thenReturn(listOf(photoLink, unrelatedContainerLink))
+        whenever(photoLink.getAttribute("href")).thenReturn(photoUrl)
+        whenever(unrelatedContainerLink.getAttribute("href")).thenReturn("https://wyborcza.pl/magazyn/")
+        whenever(driver.windowHandle).thenReturn("main")
+        whenever(driver.windowHandles).thenReturn(setOf("main"), setOf("main", "popup"), setOf("main"))
+        whenever(driver.switchTo()).thenReturn(targetLocator)
+        whenever(targetLocator.window(any())).thenReturn(driver)
+        whenever(driver.findElements(any())).thenReturn(
+            emptyList(),
+            emptyList(),
+            listOf(unrelatedContainerLink, articleLink),
+            listOf(unrelatedContainerLink, articleLink),
+        )
+        whenever(driver.findElement(any())).thenReturn(body)
+        whenever(body.text).thenReturn(
+            "The Next Web · Palantir grew 85%. Germany shortlisted 3 rivals instead.",
+        )
+        whenever(driver.pageSource).thenReturn(
+            """<a href="https://wyborcza.pl/magazyn/">Magazyn</a><a href="$articleUrl">The Next Web</a>""",
+        )
+        whenever(articleLink.getAttribute("href")).thenReturn(articleUrl)
+
+        assertEquals(articleUrl, method.invoke(importer, driver, element))
+    }
+
+    @Test
+    fun `opened photo posts ignore creator support profile links and fall back to source post url`() {
+        val importer = FacebookProfileArticleImporter(
+            FacebookImportProperties(waitAfterPageOpen = Duration.ZERO),
+            mock<AppUserRepository>(),
+            mock<ArticleService>(),
+        )
+
+        val method = importer.javaClass.getDeclaredMethod("findPostUrl", WebDriver::class.java, WebElement::class.java)
+        method.isAccessible = true
+
+        val driver = mockitoMock(
+            WebDriver::class.java,
+            withSettings().extraInterfaces(JavascriptExecutor::class.java),
+        ) as WebDriver
+        val targetLocator = mock<TargetLocator>()
+        val element = mock<WebElement>()
+        val photoLink = mock<WebElement>()
+        val supportLink = mock<WebElement>()
+        val body = mock<WebElement>()
+        val photoUrl = "https://www.facebook.com/photo/?fbid=1501965407964887&set=a.248625223298918"
+        val supportUrl = "https://patronite.pl/jakubwiech"
+
+        whenever(element.text).thenReturn(
+            "Bartek Dobrowolski-Nowakowski · Co za zjeb · Jakub Wiech pisze - mikroblog · " +
+                "Mili Państwo, ten artykuł Rzeczpospolitej jest po prostu zwykłą manipulacją.",
+        )
+        whenever(element.findElements(any())).thenReturn(listOf(photoLink))
+        whenever(photoLink.getAttribute("href")).thenReturn(photoUrl)
+        whenever(driver.windowHandle).thenReturn("main")
+        whenever(driver.windowHandles).thenReturn(setOf("main"), setOf("main", "popup"), setOf("main"))
+        whenever(driver.switchTo()).thenReturn(targetLocator)
+        whenever(targetLocator.window(any())).thenReturn(driver)
+        whenever(driver.findElements(any())).thenReturn(
+            emptyList(),
+            emptyList(),
+            listOf(supportLink),
+            listOf(supportLink),
+        )
+        whenever(driver.findElement(any())).thenReturn(body)
+        whenever(body.text).thenReturn(
+            "Jakub Wiech pisze - mikroblog\n" +
+                "Mili Państwo, ten artykuł Rzeczpospolitej jest po prostu zwykłą manipulacją.\n" +
+                "patronite.pl",
+        )
+        whenever(driver.pageSource).thenReturn("""<a href="$supportUrl">patronite.pl/jakubwiech</a>""")
+        whenever(supportLink.getAttribute("href")).thenReturn(supportUrl)
+
+        assertEquals(photoUrl, method.invoke(importer, driver, element))
+    }
+
+    @Test
+    fun `opened photo posts ignore visible creator support urls and fall back to source post url`() {
+        val importer = FacebookProfileArticleImporter(
+            FacebookImportProperties(waitAfterPageOpen = Duration.ZERO),
+            mock<AppUserRepository>(),
+            mock<ArticleService>(),
+        )
+
+        val method = importer.javaClass.getDeclaredMethod("findPostUrl", WebDriver::class.java, WebElement::class.java)
+        method.isAccessible = true
+
+        val driver = mockitoMock(
+            WebDriver::class.java,
+            withSettings().extraInterfaces(JavascriptExecutor::class.java),
+        ) as WebDriver
+        val targetLocator = mock<TargetLocator>()
+        val element = mock<WebElement>()
+        val photoLink = mock<WebElement>()
+        val body = mock<WebElement>()
+        val photoUrl = "https://www.facebook.com/photo/?fbid=1501965407964887&set=a.248625223298918"
+        val supportUrl = "https://patronite.pl/jakubwiech"
+
+        whenever(element.text).thenReturn(
+            "Bartek Dobrowolski-Nowakowski · Co za zjeb · Jakub Wiech pisze - mikroblog · " +
+                "Mili Państwo, ten artykuł Rzeczpospolitej jest po prostu zwykłą manipulacją.",
+        )
+        whenever(element.findElements(any())).thenReturn(listOf(photoLink))
+        whenever(photoLink.getAttribute("href")).thenReturn(photoUrl)
+        whenever(driver.windowHandle).thenReturn("main")
+        whenever(driver.windowHandles).thenReturn(setOf("main"), setOf("main", "popup"), setOf("main"))
+        whenever(driver.switchTo()).thenReturn(targetLocator)
+        whenever(targetLocator.window(any())).thenReturn(driver)
+        whenever(driver.findElements(any())).thenReturn(emptyList())
+        whenever(driver.findElement(any())).thenReturn(body)
+        whenever(body.text).thenReturn(
+            "Jakub Wiech pisze - mikroblog\n" +
+                "Mili Państwo, ten artykuł Rzeczpospolitej jest po prostu zwykłą manipulacją.\n" +
+                supportUrl,
+        )
+        whenever(driver.pageSource).thenReturn(supportUrl)
 
         assertEquals(photoUrl, method.invoke(importer, driver, element))
     }

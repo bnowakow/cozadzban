@@ -744,15 +744,22 @@ class FacebookProfileArticleImporter(
                 postUrl,
                 linkArticleUrls + listOfNotNull(pageTextArticleUrl) + pageHrefArticleUrls,
             )
-            val weakExternalArticleUrl = if (isFacebookPhotoUrl(postUrl) || !allowWeakExternalArticleUrls) {
+            val weakExternalArticleUrl = if (!allowWeakExternalArticleUrls) {
                 null
+            } else if (isFacebookPhotoUrl(postUrl)) {
+                linkArticleUrls.bestSpecificExternalArticleUrl()
             } else {
-                linkArticleUrls.firstOrNull()
+                linkArticleUrls.bestExternalArticleUrl()
                     ?: pageTextArticleUrl
-                    ?: pageHrefArticleUrls.firstOrNull()
+                    ?: pageHrefArticleUrls.bestExternalArticleUrl()
+            }
+            val visibleBodyTextArticleUrl = if (isFacebookPhotoUrl(postUrl)) {
+                bodyTextArticleUrl?.takeIf { isSpecificExternalArticleUrl(it) }
+            } else {
+                bodyTextArticleUrl
             }
             val unsafeSelected = nestedCandidate
-                ?: bodyTextArticleUrl
+                ?: visibleBodyTextArticleUrl
                 ?: preferredExternalArticleUrl
                 ?: weakExternalArticleUrl
                 ?: facebookFallbackUrl.takeIf { allowFacebookFallbackUrl && !isFacebookPhotoUrl(postUrl) }
@@ -764,7 +771,7 @@ class FacebookProfileArticleImporter(
             val selectedSource = when (selected) {
                 null -> "none"
                 nestedCandidate -> "nested-facebook-post"
-                bodyTextArticleUrl -> "visible-text-url"
+                visibleBodyTextArticleUrl -> "visible-text-url"
                 preferredExternalArticleUrl -> "profile-matched-external-url"
                 linkArticleUrls.firstOrNull() -> "visible-link-url"
                 pageTextArticleUrl -> "page-source-visible-url"
@@ -1002,7 +1009,34 @@ class FacebookProfileArticleImporter(
         val host = runCatching { URI(url).host?.lowercase() }.getOrNull() ?: return false
         val normalizedHost = host.removePrefix("www.")
         val normalizedText = text.lowercase()
-        return normalizedText.contains(host) || normalizedText.contains(normalizedHost)
+        return normalizedText.contains(host) ||
+            normalizedText.contains(normalizedHost) ||
+            normalizedText.filter(Char::isLetterOrDigit)
+                .contains(normalizedHost.substringBefore('.').filter(Char::isLetterOrDigit))
+    }
+
+    private fun List<String>.bestExternalArticleUrl(): String? =
+        distinct()
+            .minWithOrNull(
+                compareBy<String>(
+                    { if (isSpecificExternalArticleUrl(it)) 0 else 1 },
+                    { it.length },
+                )
+            )
+
+    private fun List<String>.bestSpecificExternalArticleUrl(): String? =
+        distinct()
+            .filter { isSpecificExternalArticleUrl(it) }
+            .minByOrNull { it.length }
+
+    private fun isSpecificExternalArticleUrl(url: String): Boolean {
+        val uri = runCatching { URI(url) }.getOrNull() ?: return false
+        val pathSegments = uri.path
+            ?.trim('/')
+            ?.split('/')
+            ?.filter { it.isNotBlank() }
+            ?: emptyList()
+        return pathSegments.size >= 2
     }
 
     private fun isGenericFacebookFeedPage(text: String): Boolean {
