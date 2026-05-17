@@ -1,44 +1,45 @@
 
-.PHONY: help docker-up docker-down docker-pg-nuke docker-pg-backup build run run-local run-prod test clean docker-logs docker-spring-shell docker-pg-shell docker-upgrade docker-upgrade-no-cache bump-version bump-patch bump-minor install-git-hooks install-codex-skills
+.PHONY: help docker-up docker-down docker-data-permissions docker-pg-nuke docker-pg-backup install-pg-backup-cron build run run-local run-prod test clean docker-logs docker-spring-shell docker-pg-shell docker-upgrade docker-upgrade-no-cache bump-version bump-patch bump-minor install-git-hooks install-codex-skills
 
 -include .env
 
 # Default target
 help:
-	@echo "CoZaZjeb — Makefile targets"
-	@echo ""
-	@echo "  PostgreSQL port from .env: $(POSTGRES_PORT)"
-	@echo ""
-	@echo "  Docker"
-	@echo "    docker-up          Start local infrastructure from compose.yaml"
-	@echo "    docker-down        Stop and remove local infrastructure containers"
-	@echo "    docker-logs        Show compose logs (follow mode)"
-	@echo "    docker-spring-shell Open bash inside the running Spring Boot container"
-	@echo "    docker-upgrade     Pull latest code, rebuild image with BuildKit caches, restart containers, follow logs"
-	@echo "    docker-upgrade-no-cache Pull latest code, rebuild without Docker cache, restart containers, follow logs"
-	@echo ""
-	@echo "  PostgreSQL in Docker"
-	@echo "    docker-pg-nuke     Recreate PostgreSQL container and reset docker-data/postgres"
-	@echo "    docker-pg-backup   Dump PostgreSQL and zip it into docker-data/backup/postgres"
-	@echo "    docker-pg-shell    Open PostgreSQL shell inside docker container"
-	@echo ""
-	@echo "  Application"
-	@echo "    build              Build the project (skip tests)"
-	@echo "    run                Run Spring Boot with SPRING_PROFILES_ACTIVE from .env"
-	@echo "    run-local          Run Spring Boot with local profile"
-	@echo "    run-prod           Run Spring Boot with prod profile"
-	@echo "    test               Run all tests"
-	@echo "    clean              Clean Gradle build artifacts"
-	@echo ""
-	@echo "  Versioning"
-	@echo "    bump-version       Set project version in build.gradle.kts (use VERSION=x.y.z[-SNAPSHOT])"
-	@echo "    bump-patch         Auto-increment patch for x.y.z-SNAPSHOT versions"
-	@echo "    bump-minor         Auto-increment minor and reset patch for x.y.z-SNAPSHOT versions"
-	@echo ""
-	@echo "  Repository"
-	@echo "    install-git-hooks  Configure repository git hooks"
-	@echo "    install-codex-skills Install all project Codex skills into CODEX_HOME"
-	@echo ""
+	@printf "CoZaZjeb — Makefile targets\n"
+	@printf "\n"
+	@printf "  PostgreSQL port from .env: $(POSTGRES_PORT)\n"
+	@printf "\n"
+	@printf "  \033[1;94m%s\033[0m\n" "Docker"
+	@printf "    %-31s %s\n" "docker-up" "Start local infrastructure from compose.yaml"
+	@printf "    %-31s %s\n" "docker-down" "Stop and remove local infrastructure containers"
+	@printf "    %-31s %s\n" "docker-logs" "Show compose logs (follow mode)"
+	@printf "    %-31s %s\n" "docker-spring-shell" "Open bash inside the running Spring Boot container"
+	@printf "    %-31s %s\n" "docker-upgrade" "Pull latest code, rebuild image with BuildKit caches, restart containers, follow logs"
+	@printf "    %-31s %s\n" "docker-upgrade-no-cache" "Pull latest code, rebuild without Docker cache, restart containers, follow logs"
+	@printf "\n"
+	@printf "  \033[1;94m%s\033[0m\n" "PostgreSQL in Docker"
+	@printf "    %-31s %s\n" "docker-pg-nuke" "Recreate PostgreSQL container and reset docker-data/postgres"
+	@printf "    %-31s %s\n" "docker-pg-backup" "Dump PostgreSQL and zip it into docker-data/backup/postgres"
+	@printf "    %-31s %s\n" "install-pg-backup-cron" "Install daily 02:00 PostgreSQL backup cron job"
+	@printf "    %-31s %s\n" "docker-pg-shell" "Open PostgreSQL shell inside docker container"
+	@printf "\n"
+	@printf "  \033[1;94m%s\033[0m\n" "Application"
+	@printf "    %-31s %s\n" "build" "Build the project (skip tests)"
+	@printf "    %-31s %s\n" "run" "Run Spring Boot with SPRING_PROFILES_ACTIVE from .env"
+	@printf "    %-31s %s\n" "run-local" "Run Spring Boot with local profile"
+	@printf "    %-31s %s\n" "run-prod" "Run Spring Boot with prod profile"
+	@printf "    %-31s %s\n" "test" "Run all tests"
+	@printf "    %-31s %s\n" "clean" "Clean Gradle build artifacts"
+	@printf "\n"
+	@printf "  \033[1;94m%s\033[0m\n" "Versioning"
+	@printf "    %-31s %s\n" "bump-version" "Set project version in build.gradle.kts (use VERSION=x.y.z[-SNAPSHOT])"
+	@printf "    %-31s %s\n" "bump-patch" "Auto-increment patch for x.y.z-SNAPSHOT versions"
+	@printf "    %-31s %s\n" "bump-minor" "Auto-increment minor and reset patch for x.y.z-SNAPSHOT versions"
+	@printf "\n"
+	@printf "  \033[1;94m%s\033[0m\n" "Repository"
+	@printf "    %-31s %s\n" "install-git-hooks" "Configure repository git hooks"
+	@printf "    %-31s %s\n" "install-codex-skills" "Install all project Codex skills into CODEX_HOME"
+	@printf "\n"
 
 # Active Spring profile used by the generic run target.
 PROFILE ?= $(SPRING_PROFILES_ACTIVE)
@@ -48,15 +49,24 @@ LOCAL_UID ?= $(shell id -u)
 LOCAL_GID ?= $(shell id -g)
 APP_BUILD_COMMIT ?= $(shell git rev-parse --short=8 HEAD 2>/dev/null || echo unknown)
 CODEX_HOME ?= $(HOME)/.codex
+CRON_SCHEDULE ?= 0 2 * * *
+CRON_MAKE ?= $(shell command -v make 2>/dev/null || echo make)
+PG_BACKUP_CRON_MARKER ?= cozazjeb-docker-pg-backup
 export APP_BUILD_COMMIT
 
 # Start local development environment from compose.yaml
-docker-up:
+docker-up: docker-data-permissions
 	docker compose -f compose.yaml up -d
 	@echo ""
 	@echo "✓ Services started:"
 	@echo "  - PostgreSQL:     localhost:$(POSTGRES_PORT)"
 	@echo ""
+
+# Prepare docker-data so containers can persist app data and host cron backups can write backup files.
+docker-data-permissions:
+	@mkdir -p ./docker-data
+	@docker run --rm -v "$(PWD)/docker-data:/work" alpine:3.20 \
+		sh -c "mkdir -p /work/postgres /work/data/favicons /work/backup/postgres && chown -R $(LOCAL_UID):$(LOCAL_GID) /work/backup && chmod 755 /work /work/postgres && chmod -R a+rwX /work/data && chmod -R u+rwX,go-rwx /work/backup"
 
 # Stop local development environment
 docker-down:
@@ -77,7 +87,7 @@ docker-pg-nuke:
 	$(MAKE) docker-up
 
 # Dump PostgreSQL from the running compose container and store a timestamped zip.
-docker-pg-backup:
+docker-pg-backup: docker-data-permissions
 	@mkdir -p ./docker-data/backup/postgres
 	@timestamp=$$(date +"%Y-%m-%d_%H-%M-%S"); \
 	base="cozazjeb-postgres-$$timestamp"; \
@@ -88,6 +98,12 @@ docker-pg-backup:
 	zip -j "$$zip_path" "$$sql_path" >/dev/null; \
 	rm "$$sql_path"; \
 	echo "✓ Backup written to $$zip_path"
+
+# Install or replace the current user's daily PostgreSQL backup cron job.
+install-pg-backup-cron: docker-data-permissions
+	@job='$(CRON_SCHEDULE) cd $(PWD) && $(CRON_MAKE) docker-pg-backup >> $(PWD)/docker-data/backup/postgres/cron.log 2>&1 # $(PG_BACKUP_CRON_MARKER)'; \
+	( crontab -l 2>/dev/null | grep -Fv '$(PG_BACKUP_CRON_MARKER)' ; echo "$$job" ) | crontab -
+	@echo "✓ Installed daily PostgreSQL backup cron job at 02:00"
 
 # Build the project (skip tests)
 build:
@@ -184,7 +200,7 @@ docker-spring-shell:
 	docker compose -f compose.yaml exec springboot bash
 
 # Pull latest code, rebuild, restart, and follow logs
-docker-upgrade:
+docker-upgrade: docker-data-permissions
 	git pull --ff-only
 	DOCKER_BUILDKIT=1 docker compose -f compose.yaml build --pull springboot
 	docker compose -f compose.yaml down --remove-orphans
@@ -193,7 +209,7 @@ docker-upgrade:
 	docker compose -f compose.yaml logs -f
 
 # Pull latest code, rebuild from scratch, restart, and follow logs. Use only when cache corruption is suspected.
-docker-upgrade-no-cache:
+docker-upgrade-no-cache: docker-data-permissions
 	git pull --ff-only
 	DOCKER_BUILDKIT=1 docker compose -f compose.yaml build --pull --no-cache springboot
 	docker compose -f compose.yaml down --remove-orphans
