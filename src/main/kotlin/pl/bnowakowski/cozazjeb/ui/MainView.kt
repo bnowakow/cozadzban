@@ -617,7 +617,7 @@ class ArticleListView(
 
     private fun buildVersionBadge(): Div {
         val versionFooter = Span("v${buildProperties.displayVersion}")
-        versionFooter.element.style.set("font-size", "12px")
+        versionFooter.element.style.set("font-size", "10px")
         versionFooter.element.style.set("color", "var(--lumo-tertiary-text-color)")
         versionFooter.element.style.set("line-height", "1")
 
@@ -631,7 +631,7 @@ class ArticleListView(
         badge.element.style.set("background", "transparent")
         badge.element.style.set("border", "0")
         badge.element.style.set("box-shadow", "none")
-        badge.element.style.set("opacity", "0.72")
+        badge.element.style.set("opacity", "0.58")
         return badge
     }
 
