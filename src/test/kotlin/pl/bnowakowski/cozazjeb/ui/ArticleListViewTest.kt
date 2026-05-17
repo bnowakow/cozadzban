@@ -20,6 +20,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.mock
+import org.mockito.kotlin.never
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken
@@ -68,6 +69,7 @@ class ArticleListViewTest {
         whenever(appUserRepository.findByEmail(adminEmail)).thenReturn(
             AppUser(1L, adminEmail, Role.ADMIN, AppUserStatus.ACTIVE),
         )
+        whenever(facebookProfileArticleImporter.facebookImportUnavailableReason()).thenReturn(null)
 
         val view = ArticleListView(
             articleRepository,
@@ -82,10 +84,48 @@ class ArticleListViewTest {
 
         assertTrue(buttons.any { it.text == "Add Article" })
         assertTrue(importButton != null, "Expected admin import button to be present")
+        assertTrue(importButton!!.isEnabled, "Expected configured import button to be enabled")
 
-        importButton!!.click()
+        UI.setCurrent(UI())
+        importButton.click()
 
         verify(facebookProfileArticleImporter).startImport(any())
+    }
+
+    @Test
+    fun `admin users see disabled facebook import button when importer user is missing`() {
+        val adminEmail = "admin@example.com"
+        authenticateAs(adminEmail)
+        UI.setCurrent(UI())
+        stubArticles()
+        whenever(appUserRepository.findByEmail(adminEmail)).thenReturn(
+            AppUser(1L, adminEmail, Role.ADMIN, AppUserStatus.ACTIVE),
+        )
+        whenever(facebookProfileArticleImporter.facebookImportUnavailableReason()).thenReturn(
+            "app.facebook-import.username must point to an existing app user",
+        )
+
+        val view = ArticleListView(
+            articleRepository,
+            articleContentRepository,
+            articleService,
+            facebookProfileArticleImporter,
+            appUserRepository,
+            buildProperties,
+        )
+        val buttons = findComponents(view, Button::class.java)
+        val importButton = buttons.firstOrNull { it.text == "Import Facebook Posts" }
+
+        assertTrue(importButton != null, "Expected admin import button to be present")
+        assertFalse(importButton!!.isEnabled, "Expected misconfigured import button to be disabled")
+        assertEquals(
+            "app.facebook-import.username must point to an existing app user",
+            importButton.element.getAttribute("title"),
+        )
+
+        importButton.click()
+
+        verify(facebookProfileArticleImporter, never()).startImport(any())
     }
 
     @Test

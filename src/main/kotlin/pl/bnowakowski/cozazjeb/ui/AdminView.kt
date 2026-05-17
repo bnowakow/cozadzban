@@ -10,6 +10,7 @@ import com.vaadin.flow.component.dependency.CssImport
 import com.vaadin.flow.component.dialog.Dialog
 import com.vaadin.flow.component.grid.Grid
 import com.vaadin.flow.component.html.H2
+import com.vaadin.flow.component.html.Image
 import com.vaadin.flow.component.html.Span
 import com.vaadin.flow.component.icon.VaadinIcon
 import com.vaadin.flow.component.notification.Notification
@@ -48,8 +49,7 @@ class AdminView(
         setSizeFull()
         addClassName("czj-admin-view")
 
-        val title = H2("Manage users")
-        title.addClassName("czj-admin-title")
+        val titleGroup = buildAdminTitleGroup("Manage users")
         val addUserButton = buildAddUserButton()
         val contentCacheButton = Button("Article content cache")
         contentCacheButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY)
@@ -62,11 +62,11 @@ class AdminView(
         logoutButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY)
         logoutButton.addClickListener { logoutAndRedirect() }
 
-        val topBar = HorizontalLayout(title, addUserButton, contentCacheButton, feedButton, themeButton, logoutButton)
+        val topBar = HorizontalLayout(titleGroup, addUserButton, contentCacheButton, feedButton, themeButton, logoutButton)
         topBar.addClassName("czj-admin-top-bar")
         topBar.width = "100%"
         topBar.defaultVerticalComponentAlignment = Alignment.CENTER
-        topBar.expand(title)
+        topBar.expand(titleGroup)
 
         configureGrid()
         refreshGrid()
@@ -80,6 +80,24 @@ class AdminView(
         button.addThemeVariants(ButtonVariant.LUMO_PRIMARY)
         button.addClickListener { openAddUserDialog() }
         return button
+    }
+
+    private fun buildAdminTitleGroup(pageTitle: String): HorizontalLayout {
+        val logo = Image("/cozazjeb-logo.png", "Co za zjeb")
+        logo.addClassName("czj-admin-logo")
+
+        val brand = Span("Co za zjeb")
+        brand.addClassName("czj-admin-brand")
+
+        val title = H2(pageTitle)
+        title.addClassName("czj-admin-title")
+
+        val titleGroup = HorizontalLayout(logo, brand, title)
+        titleGroup.addClassName("czj-admin-title-group")
+        titleGroup.isPadding = false
+        titleGroup.isSpacing = true
+        titleGroup.defaultVerticalComponentAlignment = Alignment.CENTER
+        return titleGroup
     }
 
     private fun buildThemeToggleButton(): Button {

@@ -1,10 +1,18 @@
 [part='overlay'] {
   background: var(--czj-card-bg);
+  --vaadin-dialog-background: var(--czj-card-bg);
+  --vaadin-overlay-background: var(--czj-card-bg);
+  --vaadin-background-color: var(--czj-card-bg);
   border: 1px solid var(--czj-border);
   box-shadow: var(--czj-card-shadow);
   color: var(--czj-text);
   overflow: auto;
   scrollbar-color: var(--czj-border) var(--czj-card-bg);
+}
+
+.resizer-container,
+.resizer {
+  background: var(--czj-card-bg);
 }
 
 [part='header'],
@@ -16,6 +24,7 @@
 }
 
 [part='content'] {
+  background-clip: padding-box;
   scrollbar-color: var(--czj-border) var(--czj-card-bg);
 }
 

@@ -195,14 +195,51 @@ vaadin-radio-button::part(label) {
 }
 
 .czj-admin-top-bar {
+  align-items: center;
   box-shadow: var(--czj-card-shadow);
   flex-wrap: wrap;
   gap: 0.75rem !important;
 }
 
+.czj-admin-title-group {
+  min-width: min(100%, 18rem);
+}
+
+.czj-admin-logo {
+  border-radius: 50%;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.26);
+  flex: 0 0 auto;
+  height: 46px;
+  object-fit: cover;
+  width: 46px;
+}
+
+.czj-admin-brand {
+  color: var(--czj-text);
+  font-size: var(--lumo-font-size-xl);
+  font-weight: 800;
+  white-space: nowrap;
+}
+
 .czj-admin-title {
   color: var(--czj-text);
+  font-size: var(--lumo-font-size-l);
+  font-weight: 700;
   margin: 0;
+  padding-left: 0.75rem;
+  position: relative;
+  white-space: nowrap;
+}
+
+.czj-admin-title::before {
+  background: var(--czj-border);
+  content: "";
+  height: 1.75rem;
+  left: 0.25rem;
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 1px;
 }
 
 .czj-admin-section-title {
@@ -263,8 +300,15 @@ vaadin-radio-button::part(label) {
 
 .czj-edit-article-content {
   gap: 1.5rem !important;
-  padding: 0.25rem 0 0;
+  box-sizing: border-box;
+  min-height: 100%;
+  padding: 1rem 1.5rem 1.5rem;
   width: 100%;
+}
+
+vaadin-dialog.czj-edit-article-dialog::part(content) {
+  background: var(--czj-card-bg) !important;
+  padding: 0 !important;
 }
 
 .czj-edit-article-published-controls {

@@ -60,11 +60,9 @@ class FacebookProfileArticleImporter(
     }
 
     fun startImport(approvalHandler: FacebookCandidateApprovalHandler) {
-        require(properties.username.isNotBlank()) {
-            "app.facebook-import.username must point to an existing app user"
-        }
+        facebookImportUnavailableReason()?.let { throw IllegalArgumentException(it) }
         val creator = appUserRepository.findByEmail(properties.username)
-            ?: throw IllegalArgumentException("No app user exists for ${properties.username}")
+            ?: throw IllegalArgumentException(FACEBOOK_IMPORT_USER_CONFIGURATION_ERROR)
 
         synchronized(stateLock) {
             if (activeImportThread?.isAlive == true) {
@@ -92,6 +90,17 @@ class FacebookProfileArticleImporter(
             }
             activeImportThread = importThread
             importThread.start()
+        }
+    }
+
+    fun facebookImportUnavailableReason(): String? {
+        if (properties.username.isBlank()) {
+            return FACEBOOK_IMPORT_USER_CONFIGURATION_ERROR
+        }
+        return if (appUserRepository.findByEmail(properties.username) == null) {
+            FACEBOOK_IMPORT_USER_CONFIGURATION_ERROR
+        } else {
+            null
         }
     }
 
@@ -2111,6 +2120,8 @@ class FacebookProfileArticleImporter(
     )
 
     companion object {
+        private const val FACEBOOK_IMPORT_USER_CONFIGURATION_ERROR =
+            "app.facebook-import.username must point to an existing app user"
         private val FACEBOOK_POST_URL_REGEX =
             Regex("""https?://(?:www\.)?facebook\.com/[^"'<> ]+/posts/[^"'<> ]+""", RegexOption.IGNORE_CASE)
         private val FACEBOOK_RELATIVE_POST_URL_REGEX =
