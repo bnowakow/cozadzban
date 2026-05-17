@@ -252,6 +252,9 @@ class EnrichmentService(
             fetchBloombergReaderFallback(url, ex.statusCode.value())?.let { readerText ->
                 return parseReaderMarkdownResult(url, readerText)
             }
+            fetchTvn24ReaderFallback(url, ex.statusCode.value())?.let { readerText ->
+                return parseReaderMarkdownResult(url, readerText)
+            }
             fetchWsjFallback(url, ex.statusCode.value())?.let { return it }
             fetchDlvrItReaderFallback(url)?.let { readerText ->
                 return parseReaderMarkdownResult(url, readerText)
@@ -303,6 +306,9 @@ class EnrichmentService(
             fetchBloombergReaderFallback(url)?.let { readerText ->
                 return parseReaderMarkdownResult(url, readerText)
             }
+            fetchTvn24ReaderFallback(url)?.let { readerText ->
+                return parseReaderMarkdownResult(url, readerText)
+            }
             fetchWsjFallback(url)?.let { return it }
             fetchDlvrItReaderFallback(url)?.let { readerText ->
                 return parseReaderMarkdownResult(url, readerText)
@@ -345,6 +351,9 @@ class EnrichmentService(
                 return parseReaderMarkdownResult(url, readerText)
             }
             fetchBloombergReaderFallback(url)?.let { readerText ->
+                return parseReaderMarkdownResult(url, readerText)
+            }
+            fetchTvn24ReaderFallback(url)?.let { readerText ->
                 return parseReaderMarkdownResult(url, readerText)
             }
             fetchWsjFallback(url)?.let { return it }
@@ -391,6 +400,14 @@ class EnrichmentService(
             ?.let { return enrichHtml(url, it) }
         fetchBloombergReaderFallbackIfIncomplete(url, result)
             ?.let { return parseReaderMarkdownResult(url, it) }
+        fetchTvn24ReaderFallbackIfIncomplete(url, result)
+            ?.let { return parseReaderMarkdownResult(url, it) }
+        if (isTvn24BlockedPlaceholderResult(url, result)) {
+            throw EnrichmentException(
+                message = "URL enrichment failed: TVN24 returned an unusable placeholder page for '$url'",
+                reason = EnrichmentException.Reason.NON_2XX,
+            )
+        }
         fetchWsjFallbackIfIncomplete(url, result)?.let { return it }
         fetchEbxReaderFallbackIfIncomplete(url, result)
             ?.let { return parseReaderMarkdownResult(url, it) }
@@ -2264,6 +2281,32 @@ class EnrichmentService(
         return fetchReaderFallback(url)
     }
 
+    private fun fetchTvn24ReaderFallback(url: String, statusCode: Int): String? {
+        if (statusCode != 401 && statusCode != 403 && statusCode != 429) return null
+        if (!isTvn24Url(url)) return null
+
+        return fetchReaderFallback(url)
+    }
+
+    private fun fetchTvn24ReaderFallback(url: String): String? {
+        if (!isTvn24Url(url)) return null
+
+        return fetchReaderFallback(url)
+    }
+
+    private fun fetchTvn24ReaderFallbackIfIncomplete(url: String, result: EnrichmentResult): String? {
+        if (!isTvn24Url(url)) return null
+        if (!isTvn24BlockedPlaceholderResult(url, result) &&
+            result.title != null &&
+            result.thumbnail != null &&
+            result.publishedAt != null
+        ) {
+            return null
+        }
+
+        return fetchReaderFallback(url)
+    }
+
     private fun fetchWsjFallback(url: String, statusCode: Int): EnrichmentResult? {
         if (statusCode != 401 && statusCode != 403 && statusCode != 429) return null
 
@@ -3830,6 +3873,16 @@ internal fun isBloombergUrl(url: String): Boolean {
         host == "bloomberg.com" ||
         host.endsWith(".bloomberg.com")
 }
+
+internal fun isTvn24Url(url: String): Boolean {
+    val uri = runCatching { URI(url) }.getOrNull() ?: return false
+    val host = uri.host?.lowercase() ?: return false
+
+    return host == "tvn24.pl" || host.endsWith(".tvn24.pl")
+}
+
+internal fun isTvn24BlockedPlaceholderResult(url: String, result: EnrichmentResult): Boolean =
+    isTvn24Url(url) && result.title?.trim().equals("Zaraz wracamy", ignoreCase = true)
 
 internal fun isWsjUrl(url: String): Boolean {
     val uri = runCatching { URI(url) }.getOrNull() ?: return false
