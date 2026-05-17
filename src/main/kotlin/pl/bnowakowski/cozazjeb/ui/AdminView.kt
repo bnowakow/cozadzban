@@ -38,6 +38,7 @@ import pl.bnowakowski.cozazjeb.user.Role
 @CssImport("./styles/cozazjeb-feed.css")
 @CssImport(value = "./styles/cozazjeb-dialog-overlay.css", themeFor = "vaadin-dialog-overlay")
 @CssImport(value = "./styles/cozazjeb-confirm-dialog-overlay.css", themeFor = "vaadin-confirm-dialog-overlay")
+@CssImport(value = "./styles/cozazjeb-select-overlay.css", themeFor = "vaadin-select-overlay")
 class AdminView(
     private val appUserService: AppUserService,
 ) : VerticalLayout() {

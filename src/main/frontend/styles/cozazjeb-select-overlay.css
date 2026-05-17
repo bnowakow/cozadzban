@@ -1,0 +1,30 @@
+[part='overlay'] {
+  background: var(--czj-card-bg);
+  border: 1px solid var(--czj-border);
+  box-shadow: var(--czj-card-shadow);
+  color: var(--czj-text);
+}
+
+[part='content'] {
+  background: var(--czj-card-bg);
+  color: var(--czj-text);
+}
+
+vaadin-list-box {
+  background: var(--czj-card-bg);
+  color: var(--czj-text);
+}
+
+vaadin-item {
+  color: var(--czj-text);
+}
+
+vaadin-item:hover,
+vaadin-item[focused] {
+  background: var(--lumo-contrast-10pct);
+}
+
+vaadin-item[selected] {
+  background: var(--lumo-primary-color-10pct);
+  color: var(--czj-text);
+}
