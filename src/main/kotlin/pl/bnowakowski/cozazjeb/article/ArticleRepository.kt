@@ -61,6 +61,9 @@ interface ArticleRepositoryCustom {
     /** Updates only the favicon field for a single article. */
     fun updateFavicon(id: Long, favicon: String): Boolean
 
+    /** Returns Facebook articles published at the same instant with optional cached content for duplicate checks. */
+    fun findFacebookDuplicateCandidatesByPublishedAt(publishedAt: Instant): List<ArticleDuplicateCandidate>
+
     companion object {
         /**
          * Allowlist mapping from API sort field name to SQL column name (BR-26).
@@ -76,6 +79,11 @@ interface ArticleRepositoryCustom {
         )
     }
 }
+
+data class ArticleDuplicateCandidate(
+    val article: Article,
+    val content: String?,
+)
 
 @Repository
 class ArticleRepositoryCustomImpl(
@@ -207,6 +215,26 @@ class ArticleRepositoryCustomImpl(
         return updated > 0
     }
 
+    override fun findFacebookDuplicateCandidatesByPublishedAt(publishedAt: Instant): List<ArticleDuplicateCandidate> =
+        jdbc.query(
+            """
+                SELECT a.id, a.url, a.language, a.title, a.thumbnail, a.favicon, a.lead, a.quote, a.ai_summary,
+                       a.created_by_user_id, a.created_at, a.published_at, c.content
+                  FROM article a
+                  LEFT JOIN article_content c ON c.article_id = a.id
+                 WHERE a.published_at = :publishedAt
+                   AND (
+                       a.url LIKE 'https://www.facebook.com/%'
+                       OR a.url LIKE 'https://facebook.com/%'
+                       OR a.url LIKE 'http://www.facebook.com/%'
+                       OR a.url LIKE 'http://facebook.com/%'
+                   )
+                 ORDER BY a.created_at DESC
+            """.trimIndent(),
+            mapOf("publishedAt" to Timestamp.from(publishedAt)),
+            ARTICLE_DUPLICATE_CANDIDATE_ROW_MAPPER,
+        )
+
     /**
      * Builds a parameterised WHERE clause from the given filters.
      * Column names are hardcoded — only parameter values come from user input (BR-09).
@@ -261,6 +289,13 @@ class ArticleRepositoryCustomImpl(
                 createdByUserId = rs.getLong("created_by_user_id"),
                 publishedAt     = rs.getTimestamp("published_at")?.toInstant(),
                 createdAt       = rs.getTimestamp("created_at")?.toInstant() ?: Instant.EPOCH,
+            )
+        }
+
+        val ARTICLE_DUPLICATE_CANDIDATE_ROW_MAPPER = RowMapper<ArticleDuplicateCandidate> { rs, rowNum ->
+            ArticleDuplicateCandidate(
+                article = ARTICLE_ROW_MAPPER.mapRow(rs, rowNum)!!,
+                content = rs.getString("content"),
             )
         }
     }

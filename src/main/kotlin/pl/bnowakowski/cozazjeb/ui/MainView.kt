@@ -493,6 +493,7 @@ class ArticleListView(
             image.element.style.set("display", "block")
             image.element.style.set("aspect-ratio", "1 / 1")
             image.element.style.set("object-fit", "cover")
+            image.element.executeJs("this.addEventListener('error', () => this.style.display = 'none')")
             content.add(image)
         }
 

@@ -9,6 +9,7 @@ import com.vaadin.flow.component.UI
 import com.vaadin.flow.component.dialog.Dialog
 import com.vaadin.flow.component.html.Anchor
 import com.vaadin.flow.component.html.Div
+import com.vaadin.flow.component.html.Image
 import com.vaadin.flow.component.html.Span
 import com.vaadin.flow.component.radiobutton.RadioButtonGroup
 import com.vaadin.flow.component.textfield.TextField
@@ -213,6 +214,37 @@ class ArticleListViewTest {
         assertTrue(buttons.any { it.text == "en" })
         assertTrue(spans.any { it.hasClassName("czj-language-flag-pl") })
         assertTrue(spans.any { it.hasClassName("czj-language-flag-en") })
+    }
+
+    @Test
+    fun `article card hides thumbnail image when browser reports load error`() {
+        stubArticles()
+        val article = Article(
+            id = 40L,
+            url = "https://www.facebook.com/jakub.wiech.mikroblog/posts/pfbid0cmzW1Mr2ZtDhdBUVJEJWVzXNHRfkr3g8RbAEG5rhtV8ZCMzG9jXjZXFPQJeNNfFdl",
+            language = "pl",
+            title = "Title",
+            thumbnail = "https://lookaside.fbsbx.com/lookaside/crawler/media/?media_id=1496190555209039",
+            createdByUserId = 1L,
+        )
+        whenever(articleContentRepository.findById(40L)).thenReturn(Optional.empty())
+
+        val view = ArticleListView(
+            articleRepository,
+            articleContentRepository,
+            articleService,
+            facebookProfileArticleImporter,
+            appUserRepository,
+            buildProperties,
+        )
+        val method = view.javaClass.getDeclaredMethod("buildArticleCard", Article::class.java)
+        method.isAccessible = true
+        val card = method.invoke(view, article) as Component
+
+        val image = findComponents(card, Image::class.java)
+            .single { it.src == article.thumbnail }
+
+        assertEquals(article.thumbnail, image.src)
     }
 
     @Test

@@ -112,4 +112,25 @@ class ArticleRepositoryCustomImplTest {
         assertEquals(12L, paramsCaptor.firstValue["id"])
         assertEquals("/favicons/example.png", paramsCaptor.firstValue["favicon"])
     }
+
+    @Test
+    fun `findFacebookDuplicateCandidatesByPublishedAt uses named published date parameter`() {
+        whenever(
+            jdbc.query(
+                any<String>(),
+                any<Map<String, Any>>(),
+                any<RowMapper<ArticleDuplicateCandidate>>(),
+            ),
+        ).thenReturn(emptyList())
+
+        repository.findFacebookDuplicateCandidatesByPublishedAt(java.time.Instant.parse("2026-05-07T09:08:45Z"))
+
+        val sqlCaptor = argumentCaptor<String>()
+        val paramsCaptor = argumentCaptor<Map<String, Any>>()
+        verify(jdbc).query(sqlCaptor.capture(), paramsCaptor.capture(), any<RowMapper<ArticleDuplicateCandidate>>())
+        assertTrue(sqlCaptor.firstValue.contains("LEFT JOIN article_content c ON c.article_id = a.id"))
+        assertTrue(sqlCaptor.firstValue.contains("a.published_at = :publishedAt"))
+        assertTrue(sqlCaptor.firstValue.contains("a.url LIKE 'https://www.facebook.com/%'"))
+        assertEquals(java.sql.Timestamp.from(java.time.Instant.parse("2026-05-07T09:08:45Z")), paramsCaptor.firstValue["publishedAt"])
+    }
 }

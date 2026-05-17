@@ -5,6 +5,7 @@ package pl.bnowakowski.cozazjeb.article
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.argumentCaptor
@@ -56,6 +57,59 @@ class ArticleServiceTitleTest {
         val articleCaptor = argumentCaptor<Article>()
         verify(articleRepository).save(articleCaptor.capture())
         assertNull(articleCaptor.firstValue.quote)
+    }
+
+    @Test
+    fun `create rejects Facebook article with same published time and thumbnail media id`() {
+        val articleRepository: ArticleRepository = mock()
+        val enrichmentService: EnrichmentService = mock()
+        val articleContentRepository: ArticleContentRepository = mock()
+        val service = ArticleService(
+            articleRepository,
+            enrichmentService,
+            mock<AppUserRepository>(),
+            articleContentRepository,
+        )
+        val publishedAt = Instant.parse("2026-05-07T09:08:45Z")
+        val mediaId = "688617344_1661302661683504_8203445369845282032_n.jpg"
+        whenever(articleRepository.existsByUrl(any())).thenReturn(false)
+        whenever(enrichmentService.enrich(any())).thenReturn(
+            EnrichmentResult(
+                title = "Facebook post",
+                thumbnail = "https://scontent-waw2-2.xx.fbcdn.net/v/t15.5256-10/$mediaId?new=1",
+                lead = "Mili Panstwo, prezydent chce referendum ws. polityki klimatycznej.",
+                plainText = null,
+                publishedAt = publishedAt,
+            ),
+        )
+        whenever(articleRepository.findFacebookDuplicateCandidatesByPublishedAt(publishedAt)).thenReturn(
+            listOf(
+                ArticleDuplicateCandidate(
+                    article = Article(
+                        id = 237L,
+                        url = "https://www.facebook.com/reel/2758125771253657/",
+                        language = "pl",
+                        thumbnail = "https://scontent-waw2-2.xx.fbcdn.net/v/t15.5256-10/$mediaId?old=1",
+                        createdByUserId = 7L,
+                        publishedAt = publishedAt,
+                    ),
+                    content = "Different extracted text is still duplicate because the Facebook media id matches.",
+                ),
+            ),
+        )
+
+        val exception = assertThrows(ArticleUrlConflictException::class.java) {
+            service.create(
+                ArticleInput(
+                    url = "https://www.facebook.com/bartek.dobrowolski.nowakowski/posts/pfbid0t84F3bzWBM86PhPcsmXnXQhmx1pXa7X2wKFZC46897JSDhdqiUBH5fHuT5HZ1ZjTl",
+                    language = "pl",
+                ),
+                creatorId = 7L,
+            )
+        }
+
+        assertEquals("https://www.facebook.com/reel/2758125771253657/", exception.url)
+        verify(articleRepository, org.mockito.kotlin.never()).save(any())
     }
 
     @Test

@@ -99,6 +99,15 @@ class ArticleService(
         val publishedAt = input.publishedAt ?: enrichment.publishedAt
         val contentForCache = selectContentForCache(url, enrichment.plainText, enrichment.lead, enrichment.title)
         val title = titleForSave(url, enrichment.title, enrichment.lead, contentForCache)
+        findFacebookDuplicate(url, publishedAt, enrichment.thumbnail, contentForCache)?.let { duplicate ->
+            LOG.info(
+                "Facebook duplicate content during create; inputUrl='{}'; canonicalUrl='{}'; existingArticle={}",
+                input.url,
+                url,
+                articleDiagnostic(duplicate),
+            )
+            throw ArticleUrlConflictException(duplicate.url)
+        }
         logFacebookPhotoSaveDecision(url, enrichment, contentForCache, title, publishedAt)
         logFacebookPhotoFieldSourceDecision(
             operation = "create",
@@ -395,6 +404,63 @@ class ArticleService(
         val base = wordBoundary?.let { candidate.take(it) } ?: candidate
         return "${base.trimEnd()}..."
     }
+
+    private fun findFacebookDuplicate(
+        url: String,
+        publishedAt: Instant?,
+        thumbnail: String?,
+        contentForCache: String?,
+    ): Article? {
+        if (!isFacebookUrl(url) || publishedAt == null) return null
+        val thumbnailMediaId = facebookThumbnailMediaId(thumbnail)
+        val normalizedContent = contentForCache?.let { normalizeContentFingerprintText(it) }
+
+        return articleRepository.findFacebookDuplicateCandidatesByPublishedAt(publishedAt)
+            .firstOrNull { candidate ->
+                candidate.article.url != url &&
+                    (
+                        matchingFacebookThumbnail(thumbnailMediaId, candidate.article.thumbnail) ||
+                            matchingFacebookContent(normalizedContent, candidate.content)
+                    )
+            }
+            ?.article
+    }
+
+    private fun matchingFacebookThumbnail(newMediaId: String?, existingThumbnail: String?): Boolean =
+        newMediaId != null && newMediaId == facebookThumbnailMediaId(existingThumbnail)
+
+    private fun facebookThumbnailMediaId(thumbnail: String?): String? {
+        if (thumbnail.isNullOrBlank()) return null
+        val uri = runCatching { URI(thumbnail) }.getOrNull() ?: return null
+        val host = uri.host?.lowercase().orEmpty()
+        if (!host.endsWith("fbcdn.net") && !host.contains(".fbcdn.net")) return null
+        return uri.path
+            ?.substringAfterLast('/')
+            ?.takeIf { it.isNotBlank() && it.contains('_') }
+    }
+
+    private fun matchingFacebookContent(newContent: String?, existingContent: String?): Boolean {
+        if (newContent.isNullOrBlank() || existingContent.isNullOrBlank()) return false
+        val normalizedExisting = normalizeContentFingerprintText(existingContent)
+        if (newContent.length < MIN_FACEBOOK_DUPLICATE_CONTENT_CHARS ||
+            normalizedExisting.length < MIN_FACEBOOK_DUPLICATE_CONTENT_CHARS
+        ) {
+            return false
+        }
+        if (newContent == normalizedExisting) return true
+
+        val shorter = if (newContent.length <= normalizedExisting.length) newContent else normalizedExisting
+        val longer = if (newContent.length <= normalizedExisting.length) normalizedExisting else newContent
+        val shorterPrefix = shorter.removeSuffix("...").removeSuffix("…").trimEnd()
+        if (shorterPrefix.length >= MIN_FACEBOOK_DUPLICATE_CONTENT_CHARS && longer.contains(shorterPrefix)) return true
+
+        val newPrefix = newContent.take(FACEBOOK_DUPLICATE_PREFIX_CHARS)
+        val existingPrefix = normalizedExisting.take(FACEBOOK_DUPLICATE_PREFIX_CHARS)
+        return newPrefix.length >= MIN_FACEBOOK_DUPLICATE_CONTENT_CHARS && newPrefix == existingPrefix
+    }
+
+    private fun normalizeContentFingerprintText(text: String): String =
+        text.replace(LOG_WHITESPACE_PATTERN, " ").trim()
 
     private fun preserveContentAndFacebookPostTitle(article: Article, contentForCache: String) {
         preserveContent(article.id!!, article.url, contentForCache)
@@ -1014,6 +1080,8 @@ class ArticleService(
         private const val MAX_CONTENT_BYTES = 5 * 1024 * 1024
         private const val MAX_CONTENT_CACHE_CHARS = 1_200
         private const val MIN_CONTENT_CACHE_WORD_BOUNDARY_CHARS = 900
+        private const val MIN_FACEBOOK_DUPLICATE_CONTENT_CHARS = 120
+        private const val FACEBOOK_DUPLICATE_PREFIX_CHARS = 180
 
         /**
          * Normalizes a language tag to lowercase and validates it against the BCP-47-like
