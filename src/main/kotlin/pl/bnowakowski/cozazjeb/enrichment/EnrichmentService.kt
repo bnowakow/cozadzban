@@ -418,6 +418,39 @@ class EnrichmentService(
             ?: result
     }
 
+    fun refreshFavicon(url: String): String? {
+        val candidates = try {
+            val html = fetchHtml(url)
+            faviconCandidates(url, Jsoup.parse(html, url))
+        } catch (ex: RestClientResponseException) {
+            LOG.debug(
+                "Favicon metadata fetch failed; using origin favicon fallback; url='{}'; status={}; exception={}: {}",
+                url,
+                ex.statusCode.value(),
+                ex.javaClass.simpleName,
+                ex.message,
+            )
+            originFavicon(url)
+        } catch (ex: RestClientException) {
+            LOG.debug(
+                "Favicon metadata fetch failed; using origin favicon fallback; url='{}'; exception={}: {}",
+                url,
+                ex.javaClass.simpleName,
+                ex.message,
+            )
+            originFavicon(url)
+        } catch (ex: IllegalArgumentException) {
+            LOG.debug(
+                "Favicon metadata fetch rejected; using origin favicon fallback; url='{}'; exception={}: {}",
+                url,
+                ex.javaClass.simpleName,
+                ex.message,
+            )
+            originFavicon(url)
+        }
+        return faviconCache.cache(url, candidates)
+    }
+
     private fun recoverFacebookPhotoPrimarySuccessIfUnusable(url: String, html: String): EnrichmentResult? {
         if (!isFacebookPhotoUrl(url)) return null
 

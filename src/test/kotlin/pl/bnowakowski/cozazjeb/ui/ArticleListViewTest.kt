@@ -166,7 +166,7 @@ class ArticleListViewTest {
     }
 
     @Test
-    fun `page footer shows app version`() {
+    fun `page shows fixed app version badge`() {
         stubArticles()
 
         val view = ArticleListView(
@@ -180,6 +180,7 @@ class ArticleListViewTest {
         val spans = findComponents(view, Span::class.java)
 
         assertTrue(spans.any { it.text == "v0.8.0+abc12345" })
+        assertFalse(spans.any { it.text.startsWith("Cookies: necessary session/auth cookies") })
     }
 
     private fun authenticateAs(email: String) {

@@ -260,7 +260,8 @@ Phases 4 and 5 are independent and can be developed in parallel.
     and add a visible RSS icon/link in the article list top bar for users.
 58. **Favicon metadata** — store nullable `article.favicon`, download/cache the source site's
     declared icon metadata as a local `/favicons/...` asset when available, expose it in article
-    responses, and use it in feed source rows.
+    responses, use it in feed source rows, and run a startup backfill for existing articles whose
+    favicon is missing or still points at a non-local icon URL.
 
 ---
 

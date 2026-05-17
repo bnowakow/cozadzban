@@ -1,5 +1,5 @@
 
-.PHONY: help docker-up docker-down docker-data-permissions docker-pg-nuke docker-pg-backup install-pg-backup-cron build run run-local run-prod test clean docker-logs docker-spring-shell docker-pg-shell docker-upgrade bump-version bump-patch bump-minor install-git-hooks install-codex-skills
+.PHONY: help docker-up docker-down docker-data-permissions docker-pg-nuke docker-pg-backup install-pg-backup-cron build run run-local run-prod test clean docker-logs docker-spring-shell docker-pg-shell docker-upgrade docker-upgrade-no-cache bump-version bump-patch bump-minor install-git-hooks install-codex-skills
 
 -include .env
 
@@ -14,7 +14,8 @@ help:
 	@printf "    %-31s %s\n" "docker-down" "Stop and remove local infrastructure containers"
 	@printf "    %-31s %s\n" "docker-logs" "Show compose logs (follow mode)"
 	@printf "    %-31s %s\n" "docker-spring-shell" "Open bash inside the running Spring Boot container"
-	@printf "    %-31s %s\n" "docker-upgrade" "Pull latest code, rebuild image, restart containers, follow logs"
+	@printf "    %-31s %s\n" "docker-upgrade" "Pull latest code, rebuild image with BuildKit caches, restart containers, follow logs"
+	@printf "    %-31s %s\n" "docker-upgrade-no-cache" "Pull latest code, rebuild without Docker cache, restart containers, follow logs"
 	@printf "\n"
 	@printf "  \033[1;94m%s\033[0m\n" "PostgreSQL in Docker"
 	@printf "    %-31s %s\n" "docker-pg-nuke" "Recreate PostgreSQL container and reset docker-data/postgres"
@@ -61,11 +62,11 @@ docker-up: docker-data-permissions
 	@echo "  - PostgreSQL:     localhost:$(POSTGRES_PORT)"
 	@echo ""
 
-# Prepare docker-data so Docker can own PostgreSQL files while host cron backups can write backup files.
+# Prepare docker-data so containers can persist app data and host cron backups can write backup files.
 docker-data-permissions:
 	@mkdir -p ./docker-data
 	@docker run --rm -v "$(PWD)/docker-data:/work" alpine:3.20 \
-		sh -c "mkdir -p /work/postgres /work/backup/postgres && chown -R $(LOCAL_UID):$(LOCAL_GID) /work/backup && chmod 755 /work /work/postgres && chmod -R u+rwX,go-rwx /work/backup"
+		sh -c "mkdir -p /work/postgres /work/data/favicons /work/backup/postgres && chown -R $(LOCAL_UID):$(LOCAL_GID) /work/backup && chmod 755 /work /work/postgres && chmod -R a+rwX /work/data && chmod -R u+rwX,go-rwx /work/backup"
 
 # Stop local development environment
 docker-down:
@@ -199,9 +200,18 @@ docker-spring-shell:
 	docker compose -f compose.yaml exec springboot bash
 
 # Pull latest code, rebuild, restart, and follow logs
-docker-upgrade:
+docker-upgrade: docker-data-permissions
 	git pull --ff-only
-	docker compose -f compose.yaml build --pull --no-cache springboot
+	DOCKER_BUILDKIT=1 docker compose -f compose.yaml build --pull springboot
+	docker compose -f compose.yaml down --remove-orphans
+	docker compose -f compose.yaml up -d --force-recreate
+	docker compose -f compose.yaml ps
+	docker compose -f compose.yaml logs -f
+
+# Pull latest code, rebuild from scratch, restart, and follow logs. Use only when cache corruption is suspected.
+docker-upgrade-no-cache: docker-data-permissions
+	git pull --ff-only
+	DOCKER_BUILDKIT=1 docker compose -f compose.yaml build --pull --no-cache springboot
 	docker compose -f compose.yaml down --remove-orphans
 	docker compose -f compose.yaml up -d --force-recreate
 	docker compose -f compose.yaml ps

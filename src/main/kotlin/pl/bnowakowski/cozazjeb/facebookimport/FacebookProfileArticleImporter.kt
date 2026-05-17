@@ -1698,7 +1698,7 @@ class FacebookProfileArticleImporter(
                 ArticleInput(
                     url = candidate.url,
                     language = candidate.language,
-                    quote = properties.markerPhrase,
+                    quote = null,
                 ),
                 creatorId,
             )
@@ -1734,7 +1734,7 @@ class FacebookProfileArticleImporter(
                     ArticleInput(
                         url = candidate.url,
                         language = candidate.language,
-                        quote = properties.markerPhrase,
+                        quote = null,
                     )
                 )
                 .retrieve()

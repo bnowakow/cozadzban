@@ -86,15 +86,22 @@ class ArticleListView(
     private val creatorCache = mutableMapOf<Long, String>()
     private var lastFacebookCreatedId: Long? = null
 
-    private val dataProvider = DataProvider.fromCallbacks<Article>(
+    private var dataProvider = createDataProvider()
+
+    private fun createDataProvider() = DataProvider.fromCallbacks<Article>(
         { query ->
             val requestedLimit = query.limit.coerceAtLeast(1)
             val requestedOffset = query.offset
             val page = requestedOffset / requestedLimit
+            val language = languageFilter
+            val publishedFrom = publishedFromFilter
+            val publishedTo = publishedToFilter
+            val createdFrom = createdFromFilter
+            val createdTo = createdToFilter
 
             val articles = articleRepository.findPage(
                 page, requestedLimit, "createdAt", "desc",
-                languageFilter, publishedFromFilter, publishedToFilter, createdFromFilter, createdToFilter,
+                language, publishedFrom, publishedTo, createdFrom, createdTo,
             )
             logFacebookPhotoFeedFetch(
                 page = page,
@@ -113,8 +120,13 @@ class ArticleListView(
             articles.stream()
         },
         { _ ->
+            val language = languageFilter
+            val publishedFrom = publishedFromFilter
+            val publishedTo = publishedToFilter
+            val createdFrom = createdFromFilter
+            val createdTo = createdToFilter
             articleRepository.countFiltered(
-                languageFilter, publishedFromFilter, publishedToFilter, createdFromFilter, createdToFilter,
+                language, publishedFrom, publishedTo, createdFrom, createdTo,
             ).toInt()
         },
     )
@@ -162,9 +174,8 @@ class ArticleListView(
         feedShell.add(filterBar, feed)
         feedShell.expand(feed)
 
-        val footer = buildFooter()
-        footer.element.style.set("align-self", "center")
-        add(topBar, feedShell, footer)
+        val versionBadge = buildVersionBadge()
+        add(topBar, feedShell, versionBadge)
         expand(feedShell)
     }
 
@@ -509,7 +520,7 @@ class ArticleListView(
         row.isPadding = false
         row.isSpacing = true
         row.defaultVerticalComponentAlignment = Alignment.CENTER
-        row.element.style.set("gap", "var(--lumo-space-xs)")
+        row.element.style.set("gap", "0.55rem")
         return row
     }
 
@@ -597,23 +608,24 @@ class ArticleListView(
         return row
     }
 
-    private fun buildFooter(): VerticalLayout {
+    private fun buildVersionBadge(): Div {
         val versionFooter = Span("v${buildProperties.displayVersion}")
         versionFooter.element.style.set("font-size", "var(--lumo-font-size-xs)")
         versionFooter.element.style.set("color", "var(--lumo-tertiary-text-color)")
 
-        val cookieNotice = Span("Cookies: necessary session/auth cookies are used; optional analytics cookies may be used when analytics is enabled.")
-        cookieNotice.element.style.set("font-size", "var(--lumo-font-size-xs)")
-        cookieNotice.element.style.set("color", "var(--lumo-tertiary-text-color)")
-        cookieNotice.element.style.set("text-align", "center")
-
-        val footer = VerticalLayout(versionFooter, cookieNotice)
-        footer.isPadding = false
-        footer.isSpacing = false
-        footer.defaultHorizontalComponentAlignment = Alignment.CENTER
-        footer.width = "100%"
-        footer.element.style.set("padding", "var(--lumo-space-s) var(--lumo-space-m)")
-        return footer
+        val badge = Div(versionFooter)
+        badge.addClassName("czj-version-badge")
+        badge.element.style.set("position", "fixed")
+        badge.element.style.set("left", "0.75rem")
+        badge.element.style.set("bottom", "0.55rem")
+        badge.element.style.set("z-index", "900")
+        badge.element.style.set("padding", "0.25rem 0.45rem")
+        badge.element.style.set("border-radius", "6px")
+        badge.element.style.set("background", "var(--czj-card-bg)")
+        badge.element.style.set("border", "1px solid var(--lumo-contrast-10pct)")
+        badge.element.style.set("box-shadow", "0 1px 5px rgba(15, 23, 42, 0.08)")
+        badge.element.style.set("opacity", "0.86")
+        return badge
     }
 
     private fun sourceName(url: String): String =
@@ -1093,6 +1105,8 @@ class ArticleListView(
     }
 
     private fun refreshData() {
+        dataProvider = createDataProvider()
+        feed.setDataProvider(dataProvider)
         feed.dataCommunicator.reset()
         dataProvider.refreshAll()
         feed.element.executeJs("this.scrollToIndex && this.scrollToIndex(0)")

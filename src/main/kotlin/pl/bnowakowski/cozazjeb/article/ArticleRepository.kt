@@ -55,6 +55,12 @@ interface ArticleRepositoryCustom {
     /** Returns the most frequently used normalized language codes, most-used first. */
     fun findTopLanguages(limit: Int): List<String>
 
+    /** Returns articles whose favicon still needs to be downloaded into the local cache. */
+    fun findFaviconBackfillCandidates(limit: Int): List<Article>
+
+    /** Updates only the favicon field for a single article. */
+    fun updateFavicon(id: Long, favicon: String): Boolean
+
     companion object {
         /**
          * Allowlist mapping from API sort field name to SQL column name (BR-26).
@@ -171,6 +177,34 @@ class ArticleRepositoryCustomImpl(
             mapOf("limit" to limit.coerceAtLeast(0)),
             String::class.java,
         )
+
+    override fun findFaviconBackfillCandidates(limit: Int): List<Article> =
+        jdbc.query(
+            """
+                SELECT id, url, language, title, thumbnail, favicon, lead, quote, ai_summary,
+                       created_by_user_id, created_at, published_at
+                  FROM article
+                 WHERE favicon IS NULL
+                    OR TRIM(favicon) = ''
+                    OR favicon NOT LIKE '/favicons/%'
+                 ORDER BY id ASC
+                 LIMIT :limit
+            """.trimIndent(),
+            mapOf("limit" to limit.coerceAtLeast(0)),
+            ARTICLE_ROW_MAPPER,
+        )
+
+    override fun updateFavicon(id: Long, favicon: String): Boolean {
+        val updated = jdbc.update(
+            """
+                UPDATE article
+                   SET favicon = :favicon
+                 WHERE id = :id
+            """.trimIndent(),
+            mapOf("id" to id, "favicon" to favicon),
+        )
+        return updated > 0
+    }
 
     /**
      * Builds a parameterised WHERE clause from the given filters.

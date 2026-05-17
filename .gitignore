@@ -11,6 +11,7 @@ target/
 docker-data/*
 docker-data/backup/*
 docker-data/backup/postgres/*
+data/
 src/main/frontend/generated/
 
 ### STS ###
@@ -54,4 +55,3 @@ out/
 src/main/resources/facebook.properties
 # misc
 logs/
-

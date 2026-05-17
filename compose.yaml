@@ -50,6 +50,7 @@ services:
     volumes:
       - './.env:/app/.env:ro'
       - './logs:/app/logs'
+      - './docker-data/data:/app/data'
     ports:
       - '${APP_PORT:-8086}:8080'
   postgres:
