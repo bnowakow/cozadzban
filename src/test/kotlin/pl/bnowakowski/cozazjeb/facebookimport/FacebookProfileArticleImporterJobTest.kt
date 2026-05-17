@@ -673,6 +673,62 @@ class FacebookProfileArticleImporterJobTest {
         }
     }
 
+    @Test
+    fun `remote candidate duplicate precheck sends canonical url without tracking parameters`() {
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/api/articles") { exchange ->
+            val url = queryParameters(exchange).getValue("existsUrl")
+            assertEquals(
+                "https://www.donald.pl/artykuly/xpjri33n/usa-odmawia-informacji-jak-i-dlaczego-przyjely-zbigniewa-ziobro",
+                url,
+            )
+            assertEquals("test-machine-key", exchange.requestHeaders.getFirst("X-CoZaZjeb-M2M-Key"))
+            exchange.respondJson("""{"exists":true}""")
+        }
+        server.start()
+        try {
+            val importer = FacebookProfileArticleImporter(
+                FacebookImportProperties(
+                    language = "pl",
+                    targetApiBaseUrl = "http://127.0.0.1:${server.address.port}",
+                    targetApiKey = "test-machine-key",
+                ),
+                appUserRepository,
+                articleService,
+            )
+            val method = importer.javaClass.getDeclaredMethod("isAlreadyImportedCandidateUrl", String::class.java)
+            method.isAccessible = true
+
+            assertTrue(
+                method.invoke(
+                    importer,
+                    "https://www.donald.pl/artykuly/xpjri33n/usa-odmawia-informacji-jak-i-dlaczego-przyjely-zbigniewa-ziobro?fbclid=IwZXh0bgNhZW0CMTAAc3J0YwZhcHBfaWQQMjIyMDM5MTc4ODIwMDg5MgABHgL5Eaw80yWFXwfZKY3WWjuT8169l1VqXaCS4Wp048S_0jfZ2pB01LP_iIcP_aem_XIYeUC7az_DQbcwioeCioQ",
+                ) as Boolean,
+            )
+            verify(articleService, never()).existsByUrl(any())
+        } finally {
+            server.stop(0)
+        }
+    }
+
+    @Test
+    fun `remote candidate duplicate precheck fails closed when server check fails`() {
+        val importer = FacebookProfileArticleImporter(
+            FacebookImportProperties(
+                language = "pl",
+                targetApiBaseUrl = "http://127.0.0.1:1",
+                targetApiKey = "test-machine-key",
+            ),
+            appUserRepository,
+            articleService,
+        )
+        val method = importer.javaClass.getDeclaredMethod("isAlreadyImportedCandidateUrl", String::class.java)
+        method.isAccessible = true
+
+        assertTrue(method.invoke(importer, "https://www.donald.pl/artykuly/existing?fbclid=ignored") as Boolean)
+        verify(articleService, never()).existsByUrl(any())
+    }
+
     private fun queryParameters(exchange: HttpExchange): Map<String, String> =
         exchange.requestURI.rawQuery
             .orEmpty()

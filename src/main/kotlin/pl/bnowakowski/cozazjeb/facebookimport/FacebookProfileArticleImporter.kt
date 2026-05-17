@@ -1322,14 +1322,15 @@ class FacebookProfileArticleImporter(
             }
             .getOrDefault(false)
 
-    private fun isAlreadyImportedRemoteCandidateUrl(url: String): Boolean =
-        runCatching {
+    private fun isAlreadyImportedRemoteCandidateUrl(url: String): Boolean {
+        val canonicalUrl = runCatching { ArticleService.canonicalizeUrl(url) }.getOrDefault(url)
+        return runCatching {
             remoteArticleClient()
                 .get()
                 .uri { builder ->
                     builder
                         .path(properties.targetArticlePath)
-                        .queryParam("existsUrl", url)
+                        .queryParam("existsUrl", canonicalUrl)
                         .build()
                 }
                 .header(properties.targetApiKeyHeader, properties.targetApiKey)
@@ -1338,11 +1339,13 @@ class FacebookProfileArticleImporter(
                 ?.exists ?: false
         }.onFailure { ex ->
             logger.warn(
-                "Facebook import remote duplicate precheck failed for {}; proceeding to approval: {}",
+                "Facebook import remote duplicate precheck failed for {}; canonicalUrl={}; treating as already imported: {}",
                 url,
+                canonicalUrl,
                 ex.message ?: ex.javaClass.simpleName,
             )
-        }.getOrDefault(false)
+        }.getOrDefault(true)
+    }
 
     private fun candidateApprovalId(): String =
         "facebook-import-candidate-${CANDIDATE_APPROVAL_ID_SEQUENCE.incrementAndGet()}"
