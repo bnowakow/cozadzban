@@ -376,6 +376,11 @@ html[theme~="dark"] .czj-article-card {
   max-width: 39rem;
 }
 
+.czj-article-lead-truncated {
+  border-bottom: 1px solid var(--lumo-contrast-10pct);
+  padding-bottom: 0.45rem;
+}
+
 .czj-source-icon {
   align-items: center;
   background: var(--czj-source-icon-bg);

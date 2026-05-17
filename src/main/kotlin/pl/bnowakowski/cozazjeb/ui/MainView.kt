@@ -636,12 +636,26 @@ class ArticleListView(
     private fun buildLead(text: String): Div {
         val lead = Div()
         lead.addClassName("czj-article-lead")
-        lead.text = text
+        val displayText = frontendLeadText(text)
+        if (displayText.length < text.trim().length) {
+            lead.addClassName("czj-article-lead-truncated")
+        }
+        lead.text = displayText
         lead.element.style.set("font-size", "var(--lumo-font-size-m)")
         lead.element.style.set("line-height", "1.65")
         lead.element.style.set("color", "var(--lumo-secondary-text-color)")
         lead.element.style.set("overflow-wrap", "anywhere")
         return lead
+    }
+
+    private fun frontendLeadText(text: String): String {
+        val normalized = normalizeArticleTextForComparison(text)
+        if (normalized.length <= MAX_FRONTEND_LEAD_CHARS) return normalized
+
+        val wordBoundary = normalized.lastIndexOf(' ', MAX_FRONTEND_LEAD_CHARS)
+            .takeIf { it >= MIN_FRONTEND_LEAD_WORD_BOUNDARY_CHARS }
+            ?: MAX_FRONTEND_LEAD_CHARS
+        return normalized.take(wordBoundary).trimEnd() + "..."
     }
 
     private fun buildArticleActions(article: Article): HorizontalLayout {
@@ -1442,6 +1456,8 @@ class ArticleListView(
         private const val MAX_LOGGED_VALUE_CHARS = 300
         private const val LANGUAGE_SUGGESTION_LIMIT = 3
         private const val CACHE_DERIVED_TITLE_PREFIX_MIN_CHARS = 40
+        private const val MAX_FRONTEND_LEAD_CHARS = 1_200
+        private const val MIN_FRONTEND_LEAD_WORD_BOUNDARY_CHARS = 900
         private const val FACEBOOK_IMPORT_APPROVAL_POLL_INTERVAL_MS = 1_000
         private val DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneOffset.UTC)
         private val SHORT_DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneOffset.UTC)

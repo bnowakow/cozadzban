@@ -8,6 +8,7 @@ import com.vaadin.flow.component.button.Button
 import com.vaadin.flow.component.UI
 import com.vaadin.flow.component.dialog.Dialog
 import com.vaadin.flow.component.html.Anchor
+import com.vaadin.flow.component.html.Div
 import com.vaadin.flow.component.html.Span
 import com.vaadin.flow.component.radiobutton.RadioButtonGroup
 import com.vaadin.flow.component.textfield.TextField
@@ -329,6 +330,41 @@ class ArticleListViewTest {
 
         assertFalse(divTexts.contains(title))
         assertTrue(divTexts.contains("Visible lead"))
+    }
+
+    @Test
+    fun `article card caps very long lead text for frontend display`() {
+        stubArticles()
+        val longLead = List(900) { "word$it" }.joinToString(" ")
+        val article = Article(
+            id = 45L,
+            url = "https://www.facebook.com/photo/?fbid=1287889633490862&set=a.358353523111149",
+            language = "pl",
+            title = "Distinct title",
+            lead = longLead,
+            createdByUserId = 1L,
+        )
+        whenever(articleContentRepository.findById(45L)).thenReturn(Optional.empty())
+
+        val view = ArticleListView(
+            articleRepository,
+            articleContentRepository,
+            articleService,
+            facebookProfileArticleImporter,
+            appUserRepository,
+            buildProperties,
+        )
+        val method = view.javaClass.getDeclaredMethod("buildArticleCard", Article::class.java)
+        method.isAccessible = true
+        val card = method.invoke(view, article) as Component
+
+        val lead = findComponents(card, Div::class.java)
+            .single { it.hasClassName("czj-article-lead") }
+
+        assertTrue(lead.text.length <= 1_203)
+        assertTrue(lead.text.endsWith("..."))
+        assertTrue(lead.hasClassName("czj-article-lead-truncated"))
+        assertFalse(lead.text.contains("word899"))
     }
 
     private fun authenticateAs(email: String) {
