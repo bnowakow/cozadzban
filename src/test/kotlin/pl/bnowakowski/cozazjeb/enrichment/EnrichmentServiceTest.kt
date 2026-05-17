@@ -17,6 +17,7 @@ import org.springframework.boot.test.system.OutputCaptureExtension
 import org.springframework.web.client.RestClient
 import java.net.InetSocketAddress
 import java.net.HttpURLConnection
+import java.net.URI
 import java.time.Instant
 
 @ExtendWith(OutputCaptureExtension::class)
@@ -275,6 +276,32 @@ class EnrichmentServiceTest {
         )
 
         assertNull(result)
+    }
+
+    @Test
+    fun `classifies Facebook unified login app redirects as login documents`() {
+        val html = """
+            <!doctype html>
+            <html>
+              <head>
+                <title>Facebook – zaloguj się lub zarejestruj</title>
+                <link rel="canonical" href="https://www.facebook.com/">
+                <meta name="description" content="Utwórz konto lub zaloguj się do Facebooka. Pozostawaj w kontakcie ze znajomymi, rodziną i innymi osobami, które znasz.">
+              </head>
+              <body>Facebook Ładowanie… Spróbuj ponownie Anuluj Ładowanie…</body>
+            </html>
+        """.trimIndent()
+
+        val diagnostics = validateFacebookPhotoFallbackHtml(
+            originalUrl = "https://www.facebook.com/photo/?fbid=122175696182723345&set=a.122114684240723345",
+            finalUrl = "https://mbasic.facebook.com/unified/login_via/app/?next=https%3A%2F%2Fmbasic.facebook.com%2Fphoto.php%3Ffbid%3D122175696182723345",
+            html = html,
+        )
+
+        assertTrue(diagnostics.contains("usable=false"))
+        assertTrue(diagnostics.contains("rejectReasons=final-uri-facebook-login|facebook-login-document"))
+        assertTrue(diagnostics.contains("documentKind=facebook-login"))
+        assertTrue(diagnostics.contains("facebookPostText=absent"))
     }
 
     @Test
@@ -1392,6 +1419,28 @@ class EnrichmentServiceTest {
         )
         method.isAccessible = true
         return method.invoke(service, url, html) as EnrichmentResult
+    }
+
+    private fun validateFacebookPhotoFallbackHtml(
+        originalUrl: String,
+        finalUrl: String,
+        html: String,
+    ): String {
+        val service = EnrichmentService(RestClient.builder())
+        val validationMethod = EnrichmentService::class.java.getDeclaredMethod(
+            "facebookPhotoFallbackHtmlValidation",
+            String::class.java,
+            URI::class.java,
+            String::class.java,
+        )
+        validationMethod.isAccessible = true
+        val validation = validationMethod.invoke(service, originalUrl, URI(finalUrl), html)
+        val diagnosticsMethod = EnrichmentService::class.java.getDeclaredMethod(
+            "facebookPhotoFallbackValidationDiagnostics",
+            validation.javaClass,
+        )
+        diagnosticsMethod.isAccessible = true
+        return diagnosticsMethod.invoke(service, validation) as String
     }
 
     private fun isUnavailableFacebookResult(url: String, result: EnrichmentResult, html: String): Boolean {

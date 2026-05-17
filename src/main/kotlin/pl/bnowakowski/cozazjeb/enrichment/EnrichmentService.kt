@@ -1656,11 +1656,11 @@ class EnrichmentService(
         val canonical = doc.selectFirst("link[rel=canonical]")?.attr("href").normalized()
         val imageCandidates = facebookPhotoImageCandidates(html)
         val mainPhotoImageCandidates = imageCandidates.count { isLikelyMainFacebookPhotoImage(it) }
-        val facebookPostText = facebookPhotoFallbackPostText(originalUrl, html, doc)
+        val finalUriValue = finalUri?.toString()
+        val facebookPostText = facebookPhotoFallbackPostText(originalUrl, finalUriValue, html, doc)
         val thumbnail = facebookPhotoImage(originalUrl, html)
         val publishedAt = parsePublishedAt(originalUrl, doc)
         val publishedAtSignals = facebookPhotoPublishedAtSignals(originalUrl, doc)
-        val finalUriValue = finalUri?.toString()
         val rejectReasons = mutableListOf<String>()
 
         if (isFacebookGenericError(html)) {
@@ -1702,10 +1702,11 @@ class EnrichmentService(
 
     private fun facebookPhotoFallbackPostText(
         url: String,
+        finalUrl: String?,
         html: String,
         doc: org.jsoup.nodes.Document,
     ): String? {
-        if (isFacebookLoginDocument(url, doc)) return null
+        if (isFacebookLoginDocument(url, doc, finalUrl)) return null
 
         return parseFacebookEmbeddedMessageText(url, html, doc)
             ?: metaContent(doc, "meta[property=og:description]")?.let { cleanFacebookMessageText(it) }
@@ -3772,7 +3773,13 @@ private fun isFacebookLoginUrl(value: String?): Boolean {
     val host = uri.host?.lowercase() ?: return false
     val path = uri.path?.lowercase().orEmpty()
     return isFacebookHostValue(host) &&
-        (path == "/login" || path == "/login/" || path == "/login.php" || path.startsWith("/login/"))
+        (
+            path == "/login" ||
+                path == "/login/" ||
+                path == "/login.php" ||
+                path.startsWith("/login/") ||
+                path.startsWith("/unified/login")
+            )
 }
 
 private fun isFacebookHostUrl(url: String): Boolean {
