@@ -420,7 +420,7 @@ class ArticleService(
                 candidate.article.url != url &&
                     (
                         matchingFacebookThumbnail(thumbnailMediaId, candidate.article.thumbnail) ||
-                            matchingFacebookContent(normalizedContent, candidate.content)
+                            matchingFacebookText(normalizedContent, candidate.content, candidate.article.title, candidate.article.lead)
                     )
             }
             ?.article
@@ -433,15 +433,26 @@ class ArticleService(
         if (thumbnail.isNullOrBlank()) return null
         val uri = runCatching { URI(thumbnail) }.getOrNull() ?: return null
         val host = uri.host?.lowercase().orEmpty()
+        if (host == "lookaside.fbsbx.com" || host.endsWith(".lookaside.fbsbx.com")) {
+            return uri.rawQuery
+                ?.split("&")
+                ?.firstNotNullOfOrNull { param ->
+                    param.substringBefore("=").takeIf { it == "media_id" }?.let { param.substringAfter("=", "") }
+                }
+                ?.takeIf { it.isNotBlank() }
+        }
         if (!host.endsWith("fbcdn.net") && !host.contains(".fbcdn.net")) return null
         return uri.path
             ?.substringAfterLast('/')
             ?.takeIf { it.isNotBlank() && it.contains('_') }
     }
 
-    private fun matchingFacebookContent(newContent: String?, existingContent: String?): Boolean {
-        if (newContent.isNullOrBlank() || existingContent.isNullOrBlank()) return false
-        val normalizedExisting = normalizeContentFingerprintText(existingContent)
+    private fun matchingFacebookText(newContent: String?, vararg existingValues: String?): Boolean =
+        existingValues.any { existingValue -> matchingFacebookContent(newContent, existingValue) }
+
+    private fun matchingFacebookContent(newContent: String?, existingValue: String?): Boolean {
+        if (newContent.isNullOrBlank() || existingValue.isNullOrBlank()) return false
+        val normalizedExisting = normalizeContentFingerprintText(existingValue)
         if (newContent.length < MIN_FACEBOOK_DUPLICATE_CONTENT_CHARS ||
             normalizedExisting.length < MIN_FACEBOOK_DUPLICATE_CONTENT_CHARS
         ) {
@@ -1083,8 +1094,8 @@ class ArticleService(
         private const val MAX_CONTENT_BYTES = 5 * 1024 * 1024
         private const val MAX_CONTENT_CACHE_CHARS = 1_200
         private const val MIN_CONTENT_CACHE_WORD_BOUNDARY_CHARS = 900
-        private const val MIN_FACEBOOK_DUPLICATE_CONTENT_CHARS = 120
-        private const val FACEBOOK_DUPLICATE_PREFIX_CHARS = 120
+        private const val MIN_FACEBOOK_DUPLICATE_CONTENT_CHARS = 60
+        private const val FACEBOOK_DUPLICATE_PREFIX_CHARS = 60
 
         /**
          * Normalizes a language tag to lowercase and validates it against the BCP-47-like

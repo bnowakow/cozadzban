@@ -176,6 +176,120 @@ class ArticleServiceTitleTest {
     }
 
     @Test
+    fun `create rejects Facebook article with same published time and short matching lookaside content`() {
+        val articleRepository: ArticleRepository = mock()
+        val enrichmentService: EnrichmentService = mock()
+        val articleContentRepository: ArticleContentRepository = mock()
+        val service = ArticleService(
+            articleRepository,
+            enrichmentService,
+            mock<AppUserRepository>(),
+            articleContentRepository,
+        )
+        val publishedAt = Instant.parse("2026-05-08T06:00:41Z")
+        val postText = "Do roboty kochani, ale też nie przemęczajcie się. " +
+            "Przemęczenie szkodzi zdrowiu, a nie będzie miał was kto leczyć."
+        whenever(articleRepository.existsByUrl(any())).thenReturn(false)
+        whenever(enrichmentService.enrich(any())).thenReturn(
+            EnrichmentResult(
+                title = postText,
+                thumbnail = "https://lookaside.fbsbx.com/lookaside/crawler/media/?media_id=1028710846157213",
+                lead = postText,
+                plainText = null,
+                publishedAt = publishedAt,
+            ),
+        )
+        whenever(articleRepository.findFacebookDuplicateCandidatesByPublishedAt(publishedAt)).thenReturn(
+            listOf(
+                ArticleDuplicateCandidate(
+                    article = Article(
+                        id = 241L,
+                        url = "https://www.facebook.com/serwisdonaldpl/posts/pfbid0NrAXQE57R6yqPjam86nLnRYM5jdaSCLo7SwxJCh1w3ZPLykqUH41E4SJ9uM2HR2Ul",
+                        language = "pl",
+                        thumbnail = "https://lookaside.fbsbx.com/lookaside/crawler/media/?media_id=1028710846157213",
+                        createdByUserId = 7L,
+                        publishedAt = publishedAt,
+                    ),
+                    content = postText,
+                ),
+            ),
+        )
+
+        val exception = assertThrows(ArticleUrlConflictException::class.java) {
+            service.create(
+                ArticleInput(
+                    url = "https://www.facebook.com/serwisdonaldpl/posts/pfbid0NyhhziCpsmtnWwrhc9m4wfQ4ZP8h1K42QVox9Zt7U5pFmaYRvMF6KPeBgYnTaeRZl",
+                    language = "pl",
+                ),
+                creatorId = 7L,
+            )
+        }
+
+        assertEquals(
+            "https://www.facebook.com/serwisdonaldpl/posts/pfbid0NrAXQE57R6yqPjam86nLnRYM5jdaSCLo7SwxJCh1w3ZPLykqUH41E4SJ9uM2HR2Ul",
+            exception.url,
+        )
+        verify(articleRepository, org.mockito.kotlin.never()).save(any())
+    }
+
+    @Test
+    fun `create rejects Facebook article when existing cache is noisy but title matches same published content`() {
+        val articleRepository: ArticleRepository = mock()
+        val enrichmentService: EnrichmentService = mock()
+        val articleContentRepository: ArticleContentRepository = mock()
+        val service = ArticleService(
+            articleRepository,
+            enrichmentService,
+            mock<AppUserRepository>(),
+            articleContentRepository,
+        )
+        val publishedAt = Instant.parse("2026-05-02T04:10:44Z")
+        val title = "Pentagon ogłasza: Stany Zjednoczone wycofują tysiące żołnierzy z Niemiec 👇"
+        whenever(articleRepository.existsByUrl(any())).thenReturn(false)
+        whenever(enrichmentService.enrich(any())).thenReturn(
+            EnrichmentResult(
+                title = title,
+                thumbnail = null,
+                lead = title,
+                plainText = null,
+                publishedAt = publishedAt,
+            ),
+        )
+        whenever(articleRepository.findFacebookDuplicateCandidatesByPublishedAt(publishedAt)).thenReturn(
+            listOf(
+                ArticleDuplicateCandidate(
+                    article = Article(
+                        id = 262L,
+                        url = "https://www.facebook.com/rmf24/posts/pfbid02uCJeLfen5QD4ZMexNhcd1J3ALgqobpS84BLfZ8xEdeW1jJAXYfvbevbPRz1AvgrTl",
+                        language = "pl",
+                        title = title,
+                        lead = title,
+                        createdByUserId = 7L,
+                        publishedAt = publishedAt,
+                    ),
+                    content = "Online status indicator Active Bartek Dobrowolski-Nowakowski · Co za zjeb See more RMF24.pl",
+                ),
+            ),
+        )
+
+        val exception = assertThrows(ArticleUrlConflictException::class.java) {
+            service.create(
+                ArticleInput(
+                    url = "https://www.facebook.com/rmf24/posts/pfbid0qX8Gq1thmkWNY64v6LHdjmw5xsYWX1KDC5mrtumXepgTviJY38DE12DYCVHYfvq9l",
+                    language = "pl",
+                ),
+                creatorId = 7L,
+            )
+        }
+
+        assertEquals(
+            "https://www.facebook.com/rmf24/posts/pfbid02uCJeLfen5QD4ZMexNhcd1J3ALgqobpS84BLfZ8xEdeW1jJAXYfvbevbPRz1AvgrTl",
+            exception.url,
+        )
+        verify(articleRepository, org.mockito.kotlin.never()).save(any())
+    }
+
+    @Test
     fun `Facebook reel placeholder title is replaced with full lead`() {
         val lead = "This Facebook reel has enough useful text to become the article title instead of the placeholder."
         val title = titleForSave(
