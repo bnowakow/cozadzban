@@ -589,12 +589,31 @@ class ArticleListView(
     private fun buildLead(text: String): Div {
         val lead = Div()
         lead.addClassName("czj-article-lead")
-        lead.text = text
+        val displayText = trimmedLeadText(text)
+        val leadText = Span(displayText)
+        leadText.addClassName("czj-article-lead-text")
+        lead.add(leadText)
+        if (displayText.length < text.trim().length) {
+            val trimmedNotice = Span("Lead trimmed because it was too long to show.")
+            trimmedNotice.addClassName("czj-article-lead-trimmed-notice")
+            lead.add(trimmedNotice)
+        }
         lead.element.style.set("font-size", "var(--lumo-font-size-m)")
         lead.element.style.set("line-height", "1.65")
         lead.element.style.set("color", "var(--lumo-secondary-text-color)")
         lead.element.style.set("overflow-wrap", "anywhere")
         return lead
+    }
+
+    private fun trimmedLeadText(text: String): String {
+        val normalized = text.trim()
+        if (normalized.length <= MAX_LEAD_DISPLAY_CHARS) return normalized
+
+        val candidate = normalized.take(MAX_LEAD_DISPLAY_CHARS)
+        val wordBoundary = candidate.lastIndexOfAny(charArrayOf(' ', '\n', '\t'))
+            .takeIf { it >= MIN_LEAD_WORD_BOUNDARY_CHARS }
+        val base = wordBoundary?.let { candidate.take(it) } ?: candidate
+        return "${base.trimEnd()}..."
     }
 
     private fun buildArticleActions(article: Article): HorizontalLayout {
@@ -1392,6 +1411,8 @@ class ArticleListView(
         private val LOG = LoggerFactory.getLogger(ArticleListView::class.java)
         private val LOG_WHITESPACE_PATTERN = Regex("""\s+""")
         private const val MAX_LOGGED_VALUE_CHARS = 300
+        private const val MAX_LEAD_DISPLAY_CHARS = 1_200
+        private const val MIN_LEAD_WORD_BOUNDARY_CHARS = 900
         private const val LANGUAGE_SUGGESTION_LIMIT = 3
         private const val FACEBOOK_IMPORT_APPROVAL_POLL_INTERVAL_MS = 1_000
         private val DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneOffset.UTC)

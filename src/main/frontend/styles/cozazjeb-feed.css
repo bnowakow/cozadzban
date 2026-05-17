@@ -340,7 +340,22 @@ html[theme~="dark"] .czj-article-card {
 }
 
 .czj-article-lead {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
   max-width: 39rem;
+}
+
+.czj-article-lead-text {
+  display: block;
+}
+
+.czj-article-lead-trimmed-notice {
+  color: var(--czj-faint);
+  display: block;
+  font-size: var(--lumo-font-size-xs);
+  font-weight: 700;
+  line-height: 1.35;
 }
 
 .czj-source-icon {
