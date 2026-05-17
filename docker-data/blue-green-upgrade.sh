@@ -53,7 +53,8 @@ fi
 
 tmp_file="$upstream_file.tmp"
 printf 'server %s:8080 max_fails=3 fail_timeout=10s;\n' "$new_service" > "$tmp_file"
-mv "$tmp_file" "$upstream_file"
+cat "$tmp_file" > "$upstream_file"
+rm -f "$tmp_file"
 
 docker compose -f "$compose_file" exec -T reverse-proxy nginx -s reload
 echo "Reverse proxy now points to $new_service"
