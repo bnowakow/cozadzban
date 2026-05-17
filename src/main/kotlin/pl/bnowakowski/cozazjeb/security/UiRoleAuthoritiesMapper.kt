@@ -10,6 +10,7 @@ import org.springframework.security.oauth2.core.oidc.user.OidcUserAuthority
 import org.springframework.security.oauth2.core.user.OAuth2UserAuthority
 import org.springframework.stereotype.Component
 import pl.bnowakowski.cozazjeb.user.AppUserRepository
+import pl.bnowakowski.cozazjeb.user.AppUserStatus
 
 @Component
 class UiRoleAuthoritiesMapper(
@@ -24,6 +25,7 @@ class UiRoleAuthoritiesMapper(
         val role = email
             ?.let(AllowlistAuthorizationManager::normalizeEmail)
             ?.let(appUserRepository::findByEmail)
+            ?.takeIf { it.status == AppUserStatus.ACTIVE }
             ?.role
 
         if (role != null) {

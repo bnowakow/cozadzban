@@ -18,11 +18,11 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean
  * Phase 21 / Item 64 — Migration tests.
  *
  * Verifies that V3, V4, and V5 Flyway migrations produce the expected schema:
- * - article.created_by_user_id is NOT NULL (BR-41)
- * - article.published_at is nullable (BR-47)
+ * - article.created_by_user_id is NOT NULL (BR-37)
+ * - article.published_at is nullable (BR-41)
  * - article_content table exists (Phase 20)
- * - app_user.status column exists (BR-42)
- * - article_published_at_idx index exists (BR-47)
+ * - app_user.status column exists (BR-40)
+ * - article_published_at_idx index exists (BR-41)
  * - created_by_user_id NOT NULL constraint is enforced at the DB level
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)

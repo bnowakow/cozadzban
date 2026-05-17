@@ -127,7 +127,7 @@ x-architecture:
       technology: Spring MVC UiAuthController + Spring Security oauth2Login
       description: >
         GET /auth/login starts OAuth Authorization Code + PKCE flow.
-        GET /auth/me returns current user (email, role).
+        GET /auth/me returns current user email, nullable role, and allowlist state.
         POST /auth/logout invalidates server session and clears session cookie.
     - name: Admin management panel
       technology: Vaadin UI AdminView at @Route("/admin")
@@ -602,7 +602,7 @@ x-business-rules:
       Article list endpoints support filters for language, publishedAt range,
       and createdAt range. The public Vaadin feed exposes language and collapsed
       publishedAt range filters.
-  - id: BR-47
+  - id: BR-50
     name: Article favicon backfill
     description: >
       On application startup, the server SHOULD scan existing articles whose
@@ -727,6 +727,16 @@ x-vaadin-ui:
         - "Add User button -> modal with email input + role selector"
         - "Submit invokes AppUserService create, error toast on 400/409, success toast + table refresh"
         - "Logout button in top-right (same as every other view): invalidates session, redirects to /"
+
+    - name: ArticleContentCacheAdminView
+      route: /admin/article-content-cache
+      description: >
+        Admin-only article content cache management panel. Requires authentication + ADMIN role.
+      features:
+        - Preserved content cache table with article ID, source URL, dates, size, truncation state, and capture time
+        - Filters for article ID, article URL, publishedAt range, and createdAt range
+        - View dialog for preserved content with refresh-from-source, edit, save, and purge actions
+        - Navigation back to user management and the public feed
 # ──────────────────────────────────────────────────────────────
 # API SPEC  (standard OpenAPI)
 # ──────────────────────────────────────────────────────────────
@@ -749,24 +759,48 @@ info:
     5. **Vaadin UI** — server-side lazy feed of articles (separate from
        this REST spec; rendered at the root path `/`).
 
+    6. **Frontend authentication** — Vaadin UI starts OAuth Authorization Code + PKCE
+       via backend redirect (`GET /auth/login`) and uses server-side session cookie.
+    7. **Admin pages** — Vaadin UI at `/admin` for ADMIN users to manage allowlist
+       (add/soft-delete/restore/update users) and at `/admin/article-content-cache`
+       to inspect, refresh, edit, and purge preserved article content cache entries,
+       using server-side service calls.
+    8. **Facebook import job** — admin-only REST endpoints and UI button trigger a
+       long-lived Selenium job that reuses one browser session, verifies Facebook
+       login state before each run, and re-authenticates when necessary. UI-started
+       imports pause after each discovery pass for same-session ADMIN approval of
+       candidate URLs after filtering out already-imported URLs. The UI approval
+       modal includes the source Facebook post URL when known; REST-triggered
+       imports remain non-interactive.
+    9. **Machine-to-machine writes** — the Facebook importer may write articles to
+       the remote API using a dedicated API key tied to an allowlisted bot user.
     ## Implementation notes
     - Language is normalized to lowercase and validated against a conservative
       BCP-47-like pattern (e.g. `pl`, `en`, `en-gb`).
-    - Language is normalized to lowercase and validated against a conservative
-      BCP-47-like pattern.
-    - `title`, `thumbnail`, `favicon`, `lead` and best-effort `publishedAt` are
+    - `title`, `thumbnail`, `favicon`, `lead`, and best-effort `publishedAt` are
       server-fetched; clients supply `url`, `language`, optional `quote`, and
-      optional `publishedAt` on create/replace.
+      optional `publishedAt` on create/replace. Enrichment is
+      atomic — 422 on failure means no DB write occurs and existing records are unchanged.
     - Each article stores an immutable creator FK. Creator data is omitted from
       anonymous article responses and RSS; authenticated article responses may
       include `createdBy`.
     - `aiSummary` is reserved for a future AI enrichment step; always `null`
       in the current version.
     - Read endpoints (`GET /api/articles`, `GET /api/articles/{id}`, `GET /rss`)
-      are public. Write endpoints require Google OAuth2/OIDC Bearer tokens.
+      are public. REST write endpoints require Google OAuth2/OIDC Bearer tokens.
+      First-party Vaadin UI writes are executed server-side and authenticated by session.
+    - Write endpoints additionally require the token email to be present in
+      database allowlist (`app_user` entity managed via API).
+    - Roles: USER can write articles; ADMIN can manage allowlist users.
+    - COZAZJEB_BOOTSTRAP_ADMIN_EMAIL is only required when no ADMIN exists
+      in `app_user`; if ADMINs already exist the var is ignored.
+    - If required and missing/empty/invalid, startup fails fast.
+    - If required and valid, startup seeds one ADMIN row (or promotes USER).
+    - All API timestamps are UTC.
     - Error responses use `application/problem+json` (RFC 9457 /
       Spring `ProblemDetail`).
-  version: 0.0.1-SNAPSHOT
+
+  version: 0.49.0-SNAPSHOT
   license:
     name: GNU General Public License v3.0
     url: https://www.gnu.org/licenses/gpl-3.0.html
@@ -840,6 +874,14 @@ x-problem-types:
     uri: https://cozazjeb.pl/problems/last-admin-required
     status: 409
     title: Last Admin Required
+  facebookImportBusy:
+    uri: https://cozazjeb.pl/problems/facebook-import-busy
+    status: 409
+    title: Facebook Import Already Running
+  facebookImportNotRunning:
+    uri: https://cozazjeb.pl/problems/facebook-import-not-running
+    status: 409
+    title: No Active Facebook Import
 
 tags:
   - name: Articles
@@ -848,6 +890,10 @@ tags:
     description: RSS feed endpoints
   - name: Security
     description: Allowlist management endpoints
+  - name: Authentication
+    description: UI authentication and session endpoints
+  - name: Facebook Import
+    description: Admin-triggered Facebook post import job endpoints
 
 paths:
 
@@ -964,7 +1010,7 @@ paths:
       description: >
         Accepts a URL and a BCP-47 language tag.
         The server fetches the page at the given URL and automatically
-        populates title, thumbnail, lead, and best-effort publishedAt before
+        populates title, thumbnail, favicon, lead, and best-effort publishedAt before
         persisting. Creator is resolved from the authenticated DB user.
       requestBody:
         required: true
@@ -988,6 +1034,123 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /auth/login:
+
+    get:
+      tags: [Authentication]
+      summary: Start Google OAuth login
+      operationId: startLogin
+      security: []
+      description: >
+        Redirects browser to Google OpenID Connect authorization endpoint using
+        Authorization Code flow. Callback is handled by Spring Security.
+      responses:
+        '302':
+          description: Redirect to Google authorization endpoint
+
+  /auth/me:
+
+    get:
+      tags: [Authentication]
+      summary: Get current authenticated user
+      operationId: getCurrentUser
+      security:
+        - cookieAuth: []
+      description: >
+        Returns email, nullable role, and allowlist state of the currently
+        authenticated user from server session. Authenticated users who are not
+        active in the allowlist receive `allowlisted=false` and `role=null`.
+      responses:
+        '200':
+          description: Current user details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  email:
+                    type: string
+                    example: user@example.com
+                  role:
+                    type: string
+                    nullable: true
+                    enum: [USER, ADMIN]
+                    example: ADMIN
+                  allowlisted:
+                    type: boolean
+                    example: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/logout:
+
+    post:
+      tags: [Authentication]
+      summary: Clear authentication session
+      operationId: logout
+      security:
+        - cookieAuth: []
+      description: >
+        Invalidates server session and clears session cookie.
+        Returns 204 No Content.
+      responses:
+        '204':
+          description: Logged out successfully; cookie cleared
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/admin/facebook-import/run:
+
+    post:
+      tags: [Facebook Import]
+      summary: Trigger the Facebook import job
+      operationId: runFacebookImport
+      x-required-role: ADMIN
+      security:
+        - googleOidc: []
+      description: >
+        Starts the Facebook import job if no other import is currently running.
+        The job reuses a long-lived Selenium browser session, opens the browser
+        on demand, and verifies Facebook login before scanning posts. Returns
+        202 Accepted when the job is launched. REST-triggered jobs are
+        non-interactive and accept all non-duplicate discovered candidates; the
+        Vaadin ADMIN UI start path adds a same-session candidate approval modal
+        before importing.
+      responses:
+        '202':
+          description: Facebook import job accepted for execution
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/admin/facebook-import/terminate:
+
+    post:
+      tags: [Facebook Import]
+      summary: Terminate the active Facebook import job
+      operationId: terminateFacebookImport
+      x-required-role: ADMIN
+      security:
+        - googleOidc: []
+      description: >
+        Interrupts the active Facebook import job if one is running. The Selenium
+        browser window is intentionally kept alive so the next run can reuse the
+        logged-in session. Returns 202 Accepted when termination is accepted.
+      responses:
+        '202':
+          description: Facebook import job termination accepted
+        '409':
+          $ref: '#/components/responses/Conflict'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -1126,6 +1289,14 @@ paths:
         lastBuildDateSource: app.build.timestamp injected by Gradle as ISO-8601 UTC
         lastBuildDateFormat: RFC-822 UTC (converted by RSS controller from ISO-8601)
         lastBuildDateFallback: fail-fast when app.build.timestamp is missing or unparseable
+      x-html-discovery:
+        linkRelAlternate: '<link rel="alternate" type="application/rss+xml" title="Co za zjeb RSS" href="/rss">'
+        visibleUiLink: ArticleListView top bar includes an RSS icon/link to /rss
+      description: >
+        Returns an RSS 2.0 feed of articles ordered by creation date (newest first).
+        Provide the `lang` query parameter to filter to a single BCP-47 language.
+        RSS pubDate uses publishedAt when present and falls back to createdAt.
+        RSS never exposes article creator/user data.
       parameters:
         - name: lang
           in: query
@@ -1195,6 +1366,35 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
 
+    post:
+      tags: [Security]
+      summary: Add user to allowlist
+      operationId: addAppUser
+      x-required-role: ADMIN
+      security:
+        - googleOidc: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AppUserInput'
+      responses:
+        '201':
+          description: User added to allowlist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppUser'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
   /api/users/{id}/status:
 
     parameters:
@@ -1240,37 +1440,7 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
 
-    post:
-      tags: [Security]
-      summary: Add user to allowlist
-      operationId: addAppUser
-      x-required-role: ADMIN
-      security:
-        - googleOidc: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AppUserInput'
-      responses:
-        '201':
-          description: User added to allowlist
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AppUser'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '409':
-          $ref: '#/components/responses/Conflict'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-
   /api/users/{id}:
-
     parameters:
       - name: id
         in: path
@@ -1348,7 +1518,6 @@ components:
       in: cookie
       name: JSESSIONID
       description: Server-managed authenticated session cookie
-
   parameters:
     ArticleId:
       name: id
@@ -1502,17 +1671,10 @@ components:
         createdBy:
           $ref: '#/components/schemas/ArticleCreator'
 
-    PublicArticle:
-      allOf:
-        - $ref: '#/components/schemas/Article'
-      description: >
-        Public article representation. Implementations MUST omit createdBy for
-        unauthenticated requests even though authenticated Article responses may include it.
-
     ArticleCreator:
       type: object
       readOnly: true
-      description: Present only for authenticated article responses; never exposed in RSS.
+      description: Present only for authenticated article responses; never exposed in anonymous responses or RSS.
       properties:
         id:
           type: integer
@@ -1756,9 +1918,25 @@ components:
                 detail: Operation would leave the system without an ADMIN user.
                 instance: /api/users/1
                 remainingAdmins: 0
+            facebookImportBusy:
+              summary: Facebook import already running
+              value:
+                type: https://cozazjeb.pl/problems/facebook-import-busy
+                title: Facebook Import Already Running
+                status: 409
+                detail: Facebook import is already running.
+                instance: /api/admin/facebook-import/run
+            facebookImportNotRunning:
+              summary: No Facebook import to terminate
+              value:
+                type: https://cozazjeb.pl/problems/facebook-import-not-running
+                title: No Active Facebook Import
+                status: 409
+                detail: No Facebook import job is currently running.
+                instance: /api/admin/facebook-import/terminate
 
     Unauthorized:
-      description: Missing or invalid OAuth2 Bearer token
+      description: Missing or invalid authentication credentials
       content:
         application/problem+json:
           schema:

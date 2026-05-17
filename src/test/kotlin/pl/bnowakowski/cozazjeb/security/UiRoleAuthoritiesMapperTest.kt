@@ -11,6 +11,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority
 import org.springframework.security.oauth2.core.user.OAuth2UserAuthority
 import pl.bnowakowski.cozazjeb.user.AppUser
 import pl.bnowakowski.cozazjeb.user.AppUserRepository
+import pl.bnowakowski.cozazjeb.user.AppUserStatus
 import pl.bnowakowski.cozazjeb.user.Role
 
 class UiRoleAuthoritiesMapperTest {
@@ -52,6 +53,22 @@ class UiRoleAuthoritiesMapperTest {
 
         val authorities = mutableListOf(
             OAuth2UserAuthority(mapOf("email" to "unknown@example.com")),
+            SimpleGrantedAuthority("SCOPE_openid"),
+        )
+
+        val mapped = mapper.mapAuthorities(authorities)
+
+        assertTrue(mapped.any { it.authority == "SCOPE_openid" })
+        assertTrue(mapped.none { it.authority == "ROLE_ADMIN" || it.authority == "ROLE_USER" })
+    }
+
+    @Test
+    fun `does not map role for soft deleted allowlisted email`() {
+        whenever(appUserRepository.findByEmail("deleted@example.com"))
+            .thenReturn(AppUser(id = 3L, email = "deleted@example.com", role = Role.ADMIN, status = AppUserStatus.DELETED))
+
+        val authorities = mutableListOf(
+            OAuth2UserAuthority(mapOf("email" to "deleted@example.com")),
             SimpleGrantedAuthority("SCOPE_openid"),
         )
 

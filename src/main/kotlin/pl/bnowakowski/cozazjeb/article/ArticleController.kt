@@ -125,7 +125,7 @@ class ArticleController(
         return ResponseEntity.noContent().build()
     }
 
-    /** Returns creator info when authenticated; null for anonymous requests (BR-46). */
+    /** Returns creator info when authenticated; null for anonymous requests (BR-38). */
     private fun resolveCreatorForResponse(creatorId: Long, authentication: Authentication?): AppUser? {
         if (authentication == null || !authentication.isAuthenticated) return null
         return appUserRepository.findById(creatorId).orElse(null)

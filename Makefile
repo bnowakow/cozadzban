@@ -1,5 +1,5 @@
 
-.PHONY: help docker-up docker-down docker-data-permissions docker-pg-nuke docker-pg-backup install-pg-backup-cron build run run-local run-prod test clean docker-logs docker-spring-shell docker-pg-shell docker-upgrade docker-upgrade-no-cache bump-version bump-patch bump-minor install-git-hooks install-codex-skills
+.PHONY: help docker-up docker-down docker-data-permissions docker-pg-nuke docker-pg-backup install-pg-backup-cron build run run-local run-prod test clean docker-logs docker-spring-shell docker-pg-shell docker-upgrade docker-upgrade-no-cache bump-patch bump-minor install-git-hooks install-codex-skills
 
 -include .env
 
@@ -32,7 +32,6 @@ help:
 	@printf "    %-31s %s\n" "clean" "Clean Gradle build artifacts"
 	@printf "\n"
 	@printf "  \033[1;94m%s\033[0m\n" "Versioning"
-	@printf "    %-31s %s\n" "bump-version" "Set project version in build.gradle.kts (use VERSION=x.y.z[-SNAPSHOT])"
 	@printf "    %-31s %s\n" "bump-patch" "Auto-increment patch for x.y.z-SNAPSHOT versions"
 	@printf "    %-31s %s\n" "bump-minor" "Auto-increment minor and reset patch for x.y.z-SNAPSHOT versions"
 	@printf "\n"
@@ -155,15 +154,6 @@ install-codex-skills:
 clean:
 	./gradlew clean
 
-# Set project version in build.gradle.kts, e.g. make bump-version VERSION=0.0.3-SNAPSHOT
-bump-version:
-	@if [ -z "$(VERSION)" ]; then \
-		echo "Usage: make bump-version VERSION=x.y.z[-SNAPSHOT]"; \
-		exit 1; \
-	fi
-	@perl -i -pe 's/^version\s*=\s*"[^"]+"/version = "$(VERSION)"/' build.gradle.kts
-	@echo "✓ Version set to $(VERSION)"
-
 # Auto-bump patch for semantic snapshot versions, e.g. 0.0.2-SNAPSHOT -> 0.0.3-SNAPSHOT
 bump-patch:
 	@current=$$(perl -ne 'print $$1 if /^version\s*=\s*"([^"]+)"/' build.gradle.kts); \
@@ -173,9 +163,10 @@ bump-patch:
 		patch=$$(echo "$$current" | sed -E 's/^[0-9]+\.[0-9]+\.([0-9]+)-SNAPSHOT$$/\1/'); \
 		next_patch=$$((patch + 1)); \
 		next="$$major.$$minor.$$next_patch-SNAPSHOT"; \
-		$(MAKE) bump-version VERSION="$$next"; \
+		perl -i -pe "s/^version\s*=\s*\"[^\"]+\"/version = \"$$next\"/" build.gradle.kts; \
+		echo "✓ Version set to $$next"; \
 	else \
-		echo "Current version '$$current' is not x.y.z-SNAPSHOT; use make bump-version VERSION=..."; \
+		echo "Current version '$$current' is not x.y.z-SNAPSHOT; cannot auto-bump patch"; \
 		exit 1; \
 	fi
 
@@ -187,9 +178,10 @@ bump-minor:
 		minor=$$(echo "$$current" | cut -d. -f2); \
 		next_minor=$$((minor + 1)); \
 		next="$$major.$$next_minor.0-SNAPSHOT"; \
-		$(MAKE) bump-version VERSION="$$next"; \
+		perl -i -pe "s/^version\s*=\s*\"[^\"]+\"/version = \"$$next\"/" build.gradle.kts; \
+		echo "✓ Version set to $$next"; \
 	else \
-		echo "Current version '$$current' is not x.y.z-SNAPSHOT; use make bump-version VERSION=..."; \
+		echo "Current version '$$current' is not x.y.z-SNAPSHOT; cannot auto-bump minor"; \
 		exit 1; \
 	fi
 

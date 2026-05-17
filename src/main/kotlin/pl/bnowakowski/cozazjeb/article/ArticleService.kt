@@ -1099,7 +1099,7 @@ class ArticleService(
 
         /**
          * Normalizes a language tag to lowercase and validates it against the BCP-47-like
-         * pattern. Throws [IllegalArgumentException] (→ 400) on invalid input (BR-51).
+         * pattern. Throws [IllegalArgumentException] (→ 400) on invalid input (BR-04).
          */
         fun normalizeLanguage(lang: String): String {
             val normalized = lang.lowercase()

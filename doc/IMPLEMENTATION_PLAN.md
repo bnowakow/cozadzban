@@ -98,7 +98,7 @@ Phases 4 and 5 are independent and can be developed in parallel.
     - `GET /auth/login` — redirects to Google OIDC authorization endpoint
       using Authorization Code + PKCE (no tokens exposed to frontend JS)
     - OAuth callback handled by Spring Security (`/login/oauth2/code/google`)
-    - `GET /auth/me` — returns authenticated user details (email, role) for UI shell
+    - `GET /auth/me` — returns authenticated user details (email, nullable role, allowlisted) for UI shell
       from server-side SecurityContext; returns 401 if unauthenticated
     - `POST /auth/logout` — invalidates server session and returns 204 No Content
 24. **`UiPrincipalMapper`** — maps authenticated Google principal to app role:
@@ -163,7 +163,7 @@ Phases 4 and 5 are independent and can be developed in parallel.
 30. **OAuth2 login/session lifecycle tests**:
     - `GET /auth/login` redirects to Google OIDC authorization endpoint
     - OAuth callback establishes authenticated session with expected principal and role mapping
-    - `GET /auth/me` returns 200 with `{email, role}` for valid session and 401 otherwise
+    - `GET /auth/me` returns 200 with `{email, role, allowlisted}` for valid session and 401 otherwise
     - `POST /auth/logout` invalidates session and subsequent `/auth/me` returns 401
 31. **Session security hardening tests**:
     - Validate `JSESSIONID` cookie flags: HttpOnly, Secure (prod profile), SameSite policy, Path=/

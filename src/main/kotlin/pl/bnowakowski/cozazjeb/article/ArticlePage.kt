@@ -43,4 +43,5 @@ data class PageableInfo(
 data class SortInfo(
     val sorted: Boolean,
     val unsorted: Boolean,
+    val empty: Boolean = !sorted,
 )

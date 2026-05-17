@@ -40,8 +40,8 @@ class SecurityConfig(
         http
             .cors { it.configurationSource(corsConfigurationSource()) }
             .csrf { csrf ->
-                // API and RSS are stateless — no CSRF needed (BR-16)
-                csrf.ignoringRequestMatchers("/api/**", "/rss", "/rss/**")
+                // API and the RSS feed are stateless — no CSRF needed (BR-16)
+                csrf.ignoringRequestMatchers("/api/**", "/rss")
                 // Vaadin UI routes retain CSRF protection
             }
             .with(VaadinSecurityConfigurer.vaadin()) { vaadin ->

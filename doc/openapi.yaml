@@ -59,7 +59,7 @@ info:
     - Error responses use `application/problem+json` (RFC 9457 /
       Spring `ProblemDetail`).
 
-  version: 0.0.1-SNAPSHOT
+  version: 0.49.0-SNAPSHOT
   license:
     name: GNU General Public License v3.0
     url: https://www.gnu.org/licenses/gpl-3.0.html
@@ -321,7 +321,9 @@ paths:
       security:
         - cookieAuth: []
       description: >
-        Returns email and role of the currently authenticated user from server session.
+        Returns email, nullable role, and allowlist state of the currently
+        authenticated user from server session. Authenticated users who are not
+        active in the allowlist receive `allowlisted=false` and `role=null`.
       responses:
         '200':
           description: Current user details
@@ -335,8 +337,12 @@ paths:
                     example: user@example.com
                   role:
                     type: string
+                    nullable: true
                     enum: [USER, ADMIN]
                     example: ADMIN
+                  allowlisted:
+                    type: boolean
+                    example: true
         '401':
           $ref: '#/components/responses/Unauthorized'
 
@@ -356,6 +362,8 @@ paths:
           description: Logged out successfully; cookie cleared
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
   /api/admin/facebook-import/run:
 
@@ -617,6 +625,35 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
 
+    post:
+      tags: [Security]
+      summary: Add user to allowlist
+      operationId: addAppUser
+      x-required-role: ADMIN
+      security:
+        - googleOidc: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AppUserInput'
+      responses:
+        '201':
+          description: User added to allowlist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppUser'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
   /api/users/{id}/status:
 
     parameters:
@@ -655,35 +692,6 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '404':
           $ref: '#/components/responses/NotFound'
-        '409':
-          $ref: '#/components/responses/Conflict'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-
-    post:
-      tags: [Security]
-      summary: Add user to allowlist
-      operationId: addAppUser
-      x-required-role: ADMIN
-      security:
-        - googleOidc: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AppUserInput'
-      responses:
-        '201':
-          description: User added to allowlist
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AppUser'
-        '400':
-          $ref: '#/components/responses/BadRequest'
         '409':
           $ref: '#/components/responses/Conflict'
         '401':
@@ -1187,7 +1195,7 @@ components:
                 instance: /api/admin/facebook-import/terminate
 
     Unauthorized:
-      description: Missing or invalid OAuth2 Bearer token
+      description: Missing or invalid authentication credentials
       content:
         application/problem+json:
           schema:
