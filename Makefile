@@ -1,5 +1,5 @@
 
-.PHONY: help docker-up docker-down docker-pg-nuke docker-pg-backup build run run-local run-prod test clean docker-logs docker-spring-shell docker-pg-shell docker-upgrade bump-version bump-patch bump-minor install-git-hooks install-codex-skills
+.PHONY: help docker-up docker-down docker-pg-nuke docker-pg-backup build run run-local run-prod test clean docker-logs docker-spring-shell docker-pg-shell docker-upgrade docker-upgrade-no-cache bump-version bump-patch bump-minor install-git-hooks install-codex-skills
 
 -include .env
 
@@ -14,7 +14,8 @@ help:
 	@echo "    docker-down        Stop and remove local infrastructure containers"
 	@echo "    docker-logs        Show compose logs (follow mode)"
 	@echo "    docker-spring-shell Open bash inside the running Spring Boot container"
-	@echo "    docker-upgrade     Pull latest code, rebuild image, restart containers, follow logs"
+	@echo "    docker-upgrade     Pull latest code, rebuild image with BuildKit caches, restart containers, follow logs"
+	@echo "    docker-upgrade-no-cache Pull latest code, rebuild without Docker cache, restart containers, follow logs"
 	@echo ""
 	@echo "  PostgreSQL in Docker"
 	@echo "    docker-pg-nuke     Recreate PostgreSQL container and reset docker-data/postgres"
@@ -185,7 +186,16 @@ docker-spring-shell:
 # Pull latest code, rebuild, restart, and follow logs
 docker-upgrade:
 	git pull --ff-only
-	docker compose -f compose.yaml build --pull --no-cache springboot
+	DOCKER_BUILDKIT=1 docker compose -f compose.yaml build --pull springboot
+	docker compose -f compose.yaml down --remove-orphans
+	docker compose -f compose.yaml up -d --force-recreate
+	docker compose -f compose.yaml ps
+	docker compose -f compose.yaml logs -f
+
+# Pull latest code, rebuild from scratch, restart, and follow logs. Use only when cache corruption is suspected.
+docker-upgrade-no-cache:
+	git pull --ff-only
+	DOCKER_BUILDKIT=1 docker compose -f compose.yaml build --pull --no-cache springboot
 	docker compose -f compose.yaml down --remove-orphans
 	docker compose -f compose.yaml up -d --force-recreate
 	docker compose -f compose.yaml ps

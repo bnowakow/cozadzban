@@ -600,6 +600,15 @@ x-business-rules:
       Article list endpoints support filters for language, publishedAt range,
       and createdAt range. The public Vaadin feed exposes language and collapsed
       publishedAt range filters.
+  - id: BR-47
+    name: Article favicon backfill
+    description: >
+      On application startup, the server SHOULD scan existing articles whose
+      favicon is missing, blank, or not a local /favicons/... cache URL, download
+      the source site's favicon from article.url metadata or origin /favicon.ico,
+      and update only the article.favicon column. The backfill MUST be
+      best-effort and MUST NOT block article reads when an individual favicon
+      cannot be fetched.
   - id: BR-43
     name: Analytics consent
     description: >

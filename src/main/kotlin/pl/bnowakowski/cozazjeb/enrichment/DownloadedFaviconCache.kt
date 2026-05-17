@@ -10,6 +10,7 @@ import org.springframework.http.client.SimpleClientHttpRequestFactory
 import org.springframework.stereotype.Service
 import org.springframework.web.client.RestClient
 import org.springframework.web.client.RestClientException
+import org.springframework.web.client.RestClientResponseException
 import java.io.IOException
 import java.net.URI
 import java.nio.file.Files
@@ -81,14 +82,23 @@ class DownloadedFaviconCache(
                 Files.write(target, body)
             }
             "/favicons/$filename"
+        } catch (ex: RestClientResponseException) {
+            LOG.debug(
+                "Favicon download failed; uri={}; status={}; exception={}: {}",
+                uri,
+                ex.statusCode.value(),
+                ex.javaClass.simpleName,
+                ex.message,
+            )
+            null
         } catch (ex: RestClientException) {
-            LOG.debug("Favicon download failed; uri={}", uri, ex)
+            LOG.debug("Favicon download failed; uri={}; exception={}: {}", uri, ex.javaClass.simpleName, ex.message)
             null
         } catch (ex: IllegalArgumentException) {
-            LOG.debug("Favicon candidate rejected; uri={}", uri, ex)
+            LOG.debug("Favicon candidate rejected; uri={}; exception={}: {}", uri, ex.javaClass.simpleName, ex.message)
             null
         } catch (ex: IOException) {
-            LOG.debug("Favicon cache write failed; uri={}; path={}", uri, cachePath, ex)
+            LOG.debug("Favicon cache write failed; uri={}; path={}; exception={}: {}", uri, cachePath, ex.javaClass.simpleName, ex.message)
             null
         }
     }

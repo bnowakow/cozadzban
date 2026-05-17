@@ -509,7 +509,7 @@ class ArticleListView(
         row.isPadding = false
         row.isSpacing = true
         row.defaultVerticalComponentAlignment = Alignment.CENTER
-        row.element.style.set("gap", "var(--lumo-space-xs)")
+        row.element.style.set("gap", "0.55rem")
         return row
     }
 
