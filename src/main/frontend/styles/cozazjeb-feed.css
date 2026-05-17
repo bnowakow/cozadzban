@@ -63,6 +63,14 @@ html[theme~="dark"] .czj-top-bar {
   box-shadow: 0 2px 14px rgba(0, 0, 0, 0.32);
 }
 
+.czj-version-badge {
+  backdrop-filter: blur(6px);
+}
+
+html[theme~="dark"] .czj-version-badge {
+  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.3);
+}
+
 vaadin-button.czj-filter-chip {
   --vaadin-button-background: var(--czj-card-bg);
   --vaadin-button-text-color: var(--czj-text);

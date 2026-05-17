@@ -143,6 +143,19 @@ docker compose -f compose.yaml up --build
 
 The Vaadin UI is available at **http://localhost:8080/**.
 
+Docker runtime data is stored below `docker-data/`. The Spring Boot container mounts
+`./docker-data/data` as `/app/data`, which keeps generated assets such as downloaded favicons
+outside the image and available across container rebuilds.
+
+For server upgrades, prefer:
+
+```sh
+make docker-upgrade
+```
+
+That target uses Docker BuildKit and preserves build caches between runs. Use
+`make docker-upgrade-no-cache` only when you intentionally need a completely fresh image build.
+
 ### Other useful targets
 
 ```sh
@@ -158,6 +171,7 @@ make dev-down      # Stop and remove containers
 The repository includes a multi-stage `Dockerfile`:
 
 - builder stage: Java 21 JDK image, runs `./gradlew bootJar --no-daemon`
+- builder stage cache mounts: Gradle caches, Gradle wrapper, Vaadin tooling, and npm cache
 - runtime stage: Java 21 JRE image, copies the executable Spring Boot jar as `/app/app.jar`
 - runtime user: non-root `spring`
 - exposed port: `8080`
@@ -166,6 +180,12 @@ Build it manually with:
 
 ```sh
 docker build -t cozazjeb:local .
+```
+
+For equivalent cached manual builds, enable BuildKit:
+
+```sh
+DOCKER_BUILDKIT=1 docker build -t cozazjeb:local .
 ```
 
 ### Docker resource limits

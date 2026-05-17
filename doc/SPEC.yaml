@@ -485,6 +485,8 @@ x-business-rules:
       If omitted from POST/PUT, it defaults to null.
       In PATCH, an explicit null value clears the field; omitting quote leaves
       it unchanged (standard JSON Merge Patch semantics).
+      Facebook import marker phrases such as "co za zjeb" are discovery signals
+      and MUST NOT be persisted as article quotes.
   - id: BR-28
     name: Input field length and format constraints
     description: >

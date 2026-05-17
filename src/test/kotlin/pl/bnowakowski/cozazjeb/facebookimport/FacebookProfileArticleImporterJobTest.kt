@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import org.mockito.kotlin.any
+import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.doNothing
 import org.mockito.kotlin.doReturn
 import org.mockito.kotlin.mock
@@ -18,6 +19,8 @@ import org.mockito.kotlin.never
 import org.mockito.kotlin.spy
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
+import pl.bnowakowski.cozazjeb.article.Article
+import pl.bnowakowski.cozazjeb.article.ArticleInput
 import pl.bnowakowski.cozazjeb.article.ArticleService
 import pl.bnowakowski.cozazjeb.user.AppUser
 import pl.bnowakowski.cozazjeb.user.AppUserRepository
@@ -244,6 +247,47 @@ class FacebookProfileArticleImporterJobTest {
             "remote API returned HTTP 422 - URL enrichment failed: target returned HTTP 400 for 'https://www.facebook.com/photo/?fbid=1'",
             method.invoke(importer, failure),
         )
+    }
+
+    @Test
+    fun `facebook marker phrase is not sent as quote when creating imported article`() {
+        val importer = FacebookProfileArticleImporter(
+            FacebookImportProperties(markerPhrase = "co za zjeb", language = "pl"),
+            appUserRepository,
+            articleService,
+        )
+        whenever(articleService.create(any(), any())).thenReturn(
+            Article(
+                id = 41L,
+                url = "https://example.com/article",
+                language = "pl",
+                createdByUserId = 7L,
+            ),
+        )
+        val candidateClass = Class.forName(
+            "pl.bnowakowski.cozazjeb.facebookimport.FacebookProfileArticleImporter\$FacebookPostCandidate",
+        )
+        val constructor = candidateClass.getDeclaredConstructor(
+            String::class.java,
+            String::class.java,
+            String::class.java,
+            String::class.java,
+        )
+        constructor.isAccessible = true
+        val candidate = constructor.newInstance(
+            "https://example.com/article",
+            "co za zjeb",
+            "https://www.facebook.com/source/posts/123",
+            "pl",
+        )
+        val method = importer.javaClass.getDeclaredMethod("createArticle", candidateClass, Long::class.javaPrimitiveType)
+        method.isAccessible = true
+
+        method.invoke(importer, candidate, 7L)
+
+        val inputCaptor = argumentCaptor<ArticleInput>()
+        verify(articleService).create(inputCaptor.capture(), org.mockito.kotlin.eq(7L))
+        assertNull(inputCaptor.firstValue.quote)
     }
 
     @Test
