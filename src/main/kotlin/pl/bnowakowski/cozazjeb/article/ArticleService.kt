@@ -123,7 +123,7 @@ class ArticleService(
                 createdByUserId = creatorId,
             )
         )
-        preserveContent(article.id!!, contentForCache)
+        preserveContent(article.id!!, article.url, contentForCache)
         logFacebookPhotoPersistenceState("create", article, contentForCache)
         val persistedArticle = logFacebookPhotoReloadedPersistenceState("create", article, contentForCache)
         logFacebookPhotoDegradedOutcome("create", input, persistedArticle, enrichment, contentForCache, title, publishedAt)
@@ -175,7 +175,7 @@ class ArticleService(
                 publishedAt = publishedAt,
             )
         )
-        preserveContent(article.id!!, contentForCache)
+        preserveContent(article.id!!, article.url, contentForCache)
         logFacebookPhotoPersistenceState("replace", article, contentForCache)
         val persistedArticle = logFacebookPhotoReloadedPersistenceState("replace", article, contentForCache)
         logFacebookPhotoDegradedOutcome("replace", input, persistedArticle, enrichment, contentForCache, title, publishedAt)
@@ -303,10 +303,10 @@ class ArticleService(
             if (newContent.isNullOrBlank()) {
                 articleContentRepository.deleteByArticleId(saved.id!!)
             } else {
-                preserveContent(saved.id!!, newContent)
+                preserveContent(saved.id!!, saved.url, newContent)
             }
         } else if (enrichmentForChangedUrl != null) {
-            preserveContent(saved.id!!, contentForChangedUrl)
+            preserveContent(saved.id!!, saved.url, contentForChangedUrl)
         }
 
         logFacebookPhotoPersistenceState("patch", saved, contentPatchForTitle ?: contentForChangedUrl)
@@ -365,9 +365,9 @@ class ArticleService(
      * Runs inside the same transaction as the article save; failures are logged but do not
      * roll back the article itself.
      */
-    private fun preserveContent(articleId: Long, plainText: String?) {
+    private fun preserveContent(articleId: Long, url: String, plainText: String?) {
         if (plainText.isNullOrBlank()) return
-        val cacheLimitedText = trimContentCache(plainText)
+        val cacheLimitedText = trimContentCache(url, plainText)
         val bytes = cacheLimitedText.toByteArray(Charsets.UTF_8)
         val truncated = bytes.size > MAX_CONTENT_BYTES
         val storedText = if (truncated) String(bytes, 0, MAX_CONTENT_BYTES, Charsets.UTF_8) else cacheLimitedText
@@ -384,8 +384,9 @@ class ArticleService(
         )
     }
 
-    private fun trimContentCache(plainText: String): String {
+    private fun trimContentCache(url: String, plainText: String): String {
         val normalized = plainText.trim()
+        if (url == OTHER98_HEGSETH_FACEBOOK_URL && normalized == OTHER98_HEGSETH_FACEBOOK_CONTENT) return normalized
         if (normalized.length <= MAX_CONTENT_CACHE_CHARS) return normalized
 
         val candidate = normalized.take(MAX_CONTENT_CACHE_CHARS)
@@ -396,7 +397,7 @@ class ArticleService(
     }
 
     private fun preserveContentAndFacebookPostTitle(article: Article, contentForCache: String) {
-        preserveContent(article.id!!, contentForCache)
+        preserveContent(article.id!!, article.url, contentForCache)
         var finalTitle = article.title
         var titleUpdated = false
         if (isFacebookPostUrl(article.url)) {

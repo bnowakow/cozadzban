@@ -282,10 +282,11 @@ class ArticleServiceTitleTest {
             "preserveContent",
             Long::class.javaPrimitiveType,
             String::class.java,
+            String::class.java,
         )
         method.isAccessible = true
 
-        method.invoke(service, 42L, longContent)
+        method.invoke(service, 42L, "https://example.com/article", longContent)
 
         verify(articleContentRepository).insert(contentCaptor.capture())
         assertEquals(42L, contentCaptor.firstValue.articleId)
