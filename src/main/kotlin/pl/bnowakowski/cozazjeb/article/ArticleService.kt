@@ -434,10 +434,12 @@ class ArticleService(
             ?.replace(Regex("\\s+"), " ")
             ?.trim()
             ?.takeIf { it.isNotBlank() && !isUnusableFacebookTitle(url, it) }
+            ?.let { trimContentCache(url, it) }
         val cacheExcerpt = contentForCache
             ?.replace(Regex("\\s+"), " ")
             ?.trim()
             ?.takeIf { it.isNotBlank() && !isUnusableFacebookTitle(url, it) }
+            ?.let { trimContentCache(url, it) }
 
         if (isFacebookPostUrl(url)) {
             leadExcerpt?.let { return it }
@@ -555,7 +557,7 @@ class ArticleService(
             operation,
             url,
             facebookUrlKind(url),
-            facebookPhotoTitleSource(enrichment, contentForCache, titleForSave),
+            facebookPhotoTitleSource(url, enrichment, contentForCache, titleForSave),
             facebookPhotoCacheSource(url, enrichment, contentForCache),
             facebookPhotoThumbnailSource(enrichment),
             facebookPhotoPublishedAtSource(inputPublishedAt, enrichment.publishedAt, publishedAtForSave),
@@ -735,7 +737,7 @@ class ArticleService(
             valueDiagnostic(enrichment.plainText),
             valueDiagnostic(enrichment.thumbnail),
             enrichment.publishedAt,
-            facebookPhotoTitleSource(enrichment, requestedContent, titleForSave),
+            facebookPhotoTitleSource(input.url, enrichment, requestedContent, titleForSave),
             facebookPhotoCacheSource(article.url, enrichment, requestedContent),
             facebookPhotoThumbnailSource(enrichment),
             facebookPhotoPublishedAtSource(input.publishedAt, enrichment.publishedAt, publishedAtForSave),
@@ -786,14 +788,17 @@ class ArticleService(
             "publishedAt=${article.publishedAt},createdAt=${article.createdAt},createdByUserId=${article.createdByUserId}"
 
     private fun facebookPhotoTitleSource(
+        url: String,
         enrichment: EnrichmentResult,
         contentForCache: String?,
         titleForSave: String?,
     ): String =
         when {
-            !enrichment.lead.isNullOrBlank() && titleForSave == enrichment.lead.replace(LOG_WHITESPACE_PATTERN, " ").trim() ->
+            !enrichment.lead.isNullOrBlank() &&
+                titleForSave == trimContentCache(url, enrichment.lead.replace(LOG_WHITESPACE_PATTERN, " ").trim()) ->
                 "lead"
-            !contentForCache.isNullOrBlank() && titleForSave == contentForCache.replace(LOG_WHITESPACE_PATTERN, " ").trim() ->
+            !contentForCache.isNullOrBlank() &&
+                titleForSave == trimContentCache(url, contentForCache.replace(LOG_WHITESPACE_PATTERN, " ").trim()) ->
                 "content-cache"
             isGenericFacebookTitle(titleForSave) ->
                 "generic-facebook-fallback(no-lead,no-content-cache)"

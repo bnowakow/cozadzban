@@ -100,6 +100,21 @@ class ArticleServiceTitleTest {
     }
 
     @Test
+    fun `Facebook fallback title uses trimmed cache text for very long lead`() {
+        val lead = List(260) { "word$it" }.joinToString(" ")
+        val title = titleForSave(
+            url = "https://www.facebook.com/photo/?fbid=1287889633490862&set=a.358353523111149",
+            title = "Facebook photo",
+            lead = lead,
+            contentForCache = lead,
+        )
+
+        assertTrue(title!!.length <= 1_203)
+        assertTrue(title.endsWith("..."))
+        assertTrue(lead.startsWith(title.removeSuffix("...")))
+    }
+
+    @Test
     fun `Facebook profile fallback title is replaced with full cached post text`() {
         val postText = "Michał Zimny zaczyna ten post od właściwej treści, więc to ona powinna zostać tytułem."
         val title = titleForSave(
