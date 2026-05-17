@@ -81,13 +81,14 @@ class ArticleService(
     }
 
     fun create(input: ArticleInput, creatorId: Long): Article {
+        val sanitizedInput = input.withoutFacebookImportMarkerQuote()
         val url = canonicalizeUrl(input.url)
         val language = normalizeLanguage(input.language)
         logFacebookPhotoServiceInvocation(
             operation = "create",
             url = url,
             detail = "inputUrl='${input.url}',creatorId=$creatorId,language='$language'," +
-                "quote=${valueDiagnostic(input.quote)},inputPublishedAt=${input.publishedAt}," +
+                "quote=${valueDiagnostic(sanitizedInput.quote)},inputPublishedAt=${input.publishedAt}," +
                 "contentInputSupported=false",
         )
         if (articleRepository.existsByUrl(url)) {
@@ -113,7 +114,7 @@ class ArticleService(
             Article(
                 url = url,
                 language = language,
-                quote = input.quote,
+                quote = sanitizedInput.quote,
                 title = title,
                 thumbnail = enrichment.thumbnail,
                 favicon = enrichment.favicon,
@@ -133,6 +134,7 @@ class ArticleService(
         articleRepository.existsByUrl(canonicalizeUrl(rawUrl))
 
     fun replace(id: Long, input: ArticleInput): Article {
+        val sanitizedInput = input.withoutFacebookImportMarkerQuote()
         val existing = findById(id)
         val url = canonicalizeUrl(input.url)
         val language = normalizeLanguage(input.language)
@@ -140,7 +142,7 @@ class ArticleService(
             operation = "replace",
             url = url,
             detail = "articleId=$id,inputUrl='${input.url}',existingUrl='${existing.url}',language='$language'," +
-                "quote=${valueDiagnostic(input.quote)},inputPublishedAt=${input.publishedAt}",
+                "quote=${valueDiagnostic(sanitizedInput.quote)},inputPublishedAt=${input.publishedAt}",
         )
         if (url != existing.url && articleRepository.existsByUrl(url)) {
             logFacebookPhotoDuplicateUrlConflict("replace", url, input.url, articleRepository.findByUrl(url))
@@ -165,7 +167,7 @@ class ArticleService(
             existing.copy(
                 url = url,
                 language = language,
-                quote = input.quote,
+                quote = sanitizedInput.quote,
                 title = title,
                 thumbnail = enrichment.thumbnail,
                 favicon = enrichment.favicon,
@@ -210,7 +212,7 @@ class ArticleService(
                 if (q != null && (q as? String)?.isBlank() == true) {
                     throw IllegalArgumentException("quote must not be blank when provided")
                 }
-                q as? String
+                (q as? String).withoutFacebookImportMarkerQuote()
             }
             else -> existing.quote
         }

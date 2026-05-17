@@ -23,3 +23,22 @@ data class ArticleInput(
 
     val publishedAt: Instant? = null,
 )
+
+internal fun ArticleInput.withoutFacebookImportMarkerQuote(): ArticleInput =
+    copy(quote = quote.withoutFacebookImportMarkerQuote())
+
+internal fun String?.withoutFacebookImportMarkerQuote(): String? {
+    val trimmed = this?.trim()?.takeIf { it.isNotBlank() } ?: return null
+    return trimmed.takeUnless { it.containsFacebookImportMarkerPhrase() }
+}
+
+internal fun String.containsFacebookImportMarkerPhrase(): Boolean {
+    val normalized = map { char ->
+        if (char.isWhitespace() || char == '\u00A0') ' ' else char.lowercaseChar()
+    }
+        .joinToString("")
+        .replace(Regex(" +"), " ")
+        .trim()
+
+    return normalized.contains("co za zjeb") || normalized.contains("what a fucker")
+}

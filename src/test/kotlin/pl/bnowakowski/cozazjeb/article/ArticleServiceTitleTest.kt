@@ -4,17 +4,58 @@
 package pl.bnowakowski.cozazjeb.article
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
+import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.any
 import org.mockito.kotlin.whenever
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.verify
+import pl.bnowakowski.cozazjeb.enrichment.EnrichmentResult
 import pl.bnowakowski.cozazjeb.enrichment.EnrichmentService
 import pl.bnowakowski.cozazjeb.user.AppUserRepository
 import java.time.Instant
 import java.util.Optional
 
 class ArticleServiceTitleTest {
+
+    @Test
+    fun `create does not persist facebook import marker as quote for linked article`() {
+        val articleRepository: ArticleRepository = mock()
+        val enrichmentService: EnrichmentService = mock()
+        val articleContentRepository: ArticleContentRepository = mock()
+        val service = ArticleService(
+            articleRepository,
+            enrichmentService,
+            mock<AppUserRepository>(),
+            articleContentRepository,
+        )
+        whenever(articleRepository.existsByUrl(any())).thenReturn(false)
+        whenever(enrichmentService.enrich(any())).thenReturn(
+            EnrichmentResult(
+                title = "TVN24 article",
+                thumbnail = null,
+                lead = "A lead from the linked article.",
+                plainText = "A lead from the linked article.",
+            ),
+        )
+        whenever(articleRepository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as Article).copy(id = 44L)
+        }
+
+        service.create(
+            ArticleInput(
+                url = "https://tvn24.pl/biznes/ze-swiata/donald-trump-pytany-o-tajwan-powiedzialem-ze-nie-rozmawiam-o-tym-st9050825",
+                language = "pl",
+                quote = " Co\u00A0za   zjeb ",
+            ),
+            creatorId = 7L,
+        )
+
+        val articleCaptor = argumentCaptor<Article>()
+        verify(articleRepository).save(articleCaptor.capture())
+        assertNull(articleCaptor.firstValue.quote)
+    }
 
     @Test
     fun `Facebook reel placeholder title is replaced with lead excerpt`() {
