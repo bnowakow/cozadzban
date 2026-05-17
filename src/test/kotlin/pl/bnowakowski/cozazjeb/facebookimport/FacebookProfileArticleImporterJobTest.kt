@@ -291,6 +291,73 @@ class FacebookProfileArticleImporterJobTest {
     }
 
     @Test
+    fun `facebook marker phrase is not sent to remote article api for linked article`() {
+        var requestBody = ""
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/api/articles") { exchange ->
+            requestBody = exchange.requestBody.readBytes().toString(StandardCharsets.UTF_8)
+            assertEquals("test-machine-key", exchange.requestHeaders.getFirst("X-CoZaZjeb-M2M-Key"))
+            exchange.respondJson(
+                """
+                {
+                  "id": 42,
+                  "url": "https://tvn24.pl/biznes/ze-swiata/donald-trump-pytany-o-tajwan-powiedzialem-ze-nie-rozmawiam-o-tym-st9050825",
+                  "language": "pl",
+                  "title": "TVN24 article",
+                  "thumbnail": null,
+                  "favicon": null,
+                  "lead": null,
+                  "quote": null,
+                  "aiSummary": null,
+                  "publishedAt": null,
+                  "createdAt": null,
+                  "createdBy": null
+                }
+                """.trimIndent(),
+            )
+        }
+        server.start()
+        try {
+            val importer = FacebookProfileArticleImporter(
+                FacebookImportProperties(
+                    markerPhrase = "co za zjeb",
+                    translatedMarkerPhrase = "what a fucker",
+                    language = "pl",
+                    targetApiBaseUrl = "http://127.0.0.1:${server.address.port}",
+                    targetApiKey = "test-machine-key",
+                ),
+                appUserRepository,
+                articleService,
+            )
+            val candidateClass = Class.forName(
+                "pl.bnowakowski.cozazjeb.facebookimport.FacebookProfileArticleImporter\$FacebookPostCandidate",
+            )
+            val constructor = candidateClass.getDeclaredConstructor(
+                String::class.java,
+                String::class.java,
+                String::class.java,
+                String::class.java,
+            )
+            constructor.isAccessible = true
+            val candidate = constructor.newInstance(
+                "https://tvn24.pl/biznes/ze-swiata/donald-trump-pytany-o-tajwan-powiedzialem-ze-nie-rozmawiam-o-tym-st9050825",
+                "Co za zjeb What a fucker https://tvn24.pl/biznes/ze-swiata/donald-trump-pytany-o-tajwan-powiedzialem-ze-nie-rozmawiam-o-tym-st9050825",
+                "https://www.facebook.com/source/posts/123",
+                "pl",
+            )
+            val method = importer.javaClass.getDeclaredMethod("createArticle", candidateClass, Long::class.javaPrimitiveType)
+            method.isAccessible = true
+
+            method.invoke(importer, candidate, 7L)
+
+            assertFalse(requestBody.contains("co za zjeb", ignoreCase = true))
+            assertFalse(requestBody.contains("what a fucker", ignoreCase = true))
+        } finally {
+            server.stop(0)
+        }
+    }
+
+    @Test
     fun `failed url summary prints unique urls on separate lines`() {
         val importer = FacebookProfileArticleImporter(
             FacebookImportProperties(),

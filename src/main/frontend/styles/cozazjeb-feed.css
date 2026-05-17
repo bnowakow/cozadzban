@@ -129,11 +129,12 @@ html[theme~="dark"] .czj-top-bar {
 }
 
 .czj-version-badge {
-  backdrop-filter: blur(6px);
+  color: var(--czj-muted);
+  font-family: sans-serif;
 }
 
 html[theme~="dark"] .czj-version-badge {
-  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.3);
+  color: var(--czj-muted);
 }
 
 vaadin-button.czj-filter-chip {

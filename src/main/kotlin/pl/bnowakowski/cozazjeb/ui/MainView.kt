@@ -617,21 +617,21 @@ class ArticleListView(
 
     private fun buildVersionBadge(): Div {
         val versionFooter = Span("v${buildProperties.displayVersion}")
-        versionFooter.element.style.set("font-size", "var(--lumo-font-size-xs)")
+        versionFooter.element.style.set("font-size", "12px")
         versionFooter.element.style.set("color", "var(--lumo-tertiary-text-color)")
+        versionFooter.element.style.set("line-height", "1")
 
         val badge = Div(versionFooter)
         badge.addClassName("czj-version-badge")
         badge.element.style.set("position", "fixed")
-        badge.element.style.set("left", "0.75rem")
-        badge.element.style.set("bottom", "0.55rem")
+        badge.element.style.set("left", "8px")
+        badge.element.style.set("bottom", "4px")
         badge.element.style.set("z-index", "900")
-        badge.element.style.set("padding", "0.25rem 0.45rem")
-        badge.element.style.set("border-radius", "6px")
-        badge.element.style.set("background", "var(--czj-card-bg)")
-        badge.element.style.set("border", "1px solid var(--lumo-contrast-10pct)")
-        badge.element.style.set("box-shadow", "0 1px 5px rgba(15, 23, 42, 0.08)")
-        badge.element.style.set("opacity", "0.86")
+        badge.element.style.set("padding", "0")
+        badge.element.style.set("background", "transparent")
+        badge.element.style.set("border", "0")
+        badge.element.style.set("box-shadow", "none")
+        badge.element.style.set("opacity", "0.72")
         return badge
     }
 
