@@ -70,6 +70,46 @@ class EnrichmentServiceTest {
     }
 
     @Test
+    fun `extracts favicon from relative icon link`() {
+        val html = """
+            <!doctype html>
+            <html>
+              <head>
+                <link rel="icon" href="/favicon-32.png">
+                <meta property="og:title" content="Article">
+              </head>
+              <body>Article body</body>
+            </html>
+        """.trimIndent()
+
+        val faviconCache = RecordingFaviconCache("/favicons/example.png")
+        val result = enrichHtml("https://example.com/news/story", html, faviconCache)
+
+        assertEquals("/favicons/example.png", result.favicon)
+        assertTrue(faviconCache.candidates.contains("https://example.com/favicon-32.png"))
+    }
+
+    @Test
+    fun `extracts favicon from apple touch icon when regular icon is absent`() {
+        val html = """
+            <!doctype html>
+            <html>
+              <head>
+                <link rel="apple-touch-icon" href="https://cdn.example.com/apple.png">
+                <meta property="og:title" content="Article">
+              </head>
+              <body>Article body</body>
+            </html>
+        """.trimIndent()
+
+        val faviconCache = RecordingFaviconCache("/favicons/apple.png")
+        val result = enrichHtml("https://example.com/news/story", html, faviconCache)
+
+        assertEquals("/favicons/apple.png", result.favicon)
+        assertTrue(faviconCache.candidates.contains("https://cdn.example.com/apple.png"))
+    }
+
+    @Test
     fun `recognizes Instagram links for crawler fallback`() {
         assertEquals(true, isInstagramUrl("https://www.instagram.com/reel/DW6kHAvsM-p/"))
         assertEquals(true, isInstagramUrl("https://instagram.com/p/DW6kHAvsM-p/"))
@@ -1320,8 +1360,12 @@ class EnrichmentServiceTest {
         }
     }
 
-    private fun enrichHtml(url: String, html: String): EnrichmentResult {
-        val service = EnrichmentService(RestClient.builder())
+    private fun enrichHtml(
+        url: String,
+        html: String,
+        faviconCache: FaviconCache = NoopFaviconCache,
+    ): EnrichmentResult {
+        val service = EnrichmentService(RestClient.builder(), faviconCache)
         val method = EnrichmentService::class.java.getDeclaredMethod(
             "enrichHtml",
             String::class.java,
@@ -1394,3 +1438,18 @@ private fun String.escapeHtmlAttribute(): String =
 private fun String.escapeJsonUrl(): String =
     replace("/", "\\/")
         .replace("&", "\\u0026")
+
+private class RecordingFaviconCache(
+    private val cachedUrl: String,
+) : FaviconCache {
+    var articleUrl: String? = null
+        private set
+    var candidates: List<String> = emptyList()
+        private set
+
+    override fun cache(articleUrl: String, candidates: List<String>): String {
+        this.articleUrl = articleUrl
+        this.candidates = candidates
+        return cachedUrl
+    }
+}

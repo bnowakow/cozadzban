@@ -140,12 +140,12 @@
 
 1. Ensure articles exist in at least two languages
 2. Open the article list
-3. Use language dropdown and select one language
-4. **Expected:** grid shows only articles with that normalized language
+3. Use language chips or the overflow language menu to select one language
+4. **Expected:** feed shows only articles with that normalized language
 5. Set `publishedAt` date/time range
-6. **Expected:** grid shows only articles whose `publishedAt` is inside the range
-7. Set `createdAt` date/time range
-8. **Expected:** grid shows only articles whose `createdAt` is inside the range
+6. **Expected:** feed shows only articles whose `publishedAt` is inside the range
+7. Set `createdAt` date/time range through the API
+8. **Expected:** API response shows only articles whose `createdAt` is inside the range
 9. Combine language + date filters
 10. **Expected:** filters compose with pagination and sorting
 

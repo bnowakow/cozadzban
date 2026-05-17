@@ -61,7 +61,8 @@ x-architecture:
       description: >
         On create (POST), replace (PUT) and partial update (PATCH when url is
         changed), the server synchronously fetches the target URL and extracts
-        title (og:title / <title>), thumbnail (og:image), lead
+        title (og:title / <title>), thumbnail (og:image), favicon
+        (downloaded from link icon metadata into the local favicon cache), lead
         (og:description / <meta name="description">), and best-effort
         publication date metadata.
         Enrichment is synchronous and atomic — if the fetch fails no DB write occurs.
@@ -193,6 +194,10 @@ x-database:
           type: TEXT
           constraints: nullable
           description: Thumbnail URL fetched from og:image.
+        - name: favicon
+          type: TEXT
+          constraints: nullable
+          description: Local cached favicon URL downloaded from source site link icon metadata when available.
         - name: lead
           type: TEXT
           constraints: nullable
@@ -292,7 +297,7 @@ x-business-rules:
     name: URL enrichment on create
     description: >
       When a new Article is created (POST /api/articles), the server MUST fetch
-      the URL and populate title, thumbnail, lead, and best-effort publishedAt
+      the URL and populate title, thumbnail, favicon, lead, and best-effort publishedAt
       before persisting.
       The operation is fully atomic: if enrichment fails (non-2xx, timeout, or
       unreachable), the server responds with 422 and no DB write occurs.
@@ -300,7 +305,7 @@ x-business-rules:
     name: URL enrichment on replace
     description: >
       When an Article is replaced (PUT /api/articles/{id}), the server MUST
-      re-fetch the new URL to refresh title, thumbnail, lead, and best-effort
+      re-fetch the new URL to refresh title, thumbnail, favicon, lead, and best-effort
       publishedAt unless the request explicitly supplies publishedAt.
       The operation is fully atomic: if enrichment fails, the server responds
       with 422 and the existing article record is left unchanged.
@@ -320,7 +325,8 @@ x-business-rules:
       lowercase before persistence, and validated with
       ^[a-z]{2,3}(-[a-z0-9]{2,8})*$. Invalid values return 400 Bad Request.
       The UI language filter uses distinct normalized values already present in
-      the database.
+      the database. The public feed shows All plus the three most-used languages
+      and a compact overflow menu for the complete language list.
   - id: BR-05
     name: AI summary is future-only
     description: >
@@ -591,8 +597,9 @@ x-business-rules:
   - id: BR-42
     name: Article filtering
     description: >
-      Article list endpoints and UI support filters for language, publishedAt
-      range, and createdAt range. Filters compose with pagination and sorting.
+      Article list endpoints support filters for language, publishedAt range,
+      and createdAt range. The public Vaadin feed exposes language and collapsed
+      publishedAt range filters.
   - id: BR-43
     name: Analytics consent
     description: >
@@ -667,15 +674,15 @@ x-vaadin-ui:
     - name: ArticleListView
       route: /
       description: >
-        Paginated, read-only grid listing all articles.
-      columns: [id, title, language, thumbnail, url, publishedAt, createdAt]
+        Lazy-loaded social feed listing article cards.
       features:
-        - Server-side pagination; default page size 20
-        - Page size selector dropdown with options [10, 20, 40, 60, 80, 100]
-        - Sort by any displayed column (allowlist: id, createdAt, publishedAt, language, title, url)
-        - Filter by language dropdown populated from distinct normalized languages
-        - Filter by publishedAt and createdAt date/time ranges
-        - Click row to open source URL in a new tab
+        - Vaadin VirtualList lazy loading backed by server-side pagination
+        - Article cards with optional square thumbnail, source favicon/name, published date, title, optional quote, and lead
+        - Whole card opens source URL in a new tab
+        - Language chips show All plus the three most-used languages and a compact overflow menu
+        - Published date range controls are collapsed until the user clicks the Published date filter
+        - Header includes logo, RSS link, icon-only theme toggle, and authentication/actions
+        - Footer shows app version and a concise cookie notice
 
     - name: (Enhanced) ArticleListView
       route: /
@@ -683,7 +690,7 @@ x-vaadin-ui:
         - "Top-right corner: Login button if not authenticated; Logout button if authenticated (present on every page)"
         - "Logout button click -> invalidates server session, clears security context, redirects to /"
         - "Login button click -> navigates to GET /auth/login (OAuth flow)"
-        - "If authenticated: Add Article button below grid or in toolbar"
+        - "If authenticated: Add Article button in toolbar"
         - "If authenticated and ADMIN: Import Facebook Posts button next to Add Article triggers the Facebook import job"
         - "UI-started Facebook import shows an ADMIN-only candidate approval modal after each discovery pass; accepted candidates continue to import, rejected candidates are skipped and summarized"
         - "Click Add Article -> modal with form (url, language, quote, optional publishedAt date/time)"
@@ -718,7 +725,7 @@ info:
     ## Overview
     CoZaZjeb is a link-collecting application. Users submit a URL and a language
     tag; the server fetches the target page and automatically enriches the record
-    with title, thumbnail, lead, and best-effort publication date before persisting it.
+    with title, thumbnail, favicon, lead, and best-effort publication date before persisting it.
 
     ## Components
     1. **REST API** — CRUD endpoints for `Article` resources (this spec).
@@ -728,7 +735,7 @@ info:
        No DDL is generated or executed outside of Flyway.
     4. **RSS feed** — `GET /rss` exposes articles as an RSS 2.0 feed;
        filterable per language with `?lang=<BCP-47>`.
-    5. **Vaadin UI** — server-side paginated view of articles (separate from
+    5. **Vaadin UI** — server-side lazy feed of articles (separate from
        this REST spec; rendered at the root path `/`).
 
     ## Implementation notes
@@ -736,7 +743,7 @@ info:
       BCP-47-like pattern (e.g. `pl`, `en`, `en-gb`).
     - Language is normalized to lowercase and validated against a conservative
       BCP-47-like pattern.
-    - `title`, `thumbnail`, `lead` and best-effort `publishedAt` are
+    - `title`, `thumbnail`, `favicon`, `lead` and best-effort `publishedAt` are
       server-fetched; clients supply `url`, `language`, optional `quote`, and
       optional `publishedAt` on create/replace.
     - Each article stores an immutable creator FK. Creator data is omitted from
@@ -1451,6 +1458,11 @@ components:
           description: Thumbnail URL fetched from the article page (og:image or similar)
           nullable: true
           example: https://example.com/images/thumb.jpg
+        favicon:
+          type: string
+          description: Local cached favicon URL downloaded from source site icon metadata
+          nullable: true
+          example: /favicons/2f1a0c8d9e7b6a5c4d3e2f10987654321abcdeffedcba9876543210012345678.png
         lead:
           type: string
           description: Lead/excerpt fetched from the article page (og:description or similar)

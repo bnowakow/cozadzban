@@ -685,4 +685,20 @@ class ArticleOwnershipIT {
                 jsonPath("$.thumbnail") { doesNotExist() }
             }
     }
+
+    @Test
+    fun `favicon from enrichment is stored and returned in article response`() {
+        val expectedFavicon = "https://example.com/favicon.ico"
+        whenever(enrichmentService.enrich(any())).thenReturn(
+            EnrichmentResult(title = "Favicon Title", thumbnail = null, lead = null, favicon = expectedFavicon),
+        )
+
+        val id = createArticle()
+
+        mockMvc.get("/api/articles/$id")
+            .andExpect {
+                status { isOk() }
+                jsonPath("$.favicon") { value(expectedFavicon) }
+            }
+    }
 }

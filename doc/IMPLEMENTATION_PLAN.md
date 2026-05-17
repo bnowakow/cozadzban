@@ -245,18 +245,22 @@ Phases 4 and 5 are independent and can be developed in parallel.
 
 ## Phase 18 — Article list UI filters and editing (NEW)
 
-53. **Article grid columns** — include `publishedAt`, `createdAt`, language, title, thumbnail
-    preview/link, URL, and authenticated-only creator display where appropriate.
-54. **Language filter** — dropdown populated from distinct normalized article languages with an
-    `All` option.
-55. **Date range filters** — add date/time range controls for `publishedAt` and `createdAt`.
-    Filters apply server-side and compose with pagination and sorting.
+53. **Article feed cards** — render `/` as a Vaadin `VirtualList` lazy feed with cards containing
+    optional square thumbnail, favicon/source, published date, title, optional quote, and lead.
+    The full card opens the source URL in a new tab.
+54. **Language filter** — show `All` plus the three most-used normalized languages as chips, with
+    a compact overflow menu for the complete distinct language list.
+55. **Date range filters** — expose collapsed `publishedAt` range controls in the feed. REST
+    endpoints retain `publishedAt` and `createdAt` filters.
 56. **Article create/edit modal** — add date picker + time picker for optional `publishedAt`.
     Support clearing the field to persist `null`. Keep creator immutable and hidden from form
     inputs.
 57. **RSS discovery in UI** — advertise the feed in page HTML with
     `<link rel="alternate" type="application/rss+xml" title="Co za zjeb RSS" href="/rss">`
     and add a visible RSS icon/link in the article list top bar for users.
+58. **Favicon metadata** — store nullable `article.favicon`, download/cache the source site's
+    declared icon metadata as a local `/favicons/...` asset when available, expose it in article
+    responses, and use it in feed source rows.
 
 ---
 

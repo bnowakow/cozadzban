@@ -116,6 +116,7 @@ class ArticleService(
                 quote = input.quote,
                 title = title,
                 thumbnail = enrichment.thumbnail,
+                favicon = enrichment.favicon,
                 lead = enrichment.lead,
                 publishedAt = publishedAt,
                 createdByUserId = creatorId,
@@ -167,6 +168,7 @@ class ArticleService(
                 quote = input.quote,
                 title = title,
                 thumbnail = enrichment.thumbnail,
+                favicon = enrichment.favicon,
                 lead = enrichment.lead,
                 publishedAt = publishedAt,
             )
@@ -254,16 +256,18 @@ class ArticleService(
                 "urlPresent=$urlPresent,urlChanged=$urlChanged,contentPresent=$contentPresent," +
                 "contentValue=${patchValueDiagnostic(patch["content"])},existingTitle=${valueDiagnostic(existing.title)}",
         )
-        val (newTitle, newThumbnail, newLead) = if (enrichmentForChangedUrl != null) {
-            Triple(
+        val (newTitle, newThumbnail, newFavicon, newLead) = if (enrichmentForChangedUrl != null) {
+            FaviconPatchFields(
                 titleForSave(newUrl, enrichmentForChangedUrl.title, enrichmentForChangedUrl.lead, contentForChangedUrl),
                 enrichmentForChangedUrl.thumbnail,
+                enrichmentForChangedUrl.favicon,
                 enrichmentForChangedUrl.lead,
             )
         } else {
-            Triple(
+            FaviconPatchFields(
                 contentPatchForTitle?.let { titleForSave(newUrl, existing.title, existing.lead, it) } ?: existing.title,
                 existing.thumbnail,
+                existing.favicon,
                 existing.lead,
             )
         }
@@ -286,6 +290,7 @@ class ArticleService(
                 quote = newQuote,
                 title = newTitle,
                 thumbnail = newThumbnail,
+                favicon = newFavicon,
                 lead = newLead,
                 publishedAt = newPublishedAt,
             )
@@ -345,6 +350,13 @@ class ArticleService(
     }
 
     // ── private helpers ───────────────────────────────────────────────────────
+
+    private data class FaviconPatchFields(
+        val title: String?,
+        val thumbnail: String?,
+        val favicon: String?,
+        val lead: String?,
+    )
 
     /**
      * Persists plain-text content for an article, truncating to [MAX_CONTENT_BYTES] if needed.

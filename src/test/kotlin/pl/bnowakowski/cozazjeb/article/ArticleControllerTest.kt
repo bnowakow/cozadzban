@@ -66,6 +66,7 @@ class ArticleControllerTest {
         title = "Test Article",
         lead = "A test lead",
         thumbnail = null,
+        favicon = "https://example.com/favicon.ico",
         quote = null,
         aiSummary = null,
         createdByUserId = 1L,
@@ -109,6 +110,7 @@ class ArticleControllerTest {
                 jsonPath("$.content[0].id") { value(1) }
                 jsonPath("$.totalElements") { value(1) }
                 jsonPath("$.content[0].url") { value("https://example.com/article") }
+                jsonPath("$.content[0].favicon") { value("https://example.com/favicon.ico") }
             }
     }
 

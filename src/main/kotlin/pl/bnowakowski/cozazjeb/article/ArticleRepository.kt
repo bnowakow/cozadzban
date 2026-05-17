@@ -103,7 +103,7 @@ class ArticleRepositoryCustomImpl(
         params["offset"] = page * size
         // column and direction are from a closed allowlist — safe to interpolate
         val sql = """
-            SELECT id, url, language, title, thumbnail, lead, quote, ai_summary,
+            SELECT id, url, language, title, thumbnail, favicon, lead, quote, ai_summary,
                    created_by_user_id, created_at, published_at
               FROM article
              $whereClause
@@ -129,7 +129,7 @@ class ArticleRepositoryCustomImpl(
         val hasLanguageFilter = !language.isNullOrBlank()
         val sql = if (hasLanguageFilter) {
             """
-                SELECT id, url, language, title, thumbnail, lead, quote, ai_summary,
+                SELECT id, url, language, title, thumbnail, favicon, lead, quote, ai_summary,
                        created_by_user_id, created_at, published_at
                   FROM article
                  WHERE language = :language
@@ -137,7 +137,7 @@ class ArticleRepositoryCustomImpl(
             """.trimIndent()
         } else {
             """
-                SELECT id, url, language, title, thumbnail, lead, quote, ai_summary,
+                SELECT id, url, language, title, thumbnail, favicon, lead, quote, ai_summary,
                        created_by_user_id, created_at, published_at
                   FROM article
                  ORDER BY created_at DESC
@@ -219,6 +219,7 @@ class ArticleRepositoryCustomImpl(
                 language        = rs.getString("language"),
                 title           = rs.getString("title"),
                 thumbnail       = rs.getString("thumbnail"),
+                favicon         = rs.getString("favicon"),
                 lead            = rs.getString("lead"),
                 quote           = rs.getString("quote"),
                 aiSummary       = rs.getString("ai_summary"),

@@ -56,7 +56,7 @@ class SecurityConfig(
                 // OAuth2 login and callback endpoints must stay public.
                 auth.requestMatchers("/auth/login", "/oauth2/**", "/login/oauth2/**").permitAll()
                 // Browser-discovered site assets must stay public (e.g. after OAuth redirects).
-                auth.requestMatchers("/favicon.ico", "/apple-touch-icon.png", "/apple-touch-icon-precomposed.png", "/manifest.webmanifest", "/site.webmanifest", "/robots.txt").permitAll()
+                auth.requestMatchers("/favicon.ico", "/favicons/**", "/cozazjeb-logo.png", "/apple-touch-icon.png", "/apple-touch-icon-precomposed.png", "/manifest.webmanifest", "/site.webmanifest", "/robots.txt").permitAll()
 
                 // Session-backed UI identity endpoints (Phase 11)
                 auth.requestMatchers(HttpMethod.GET, "/auth/me").authenticated()

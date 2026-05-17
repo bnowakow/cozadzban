@@ -7,10 +7,10 @@ import com.vaadin.flow.component.button.Button
 import com.vaadin.flow.component.button.ButtonVariant
 import com.vaadin.flow.component.Key
 import com.vaadin.flow.component.UI
+import com.vaadin.flow.component.dependency.CssImport
 import com.vaadin.flow.component.datetimepicker.DateTimePicker
 import com.vaadin.flow.component.confirmdialog.ConfirmDialog
 import com.vaadin.flow.component.dialog.Dialog
-import com.vaadin.flow.component.grid.Grid
 import com.vaadin.flow.component.html.Anchor
 import com.vaadin.flow.component.html.Div
 import com.vaadin.flow.component.html.H1
@@ -27,9 +27,10 @@ import com.vaadin.flow.component.select.Select
 import com.vaadin.flow.component.textfield.TextArea
 import com.vaadin.flow.component.textfield.TextField
 import com.vaadin.flow.data.provider.DataProvider
-import com.vaadin.flow.data.provider.SortDirection
+import com.vaadin.flow.data.renderer.ComponentRenderer
 import com.vaadin.flow.router.Route
 import com.vaadin.flow.server.VaadinServletRequest
+import com.vaadin.flow.component.virtuallist.VirtualList
 import org.slf4j.LoggerFactory
 import com.vaadin.flow.server.auth.AnonymousAllowed
 import org.springframework.security.access.AccessDeniedException
@@ -59,6 +60,7 @@ import java.util.concurrent.ExecutionException
 
 @Route("")
 @AnonymousAllowed
+@CssImport("./styles/cozazjeb-feed.css")
 class ArticleListView(
     private val articleRepository: ArticleRepository,
     private val articleService: ArticleService,
@@ -67,11 +69,7 @@ class ArticleListView(
     private val buildProperties: AppBuildProperties,
 ) : VerticalLayout() {
 
-    private val pageSizes = listOf(10, 20, 40, 60, 80, 100)
-    private var pageSize = 20
-
-    private val totalInfo = Span()
-    private val grid = Grid(Article::class.java, false)
+    private val feed = VirtualList<Article>()
 
     // Filter state — captured by dataProvider lambdas via `this`
     private var languageFilter: String? = null
@@ -94,20 +92,14 @@ class ArticleListView(
             val requestedOffset = query.offset
             val page = requestedOffset / requestedLimit
 
-            val sortOrder = query.sortOrders.firstOrNull()
-            val sortField = sortOrder?.sorted ?: "createdAt"
-            val sortDirection = if (sortOrder?.direction == SortDirection.ASCENDING) "asc" else "desc"
-
             val articles = articleRepository.findPage(
-                page, requestedLimit, sortField, sortDirection,
+                page, requestedLimit, "createdAt", "desc",
                 languageFilter, publishedFromFilter, publishedToFilter, createdFromFilter, createdToFilter,
             )
-            logFacebookPhotoGridFetch(
+            logFacebookPhotoFeedFetch(
                 page = page,
                 requestedLimit = requestedLimit,
                 requestedOffset = requestedOffset,
-                sortField = sortField,
-                sortDirection = sortDirection,
                 articles = articles,
             )
 
@@ -143,248 +135,499 @@ class ArticleListView(
 
         setSizeFull()
 
-        // ── Top bar ───────────────────────────────────────────────────────────
-        val title = H1("Co za zjeb")
+        element.style.set("background", "var(--lumo-contrast-5pct)")
+        element.style.set("padding", "0")
+        element.style.set("gap", "0")
 
-        val rssAnchor = Anchor("/rss", "RSS Feed")
-        rssAnchor.setTarget("_blank")
-        rssAnchor.element.setAttribute("rel", "noopener noreferrer")
-        rssAnchor.element.style.set("color", "var(--lumo-primary-color)")
+        val topBar = buildTopBar()
+        val feedShell = VerticalLayout()
+        feedShell.isPadding = false
+        feedShell.isSpacing = false
+        feedShell.setWidth("min(100%, 42rem)")
+        feedShell.maxWidth = "42rem"
+        feedShell.element.style.set("align-self", "center")
+        feedShell.element.style.set("box-sizing", "border-box")
+        feedShell.element.style.set("margin", "calc(66px + 1.35rem) auto 0")
 
-        val authButton = buildAuthButton()
+        val filterBar = buildFilterBar()
 
-        val topBar = if (isAuthenticated && authenticatedUser?.status == AppUserStatus.ACTIVE) {
-            val addArticleButton = Button("Add Article")
-            addArticleButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY)
-            addArticleButton.addClickListener { openAddArticleDialog() }
-            if (authenticatedUser?.role == Role.ADMIN) {
-                val importFacebookButton = Button("Import Facebook Posts", VaadinIcon.DOWNLOAD.create())
-                importFacebookButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY)
-                importFacebookButton.addClickListener { triggerFacebookImport() }
-
-                val manageUsersButton = Button("Manage users")
-                manageUsersButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY)
-                val manageUsersLink = Anchor("/admin")
-                manageUsersLink.add(manageUsersButton)
-                HorizontalLayout(title, rssAnchor, addArticleButton, importFacebookButton, manageUsersLink, authButton)
-            } else {
-                HorizontalLayout(title, rssAnchor, addArticleButton, authButton)
-            }
-        } else {
-            HorizontalLayout(title, rssAnchor, authButton)
-        }
-        topBar.width = "100%"
-        topBar.defaultVerticalComponentAlignment = Alignment.CENTER
-        topBar.expand(title)
-
-        // ── Filter controls ───────────────────────────────────────────────────
-        val pageSizeSelect = Select<Int>()
-        pageSizeSelect.label = "Page size"
-        pageSizeSelect.setItems(pageSizes)
-        pageSizeSelect.value = pageSize
-        pageSizeSelect.addValueChangeListener { event ->
-            pageSize = event.value ?: 20
-            grid.setPageSize(pageSize)
-            refreshData()
-        }
-
-        val allLanguagesLabel = "All"
-        val languageSelect = Select<String>()
-        languageSelect.label = "Language"
-        val languages = mutableListOf(allLanguagesLabel)
-        languages.addAll(articleRepository.findDistinctLanguages())
-        languageSelect.setItems(languages)
-        languageSelect.value = allLanguagesLabel
-        languageSelect.addValueChangeListener { event ->
-            languageFilter = event.value?.takeIf { it != allLanguagesLabel }
-            refreshData()
-        }
-
-        val controlsRow1 = HorizontalLayout(pageSizeSelect, languageSelect, totalInfo)
-        controlsRow1.defaultVerticalComponentAlignment = Alignment.END
-
-        val publishedFromPicker = DateTimePicker("Published from")
-        publishedFromPicker.addValueChangeListener { event ->
-            val new = event.value
-            if (new != null && new.toLocalDate() != event.oldValue?.toLocalDate()) {
-                publishedFromPicker.value = new.toLocalDate().atStartOfDay()
-                return@addValueChangeListener
-            }
-            publishedFromFilter = new?.toInstant(ZoneOffset.UTC)
-            refreshData()
-        }
-        val publishedToPicker = DateTimePicker("Published to")
-        publishedToPicker.addValueChangeListener { event ->
-            val new = event.value
-            if (new != null && new.toLocalDate() != event.oldValue?.toLocalDate()) {
-                publishedToPicker.value = new.toLocalDate().atStartOfDay()
-                return@addValueChangeListener
-            }
-            publishedToFilter = new?.toInstant(ZoneOffset.UTC)
-            refreshData()
-        }
-        val createdFromPicker = DateTimePicker("Created from")
-        createdFromPicker.addValueChangeListener { event ->
-            val new = event.value
-            if (new != null && new.toLocalDate() != event.oldValue?.toLocalDate()) {
-                createdFromPicker.value = new.toLocalDate().atStartOfDay()
-                return@addValueChangeListener
-            }
-            createdFromFilter = new?.toInstant(ZoneOffset.UTC)
-            refreshData()
-        }
-        val createdToPicker = DateTimePicker("Created to")
-        createdToPicker.addValueChangeListener { event ->
-            val new = event.value
-            if (new != null && new.toLocalDate() != event.oldValue?.toLocalDate()) {
-                createdToPicker.value = new.toLocalDate().atStartOfDay()
-                return@addValueChangeListener
-            }
-            createdToFilter = new?.toInstant(ZoneOffset.UTC)
-            refreshData()
-        }
-
-        val clearFiltersButton = Button("Clear filters") {
-            languageSelect.value = allLanguagesLabel
-            publishedFromPicker.clear()
-            publishedToPicker.clear()
-            createdFromPicker.clear()
-            createdToPicker.clear()
-            // filter state vars are reset by each picker's/select's own listener above
-        }
-        clearFiltersButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY, ButtonVariant.LUMO_SMALL)
-
-        val controlsRow2 = HorizontalLayout(publishedFromPicker, publishedToPicker, createdFromPicker, createdToPicker, clearFiltersButton)
-        controlsRow2.defaultVerticalComponentAlignment = Alignment.END
-
-        // ── Grid columns (Item 53) ─────────────────────────────────────────────
-        // Allow rows to expand for multi-line title cells
-        grid.element.style.set("--lumo-size-l", "auto")
-
-        // Thumbnail preview — small image linked to article URL
-        grid.addComponentColumn { article ->
-            val src = article.thumbnail
-            if (!src.isNullOrBlank()) {
-                val img = Image(src, article.title ?: "")
-                img.maxHeight = "48px"
-                img.maxWidth = "80px"
-                img.element.style.set("object-fit", "cover")
-                val anchor = Anchor(article.url, "")
-                anchor.setTarget("_blank")
-                anchor.element.setAttribute("rel", "noopener noreferrer")
-                anchor.add(img)
-                anchor
-            } else {
-                Span()
-            }
-        }
-            .setHeader("Thumbnail")
-            .setAutoWidth(true)
-            .setFlexGrow(0)
-
-        // Title as a link — 3-line clamp so more text is visible in a wider column
-        grid.addComponentColumn { article ->
-            val textDiv = Div()
-            textDiv.text = article.title ?: article.url
-            textDiv.element.style.set("display", "-webkit-box")
-            textDiv.element.style.set("-webkit-line-clamp", "3")
-            textDiv.element.style.set("-webkit-box-orient", "vertical")
-            textDiv.element.style.set("overflow", "hidden")
-            textDiv.element.style.set("white-space", "normal")
-            textDiv.element.style.set("word-break", "break-word")
-            val anchor = Anchor(article.url, "")
-            anchor.setTarget("_blank")
-            anchor.element.setAttribute("rel", "noopener noreferrer")
-            anchor.add(textDiv)
-            anchor
-        }
-            .setHeader("Title")
-            .setKey("title")
-            .setSortProperty("title")
-            .setSortable(true)
-            .setFlexGrow(3)
-
-        grid.addColumn(Article::language)
-            .setHeader("Lang")
-            .setKey("language")
-            .setSortProperty("language")
-            .setSortable(true)
-            .setWidth("60px")
-            .setFlexGrow(0)
-
-        grid.addColumn { article -> article.publishedAt?.let { formatDate(it) } ?: "" }
-            .setHeader("Published")
-            .setKey("publishedAt")
-            .setSortProperty("publishedAt")
-            .setSortable(true)
-            .setWidth("100px")
-            .setFlexGrow(0)
-
-        grid.addColumn { article -> article.createdAt?.let { formatDate(it) } ?: "" }
-            .setHeader("Created")
-            .setKey("createdAt")
-            .setSortProperty("createdAt")
-            .setSortable(true)
-            .setWidth("100px")
-            .setFlexGrow(0)
-
-        if (isAuthenticated) {
-            grid.addColumn(Article::id)
-                .setHeader("ID")
-                .setKey("id")
-                .setSortProperty("id")
-                .setSortable(true)
-                .setWidth("70px")
-                .setFlexGrow(0)
-        }
-
-        // Creator column — authenticated users only (Item 53)
-        if (isAuthenticated) {
-            grid.addColumn { article -> creatorCache[article.createdByUserId] ?: "" }
-                .setHeader("Creator")
-                .setAutoWidth(true)
-        }
-
-        // Edit / Delete column — active authenticated users only
-        if (isAuthenticated && authenticatedUser?.status == AppUserStatus.ACTIVE) {
-            grid.addComponentColumn { article ->
-                val editBtn = Button("Edit")
-                editBtn.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY)
-                editBtn.addClickListener { openEditArticleDialog(article) }
-
-                val deleteBtn = Button("Delete")
-                deleteBtn.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_ERROR, ButtonVariant.LUMO_TERTIARY)
-                deleteBtn.addClickListener { confirmDeleteArticle(article) }
-
-                val row = HorizontalLayout(editBtn, deleteBtn)
-                row.isPadding = false
-                row.isSpacing = true
-                row.defaultVerticalComponentAlignment = Alignment.CENTER
-                row
-            }
-                .setAutoWidth(true)
-                .setFlexGrow(0)
-                .setKey("actions")
-        }
-
-        grid.addItemClickListener { event ->
-            if (event.column?.key == "actions") return@addItemClickListener
-            grid.element.executeJs("window.open($0, '_blank', 'noopener')", event.item.url)
-        }
-
-        grid.dataProvider = dataProvider
-        grid.setPageSize(pageSize)
-        grid.setSizeFull()
+        feed.setRenderer(ComponentRenderer { article -> buildArticleCard(article) })
+        feed.setDataProvider(dataProvider)
+        feed.setItemAccessibleNameGenerator { article -> article.title ?: article.url }
+        feed.width = "100%"
+        feed.element.style.set("background", "transparent")
+        feed.element.style.set("height", "100%")
 
         refreshData()
+        feedShell.add(filterBar, feed)
+        feedShell.expand(feed)
+
+        val footer = buildFooter()
+        footer.element.style.set("align-self", "center")
+        add(topBar, feedShell, footer)
+        expand(feedShell)
+    }
+
+    private fun buildTopBar(): HorizontalLayout {
+        val logo = Image("/cozazjeb-logo.png", "Co za zjeb")
+        logo.setWidth("46px")
+        logo.setHeight("46px")
+        logo.element.style.set("border-radius", "50%")
+        logo.element.style.set("object-fit", "cover")
+        logo.element.style.set("box-shadow", "0 1px 4px rgba(0,0,0,.26)")
+
+        val brand = Span("Co za zjeb")
+        brand.element.style.set("font-size", "var(--lumo-font-size-xl)")
+        brand.element.style.set("font-weight", "800")
+        brand.element.style.set("white-space", "nowrap")
+
+        val titleGroup = HorizontalLayout(logo, brand)
+        titleGroup.isPadding = false
+        titleGroup.isSpacing = true
+        titleGroup.defaultVerticalComponentAlignment = Alignment.CENTER
+
+        val rssButton = Button("RSS", VaadinIcon.RSS.create())
+        rssButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY)
+        val rssAnchor = Anchor("/rss")
+        rssAnchor.setTarget("_blank")
+        rssAnchor.element.setAttribute("rel", "noopener noreferrer")
+        rssAnchor.add(rssButton)
+
+        val themeButton = Button(VaadinIcon.ADJUST.create())
+        themeButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY, ButtonVariant.LUMO_ICON)
+        themeButton.element.setAttribute("aria-label", "Toggle dark mode")
+        themeButton.element.setAttribute("title", "Toggle dark mode")
+        themeButton.addClickListener {
+            ui.ifPresent { currentUi ->
+                currentUi.page.executeJs(
+                    """
+                        const current = document.documentElement.getAttribute('theme') || '';
+                        const nextMode = current.split(/\s+/).includes('dark') ? 'light' : 'dark';
+                        localStorage.setItem('cozazjeb-theme', nextMode);
+                        window.cozazjebApplyTheme(nextMode);
+                    """.trimIndent(),
+                )
+            }
+        }
+
+        addAttachListener { event ->
+            event.ui.page.executeJs(
+                """
+                    window.cozazjebApplyTheme = function(mode) {
+                        const dark = mode === 'dark';
+                        const root = document.documentElement;
+                        const body = document.body;
+                        if (dark) {
+                            root.setAttribute('theme', 'dark');
+                            body.setAttribute('theme', 'dark');
+                        } else {
+                            root.removeAttribute('theme');
+                            body.removeAttribute('theme');
+                        }
+                    };
+                    const stored = localStorage.getItem('cozazjeb-theme');
+                    const dark = stored ? stored === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
+                    window.cozazjebApplyTheme(dark ? 'dark' : 'light');
+                """.trimIndent(),
+            )
+        }
+
+        val actions = HorizontalLayout(rssAnchor, themeButton)
+        actions.isPadding = false
+        actions.isSpacing = true
+        actions.defaultVerticalComponentAlignment = Alignment.CENTER
+        actions.element.style.set("flex-shrink", "0")
+        actions.element.style.set("padding-right", "0.25rem")
+
+        if (isAuthenticated && authenticatedUser?.status == AppUserStatus.ACTIVE) {
+            val addArticleButton = Button("Add Article", VaadinIcon.PLUS.create())
+            addArticleButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_PRIMARY)
+            addArticleButton.addClickListener { openAddArticleDialog() }
+            actions.add(addArticleButton)
+
+            if (authenticatedUser?.role == Role.ADMIN) {
+                val importFacebookButton = Button("Import Facebook Posts", VaadinIcon.DOWNLOAD.create())
+                importFacebookButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY)
+                importFacebookButton.element.setAttribute("aria-label", "Import Facebook Posts")
+                importFacebookButton.element.setAttribute("title", "Import Facebook Posts")
+                importFacebookButton.addClickListener { triggerFacebookImport() }
+                actions.add(importFacebookButton)
+
+                val manageUsersButton = Button(VaadinIcon.USERS.create())
+                manageUsersButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY, ButtonVariant.LUMO_ICON)
+                manageUsersButton.element.setAttribute("aria-label", "Manage users")
+                manageUsersButton.element.setAttribute("title", "Manage users")
+                val manageUsersLink = Anchor("/admin")
+                manageUsersLink.add(manageUsersButton)
+                actions.add(manageUsersLink)
+            }
+        }
+        actions.add(buildAuthButton())
+
+        val topBar = HorizontalLayout(titleGroup, actions)
+        topBar.addClassName("czj-top-bar")
+        topBar.width = "100%"
+        topBar.defaultVerticalComponentAlignment = Alignment.CENTER
+        topBar.expand(titleGroup)
+        topBar.element.style.set("box-sizing", "border-box")
+        topBar.element.style.set("height", "66px")
+        topBar.element.style.set("padding", "0 1.5rem")
+        topBar.element.style.set("background", "var(--czj-card-bg)")
+        topBar.element.style.set("border-bottom", "1px solid var(--lumo-contrast-10pct)")
+        topBar.element.style.set("position", "fixed")
+        topBar.element.style.set("top", "0")
+        topBar.element.style.set("left", "0")
+        topBar.element.style.set("right", "0")
+        topBar.element.style.set("z-index", "1000")
+        topBar.element.style.set("box-shadow", "0 2px 10px rgba(15, 23, 42, 0.08)")
+        return topBar
+    }
+
+    private fun buildFilterBar(): Div {
+        val allLanguagesLabel = "All"
+        val topLanguages = articleRepository.findTopLanguages(3)
+        val allLanguages = articleRepository.findDistinctLanguages()
+        val filterBar = Div()
+        filterBar.addClassName("czj-filter-bar")
+        filterBar.setWidth("100%")
+        filterBar.element.style.set("box-sizing", "border-box")
+        filterBar.element.style.set("background", "var(--czj-card-bg)")
+        filterBar.element.style.set("border", "1px solid var(--lumo-contrast-10pct)")
+        filterBar.element.style.set("border-radius", "8px")
+        filterBar.element.style.set("padding", "1rem 1.15rem")
+        filterBar.element.style.set("margin-bottom", "1.35rem")
+        filterBar.element.style.set("display", "flex")
+        filterBar.element.style.set("flex-direction", "column")
+        filterBar.element.style.set("gap", "1rem")
+
+        val languageButtons = mutableMapOf<String?, Button>()
+
+        fun updateLanguageButtons() {
+            languageButtons.forEach { (language, button) ->
+                button.removeThemeVariants(ButtonVariant.LUMO_PRIMARY)
+                styleFilterChip(button, active = language == languageFilter)
+            }
+        }
+
+        fun languageChip(label: String, language: String?): Button {
+            val button = Button(label)
+            button.addThemeVariants(ButtonVariant.LUMO_SMALL)
+            styleFilterChip(button, active = false)
+            button.addClickListener {
+                languageFilter = language
+                updateLanguageButtons()
+                refreshData()
+            }
+            languageButtons[language] = button
+            return button
+        }
+
+        val languageRow = HorizontalLayout()
+        languageRow.isPadding = false
+        languageRow.isSpacing = true
+        languageRow.defaultVerticalComponentAlignment = Alignment.CENTER
+        languageRow.element.style.set("gap", "0.85rem")
+        languageRow.add(filterLabel(VaadinIcon.GLOBE, "Language"))
+        languageRow.add(languageChip(allLanguagesLabel, null))
+        topLanguages.forEach { language -> languageRow.add(languageChip(language, language)) }
+        if (allLanguages.size > topLanguages.size) {
+            val more = Button(VaadinIcon.ELLIPSIS_DOTS_H.create())
+            more.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_ICON)
+            styleFilterChip(more, active = false)
+            more.element.setAttribute("aria-label", "More languages")
+            more.element.setAttribute("title", "More languages")
+            more.addClickListener { openLanguageDialog(allLanguages) { updateLanguageButtons() } }
+            languageRow.add(more)
+        }
+        updateLanguageButtons()
+
+        val publishedFromPicker = DateTimePicker()
+        publishedFromPicker.setAriaLabel("Published from")
+        publishedFromPicker.width = "10.5rem"
+        val publishedToPicker = DateTimePicker()
+        publishedToPicker.setAriaLabel("Published to")
+        publishedToPicker.width = "10.5rem"
+
+        val dateFields = HorizontalLayout(publishedFromPicker, publishedToPicker)
+        dateFields.isPadding = false
+        dateFields.isSpacing = true
+        dateFields.defaultVerticalComponentAlignment = Alignment.CENTER
+        dateFields.element.style.set("gap", "0.85rem")
+        dateFields.element.style.set("flex-wrap", "wrap")
+        dateFields.isVisible = false
+
+        val publishedDateButton = Button("Published date", VaadinIcon.CALENDAR.create())
+        publishedDateButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY)
+        publishedDateButton.addClassName("czj-date-filter-button")
+        publishedDateButton.element.style.set("font-weight", "700")
+        publishedDateButton.element.style.set("color", "var(--lumo-secondary-text-color)")
+        publishedDateButton.addClickListener { dateFields.isVisible = !dateFields.isVisible }
+
+        val applyDatesButton = Button("Apply") {
+            publishedFromFilter = publishedFromPicker.value?.toInstant(ZoneOffset.UTC)
+            publishedToFilter = publishedToPicker.value?.toInstant(ZoneOffset.UTC)
+            refreshData()
+        }
+        applyDatesButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_PRIMARY)
+
+        val clearDatesButton = Button("Clear") {
+            publishedFromPicker.clear()
+            publishedToPicker.clear()
+            publishedFromFilter = null
+            publishedToFilter = null
+            refreshData()
+        }
+        clearDatesButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY)
+        dateFields.add(clearDatesButton, applyDatesButton)
+
+        val publishedDateRow = HorizontalLayout(publishedDateButton, dateFields)
+        publishedDateRow.isPadding = false
+        publishedDateRow.isSpacing = true
+        publishedDateRow.defaultVerticalComponentAlignment = Alignment.CENTER
+        publishedDateRow.element.style.set("gap", "1.15rem")
+        publishedDateRow.element.style.set("flex-wrap", "wrap")
+
+        filterBar.add(languageRow, publishedDateRow)
+        return filterBar
+    }
+
+    private fun styleFilterChip(button: Button, active: Boolean) {
+        button.addClassName("czj-filter-chip")
+        button.element.classList.set("czj-filter-chip-active", active)
+    }
+
+    private fun openLanguageDialog(languages: List<String>, afterSelection: () -> Unit) {
+        val dialog = Dialog()
+        dialog.headerTitle = "Languages"
+        val content = VerticalLayout()
+        content.isPadding = false
+        content.width = "16rem"
+        languages.forEach { language ->
+            val button = Button(language) {
+                languageFilter = language
+                afterSelection()
+                refreshData()
+                dialog.close()
+            }
+            button.width = "100%"
+            button.addThemeVariants(ButtonVariant.LUMO_TERTIARY)
+            content.add(button)
+        }
+        dialog.add(content)
+        dialog.open()
+    }
+
+    private fun filterLabel(icon: VaadinIcon, text: String): HorizontalLayout {
+        val iconComponent = icon.create()
+        iconComponent.setSize("1.1rem")
+        iconComponent.color = "var(--lumo-secondary-text-color)"
+        iconComponent.element.style.set("margin-right", "0.35rem")
+        val label = Span(text)
+        label.element.style.set("font-size", "var(--lumo-font-size-s)")
+        label.element.style.set("font-weight", "700")
+        label.element.style.set("color", "var(--lumo-secondary-text-color)")
+        val row = HorizontalLayout(iconComponent, label)
+        row.isPadding = false
+        row.isSpacing = true
+        row.defaultVerticalComponentAlignment = Alignment.CENTER
+        row.element.style.set("min-width", "8.75rem")
+        row.element.style.set("gap", "0.35rem")
+        return row
+    }
+
+    private fun buildArticleCard(article: Article): Div {
+        val frame = Div()
+        frame.addClassName("czj-article-frame")
+        frame.width = "100%"
+        frame.element.style.set("box-sizing", "border-box")
+        frame.element.style.set("padding-bottom", "1.75rem")
+
+        val card = Div()
+        card.addClassName("czj-article-card")
+        card.width = "100%"
+        card.element.style.set("box-sizing", "border-box")
+        card.element.style.set("background", "var(--lumo-base-color)")
+        card.element.style.set("border", "1px solid var(--czj-card-border)")
+        card.element.style.set("border-radius", "8px")
+        card.element.style.set("overflow", "hidden")
+        card.element.style.set("margin-bottom", "0")
+        card.element.style.set("box-shadow", "var(--czj-card-shadow)")
+
+        val link = Anchor(article.url)
+        link.setTarget("_blank")
+        link.element.setAttribute("rel", "noopener noreferrer")
+        link.element.style.set("display", "block")
+        link.element.style.set("color", "inherit")
+        link.element.style.set("text-decoration", "none")
+
+        val content = Div()
+        article.thumbnail?.trim()?.takeIf { it.isNotBlank() }?.let { thumbnail ->
+            val image = Image(thumbnail, article.title ?: "")
+            image.width = "100%"
+            image.element.style.set("display", "block")
+            image.element.style.set("aspect-ratio", "1 / 1")
+            image.element.style.set("object-fit", "cover")
+            content.add(image)
+        }
+
+        val body = Div()
+        body.addClassName("czj-article-body")
+        body.element.style.set("display", "flex")
+        body.element.style.set("flex-direction", "column")
+        body.element.style.set("gap", "1.2rem")
+        body.element.style.set("padding", "1.35rem 1.55rem 1.6rem")
+        body.add(buildArticleMeta(article), buildArticleTitle(article))
+        article.quote?.trim()?.takeIf { it.isNotBlank() }?.let { body.add(buildQuote(it)) }
+        article.lead?.trim()?.takeIf { it.isNotBlank() }?.let { body.add(buildLead(it)) }
+        content.add(body)
+        link.add(content)
+        card.add(link)
+
+        if (isAuthenticated && authenticatedUser?.status == AppUserStatus.ACTIVE) {
+            card.add(buildArticleActions(article))
+        }
+        frame.add(card)
+        return frame
+    }
+
+    private fun buildArticleMeta(article: Article): HorizontalLayout {
+        val row = HorizontalLayout(buildSourceIcon(article))
+        row.addClassName("czj-article-meta")
+
+        val source = Span(sourceName(article.url))
+        source.element.style.set("font-size", "var(--lumo-font-size-m)")
+        source.element.style.set("font-weight", "700")
+
+        val dot = Span("•")
+        dot.element.style.set("color", "var(--lumo-secondary-text-color)")
+
+        val date = Span(article.publishedAt?.let { formatDate(it) } ?: "")
+        date.element.style.set("font-size", "var(--lumo-font-size-xs)")
+        date.element.style.set("color", "var(--lumo-secondary-text-color)")
+
+        row.add(source, dot, date)
+        row.isPadding = false
+        row.isSpacing = true
+        row.defaultVerticalComponentAlignment = Alignment.CENTER
+        row.element.style.set("gap", "var(--lumo-space-xs)")
+        return row
+    }
+
+    private fun buildSourceIcon(article: Article): Div {
+        val wrapper = Div()
+        wrapper.addClassName("czj-source-icon")
+
+        val fallback = Span(sourceName(article.url).firstOrNull()?.uppercaseChar()?.toString() ?: "?")
+        fallback.addClassName("czj-source-icon-fallback")
+
+        val faviconUrl = article.favicon?.takeIf { it.isNotBlank() } ?: fallbackFavicon(article.url)
+        val favicon = Image(faviconUrl, "")
+        favicon.addClassName("czj-source-favicon")
+        favicon.element.executeJs("this.addEventListener('error', () => this.style.display = 'none')")
+
+        wrapper.add(fallback, favicon)
+        return wrapper
+    }
+
+    private fun buildArticleTitle(article: Article): Div {
+        val title = Div()
+        title.addClassName("czj-article-title")
+        title.text = article.title ?: article.url
+        title.element.style.set("font-size", "1.45rem")
+        title.element.style.set("font-weight", "800")
+        title.element.style.set("line-height", "1.28")
+        title.element.style.set("overflow-wrap", "anywhere")
+        return title
+    }
+
+    private fun buildQuote(text: String): Div {
+        val quote = Div()
+        quote.addClassName("czj-article-quote")
+        quote.element.style.set("width", "92%")
+        quote.element.style.set("box-sizing", "border-box")
+        quote.element.style.set("margin", "0")
+        quote.element.style.set("padding", "0.75rem 1rem")
+        quote.element.style.set("border-left", "3px solid var(--lumo-primary-color)")
+        quote.element.style.set("border-top", "1px solid var(--czj-quote-border, var(--lumo-primary-color))")
+        quote.element.style.set("border-right", "1px solid var(--czj-quote-border, var(--lumo-primary-color))")
+        quote.element.style.set("border-bottom", "1px solid var(--czj-quote-border, var(--lumo-primary-color))")
+        quote.element.style.set("border-radius", "0 7px 7px 0")
+        quote.element.style.set("background", "var(--czj-quote-bg)")
+
+        val mark = Span("“")
+        mark.element.style.set("font-size", "1.8rem")
+        mark.element.style.set("line-height", "0")
+        mark.element.style.set("font-weight", "800")
+        mark.element.style.set("color", "var(--lumo-primary-color)")
+        mark.element.style.set("margin-right", "var(--lumo-space-xs)")
+
+        val quoteText = Span(text)
+        quoteText.element.style.set("font-size", "var(--lumo-font-size-s)")
+        quoteText.element.style.set("line-height", "1.5")
+        quote.add(mark, quoteText)
+        return quote
+    }
+
+    private fun buildLead(text: String): Div {
+        val lead = Div()
+        lead.addClassName("czj-article-lead")
+        lead.text = text
+        lead.element.style.set("font-size", "var(--lumo-font-size-m)")
+        lead.element.style.set("line-height", "1.65")
+        lead.element.style.set("color", "var(--lumo-secondary-text-color)")
+        lead.element.style.set("overflow-wrap", "anywhere")
+        return lead
+    }
+
+    private fun buildArticleActions(article: Article): HorizontalLayout {
+        val editBtn = Button("Edit")
+        editBtn.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY)
+        editBtn.addClickListener { openEditArticleDialog(article) }
+
+        val deleteBtn = Button("Delete")
+        deleteBtn.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_ERROR, ButtonVariant.LUMO_TERTIARY)
+        deleteBtn.addClickListener { confirmDeleteArticle(article) }
+
+        val row = HorizontalLayout(editBtn, deleteBtn)
+        row.isPadding = false
+        row.isSpacing = true
+        row.defaultVerticalComponentAlignment = Alignment.CENTER
+        row.element.style.set("border-top", "1px solid var(--lumo-contrast-10pct)")
+        row.element.style.set("padding", "var(--lumo-space-xs) var(--lumo-space-m)")
+        return row
+    }
+
+    private fun buildFooter(): VerticalLayout {
         val versionFooter = Span("v${buildProperties.displayVersion}")
         versionFooter.element.style.set("font-size", "var(--lumo-font-size-xs)")
         versionFooter.element.style.set("color", "var(--lumo-tertiary-text-color)")
-        versionFooter.element.style.set("align-self", "center")
-        versionFooter.element.style.set("padding-bottom", "var(--lumo-space-xs)")
 
-        add(topBar, controlsRow1, controlsRow2, grid, versionFooter)
-        expand(grid)
+        val cookieNotice = Span("Cookies: necessary session/auth cookies are used; optional analytics cookies may be used when analytics is enabled.")
+        cookieNotice.element.style.set("font-size", "var(--lumo-font-size-xs)")
+        cookieNotice.element.style.set("color", "var(--lumo-tertiary-text-color)")
+        cookieNotice.element.style.set("text-align", "center")
+
+        val footer = VerticalLayout(versionFooter, cookieNotice)
+        footer.isPadding = false
+        footer.isSpacing = false
+        footer.defaultHorizontalComponentAlignment = Alignment.CENTER
+        footer.width = "100%"
+        footer.element.style.set("padding", "var(--lumo-space-s) var(--lumo-space-m)")
+        return footer
+    }
+
+    private fun sourceName(url: String): String =
+        runCatching { URI(url).host }
+            .getOrNull()
+            ?.removePrefix("www.")
+            ?.ifBlank { null }
+            ?: url
+
+    private fun fallbackFavicon(url: String): String {
+        val uri = runCatching { URI(url) }.getOrNull()
+        val scheme = uri?.scheme?.takeIf { it == "http" || it == "https" } ?: return ""
+        val host = uri.host ?: return ""
+        return "$scheme://$host/favicon.ico"
     }
 
     private fun buildAuthButton(): Button {
@@ -850,19 +1093,15 @@ class ArticleListView(
     }
 
     private fun refreshData() {
-        val totalElements = articleRepository.countFiltered(
-            languageFilter, publishedFromFilter, publishedToFilter, createdFromFilter, createdToFilter,
-        )
-        totalInfo.text = "Total articles: $totalElements"
+        feed.dataCommunicator.reset()
         dataProvider.refreshAll()
+        feed.element.executeJs("this.scrollToIndex && this.scrollToIndex(0)")
     }
 
-    private fun logFacebookPhotoGridFetch(
+    private fun logFacebookPhotoFeedFetch(
         page: Int,
         requestedLimit: Int,
         requestedOffset: Int,
-        sortField: String,
-        sortDirection: String,
         articles: List<Article>,
     ) {
         val facebookRows = articles
@@ -871,12 +1110,12 @@ class ArticleListView(
         if (facebookRows.isEmpty()) return
 
         LOG.debug(
-            "Facebook UI grid fetch state; page={}; requestedLimit={}; requestedOffset={}; sort={}; " +
+            "Facebook UI feed fetch state; page={}; requestedLimit={}; requestedOffset={}; sort={}; " +
                 "filters={}; lastFacebookCreatedId={}; rows={}",
             page,
             requestedLimit,
             requestedOffset,
-            "$sortField,$sortDirection",
+            "createdAt,desc",
             currentFilterDiagnostic(),
             lastFacebookCreatedId,
             facebookRows.joinToString(" | ") { facebookRowDiagnostic(it) },

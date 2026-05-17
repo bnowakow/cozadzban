@@ -28,10 +28,22 @@ class AnalyticsIndexHtmlRequestListener(
     override fun serviceInit(event: ServiceInitEvent) {
         event.addIndexHtmlRequestListener { response ->
             val doc: Document = response.document
+            injectVaadinDevToolsBootstrap(doc)
             injectConsentBannerStyles(doc)
             injectConsentBannerHtml(doc)
             injectAnalyticsScript(doc)
         }
+    }
+
+    private fun injectVaadinDevToolsBootstrap(doc: Document) {
+        val script = doc.head().prependElement("script")
+        script.attr("id", "czj-vaadin-devtools-bootstrap")
+        script.appendChild(DataNode(
+            """
+            window.Vaadin = window.Vaadin || {};
+            window.Vaadin.devToolsPlugins = window.Vaadin.devToolsPlugins || [];
+            """.trimIndent(),
+        ))
     }
 
     // -------------------------------------------------------------------------

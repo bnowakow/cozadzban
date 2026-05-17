@@ -52,6 +52,7 @@ import java.util.concurrent.TimeUnit
 @Service
 class EnrichmentService(
     restClientBuilder: RestClient.Builder,
+    private val faviconCache: FaviconCache = NoopFaviconCache,
 ) {
 
     private val restClient: RestClient = restClientBuilder
@@ -2506,6 +2507,7 @@ class EnrichmentService(
         )?.takeUnless { isGenericInstagramThumbnail(url, it) }
         val facebookPhotoThumbnail = facebookPhotoImage(url, html).takeIf { metaThumbnail == null }
         val thumbnail = metaThumbnail ?: facebookPhotoThumbnail
+        val favicon = faviconCache.cache(url, faviconCandidates(url, doc))
         val facebookPostText = parseFacebookEmbeddedMessageText(url, html, doc)
             ?.let { cleanFacebookMessageText(it) }
         val rawMetaDescription = metaContent(doc, "meta[property=og:description]")
@@ -2575,6 +2577,7 @@ class EnrichmentService(
         return EnrichmentResult(
             title = title,
             thumbnail = thumbnail,
+            favicon = favicon,
             lead = lead,
             publishedAt = publishedAt,
             plainText = plainText,
@@ -3038,6 +3041,32 @@ class EnrichmentService(
     private fun firstMetaImage(doc: org.jsoup.nodes.Document, vararg selectors: String): String? =
         selectors.firstNotNullOfOrNull { selector -> absoluteOrRawMetaContent(doc, selector) }
 
+    private fun faviconCandidates(url: String, doc: org.jsoup.nodes.Document): List<String> {
+        val selectors = listOf(
+            "link[rel~=(?i)^(shortcut\\s+icon|icon)$]",
+            "link[rel~=(?i)apple-touch-icon]",
+            "link[rel~=(?i)mask-icon]",
+        )
+        val declared = selectors
+            .asSequence()
+            .flatMap { selector -> doc.select(selector).asSequence() }
+            .mapNotNull { element ->
+                element.attr("abs:href").normalized()
+                    ?: element.attr("href").normalized()
+            }
+        return (declared + originFavicon(url).asSequence())
+            .distinct()
+            .toList()
+    }
+
+    private fun originFavicon(url: String): List<String> {
+        val uri = runCatching { URI(url) }.getOrNull() ?: return emptyList()
+        val scheme = uri.scheme?.lowercase()?.takeIf { it == "http" || it == "https" } ?: return emptyList()
+        val host = uri.host ?: return emptyList()
+        val port = if (uri.port >= 0) ":${uri.port}" else ""
+        return listOf("$scheme://$host$port/favicon.ico")
+    }
+
     private fun facebookPhotoImage(url: String, html: String): String? {
         if (!isFacebookPhotoUrl(url) && !isFacebookPfbidPostUrl(url)) return null
 
@@ -3411,6 +3440,7 @@ data class EnrichmentResult(
     val title: String?,
     val thumbnail: String?,
     val lead: String?,
+    val favicon: String? = null,
     val publishedAt: Instant? = null,
     /** Plain text extracted from the page body, for preservation only. Never exposed publicly. */
     val plainText: String? = null,
@@ -3428,6 +3458,7 @@ internal fun recoverFacebookPostFromGenericError(
     return EnrichmentResult(
         title = facebookFallbackTitle(url),
         thumbnail = null,
+        favicon = null,
         lead = null,
         publishedAt = null,
         plainText = null,

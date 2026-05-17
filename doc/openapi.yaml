@@ -5,7 +5,7 @@ info:
     ## Overview
     CoZaZjeb is a link-collecting application. Users submit a URL and a language
     tag; the server fetches the target page and automatically enriches the record
-    with title, thumbnail, lead, and best-effort publication date before persisting it.
+    with title, thumbnail, favicon, lead, and best-effort publication date before persisting it.
 
     ## Components
     1. **REST API** — CRUD endpoints for `Article` resources (this spec).
@@ -15,7 +15,7 @@ info:
        No DDL is generated or executed outside of Flyway.
     4. **RSS feed** — `GET /rss` exposes articles as an RSS 2.0 feed;
        filterable per language with `?lang=<BCP-47>`.
-    5. **Vaadin UI** — server-side paginated view of articles (separate from
+    5. **Vaadin UI** — server-side lazy feed of articles (separate from
        this REST spec; rendered at the root path `/`).
 
     6. **Frontend authentication** — Vaadin UI starts OAuth Authorization Code + PKCE
@@ -34,7 +34,7 @@ info:
     ## Implementation notes
     - Language is normalized to lowercase and validated against a conservative
       BCP-47-like pattern (e.g. `pl`, `en`, `en-gb`).
-    - `title`, `thumbnail`, `lead`, and best-effort `publishedAt` are
+    - `title`, `thumbnail`, `favicon`, `lead`, and best-effort `publishedAt` are
       server-fetched; clients supply `url`, `language`, optional `quote`, and
       optional `publishedAt` on create/replace. Enrichment is
       atomic — 422 on failure means no DB write occurs and existing records are unchanged.
@@ -267,7 +267,7 @@ paths:
       description: >
         Accepts a URL and a BCP-47 language tag.
         The server fetches the page at the given URL and automatically
-        populates title, thumbnail, lead, and best-effort publishedAt before
+        populates title, thumbnail, favicon, lead, and best-effort publishedAt before
         persisting. Creator is resolved from the authenticated DB user.
       requestBody:
         required: true
@@ -887,6 +887,11 @@ components:
           description: Thumbnail URL fetched from the article page (og:image or similar)
           nullable: true
           example: https://example.com/images/thumb.jpg
+        favicon:
+          type: string
+          description: Local cached favicon URL downloaded from source site icon metadata
+          nullable: true
+          example: /favicons/2f1a0c8d9e7b6a5c4d3e2f10987654321abcdeffedcba9876543210012345678.png
         lead:
           type: string
           description: Lead/excerpt fetched from the article page (og:description or similar)

@@ -16,6 +16,7 @@ data class Article(
     val language: String,
     val title: String? = null,
     val thumbnail: String? = null,
+    val favicon: String? = null,
     val lead: String? = null,
     val quote: String? = null,
     val aiSummary: String? = null,
