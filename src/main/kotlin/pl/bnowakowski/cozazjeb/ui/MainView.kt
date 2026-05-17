@@ -885,6 +885,7 @@ class ArticleListView(
 
         val rows = mutableListOf<FacebookCandidateApprovalRow>()
         val content = VerticalLayout()
+        content.addClassNames("czj-dialog-content", "czj-facebook-approval-dialog")
         content.width = "100%"
         val header = facebookCandidateApprovalGridRow(
             facebookCandidateApprovalHeader("Candidate ID"),
@@ -893,9 +894,11 @@ class ArticleListView(
             facebookCandidateApprovalHeader("Language"),
             facebookCandidateApprovalHeader("Decision"),
         )
+        header.addClassName("czj-facebook-approval-header-row")
         content.add(header)
         candidates.forEach { candidate ->
             val candidateId = Span(candidate.candidateId)
+            candidateId.addClassName("czj-facebook-approval-id")
             candidateId.element.style.set("font-family", "monospace")
             candidateId.element.style.set("font-size", "var(--lumo-font-size-s)")
             candidateId.element.style.set("overflow-wrap", "anywhere")
@@ -903,6 +906,7 @@ class ArticleListView(
             candidateId.element.style.set("white-space", "normal")
 
             val url = Anchor(candidate.url, candidate.url)
+            url.addClassName("czj-facebook-approval-link")
             url.setTarget("_blank")
             url.element.setAttribute("rel", "noopener noreferrer")
             url.element.style.set("overflow-wrap", "anywhere")
@@ -916,6 +920,7 @@ class ArticleListView(
                 Span("—")
             } else {
                 Anchor(sourcePostUrl, sourcePostUrl).apply {
+                    addClassName("czj-facebook-approval-link")
                     setTarget("_blank")
                     element.setAttribute("rel", "noopener noreferrer")
                 }
@@ -930,12 +935,14 @@ class ArticleListView(
             language.value = candidate.language
             language.placeholder = "pl"
             language.setWidth("6rem")
+            language.addClassName("czj-facebook-approval-language")
             language.element.style.set("min-width", "0")
 
             val decision = facebookCandidateDecisionGroup()
             decision.value = FacebookCandidateApprovalDecision.ACCEPT
 
             val row = facebookCandidateApprovalGridRow(candidateId, url, sourcePost, language, decision)
+            row.addClassName("czj-facebook-approval-row")
             content.add(row)
             rows += FacebookCandidateApprovalRow(candidate, language, decision)
         }
@@ -956,6 +963,7 @@ class ArticleListView(
         submitButton.addClickShortcut(Key.ENTER)
 
         val actions = HorizontalLayout(submitButton)
+        actions.addClassName("czj-facebook-approval-actions")
         actions.defaultVerticalComponentAlignment = Alignment.CENTER
         content.add(actions)
         dialog.add(content)
@@ -970,16 +978,19 @@ class ArticleListView(
         decision: com.vaadin.flow.component.Component,
     ): Div {
         val row = Div(candidateId, url, sourcePost, language, decision)
+        row.addClassName("czj-facebook-approval-grid-row")
         row.width = "100%"
         row.element.style.set("display", "grid")
         row.element.style.set("grid-template-columns", "6rem minmax(22rem, 1fr) minmax(8rem, 12rem) 6rem 10.5rem")
         row.element.style.set("column-gap", "var(--lumo-space-m)")
+        row.element.style.set("row-gap", "var(--lumo-space-s)")
         row.element.style.set("align-items", "center")
         return row
     }
 
     private fun facebookCandidateApprovalHeader(text: String): Span {
         val header = Span(text)
+        header.addClassName("czj-facebook-approval-header")
         header.element.style.set("font-weight", "600")
         header.element.style.set("font-size", "var(--lumo-font-size-s)")
         header.element.style.set("color", "var(--lumo-secondary-text-color)")
@@ -998,6 +1009,7 @@ class ArticleListView(
         }
         decision.element.style.set("width", "10rem")
         decision.element.style.set("min-width", "10rem")
+        decision.addClassName("czj-facebook-approval-decision")
         decision.element.style.set("--vaadin-radio-button-label-color", "var(--lumo-success-text-color)")
         decision.addValueChangeListener { event ->
             val color = when (event.value) {

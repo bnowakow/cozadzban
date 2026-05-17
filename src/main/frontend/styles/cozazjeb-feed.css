@@ -146,6 +146,14 @@ vaadin-button {
   color: var(--czj-text);
 }
 
+vaadin-radio-button::part(radio) {
+  border-color: var(--czj-field-border);
+}
+
+vaadin-radio-button::part(label) {
+  color: var(--czj-text);
+}
+
 .czj-date-range-picker::part(label) {
   font-size: var(--lumo-font-size-xs);
   line-height: 1.1;
@@ -256,6 +264,72 @@ vaadin-button {
 .czj-cache-content-field::part(input-field) {
   background: var(--czj-field-bg);
   border-color: var(--czj-border);
+}
+
+.czj-facebook-approval-dialog {
+  max-height: 70vh;
+  overflow: auto;
+}
+
+.czj-facebook-approval-grid-row {
+  border-bottom: 1px solid var(--czj-border);
+  box-sizing: border-box;
+  color: var(--czj-text);
+  padding: 0.75rem 0;
+}
+
+.czj-facebook-approval-header-row {
+  background: var(--czj-field-bg);
+  border: 1px solid var(--czj-border);
+  border-radius: 8px;
+  padding: 0.65rem 0.75rem !important;
+}
+
+.czj-facebook-approval-row {
+  padding-left: 0.75rem !important;
+  padding-right: 0.75rem !important;
+}
+
+.czj-facebook-approval-row:hover {
+  background: var(--lumo-primary-color-10pct);
+}
+
+.czj-facebook-approval-header {
+  color: var(--czj-muted) !important;
+  letter-spacing: 0;
+}
+
+.czj-facebook-approval-id {
+  color: var(--czj-muted);
+}
+
+.czj-facebook-approval-link {
+  color: var(--lumo-primary-color);
+  text-decoration: none;
+}
+
+.czj-facebook-approval-link:hover {
+  text-decoration: underline;
+}
+
+.czj-facebook-approval-language {
+  max-width: 6rem;
+}
+
+.czj-facebook-approval-decision {
+  color: var(--czj-text);
+}
+
+.czj-facebook-approval-actions {
+  justify-content: flex-end;
+  padding-top: 0.5rem;
+  width: 100%;
+}
+
+@media (max-width: 900px) {
+  .czj-facebook-approval-grid-row {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
 }
 
 .czj-admin-warning {
