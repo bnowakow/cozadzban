@@ -781,6 +781,25 @@ class EnrichmentServiceTest {
     }
 
     @Test
+    fun `recognizes TVN24 links for reader fallback`() {
+        assertEquals(true, isTvn24Url("https://tvn24.pl/biznes/ze-swiata/example-st9050825"))
+        assertEquals(true, isTvn24Url("https://www.tvn24.pl/example"))
+        assertEquals(false, isTvn24Url("https://example.com/article"))
+    }
+
+    @Test
+    fun `recognizes TVN24 placeholder result as blocked metadata`() {
+        val result = EnrichmentResult(
+            title = "Zaraz wracamy",
+            thumbnail = null,
+            lead = null,
+        )
+
+        assertEquals(true, isTvn24BlockedPlaceholderResult("https://tvn24.pl/biznes/example-st9050825", result))
+        assertEquals(false, isTvn24BlockedPlaceholderResult("https://example.com/article", result))
+    }
+
+    @Test
     fun `recognizes WSJ links for fallback`() {
         assertEquals(true, isWsjUrl("https://on.wsj.com/4cniLaK"))
         assertEquals(true, isWsjUrl("https://www.wsj.com/business/media/example-7d925a4b"))

@@ -1,4 +1,5 @@
 node_modules
+.npm/
 HELP.md
 .DS_Store
 .gradle
