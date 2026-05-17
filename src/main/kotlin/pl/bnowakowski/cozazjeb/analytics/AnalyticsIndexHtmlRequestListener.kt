@@ -53,7 +53,7 @@ class AnalyticsIndexHtmlRequestListener(
         script.appendChild(DataNode(
             """
             (function () {
-                window.cozazjebApplyTheme = function(mode) {
+                function applyTheme(mode) {
                     var dark = mode === 'dark';
                     var root = document.documentElement;
                     var body = document.body;
@@ -64,9 +64,9 @@ class AnalyticsIndexHtmlRequestListener(
                         root.removeAttribute('theme');
                         if (body) body.removeAttribute('theme');
                     }
-                };
+                }
 
-                window.cozazjebInitialTheme = function() {
+                function initialTheme() {
                     var stored = null;
                     try {
                         stored = localStorage.getItem('cozazjeb-theme');
@@ -75,16 +75,16 @@ class AnalyticsIndexHtmlRequestListener(
                     }
                     var dark = stored ? stored === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
                     return dark ? 'dark' : 'light';
-                };
+                }
 
-                var mode = window.cozazjebInitialTheme();
-                window.cozazjebApplyTheme(mode);
+                var mode = initialTheme();
+                applyTheme(mode);
                 if (document.readyState === 'loading') {
                     document.addEventListener('DOMContentLoaded', function () {
-                        window.cozazjebApplyTheme(mode);
+                        applyTheme(mode);
                     }, { once: true });
                 } else {
-                    window.cozazjebApplyTheme(mode);
+                    applyTheme(mode);
                 }
             })();
             """.trimIndent(),
