@@ -152,6 +152,14 @@ vaadin-button {
   padding-bottom: 0.15rem;
 }
 
+.czj-date-range-fields {
+  align-items: flex-end !important;
+}
+
+.czj-date-range-action {
+  margin-bottom: 0.05rem;
+}
+
 .czj-admin-view {
   background: var(--czj-page-bg);
   box-sizing: border-box;

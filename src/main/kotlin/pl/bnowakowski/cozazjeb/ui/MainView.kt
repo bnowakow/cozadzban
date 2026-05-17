@@ -358,9 +358,10 @@ class ArticleListView(
         publishedToPicker.width = "10.5rem"
 
         val dateFields = HorizontalLayout(publishedFromPicker, publishedToPicker)
+        dateFields.addClassName("czj-date-range-fields")
         dateFields.isPadding = false
         dateFields.isSpacing = true
-        dateFields.defaultVerticalComponentAlignment = Alignment.CENTER
+        dateFields.defaultVerticalComponentAlignment = Alignment.END
         dateFields.element.style.set("gap", "0.85rem")
         dateFields.element.style.set("flex-wrap", "wrap")
         dateFields.isVisible = false
@@ -378,6 +379,7 @@ class ArticleListView(
             refreshData()
         }
         applyDatesButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_PRIMARY)
+        applyDatesButton.addClassName("czj-date-range-action")
 
         val clearDatesButton = Button("Clear") {
             publishedFromPicker.clear()
@@ -387,6 +389,7 @@ class ArticleListView(
             refreshData()
         }
         clearDatesButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY)
+        clearDatesButton.addClassName("czj-date-range-action")
         dateFields.add(clearDatesButton, applyDatesButton)
 
         val publishedDateRow = HorizontalLayout(publishedDateButton, dateFields)
