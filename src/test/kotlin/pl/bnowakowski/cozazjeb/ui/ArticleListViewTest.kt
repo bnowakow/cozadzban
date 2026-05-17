@@ -253,6 +253,45 @@ class ArticleListViewTest {
         assertTrue(divTexts.contains("Visible lead"))
     }
 
+    @Test
+    fun `article card hides ellipsis shortened title when cached text starts with title prefix`() {
+        stubArticles()
+        val title = "To chyba najlepsze podsumowanie co sie stanie jak na Polske ktos napadnie..."
+        val article = Article(
+            id = 43L,
+            url = "https://www.facebook.com/photo/?fbid=26699459673045248&set=a.174617535956156",
+            language = "pl",
+            title = title,
+            lead = "Visible lead",
+            createdByUserId = 1L,
+        )
+        whenever(articleContentRepository.findById(43L)).thenReturn(
+            Optional.of(
+                ArticleContent(
+                    articleId = 43L,
+                    content = "To chyba najlepsze podsumowanie co sie stanie jak na Polske ktos napadnie i co dalej.",
+                ),
+            ),
+        )
+
+        val view = ArticleListView(
+            articleRepository,
+            articleContentRepository,
+            articleService,
+            facebookProfileArticleImporter,
+            appUserRepository,
+            buildProperties,
+        )
+        val method = view.javaClass.getDeclaredMethod("buildArticleCard", Article::class.java)
+        method.isAccessible = true
+        val card = method.invoke(view, article) as Component
+
+        val divTexts = findComponents(card, com.vaadin.flow.component.html.Div::class.java).map { it.text }
+
+        assertFalse(divTexts.contains(title))
+        assertTrue(divTexts.contains("Visible lead"))
+    }
+
     private fun authenticateAs(email: String) {
         SecurityContextHolder.getContext().authentication =
             UsernamePasswordAuthenticationToken(

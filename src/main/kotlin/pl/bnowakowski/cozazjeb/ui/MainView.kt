@@ -561,11 +561,28 @@ class ArticleListView(
         val articleId = article.id ?: return title
         val isCacheDerived = cacheDerivedTitleIds.getOrPut(articleId) {
             articleContentRepository.findById(articleId)
-                .map { it.content.trim() == title }
+                .map { isCacheDerivedTitle(title, it.content) }
                 .orElse(false)
         }
         return title.takeUnless { isCacheDerived }
     }
+
+    private fun isCacheDerivedTitle(title: String, content: String): Boolean {
+        val normalizedTitle = normalizeArticleTextForComparison(title)
+        val normalizedContent = normalizeArticleTextForComparison(content)
+        if (normalizedTitle == normalizedContent) return true
+
+        val titlePrefix = normalizedTitle
+            .removeSuffix("...")
+            .removeSuffix("…")
+            .trimEnd()
+        return titlePrefix.length >= CACHE_DERIVED_TITLE_PREFIX_MIN_CHARS &&
+            titlePrefix.length < normalizedContent.length &&
+            normalizedContent.startsWith(titlePrefix)
+    }
+
+    private fun normalizeArticleTextForComparison(text: String): String =
+        text.replace(Regex("\\s+"), " ").trim()
 
     private fun buildArticleTitle(text: String): Div {
         val title = Div()
@@ -1413,6 +1430,7 @@ class ArticleListView(
         private val LOG_WHITESPACE_PATTERN = Regex("""\s+""")
         private const val MAX_LOGGED_VALUE_CHARS = 300
         private const val LANGUAGE_SUGGESTION_LIMIT = 3
+        private const val CACHE_DERIVED_TITLE_PREFIX_MIN_CHARS = 40
         private const val FACEBOOK_IMPORT_APPROVAL_POLL_INTERVAL_MS = 1_000
         private val DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneOffset.UTC)
         private val SHORT_DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneOffset.UTC)
