@@ -434,12 +434,10 @@ class ArticleService(
             ?.replace(Regex("\\s+"), " ")
             ?.trim()
             ?.takeIf { it.isNotBlank() && !isUnusableFacebookTitle(url, it) }
-            ?.let { excerpt(it, ARTICLE_TITLE_EXCERPT_LENGTH) }
         val cacheExcerpt = contentForCache
             ?.replace(Regex("\\s+"), " ")
             ?.trim()
             ?.takeIf { it.isNotBlank() && !isUnusableFacebookTitle(url, it) }
-            ?.let { excerpt(it, ARTICLE_TITLE_EXCERPT_LENGTH) }
 
         if (isFacebookPostUrl(url)) {
             leadExcerpt?.let { return it }
@@ -476,13 +474,6 @@ class ArticleService(
 
     private fun shouldUseFacebookLeadTitle(title: String?): Boolean =
         isGenericFacebookTitle(title) || isFacebookLoginAccessTitle(title) || title?.contains(" | ") == true
-
-    private fun excerpt(text: String, maxLength: Int): String =
-        if (text.length <= maxLength) {
-            text
-        } else {
-            text.take(maxLength).trimEnd() + "..."
-        }
 
     private fun facebookVideoTitleContent(url: String, title: String?): String? {
         if (!isFacebookVideoOrReelUrl(url)) return null
@@ -800,10 +791,10 @@ class ArticleService(
         titleForSave: String?,
     ): String =
         when {
-            !enrichment.lead.isNullOrBlank() && titleForSave == excerpt(enrichment.lead.replace(LOG_WHITESPACE_PATTERN, " ").trim(), ARTICLE_TITLE_EXCERPT_LENGTH) ->
-                "lead-excerpt"
-            !contentForCache.isNullOrBlank() && titleForSave == excerpt(contentForCache.replace(LOG_WHITESPACE_PATTERN, " ").trim(), ARTICLE_TITLE_EXCERPT_LENGTH) ->
-                "content-cache-excerpt"
+            !enrichment.lead.isNullOrBlank() && titleForSave == enrichment.lead.replace(LOG_WHITESPACE_PATTERN, " ").trim() ->
+                "lead"
+            !contentForCache.isNullOrBlank() && titleForSave == contentForCache.replace(LOG_WHITESPACE_PATTERN, " ").trim() ->
+                "content-cache"
             isGenericFacebookTitle(titleForSave) ->
                 "generic-facebook-fallback(no-lead,no-content-cache)"
             titleForSave.isNullOrBlank() ->
@@ -997,7 +988,6 @@ class ArticleService(
         private const val GENERIC_FACEBOOK_SHARE_TITLE = "Facebook share"
         private const val GENERIC_FACEBOOK_REEL_TITLE = "Facebook reel"
         private const val GENERIC_FACEBOOK_PHOTO_TITLE = "Facebook photo"
-        private const val ARTICLE_TITLE_EXCERPT_LENGTH = 120
         private const val MAX_LOGGED_VALUE_CHARS = 180
         private val LOG_WHITESPACE_PATTERN = Regex("""\s+""")
         private const val OTHER98_HEGSETH_FACEBOOK_URL =
