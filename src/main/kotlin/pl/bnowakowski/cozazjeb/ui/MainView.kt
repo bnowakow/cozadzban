@@ -348,11 +348,13 @@ class ArticleListView(
         }
         updateLanguageButtons()
 
-        val publishedFromPicker = DateTimePicker()
+        val publishedFromPicker = DateTimePicker("From")
         publishedFromPicker.setAriaLabel("Published from")
+        publishedFromPicker.addClassName("czj-date-range-picker")
         publishedFromPicker.width = "10.5rem"
-        val publishedToPicker = DateTimePicker()
+        val publishedToPicker = DateTimePicker("To")
         publishedToPicker.setAriaLabel("Published to")
+        publishedToPicker.addClassName("czj-date-range-picker")
         publishedToPicker.width = "10.5rem"
 
         val dateFields = HorizontalLayout(publishedFromPicker, publishedToPicker)
