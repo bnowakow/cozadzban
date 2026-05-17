@@ -62,6 +62,8 @@ import java.util.concurrent.ExecutionException
 @Route("")
 @AnonymousAllowed
 @CssImport("./styles/cozazjeb-feed.css")
+@CssImport(value = "./styles/cozazjeb-dialog-overlay.css", themeFor = "vaadin-dialog-overlay")
+@CssImport(value = "./styles/cozazjeb-confirm-dialog-overlay.css", themeFor = "vaadin-confirm-dialog-overlay")
 class ArticleListView(
     private val articleRepository: ArticleRepository,
     private val articleContentRepository: ArticleContentRepository,

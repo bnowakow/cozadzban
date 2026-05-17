@@ -47,6 +47,8 @@ import java.time.ZoneOffset
 @PageTitle("Admin")
 @RolesAllowed("ADMIN")
 @CssImport("./styles/cozazjeb-feed.css")
+@CssImport(value = "./styles/cozazjeb-dialog-overlay.css", themeFor = "vaadin-dialog-overlay")
+@CssImport(value = "./styles/cozazjeb-confirm-dialog-overlay.css", themeFor = "vaadin-confirm-dialog-overlay")
 class AdminView(
     private val appUserService: AppUserService,
     private val articleService: ArticleService,

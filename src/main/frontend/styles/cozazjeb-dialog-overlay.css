@@ -1,0 +1,18 @@
+[part='overlay'] {
+  background: var(--czj-card-bg);
+  border: 1px solid var(--czj-border);
+  box-shadow: var(--czj-card-shadow);
+  color: var(--czj-text);
+}
+
+[part='header'],
+[part='header-content'],
+[part='content'],
+[part='footer'] {
+  background: var(--czj-card-bg);
+  color: var(--czj-text);
+}
+
+[part='title'] {
+  color: var(--czj-text);
+}
