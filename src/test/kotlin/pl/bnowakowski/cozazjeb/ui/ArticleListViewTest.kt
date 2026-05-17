@@ -24,6 +24,9 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.authority.SimpleGrantedAuthority
 import org.springframework.security.core.context.SecurityContextHolder
 import pl.bnowakowski.cozazjeb.article.ArticleRepository
+import pl.bnowakowski.cozazjeb.article.Article
+import pl.bnowakowski.cozazjeb.article.ArticleContent
+import pl.bnowakowski.cozazjeb.article.ArticleContentRepository
 import pl.bnowakowski.cozazjeb.article.ArticleService
 import pl.bnowakowski.cozazjeb.facebookimport.FacebookCandidateApproval
 import pl.bnowakowski.cozazjeb.facebookimport.FacebookCandidateApprovalDecision
@@ -33,11 +36,13 @@ import pl.bnowakowski.cozazjeb.user.AppUserRepository
 import pl.bnowakowski.cozazjeb.user.AppUserStatus
 import pl.bnowakowski.cozazjeb.user.Role
 import pl.bnowakowski.cozazjeb.version.AppBuildProperties
+import java.util.Optional
 import java.util.concurrent.CompletableFuture
 
 class ArticleListViewTest {
 
     private val articleRepository: ArticleRepository = mock()
+    private val articleContentRepository: ArticleContentRepository = mock()
     private val articleService: ArticleService = mock()
     private val facebookProfileArticleImporter: FacebookProfileArticleImporter = mock()
     private val appUserRepository: AppUserRepository = mock()
@@ -64,6 +69,7 @@ class ArticleListViewTest {
 
         val view = ArticleListView(
             articleRepository,
+            articleContentRepository,
             articleService,
             facebookProfileArticleImporter,
             appUserRepository,
@@ -91,6 +97,7 @@ class ArticleListViewTest {
 
         val view = ArticleListView(
             articleRepository,
+            articleContentRepository,
             articleService,
             facebookProfileArticleImporter,
             appUserRepository,
@@ -114,6 +121,7 @@ class ArticleListViewTest {
         )
         val view = ArticleListView(
             articleRepository,
+            articleContentRepository,
             articleService,
             facebookProfileArticleImporter,
             appUserRepository,
@@ -171,6 +179,7 @@ class ArticleListViewTest {
 
         val view = ArticleListView(
             articleRepository,
+            articleContentRepository,
             articleService,
             facebookProfileArticleImporter,
             appUserRepository,
@@ -189,6 +198,7 @@ class ArticleListViewTest {
 
         val view = ArticleListView(
             articleRepository,
+            articleContentRepository,
             articleService,
             facebookProfileArticleImporter,
             appUserRepository,
@@ -202,6 +212,45 @@ class ArticleListViewTest {
         assertTrue(buttons.any { it.text == "en" })
         assertTrue(spans.any { it.hasClassName("czj-language-flag-pl") })
         assertTrue(spans.any { it.hasClassName("czj-language-flag-en") })
+    }
+
+    @Test
+    fun `article card hides title when it matches cached article text`() {
+        stubArticles()
+        val article = Article(
+            id = 42L,
+            url = "https://www.facebook.com/photo/?fbid=1287889633490862&set=a.358353523111149",
+            language = "pl",
+            title = "Same text as cached content",
+            lead = "Visible lead",
+            createdByUserId = 1L,
+        )
+        whenever(articleContentRepository.findById(42L)).thenReturn(
+            Optional.of(
+                ArticleContent(
+                    articleId = 42L,
+                    content = " Same text as cached content ",
+                    truncated = true,
+                ),
+            ),
+        )
+
+        val view = ArticleListView(
+            articleRepository,
+            articleContentRepository,
+            articleService,
+            facebookProfileArticleImporter,
+            appUserRepository,
+            buildProperties,
+        )
+        val method = view.javaClass.getDeclaredMethod("buildArticleCard", Article::class.java)
+        method.isAccessible = true
+        val card = method.invoke(view, article) as Component
+
+        val divTexts = findComponents(card, com.vaadin.flow.component.html.Div::class.java).map { it.text }
+
+        assertFalse(divTexts.contains("Same text as cached content"))
+        assertTrue(divTexts.contains("Visible lead"))
     }
 
     private fun authenticateAs(email: String) {

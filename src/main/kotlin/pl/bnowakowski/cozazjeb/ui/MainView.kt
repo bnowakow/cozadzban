@@ -37,6 +37,7 @@ import org.springframework.security.access.AccessDeniedException
 import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.security.oauth2.core.OAuth2AuthenticatedPrincipal
 import pl.bnowakowski.cozazjeb.article.Article
+import pl.bnowakowski.cozazjeb.article.ArticleContentRepository
 import pl.bnowakowski.cozazjeb.article.ArticleInput
 import pl.bnowakowski.cozazjeb.article.ArticleRepository
 import pl.bnowakowski.cozazjeb.article.ArticleService
@@ -63,6 +64,7 @@ import java.util.concurrent.ExecutionException
 @CssImport("./styles/cozazjeb-feed.css")
 class ArticleListView(
     private val articleRepository: ArticleRepository,
+    private val articleContentRepository: ArticleContentRepository,
     private val articleService: ArticleService,
     private val facebookProfileArticleImporter: FacebookProfileArticleImporter,
     private val appUserRepository: AppUserRepository,
@@ -84,6 +86,7 @@ class ArticleListView(
 
     // Creator email cache: populated in batch per page fetch (keyed by createdByUserId)
     private val creatorCache = mutableMapOf<Long, String>()
+    private val cacheDerivedTitleIds = mutableMapOf<Long, Boolean>()
     private var lastFacebookCreatedId: Long? = null
 
     private var dataProvider = createDataProvider()
@@ -167,7 +170,7 @@ class ArticleListView(
 
         feed.setRenderer(ComponentRenderer { article -> buildArticleCard(article) })
         feed.setDataProvider(dataProvider)
-        feed.setItemAccessibleNameGenerator { article -> article.title ?: article.url }
+        feed.setItemAccessibleNameGenerator { article -> visibleArticleTitle(article) ?: article.url }
         feed.width = "100%"
         feed.element.style.set("background", "transparent")
         feed.element.style.set("height", "100%")
@@ -499,7 +502,8 @@ class ArticleListView(
         body.element.style.set("flex-direction", "column")
         body.element.style.set("gap", "1.2rem")
         body.element.style.set("padding", "1.35rem 1.55rem 1.6rem")
-        body.add(buildArticleMeta(article), buildArticleTitle(article))
+        body.add(buildArticleMeta(article))
+        visibleArticleTitle(article)?.let { body.add(buildArticleTitle(it)) }
         article.quote?.trim()?.takeIf { it.isNotBlank() }?.let { body.add(buildQuote(it)) }
         article.lead?.trim()?.takeIf { it.isNotBlank() }?.let { body.add(buildLead(it)) }
         content.add(body)
@@ -552,10 +556,21 @@ class ArticleListView(
         return wrapper
     }
 
-    private fun buildArticleTitle(article: Article): Div {
+    private fun visibleArticleTitle(article: Article): String? {
+        val title = article.title?.trim()?.takeIf { it.isNotBlank() } ?: return article.url
+        val articleId = article.id ?: return title
+        val isCacheDerived = cacheDerivedTitleIds.getOrPut(articleId) {
+            articleContentRepository.findById(articleId)
+                .map { it.content.trim() == title }
+                .orElse(false)
+        }
+        return title.takeUnless { isCacheDerived }
+    }
+
+    private fun buildArticleTitle(text: String): Div {
         val title = Div()
         title.addClassName("czj-article-title")
-        title.text = article.title ?: article.url
+        title.text = text
         title.element.style.set("font-size", "1.45rem")
         title.element.style.set("font-weight", "800")
         title.element.style.set("line-height", "1.28")
