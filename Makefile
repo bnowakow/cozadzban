@@ -14,8 +14,8 @@ help:
 	@printf "    %-31s %s\n" "docker-down" "Stop and remove local infrastructure containers"
 	@printf "    %-31s %s\n" "docker-logs" "Show compose logs (follow mode)"
 	@printf "    %-31s %s\n" "docker-spring-shell" "Open bash inside the running Spring Boot container"
-	@printf "    %-31s %s\n" "docker-upgrade" "Pull latest code, rebuild image with BuildKit caches, restart containers, follow logs"
-	@printf "    %-31s %s\n" "docker-upgrade-no-cache" "Pull latest code, rebuild without Docker cache, restart containers, follow logs"
+	@printf "    %-31s %s\n" "docker-upgrade" "Pull latest code, rebuild image, and switch Spring traffic after health check"
+	@printf "    %-31s %s\n" "docker-upgrade-no-cache" "Pull latest code, rebuild without Docker cache, and switch after health check"
 	@printf "\n"
 	@printf "  \033[1;94m%s\033[0m\n" "PostgreSQL in Docker"
 	@printf "    %-31s %s\n" "docker-pg-nuke" "Recreate PostgreSQL container and reset docker-data/postgres"
@@ -45,6 +45,7 @@ help:
 PROFILE ?= $(SPRING_PROFILES_ACTIVE)
 PROFILE ?= local
 POSTGRES_PORT ?= 5432
+APP_PORT ?= 8086
 LOCAL_UID ?= $(shell id -u)
 LOCAL_GID ?= $(shell id -g)
 APP_BUILD_COMMIT ?= $(shell git rev-parse --short=8 HEAD 2>/dev/null || echo unknown)
@@ -56,17 +57,18 @@ export APP_BUILD_COMMIT
 
 # Start local development environment from compose.yaml
 docker-up: docker-data-permissions
-	docker compose -f compose.yaml up -d
+	docker compose -f compose.yaml up -d postgres zipkin springboot reverse-proxy
 	@echo ""
 	@echo "✓ Services started:"
 	@echo "  - PostgreSQL:     localhost:$(POSTGRES_PORT)"
+	@echo "  - Reverse proxy:  http://localhost:$(APP_PORT)"
 	@echo ""
 
 # Prepare docker-data so containers can persist app data and host cron backups can write backup files.
 docker-data-permissions:
 	@mkdir -p ./docker-data
 	@docker run --rm -v "$(PWD)/docker-data:/work" alpine:3.20 \
-		sh -c "mkdir -p /work/postgres /work/data/favicons /work/backup/postgres && chown -R $(LOCAL_UID):$(LOCAL_GID) /work/backup && chmod 755 /work /work/postgres && chmod -R a+rwX /work/data && chmod -R u+rwX,go-rwx /work/backup"
+		sh -c "mkdir -p /work/postgres /work/data/favicons /work/backup/postgres /work/nginx && if [ ! -f /work/nginx/upstream.conf ]; then printf 'server springboot:8080 max_fails=3 fail_timeout=10s;\n' > /work/nginx/upstream.conf; fi && chown -R $(LOCAL_UID):$(LOCAL_GID) /work/backup /work/nginx && chmod 755 /work /work/postgres /work/nginx && chmod -R a+rwX /work/data && chmod -R u+rwX,go-rwx /work/backup && chmod 644 /work/nginx/upstream.conf"
 
 # Stop local development environment
 docker-down:
@@ -202,19 +204,13 @@ docker-spring-shell:
 # Pull latest code, rebuild, restart, and follow logs
 docker-upgrade: docker-data-permissions
 	git pull --ff-only
-	DOCKER_BUILDKIT=1 docker compose -f compose.yaml build --pull springboot
-	docker compose -f compose.yaml down --remove-orphans
-	docker compose -f compose.yaml up -d --force-recreate
-	docker compose -f compose.yaml ps
+	docker-data/blue-green-upgrade.sh
 	docker compose -f compose.yaml logs -f
 
 # Pull latest code, rebuild from scratch, restart, and follow logs. Use only when cache corruption is suspected.
 docker-upgrade-no-cache: docker-data-permissions
 	git pull --ff-only
-	DOCKER_BUILDKIT=1 docker compose -f compose.yaml build --pull --no-cache springboot
-	docker compose -f compose.yaml down --remove-orphans
-	docker compose -f compose.yaml up -d --force-recreate
-	docker compose -f compose.yaml ps
+	NO_CACHE=true docker-data/blue-green-upgrade.sh
 	docker compose -f compose.yaml logs -f
 
 # Open PostgreSQL shell inside docker container (requires dev-up)

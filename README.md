@@ -32,7 +32,7 @@ Then edit the matching file for the role you are setting up:
 | `POSTGRES_USER` | Database user | _(required)_ |
 | `POSTGRES_PASSWORD` | Database password | _(required)_ |
 | `POSTGRES_PORT` | Host port for PostgreSQL | `5432` |
-| `APP_PORT` | Host port for the Dockerized Spring Boot app | `8080` |
+| `APP_PORT` | Host-local port for the Dockerized reverse proxy | `8086` |
 | `SPRING_PROFILES_ACTIVE` | Spring profile (`local` or `prod`) | `local` |
 | `SPRING_DEVTOOLS_RESTART_ENABLED` | Enables Spring Boot DevTools restarts. Use `true` for the server and `false` for the worker so Selenium imports are not interrupted. | server: `true`, worker: `false` |
 | `SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_AUDIENCES` | Google OAuth2 client ID (used to validate JWT `aud` claim) | _(required for auth to work)_ |
@@ -116,11 +116,12 @@ make dev-up
 ```
 
 Starts the Docker Compose stack from `compose.yaml`. PostgreSQL is exposed on
-`localhost:${POSTGRES_PORT}` and the Dockerized Spring Boot app is exposed on
-`http://localhost:${APP_PORT:-8080}`.
+`localhost:${POSTGRES_PORT}` and the Dockerized reverse proxy is exposed on
+`http://localhost:${APP_PORT:-8086}`. Spring Boot containers are only reachable on the Compose
+network; host nginx should proxy to `127.0.0.1:${APP_PORT:-8086}`.
 
-The `springboot` container runs with the `prod` Spring profile and connects to PostgreSQL through the
-Compose network using:
+The active Spring Boot container runs with the `prod` Spring profile and connects to PostgreSQL
+through the Compose network using:
 
 ```text
 jdbc:postgresql://postgres:5432/${POSTGRES_DB}
@@ -141,11 +142,12 @@ To run the full Dockerized application instead, use:
 docker compose -f compose.yaml up --build
 ```
 
-The Vaadin UI is available at **http://localhost:8080/**.
+The Vaadin UI is available through the Compose reverse proxy at
+**http://localhost:${APP_PORT:-8086}/**.
 
-Docker runtime data is stored below `docker-data/`. The Spring Boot container mounts
-`./docker-data/data` as `/app/data`, which keeps generated assets such as downloaded favicons
-outside the image and available across container rebuilds.
+Docker runtime data and lightweight deployment assets are stored below `docker-data/`. The Spring
+Boot container mounts `./docker-data/data` as `/app/data`, which keeps generated assets such as
+downloaded favicons outside the image and available across container rebuilds.
 
 For server upgrades, prefer:
 
@@ -153,7 +155,9 @@ For server upgrades, prefer:
 make docker-upgrade
 ```
 
-That target uses Docker BuildKit and preserves build caches between runs. Use
+That target uses Docker BuildKit and preserves build caches between runs. It starts the idle
+blue/green Spring Boot service, waits for `/actuator/health`, reloads the Compose nginx proxy to
+the healthy service, and then stops the old Spring Boot service. Use
 `make docker-upgrade-no-cache` only when you intentionally need a completely fresh image build.
 
 ### Other useful targets

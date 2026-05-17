@@ -10,6 +10,9 @@ target/
 !**/src/main/**/build/
 !**/src/test/**/build/
 docker-data/*
+!docker-data/blue-green-upgrade.sh
+!docker-data/nginx/
+!docker-data/nginx/default.conf
 docker-data/backup/*
 docker-data/backup/postgres/*
 data/
