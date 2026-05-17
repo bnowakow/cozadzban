@@ -572,17 +572,27 @@ class ArticleListView(
         val normalizedContent = normalizeArticleTextForComparison(content)
         if (normalizedTitle == normalizedContent) return true
 
-        val titlePrefix = normalizedTitle
-            .removeSuffix("...")
-            .removeSuffix("…")
-            .trimEnd()
-        return titlePrefix.length >= CACHE_DERIVED_TITLE_PREFIX_MIN_CHARS &&
-            titlePrefix.length < normalizedContent.length &&
-            normalizedContent.startsWith(titlePrefix)
+        if (!normalizedTitle.endsWith("...") && !normalizedTitle.endsWith("…")) return false
+        return cacheDerivedTitlePrefixes(normalizedTitle).any { titlePrefix ->
+            titlePrefix.length >= CACHE_DERIVED_TITLE_PREFIX_MIN_CHARS &&
+                titlePrefix.length < normalizedContent.length &&
+                normalizedContent.contains(titlePrefix)
+        }
     }
 
     private fun normalizeArticleTextForComparison(text: String): String =
         text.replace(Regex("\\s+"), " ").trim()
+
+    private fun cacheDerivedTitlePrefixes(title: String): Set<String> {
+        val titlePrefix = title
+            .removeSuffix("...")
+            .removeSuffix("…")
+            .trimEnd()
+        return setOf(
+            titlePrefix,
+            titlePrefix.replace(LEADING_DECORATIVE_TEXT_PATTERN, ""),
+        ).filter { it.isNotBlank() }.toSet()
+    }
 
     private fun buildArticleTitle(text: String): Div {
         val title = Div()
@@ -1428,6 +1438,7 @@ class ArticleListView(
     companion object {
         private val LOG = LoggerFactory.getLogger(ArticleListView::class.java)
         private val LOG_WHITESPACE_PATTERN = Regex("""\s+""")
+        private val LEADING_DECORATIVE_TEXT_PATTERN = Regex("""^[^\p{L}\p{N}]+""")
         private const val MAX_LOGGED_VALUE_CHARS = 300
         private const val LANGUAGE_SUGGESTION_LIMIT = 3
         private const val CACHE_DERIVED_TITLE_PREFIX_MIN_CHARS = 40

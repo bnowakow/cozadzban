@@ -292,6 +292,45 @@ class ArticleListViewTest {
         assertTrue(divTexts.contains("Visible lead"))
     }
 
+    @Test
+    fun `article card hides ellipsis shortened title when cached text contains title prefix without leading emoji`() {
+        stubArticles()
+        val title = "💉 Amerykanski Narodowy Instytut Onkologiczny, Memorial Sloan Kettering Cancer Center, Mayo Clinic oraz wielu innych eks..."
+        val article = Article(
+            id = 44L,
+            url = "https://www.facebook.com/DEMAGOG/posts/pfbid037WsMCu5fbaMFwwNvW3uAv85zyupQDrXPBE5LfPwHbxqMkmLXKwaSBgJgrBgwXhc2l",
+            language = "pl",
+            title = title,
+            lead = "Visible lead",
+            createdByUserId = 1L,
+        )
+        whenever(articleContentRepository.findById(44L)).thenReturn(
+            Optional.of(
+                ArticleContent(
+                    articleId = 44L,
+                    content = "Online status indicator Active Demagog · Amerykanski Narodowy Instytut Onkologiczny, Memorial Sloan Kettering Cancer Center, Mayo Clinic oraz wielu innych ekspertow twierdzi.",
+                ),
+            ),
+        )
+
+        val view = ArticleListView(
+            articleRepository,
+            articleContentRepository,
+            articleService,
+            facebookProfileArticleImporter,
+            appUserRepository,
+            buildProperties,
+        )
+        val method = view.javaClass.getDeclaredMethod("buildArticleCard", Article::class.java)
+        method.isAccessible = true
+        val card = method.invoke(view, article) as Component
+
+        val divTexts = findComponents(card, com.vaadin.flow.component.html.Div::class.java).map { it.text }
+
+        assertFalse(divTexts.contains(title))
+        assertTrue(divTexts.contains("Visible lead"))
+    }
+
     private fun authenticateAs(email: String) {
         SecurityContextHolder.getContext().authentication =
             UsernamePasswordAuthenticationToken(
