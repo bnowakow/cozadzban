@@ -82,19 +82,25 @@ vaadin-notification-card {
 
 vaadin-dialog-overlay::part(overlay),
 vaadin-confirm-dialog-overlay::part(overlay) {
-  background: var(--czj-card-bg);
-  border: 1px solid var(--czj-border);
+  background: var(--czj-card-bg) !important;
+  border: 1px solid var(--czj-border) !important;
   border-radius: 8px;
-  box-shadow: var(--czj-card-shadow);
-  color: var(--czj-text);
+  box-shadow: var(--czj-card-shadow) !important;
+  color: var(--czj-text) !important;
+}
+
+vaadin-dialog-overlay::part(content),
+vaadin-confirm-dialog-overlay::part(content) {
+  background: var(--czj-card-bg) !important;
+  color: var(--czj-text) !important;
 }
 
 vaadin-dialog-overlay::part(header),
 vaadin-dialog-overlay::part(footer),
 vaadin-confirm-dialog-overlay::part(header),
 vaadin-confirm-dialog-overlay::part(footer) {
-  background: var(--czj-card-bg);
-  color: var(--czj-text);
+  background: var(--czj-card-bg) !important;
+  color: var(--czj-text) !important;
 }
 
 vaadin-text-field::part(input-field),
