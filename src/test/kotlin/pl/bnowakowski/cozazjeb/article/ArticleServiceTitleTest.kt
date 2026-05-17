@@ -59,7 +59,7 @@ class ArticleServiceTitleTest {
     }
 
     @Test
-    fun `Facebook reel placeholder title is replaced with lead excerpt`() {
+    fun `Facebook reel placeholder title is replaced with full lead`() {
         val lead = "This Facebook reel has enough useful text to become the article title instead of the placeholder."
         val title = titleForSave(
             url = "https://www.facebook.com/reel/1648200636595572",
@@ -68,11 +68,11 @@ class ArticleServiceTitleTest {
             contentForCache = lead,
         )
 
-        assertEquals(lead.excerptForArticleTitle(), title)
+        assertEquals(lead, title)
     }
 
     @Test
-    fun `Facebook plugin page title is replaced with lead excerpt for reel`() {
+    fun `Facebook plugin page title is replaced with full lead for reel`() {
         val lead = "White House press secretary Karoline Leavitt told reporters " +
             "\"Americans will see oil and gas prices drop rapidly\" once the U.S. military's national security objectives are \"fully achieved\" in Iran."
         val title = titleForSave(
@@ -82,11 +82,11 @@ class ArticleServiceTitleTest {
             contentForCache = lead,
         )
 
-        assertEquals(lead.excerptForArticleTitle(), title)
+        assertEquals(lead, title)
     }
 
     @Test
-    fun `Facebook watch metrics title is replaced with lead excerpt for reel`() {
+    fun `Facebook watch metrics title is replaced with full lead for reel`() {
         val lead = "White House press secretary Karoline Leavitt told reporters " +
             "\"Americans will see oil and gas prices drop rapidly\" once the objectives are achieved."
         val title = titleForSave(
@@ -96,11 +96,11 @@ class ArticleServiceTitleTest {
             contentForCache = "1.1M views, 3K reactions | $lead | Reuters",
         )
 
-        assertEquals(lead.excerptForArticleTitle(), title)
+        assertEquals(lead, title)
     }
 
     @Test
-    fun `Facebook profile fallback title is replaced with cached post excerpt`() {
+    fun `Facebook profile fallback title is replaced with full cached post text`() {
         val postText = "Michał Zimny zaczyna ten post od właściwej treści, więc to ona powinna zostać tytułem."
         val title = titleForSave(
             url = "https://www.facebook.com/mzimu/posts/pfbid02ouRUuuRuoF5KnkqjiyyyvDGKWGqRWSWEjA7Tmf1Tw9XZZbNP8dd3YTh6LXNtgrU7l",
@@ -109,11 +109,11 @@ class ArticleServiceTitleTest {
             contentForCache = postText,
         )
 
-        assertEquals(postText.excerptForArticleTitle(), title)
+        assertEquals(postText, title)
     }
 
     @Test
-    fun `Facebook share fallback title is replaced with cached post excerpt`() {
+    fun `Facebook share fallback title is replaced with full cached post text`() {
         val postText = "Treść wpisu z udostępnionego linku Facebooka powinna stać się tytułem po ręcznym zapisaniu cache."
         val title = titleForSave(
             url = "https://www.facebook.com/share/18e3PrKAEK/",
@@ -122,11 +122,11 @@ class ArticleServiceTitleTest {
             contentForCache = postText,
         )
 
-        assertEquals(postText.excerptForArticleTitle(), title)
+        assertEquals(postText, title)
     }
 
     @Test
-    fun `Facebook photo fallback title is replaced with cached post excerpt`() {
+    fun `Facebook photo fallback title is replaced with full cached post text`() {
         val postText = "Trybunał Konstytucyjny orzekł, że niezgodne z konstytucją jest takie rozumienie ustawy o statusie sędziów TK."
         val title = titleForSave(
             url = "https://www.facebook.com/photo/?fbid=1386997413458759&set=a.473737708118072",
@@ -135,11 +135,11 @@ class ArticleServiceTitleTest {
             contentForCache = postText,
         )
 
-        assertEquals(postText.excerptForArticleTitle(), title)
+        assertEquals(postText, title)
     }
 
     @Test
-    fun `Facebook photo login title is replaced with cached post excerpt`() {
+    fun `Facebook photo login title is replaced with full cached post text`() {
         val postText = "Trybunał Konstytucyjny orzekł, że niezgodne z konstytucją jest takie rozumienie ustawy o statusie sędziów TK."
         val title = titleForSave(
             url = "https://www.facebook.com/photo/?fbid=1386997413458759&set=a.473737708118072",
@@ -148,7 +148,7 @@ class ArticleServiceTitleTest {
             contentForCache = postText,
         )
 
-        assertEquals(postText.excerptForArticleTitle(), title)
+        assertEquals(postText, title)
     }
 
     @Test
@@ -228,7 +228,7 @@ class ArticleServiceTitleTest {
 
         val saved = service.patch(249L, mapOf("content" to postText))
 
-        assertEquals(postText.excerptForArticleTitle(), saved.title)
+        assertEquals(postText, saved.title)
     }
 
     @Test
@@ -264,7 +264,7 @@ class ArticleServiceTitleTest {
         val savedContent = service.replaceContentCache(249L, postText)
 
         assertEquals(postText, savedContent.content)
-        verify(articleRepository).save(article.copy(title = postText.excerptForArticleTitle()))
+        verify(articleRepository).save(article.copy(title = postText))
     }
 
     @Test
@@ -328,6 +328,3 @@ class ArticleServiceTitleTest {
             articleContentRepository = mock<ArticleContentRepository>(),
         )
 }
-
-private fun String.excerptForArticleTitle(): String =
-    if (length <= 120) this else take(120).trimEnd() + "..."
