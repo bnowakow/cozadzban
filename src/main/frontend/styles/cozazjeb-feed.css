@@ -386,6 +386,28 @@ vaadin-dialog.czj-edit-article-dialog::part(content) {
   color: var(--czj-text);
 }
 
+.czj-facebook-approval-decision vaadin-radio-button::part(label) {
+  color: var(--czj-text);
+}
+
+.czj-facebook-approval-accept {
+  color: #16843a;
+  font-weight: 800;
+}
+
+.czj-facebook-approval-reject {
+  color: #c72c41;
+  font-weight: 800;
+}
+
+html[theme~="dark"] .czj-facebook-approval-accept {
+  color: #65d17f;
+}
+
+html[theme~="dark"] .czj-facebook-approval-reject {
+  color: #ff858f;
+}
+
 .czj-facebook-approval-actions {
   justify-content: flex-end;
   padding-top: 0.5rem;

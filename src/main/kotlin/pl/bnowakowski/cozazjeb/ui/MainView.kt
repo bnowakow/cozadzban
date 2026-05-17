@@ -1013,6 +1013,21 @@ class ArticleListView(
     private fun facebookCandidateDecisionGroup(): RadioButtonGroup<FacebookCandidateApprovalDecision> {
         val decision = RadioButtonGroup<FacebookCandidateApprovalDecision>()
         decision.setItems(FacebookCandidateApprovalDecision.ACCEPT, FacebookCandidateApprovalDecision.REJECT)
+        decision.setRenderer(ComponentRenderer { item ->
+            Span(
+                when (item) {
+                    FacebookCandidateApprovalDecision.ACCEPT -> "✓ Accept"
+                    FacebookCandidateApprovalDecision.REJECT -> "✕ Reject"
+                },
+            ).apply {
+                addClassName(
+                    when (item) {
+                        FacebookCandidateApprovalDecision.ACCEPT -> "czj-facebook-approval-accept"
+                        FacebookCandidateApprovalDecision.REJECT -> "czj-facebook-approval-reject"
+                    },
+                )
+            }
+        })
         decision.setItemLabelGenerator {
             when (it) {
                 FacebookCandidateApprovalDecision.ACCEPT -> "✓ Accept"
@@ -1022,14 +1037,6 @@ class ArticleListView(
         decision.element.style.set("width", "10rem")
         decision.element.style.set("min-width", "10rem")
         decision.addClassName("czj-facebook-approval-decision")
-        decision.element.style.set("--vaadin-radio-button-label-color", "var(--lumo-success-text-color)")
-        decision.addValueChangeListener { event ->
-            val color = when (event.value) {
-                FacebookCandidateApprovalDecision.REJECT -> "var(--lumo-error-text-color)"
-                else -> "var(--lumo-success-text-color)"
-            }
-            decision.element.style.set("--vaadin-radio-button-label-color", color)
-        }
         return decision
     }
 
