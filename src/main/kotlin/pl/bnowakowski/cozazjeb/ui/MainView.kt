@@ -1052,28 +1052,30 @@ class ArticleListView(
 
     private fun openEditArticleDialog(article: Article) {
         val languageField = TextField("Language (BCP-47)")
-        languageField.width = "28rem"
+        languageField.width = "100%"
         languageField.value = article.language
 
         val quoteField = TextArea("Quote (optional)")
-        quoteField.width = "28rem"
-        quoteField.maxHeight = "8rem"
+        quoteField.width = "100%"
+        quoteField.minHeight = "7rem"
+        quoteField.maxHeight = "12rem"
         quoteField.value = article.quote ?: ""
 
         val publishedAtPicker = DateTimePicker("Published at (optional — clear to remove)")
-        publishedAtPicker.width = "18rem"
+        publishedAtPicker.width = "22rem"
         publishedAtPicker.value = article.publishedAt?.atOffset(ZoneOffset.UTC)?.toLocalDateTime()
 
         val refreshPublishedAtButton = Button("Refresh published date")
         refreshPublishedAtButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY)
         val publishedAtControls = HorizontalLayout(publishedAtPicker, refreshPublishedAtButton)
         publishedAtControls.defaultVerticalComponentAlignment = Alignment.END
-        publishedAtControls.width = "28rem"
+        publishedAtControls.width = "100%"
+        publishedAtControls.addClassName("czj-edit-article-published-controls")
 
         val contentField = TextArea("Cached content (optional — paste full text to override)")
-        contentField.width = "28rem"
-        contentField.minHeight = "10rem"
-        contentField.maxHeight = "20rem"
+        contentField.width = "100%"
+        contentField.minHeight = "24rem"
+        contentField.maxHeight = "42rem"
         contentField.value = articleService.getContent(article.id!!) ?: ""
 
         val submitButton = Button("Save")
@@ -1083,6 +1085,9 @@ class ArticleListView(
         cancelButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY)
 
         val dialog = Dialog()
+        dialog.addClassName("czj-edit-article-dialog")
+        dialog.width = "min(64rem, calc(100vw - 2rem))"
+        dialog.maxHeight = "min(88vh, 56rem)"
         dialog.headerTitle = "Edit Article"
 
         refreshPublishedAtButton.addClickListener {
@@ -1133,9 +1138,10 @@ class ArticleListView(
 
         val actions = HorizontalLayout(submitButton, cancelButton)
         actions.defaultVerticalComponentAlignment = Alignment.END
+        actions.addClassName("czj-edit-article-actions")
 
         val fields = VerticalLayout(languageField, quoteField, publishedAtControls, contentField, actions)
-        fields.addClassName("czj-dialog-content")
+        fields.addClassNames("czj-dialog-content", "czj-edit-article-content")
         contentField.addClassName("czj-cache-content-field")
         dialog.add(fields)
         dialog.open()

@@ -3,6 +3,8 @@
   border: 1px solid var(--czj-border);
   box-shadow: var(--czj-card-shadow);
   color: var(--czj-text);
+  overflow: auto;
+  scrollbar-color: var(--czj-border) var(--czj-card-bg);
 }
 
 [part='header'],
@@ -11,4 +13,8 @@
 [part='footer'] {
   background: var(--czj-card-bg);
   color: var(--czj-text);
+}
+
+[part='content'] {
+  scrollbar-color: var(--czj-border) var(--czj-card-bg);
 }

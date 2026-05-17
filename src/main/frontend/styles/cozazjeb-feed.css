@@ -261,6 +261,22 @@ vaadin-radio-button::part(label) {
   padding: 0;
 }
 
+.czj-edit-article-content {
+  gap: 1.5rem !important;
+  padding: 0.25rem 0 0;
+  width: 100%;
+}
+
+.czj-edit-article-published-controls {
+  gap: 1rem !important;
+  flex-wrap: wrap;
+}
+
+.czj-edit-article-actions {
+  gap: 1rem !important;
+  padding-top: 0.25rem;
+}
+
 .czj-admin-content-dialog vaadin-text-area,
 .czj-cache-content-field {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
