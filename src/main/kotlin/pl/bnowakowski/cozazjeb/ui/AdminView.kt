@@ -100,6 +100,7 @@ class AdminView(
     )
 
     init {
+        installCozazjebThemeBootstrap()
         setSizeFull()
         addClassName("czj-admin-view")
 

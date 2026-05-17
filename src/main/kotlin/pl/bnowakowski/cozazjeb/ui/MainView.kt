@@ -132,6 +132,8 @@ class ArticleListView(
     )
 
     init {
+        installCozazjebThemeBootstrap()
+
         // Resolve auth state once; dataProvider callbacks read these fields lazily
         val auth = SecurityContextHolder.getContext().authentication
         isAuthenticated = auth != null && auth.isAuthenticated && auth.principal != "anonymousUser"

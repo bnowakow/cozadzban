@@ -29,6 +29,7 @@ class AnalyticsIndexHtmlRequestListener(
         event.addIndexHtmlRequestListener { response ->
             val doc: Document = response.document
             injectVaadinDevToolsBootstrap(doc)
+            injectThemeBootstrap(doc)
             injectConsentBannerStyles(doc)
             injectConsentBannerHtml(doc)
             injectAnalyticsScript(doc)
@@ -42,6 +43,50 @@ class AnalyticsIndexHtmlRequestListener(
             """
             window.Vaadin = window.Vaadin || {};
             window.Vaadin.devToolsPlugins = window.Vaadin.devToolsPlugins || [];
+            """.trimIndent(),
+        ))
+    }
+
+    private fun injectThemeBootstrap(doc: Document) {
+        val script = doc.head().appendElement("script")
+        script.attr("id", "czj-theme-bootstrap")
+        script.appendChild(DataNode(
+            """
+            (function () {
+                window.cozazjebApplyTheme = function(mode) {
+                    var dark = mode === 'dark';
+                    var root = document.documentElement;
+                    var body = document.body;
+                    if (dark) {
+                        root.setAttribute('theme', 'dark');
+                        if (body) body.setAttribute('theme', 'dark');
+                    } else {
+                        root.removeAttribute('theme');
+                        if (body) body.removeAttribute('theme');
+                    }
+                };
+
+                window.cozazjebInitialTheme = function() {
+                    var stored = null;
+                    try {
+                        stored = localStorage.getItem('cozazjeb-theme');
+                    } catch (e) {
+                        // Ignore storage failures and fall back to the system preference.
+                    }
+                    var dark = stored ? stored === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
+                    return dark ? 'dark' : 'light';
+                };
+
+                var mode = window.cozazjebInitialTheme();
+                window.cozazjebApplyTheme(mode);
+                if (document.readyState === 'loading') {
+                    document.addEventListener('DOMContentLoaded', function () {
+                        window.cozazjebApplyTheme(mode);
+                    }, { once: true });
+                } else {
+                    window.cozazjebApplyTheme(mode);
+                }
+            })();
             """.trimIndent(),
         ))
     }

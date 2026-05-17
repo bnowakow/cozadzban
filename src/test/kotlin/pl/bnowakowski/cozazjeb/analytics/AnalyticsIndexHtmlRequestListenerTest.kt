@@ -12,6 +12,20 @@ import org.junit.jupiter.api.Test
 class AnalyticsIndexHtmlRequestListenerTest {
 
     @Test
+    fun `injects shared theme bootstrap as raw data node`() {
+        val doc = Jsoup.parse("<!doctype html><html><head></head><body></body></html>")
+        val listener = AnalyticsIndexHtmlRequestListener(AnalyticsProperties())
+
+        injectThemeBootstrap(listener, doc)
+
+        val script = doc.head().selectFirst("#czj-theme-bootstrap")
+        assertEquals("script", script?.tagName())
+        assertTrue(script?.childNode(0) is DataNode)
+        assertTrue(script?.data().orEmpty().contains("window.cozazjebApplyTheme"))
+        assertTrue(script?.data().orEmpty().contains("cozazjeb-theme"))
+    }
+
+    @Test
     fun `injects analytics init script as raw data node`() {
         val doc = Jsoup.parse("<!doctype html><html><head></head><body></body></html>")
         val listener = AnalyticsIndexHtmlRequestListener(
@@ -35,6 +49,15 @@ class AnalyticsIndexHtmlRequestListenerTest {
     private fun injectAnalyticsScript(listener: AnalyticsIndexHtmlRequestListener, doc: org.jsoup.nodes.Document) {
         val method = AnalyticsIndexHtmlRequestListener::class.java.getDeclaredMethod(
             "injectAnalyticsScript",
+            org.jsoup.nodes.Document::class.java,
+        )
+        method.isAccessible = true
+        method.invoke(listener, doc)
+    }
+
+    private fun injectThemeBootstrap(listener: AnalyticsIndexHtmlRequestListener, doc: org.jsoup.nodes.Document) {
+        val method = AnalyticsIndexHtmlRequestListener::class.java.getDeclaredMethod(
+            "injectThemeBootstrap",
             org.jsoup.nodes.Document::class.java,
         )
         method.isAccessible = true
