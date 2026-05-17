@@ -221,28 +221,6 @@ class ArticleListView(
             }
         }
 
-        addAttachListener { event ->
-            event.ui.page.executeJs(
-                """
-                    window.cozazjebApplyTheme = function(mode) {
-                        const dark = mode === 'dark';
-                        const root = document.documentElement;
-                        const body = document.body;
-                        if (dark) {
-                            root.setAttribute('theme', 'dark');
-                            body.setAttribute('theme', 'dark');
-                        } else {
-                            root.removeAttribute('theme');
-                            body.removeAttribute('theme');
-                        }
-                    };
-                    const stored = localStorage.getItem('cozazjeb-theme');
-                    const dark = stored ? stored === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
-                    window.cozazjebApplyTheme(dark ? 'dark' : 'light');
-                """.trimIndent(),
-            )
-        }
-
         val actions = HorizontalLayout(rssAnchor, themeButton)
         actions.isPadding = false
         actions.isSpacing = true
