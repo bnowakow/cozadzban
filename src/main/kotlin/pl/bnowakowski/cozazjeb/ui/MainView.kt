@@ -302,6 +302,10 @@ class ArticleListView(
 
         fun languageChip(label: String, language: String?): Button {
             val button = Button(label)
+            languageFlagIcon(language)?.let { flag ->
+                button.icon = flag
+                button.addClassName("czj-language-filter-chip")
+            }
             button.addThemeVariants(ButtonVariant.LUMO_SMALL)
             styleFilterChip(button, active = false)
             button.addClickListener {
@@ -380,6 +384,17 @@ class ArticleListView(
 
         filterBar.add(languageRow, publishedDateRow)
         return filterBar
+    }
+
+    private fun languageFlagIcon(language: String?): Span? {
+        val normalized = language?.trim()?.lowercase() ?: return null
+        if (normalized != "pl" && normalized != "en") return null
+
+        val flag = Span()
+        flag.addClassName("czj-language-flag")
+        flag.addClassName("czj-language-flag-$normalized")
+        flag.element.setAttribute("aria-hidden", "true")
+        return flag
     }
 
     private fun styleFilterChip(button: Button, active: Boolean) {

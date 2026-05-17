@@ -183,6 +183,27 @@ class ArticleListViewTest {
         assertFalse(spans.any { it.text.startsWith("Cookies: necessary session/auth cookies") })
     }
 
+    @Test
+    fun `polish and english language filter chips show flags`() {
+        stubArticles(topLanguages = listOf("pl", "en"))
+
+        val view = ArticleListView(
+            articleRepository,
+            articleService,
+            facebookProfileArticleImporter,
+            appUserRepository,
+            buildProperties,
+        )
+
+        val buttons = findComponents(view, Button::class.java)
+        val spans = findComponents(view, Span::class.java)
+
+        assertTrue(buttons.any { it.text == "pl" })
+        assertTrue(buttons.any { it.text == "en" })
+        assertTrue(spans.any { it.hasClassName("czj-language-flag-pl") })
+        assertTrue(spans.any { it.hasClassName("czj-language-flag-en") })
+    }
+
     private fun authenticateAs(email: String) {
         SecurityContextHolder.getContext().authentication =
             UsernamePasswordAuthenticationToken(
@@ -192,7 +213,7 @@ class ArticleListViewTest {
             )
     }
 
-    private fun stubArticles() {
+    private fun stubArticles(topLanguages: List<String> = emptyList()) {
         whenever(
             articleRepository.findPage(
                 0,
@@ -207,6 +228,7 @@ class ArticleListViewTest {
             ),
         ).thenReturn(emptyList())
         whenever(articleRepository.countFiltered(null, null, null, null, null)).thenReturn(0L)
+        whenever(articleRepository.findTopLanguages(3)).thenReturn(topLanguages)
         whenever(articleRepository.findDistinctLanguages()).thenReturn(emptyList())
     }
 
