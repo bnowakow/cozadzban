@@ -21,7 +21,7 @@ class AnalyticsIndexHtmlRequestListenerTest {
         val script = doc.head().selectFirst("#czj-theme-bootstrap")
         assertEquals("script", script?.tagName())
         assertTrue(script?.childNode(0) is DataNode)
-        assertTrue(script?.data().orEmpty().contains("window.cozazjebApplyTheme"))
+        assertTrue(script?.data().orEmpty().contains("function applyTheme"))
         assertTrue(script?.data().orEmpty().contains("cozazjeb-theme"))
     }
 

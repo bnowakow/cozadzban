@@ -214,10 +214,22 @@ class ArticleListView(
             ui.ifPresent { currentUi ->
                 currentUi.page.executeJs(
                     """
+                        function applyTheme(mode) {
+                            const dark = mode === 'dark';
+                            const root = document.documentElement;
+                            const body = document.body;
+                            if (dark) {
+                                root.setAttribute('theme', 'dark');
+                                body.setAttribute('theme', 'dark');
+                            } else {
+                                root.removeAttribute('theme');
+                                body.removeAttribute('theme');
+                            }
+                        }
                         const current = document.documentElement.getAttribute('theme') || '';
                         const nextMode = current.split(/\s+/).includes('dark') ? 'light' : 'dark';
                         localStorage.setItem('cozazjeb-theme', nextMode);
-                        window.cozazjebApplyTheme(nextMode);
+                        applyTheme(nextMode);
                     """.trimIndent(),
                 )
             }
