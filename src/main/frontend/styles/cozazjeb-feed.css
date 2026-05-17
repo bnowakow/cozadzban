@@ -14,6 +14,20 @@
   --czj-quote-border: #ffc6a6;
   --czj-source-icon-bg: #ff6b2a;
   --czj-source-icon-text: #190b04;
+  --czj-field-bg: #f8f9fb;
+  --czj-field-border: #c7cdd5;
+  --czj-grid-row-bg: #ffffff;
+  --czj-grid-row-alt-bg: #f6f8fa;
+  --lumo-base-color: #ffffff;
+  --lumo-contrast-5pct: #f4f6f8;
+  --lumo-contrast-10pct: #e4e8ed;
+  --lumo-contrast-20pct: #c7cdd5;
+  --lumo-body-text-color: #15171a;
+  --lumo-secondary-text-color: #626970;
+  --lumo-tertiary-text-color: #8a9097;
+  --lumo-primary-color: #ff6b2a;
+  --lumo-primary-contrast-color: #190b04;
+  --lumo-primary-color-10pct: #fff0e6;
 }
 
 html[theme~="dark"] {
@@ -41,6 +55,10 @@ html[theme~="dark"] {
   --czj-quote-border: #5a3828;
   --czj-source-icon-bg: #ff6b2a;
   --czj-source-icon-text: #190b04;
+  --czj-field-bg: #101419;
+  --czj-field-border: #3a424c;
+  --czj-grid-row-bg: #181c21;
+  --czj-grid-row-alt-bg: #15191e;
 }
 
 html,
@@ -62,11 +80,64 @@ vaadin-notification-card {
   color: var(--czj-text);
 }
 
+vaadin-dialog-overlay::part(overlay),
+vaadin-confirm-dialog-overlay::part(overlay) {
+  background: var(--czj-card-bg);
+  border: 1px solid var(--czj-border);
+  border-radius: 8px;
+  box-shadow: var(--czj-card-shadow);
+  color: var(--czj-text);
+}
+
+vaadin-dialog-overlay::part(header),
+vaadin-dialog-overlay::part(footer),
+vaadin-confirm-dialog-overlay::part(header),
+vaadin-confirm-dialog-overlay::part(footer) {
+  background: var(--czj-card-bg);
+  color: var(--czj-text);
+}
+
+vaadin-text-field::part(input-field),
+vaadin-text-area::part(input-field),
+vaadin-select::part(input-field),
+vaadin-date-time-picker-date-picker::part(input-field),
+vaadin-date-time-picker-time-picker::part(input-field),
+vaadin-date-picker::part(input-field),
+vaadin-time-picker::part(input-field) {
+  background: var(--czj-field-bg);
+  border: 1px solid var(--czj-field-border);
+  color: var(--czj-text);
+  box-shadow: none;
+}
+
+vaadin-text-field::part(label),
+vaadin-text-area::part(label),
+vaadin-select::part(label),
+vaadin-date-time-picker::part(label),
+vaadin-date-picker::part(label),
+vaadin-time-picker::part(label) {
+  color: var(--czj-muted);
+  font-weight: 700;
+}
+
+vaadin-text-field::part(input-field):hover,
+vaadin-text-area::part(input-field):hover,
+vaadin-select::part(input-field):hover,
+vaadin-date-time-picker-date-picker::part(input-field):hover,
+vaadin-date-time-picker-time-picker::part(input-field):hover {
+  border-color: var(--lumo-primary-color);
+}
+
+vaadin-button {
+  color: var(--czj-text);
+}
+
 .czj-admin-view {
   background: var(--czj-page-bg);
   box-sizing: border-box;
   color: var(--czj-text);
   gap: 1rem !important;
+  min-height: 100vh;
   padding: 1.25rem !important;
 }
 
@@ -79,6 +150,12 @@ vaadin-notification-card {
   color: var(--czj-text);
   padding: 1rem;
   width: 100%;
+}
+
+.czj-admin-top-bar {
+  box-shadow: var(--czj-card-shadow);
+  flex-wrap: wrap;
+  gap: 0.75rem !important;
 }
 
 .czj-admin-title {
@@ -98,14 +175,59 @@ vaadin-notification-card {
 .czj-admin-grid {
   border: 1px solid var(--czj-border);
   border-radius: 8px;
+  background: var(--czj-card-bg);
+  color: var(--czj-text);
   overflow: hidden;
 }
 
+.czj-admin-grid::part(header-cell) {
+  background: var(--czj-field-bg);
+  color: var(--czj-muted);
+  font-weight: 800;
+}
+
+.czj-admin-grid::part(body-cell) {
+  background: var(--czj-grid-row-bg);
+  border-color: var(--czj-border);
+  color: var(--czj-text);
+}
+
+.czj-admin-grid::part(even-row-cell) {
+  background: var(--czj-grid-row-alt-bg);
+}
+
+.czj-admin-grid::part(hovered-row-cell) {
+  background: var(--lumo-primary-color-10pct);
+}
+
+.czj-admin-filters {
+  background: transparent;
+  gap: 0.8rem !important;
+}
+
+.czj-admin-filters vaadin-horizontal-layout {
+  flex-wrap: wrap;
+  gap: 0.75rem !important;
+}
+
+.czj-dialog-content,
+.czj-admin-dialog-content,
 .czj-admin-content-dialog {
-  background: var(--lumo-base-color);
-  color: var(--lumo-body-text-color);
+  background: var(--czj-card-bg);
+  color: var(--czj-text);
   gap: 1rem !important;
   padding: 0;
+}
+
+.czj-admin-content-dialog vaadin-text-area,
+.czj-cache-content-field {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+
+.czj-admin-content-dialog vaadin-text-area::part(input-field),
+.czj-cache-content-field::part(input-field) {
+  background: var(--czj-field-bg);
+  border-color: var(--czj-border);
 }
 
 .czj-admin-warning {

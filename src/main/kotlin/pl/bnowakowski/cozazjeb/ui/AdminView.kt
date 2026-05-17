@@ -110,11 +110,12 @@ class AdminView(
         val manageArticlesButton = Button("Manage articles")
         manageArticlesButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY)
         manageArticlesButton.addClickListener { ui.ifPresent { it.navigate("") } }
+        val themeButton = buildThemeToggleButton()
         val logoutButton = Button("Logout")
         logoutButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY)
         logoutButton.addClickListener { logoutAndRedirect() }
 
-        val topBar = HorizontalLayout(title, addUserButton, manageArticlesButton, logoutButton)
+        val topBar = HorizontalLayout(title, addUserButton, manageArticlesButton, themeButton, logoutButton)
         topBar.addClassName("czj-admin-top-bar")
         topBar.width = "100%"
         topBar.defaultVerticalComponentAlignment = Alignment.CENTER
@@ -143,6 +144,36 @@ class AdminView(
         val button = Button("Add user")
         button.addThemeVariants(ButtonVariant.LUMO_PRIMARY)
         button.addClickListener { openAddUserDialog() }
+        return button
+    }
+
+    private fun buildThemeToggleButton(): Button {
+        val button = Button(VaadinIcon.ADJUST.create())
+        button.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY, ButtonVariant.LUMO_ICON)
+        button.element.setAttribute("aria-label", "Toggle dark mode")
+        button.element.setAttribute("title", "Toggle dark mode")
+        button.addClickListener {
+            ui.ifPresent { currentUi ->
+                currentUi.page.executeJs(
+                    """
+                        (function() {
+                            const root = document.documentElement;
+                            const body = document.body;
+                            const current = root.getAttribute('theme') || '';
+                            const nextMode = current.includes('dark') ? 'light' : 'dark';
+                            if (nextMode === 'dark') {
+                                root.setAttribute('theme', 'dark');
+                                body.setAttribute('theme', 'dark');
+                            } else {
+                                root.removeAttribute('theme');
+                                body.removeAttribute('theme');
+                            }
+                            localStorage.setItem('cozazjeb-theme', nextMode);
+                        })();
+                    """.trimIndent(),
+                )
+            }
+        }
         return button
     }
 
@@ -189,7 +220,9 @@ class AdminView(
         val actions = HorizontalLayout(submitButton, cancelButton)
         actions.defaultVerticalComponentAlignment = Alignment.END
 
-        dialog.add(VerticalLayout(emailField, roleSelect, actions))
+        val content = VerticalLayout(emailField, roleSelect, actions)
+        content.addClassName("czj-admin-dialog-content")
+        dialog.add(content)
         dialog.open()
     }
 

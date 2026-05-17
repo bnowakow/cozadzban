@@ -769,6 +769,7 @@ class ArticleListView(
         actions.defaultVerticalComponentAlignment = Alignment.END
 
         val fields = VerticalLayout(urlField, languageFieldGroup, quoteField, publishedAtPicker, actions)
+        fields.addClassName("czj-dialog-content")
         dialog.add(fields)
         dialog.open()
     }
@@ -1057,7 +1058,10 @@ class ArticleListView(
         val actions = HorizontalLayout(submitButton, cancelButton)
         actions.defaultVerticalComponentAlignment = Alignment.END
 
-        dialog.add(VerticalLayout(languageField, quoteField, publishedAtControls, contentField, actions))
+        val fields = VerticalLayout(languageField, quoteField, publishedAtControls, contentField, actions)
+        fields.addClassName("czj-dialog-content")
+        contentField.addClassName("czj-cache-content-field")
+        dialog.add(fields)
         dialog.open()
     }
 
