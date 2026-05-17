@@ -111,6 +111,8 @@ curl -s -w "\n%{http_code}" \
 4. For an ACTIVE user the **Actions** cell should show the **Delete** button (no Restore button).
 5. Click **Restore** on a DELETED user — the row status should flip to `ACTIVE`.
 6. Click **Delete** on an ACTIVE non-admin user — the row status should flip to `DELETED`.
+7. Click **Article content cache** and confirm the browser navigates to
+   **http://localhost:8080/admin/article-content-cache**.
 
 ---
 

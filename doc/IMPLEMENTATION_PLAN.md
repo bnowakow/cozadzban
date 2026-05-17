@@ -123,6 +123,12 @@ Phases 4 and 5 are independent and can be developed in parallel.
         - Logout button in top-right
         - Uses server-side service calls (`AppUserService`) from Vaadin events,
             not browser-side REST calls with cookies
+        - Links to the separate ADMIN-only article content cache page.
+
+27. **`ArticleContentCacheAdminView`** — `@Route("/admin/article-content-cache")`, `@RolesAllowed("ADMIN")`:
+        - Shows preserved article content cache entries in a dedicated grid
+        - Filters by article id, URL, publication date, and article creation date
+        - Allows viewing, refreshing from the website, saving overrides, and purging cache entries
 
 ---
 

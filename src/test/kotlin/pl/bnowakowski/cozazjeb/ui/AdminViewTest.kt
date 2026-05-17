@@ -41,6 +41,17 @@ class AdminViewTest {
     }
 
     @Test
+    fun `article content cache admin view has expected route and role guard`() {
+        val route = ArticleContentCacheAdminView::class.java.getAnnotation(Route::class.java)
+        val rolesAllowed = ArticleContentCacheAdminView::class.java.getAnnotation(RolesAllowed::class.java)
+
+        assertNotNull(route)
+        assertEquals("admin/article-content-cache", route.value)
+        assertNotNull(rolesAllowed)
+        assertTrue(rolesAllowed.value.contains("ADMIN"), "Expected ADMIN in @RolesAllowed")
+    }
+
+    @Test
     fun `admin view loads users on init`() {
         whenever(appUserService.list()).thenReturn(
             listOf(
@@ -52,9 +63,8 @@ class AdminViewTest {
                 ),
             ),
         )
-        whenever(articleContentRepository.findAll()).thenReturn(emptyList())
 
-        AdminView(appUserService, articleService, articleRepository, articleContentRepository)
+        AdminView(appUserService)
 
         verify(appUserService).list()
     }
@@ -62,24 +72,33 @@ class AdminViewTest {
     @Test
     fun `admin view contains logout and add user controls`() {
         whenever(appUserService.list()).thenReturn(emptyList())
-        whenever(articleContentRepository.findAll()).thenReturn(emptyList())
 
-        val view = AdminView(appUserService, articleService, articleRepository, articleContentRepository)
+        val view = AdminView(appUserService)
         val buttons = findComponents(view, Button::class.java)
 
         assertTrue(buttons.any { it.text == "Logout" })
         assertTrue(buttons.any { it.text == "Add user" })
+        assertTrue(buttons.any { it.text == "Article content cache" })
     }
 
     @Test
     fun `admin view contains add user button`() {
         whenever(appUserService.list()).thenReturn(emptyList())
-        whenever(articleContentRepository.findAll()).thenReturn(emptyList())
 
-        val view = AdminView(appUserService, articleService, articleRepository, articleContentRepository)
+        val view = AdminView(appUserService)
 
         val buttons = findComponents(view, Button::class.java)
         assertTrue(buttons.any { it.text == "Add user" })
+    }
+
+    @Test
+    fun `article content cache admin view contains navigation controls`() {
+        val view = ArticleContentCacheAdminView(articleService, articleRepository, articleContentRepository)
+
+        val buttons = findComponents(view, Button::class.java)
+        assertTrue(buttons.any { it.text == "Manage users" })
+        assertTrue(buttons.any { it.text == "Feed" })
+        assertTrue(buttons.any { it.text == "Logout" })
     }
 
     private fun <T : Component> findComponents(root: Component, type: Class<T>): List<T> {

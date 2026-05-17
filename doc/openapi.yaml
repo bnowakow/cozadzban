@@ -20,8 +20,10 @@ info:
 
     6. **Frontend authentication** — Vaadin UI starts OAuth Authorization Code + PKCE
        via backend redirect (`GET /auth/login`) and uses server-side session cookie.
-    7. **Admin panel** — Vaadin UI at `/admin` for ADMIN users to manage allowlist
-       (add/soft-delete/restore/update users) using server-side service calls.
+    7. **Admin pages** — Vaadin UI at `/admin` for ADMIN users to manage allowlist
+       (add/soft-delete/restore/update users) and at `/admin/article-content-cache`
+       to inspect, refresh, edit, and purge preserved article content cache entries,
+       using server-side service calls.
     8. **Facebook import job** — admin-only REST endpoints and UI button trigger a
        long-lived Selenium job that reuses one browser session, verifies Facebook
        login state before each run, and re-authenticates when necessary. UI-started
