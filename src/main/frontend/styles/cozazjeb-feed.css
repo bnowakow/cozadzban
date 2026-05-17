@@ -55,6 +55,71 @@ vaadin-vertical-layout {
   color: var(--czj-text);
 }
 
+vaadin-grid,
+vaadin-dialog-overlay,
+vaadin-confirm-dialog-overlay,
+vaadin-notification-card {
+  color: var(--czj-text);
+}
+
+.czj-admin-view {
+  background: var(--czj-page-bg);
+  box-sizing: border-box;
+  color: var(--czj-text);
+  gap: 1rem !important;
+  padding: 1.25rem !important;
+}
+
+.czj-admin-top-bar,
+.czj-admin-panel {
+  background: var(--czj-card-bg);
+  border: 1px solid var(--czj-border);
+  border-radius: 8px;
+  box-sizing: border-box;
+  color: var(--czj-text);
+  padding: 1rem;
+  width: 100%;
+}
+
+.czj-admin-title {
+  color: var(--czj-text);
+  margin: 0;
+}
+
+.czj-admin-section-title {
+  color: var(--czj-text);
+  margin: 0;
+}
+
+.czj-admin-muted {
+  color: var(--czj-muted);
+}
+
+.czj-admin-grid {
+  border: 1px solid var(--czj-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.czj-admin-content-dialog {
+  background: var(--lumo-base-color);
+  color: var(--lumo-body-text-color);
+  gap: 1rem !important;
+  padding: 0;
+}
+
+.czj-admin-warning {
+  background: var(--czj-quote-bg);
+  border: 1px solid var(--czj-quote-border);
+  border-left: 3px solid var(--lumo-primary-color);
+  border-radius: 0 7px 7px 0;
+  box-sizing: border-box;
+  color: var(--czj-text);
+  margin: 0;
+  padding: 0.75rem 1rem;
+  width: 100%;
+}
+
 .czj-top-bar {
   box-shadow: 0 2px 10px rgba(15, 23, 42, 0.08);
 }

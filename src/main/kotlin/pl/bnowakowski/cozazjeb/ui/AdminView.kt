@@ -6,6 +6,7 @@ package pl.bnowakowski.cozazjeb.ui
 import com.vaadin.flow.component.button.Button
 import com.vaadin.flow.component.button.ButtonVariant
 import com.vaadin.flow.component.confirmdialog.ConfirmDialog
+import com.vaadin.flow.component.dependency.CssImport
 import com.vaadin.flow.component.datetimepicker.DateTimePicker
 import com.vaadin.flow.component.dialog.Dialog
 import com.vaadin.flow.component.grid.Grid
@@ -46,6 +47,7 @@ import java.time.ZoneOffset
 @Route("admin")
 @PageTitle("Admin")
 @RolesAllowed("ADMIN")
+@CssImport("./styles/cozazjeb-feed.css")
 class AdminView(
     private val appUserService: AppUserService,
     private val articleService: ArticleService,
@@ -99,8 +101,10 @@ class AdminView(
 
     init {
         setSizeFull()
+        addClassName("czj-admin-view")
 
         val title = H2("Admin Panel")
+        title.addClassName("czj-admin-title")
         val addUserButton = buildAddUserButton()
         val manageArticlesButton = Button("Manage articles")
         manageArticlesButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY)
@@ -110,6 +114,7 @@ class AdminView(
         logoutButton.addClickListener { logoutAndRedirect() }
 
         val topBar = HorizontalLayout(title, addUserButton, manageArticlesButton, logoutButton)
+        topBar.addClassName("czj-admin-top-bar")
         topBar.width = "100%"
         topBar.defaultVerticalComponentAlignment = Alignment.CENTER
         topBar.expand(title)
@@ -119,10 +124,18 @@ class AdminView(
 
         configureContentGrid()
         val contentFilters = buildContentFilters()
+        val contentTitle = H3("Article content cache")
+        contentTitle.addClassName("czj-admin-section-title")
+        val contentPanel = VerticalLayout(contentTitle, contentFilters, contentGrid)
+        contentPanel.addClassName("czj-admin-panel")
+        contentPanel.isPadding = false
+        contentPanel.isSpacing = true
+        contentPanel.setSizeFull()
+        contentPanel.expand(contentGrid)
 
-        add(topBar, usersGrid, H3("Article content cache"), contentFilters, contentGrid)
+        add(topBar, usersGrid, contentPanel)
         expand(usersGrid)
-        expand(contentGrid)
+        expand(contentPanel)
     }
 
     private fun buildAddUserButton(): Button {
@@ -180,6 +193,7 @@ class AdminView(
     }
 
     private fun configureGrid() {
+        usersGrid.addClassName("czj-admin-grid")
         usersGrid.setSizeFull()
         usersGrid.addColumn { it.id?.toString().orEmpty() }
             .setHeader("ID")
@@ -280,6 +294,7 @@ class AdminView(
     }
 
     private fun configureContentGrid() {
+        contentGrid.addClassName("czj-admin-grid")
         contentGrid.setSizeFull()
         contentGrid.setPageSize(50)
         contentGrid.setDataProvider(contentDataProvider)
@@ -365,7 +380,10 @@ class AdminView(
         clearButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY, ButtonVariant.LUMO_SMALL)
 
         val searchRow = HorizontalLayout(articleIdField, articleUrlField, contentTotalInfo)
+        searchRow.width = "100%"
+        searchRow.isSpacing = true
         searchRow.defaultVerticalComponentAlignment = Alignment.END
+        contentTotalInfo.addClassName("czj-admin-muted")
 
         val dateRow = HorizontalLayout(
             publishedFromPicker,
@@ -374,11 +392,14 @@ class AdminView(
             createdToPicker,
             clearButton,
         )
+        dateRow.width = "100%"
+        dateRow.isSpacing = true
         dateRow.defaultVerticalComponentAlignment = Alignment.END
 
         val filters = VerticalLayout(searchRow, dateRow)
+        filters.addClassName("czj-admin-filters")
         filters.isPadding = false
-        filters.isSpacing = false
+        filters.isSpacing = true
         filters.width = "100%"
         return filters
     }
@@ -424,6 +445,7 @@ class AdminView(
         val truncatedNote = if (entry.truncated) {
             Paragraph("⚠ Content was truncated to 5 MB at capture time.")
         } else null
+        truncatedNote?.addClassName("czj-admin-warning")
 
         val closeButton = Button("Close")
         closeButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY)
@@ -438,6 +460,7 @@ class AdminView(
         dialog.setWidth("80vw")
         dialog.setHeight("80vh")
         val content = VerticalLayout(urlField, textArea)
+        content.addClassName("czj-admin-content-dialog")
         if (truncatedNote != null) content.addComponentAsFirst(truncatedNote)
         content.setSizeFull()
         dialog.add(content)

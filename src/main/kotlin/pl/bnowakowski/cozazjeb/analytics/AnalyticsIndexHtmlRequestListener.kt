@@ -61,8 +61,9 @@ class AnalyticsIndexHtmlRequestListener(
                 left: 0;
                 right: 0;
                 z-index: 99999;
-                background: #1e1e1e;
-                color: #f0f0f0;
+                background: var(--czj-card-bg, var(--lumo-base-color, #ffffff));
+                border-top: 1px solid var(--czj-border, var(--lumo-contrast-10pct, #d4d9df));
+                color: var(--czj-text, var(--lumo-body-text-color, #15171a));
                 font-family: sans-serif;
                 font-size: 14px;
                 padding: 14px 20px;
@@ -70,22 +71,31 @@ class AnalyticsIndexHtmlRequestListener(
                 flex-wrap: wrap;
                 align-items: center;
                 gap: 12px;
-                box-shadow: 0 -2px 8px rgba(0,0,0,0.4);
+                box-shadow: 0 -2px 8px rgba(15, 23, 42, 0.12);
+            }
+            html[theme~="dark"] #czj-consent-banner {
+                box-shadow: 0 -2px 12px rgba(0,0,0,0.35);
             }
             #czj-consent-banner p { margin: 0; flex: 1 1 260px; }
             #czj-consent-banner .czj-consent-actions { display: flex; gap: 8px; flex-wrap: wrap; }
             #czj-consent-banner button {
                 cursor: pointer;
-                border: none;
+                border: 1px solid var(--czj-border, var(--lumo-contrast-10pct, #d4d9df));
                 border-radius: 4px;
                 padding: 7px 16px;
                 font-size: 14px;
             }
-            #czj-consent-accept { background: #4caf50; color: #fff; }
-            #czj-consent-decline { background: #555; color: #fff; }
+            #czj-consent-accept {
+                background: var(--lumo-primary-color, #ff6b2a);
+                color: var(--lumo-primary-contrast-color, #190b04);
+            }
+            #czj-consent-decline {
+                background: var(--lumo-contrast-10pct, #eef0f3);
+                color: var(--czj-text, var(--lumo-body-text-color, #15171a));
+            }
             #czj-manage-cookies {
                 font-size: 12px;
-                color: #aaa;
+                color: var(--czj-muted, var(--lumo-secondary-text-color, #626970));
                 cursor: pointer;
                 text-decoration: underline;
                 background: none;
