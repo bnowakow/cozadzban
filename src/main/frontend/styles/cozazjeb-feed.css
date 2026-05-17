@@ -172,11 +172,8 @@ vaadin-button.czj-filter-chip-active {
 
 .czj-language-flag-en {
   background:
-    linear-gradient(33deg, transparent 0 42%, #ffffff 42% 47%, #c8102e 47% 53%, #ffffff 53% 58%, transparent 58% 100%),
-    linear-gradient(147deg, transparent 0 42%, #ffffff 42% 47%, #c8102e 47% 53%, #ffffff 53% 58%, transparent 58% 100%),
-    linear-gradient(to bottom, transparent 0 35%, #ffffff 35% 43%, #c8102e 43% 57%, #ffffff 57% 65%, transparent 65% 100%),
-    linear-gradient(to right, transparent 0 35%, #ffffff 35% 43%, #c8102e 43% 57%, #ffffff 57% 65%, transparent 65% 100%),
-    #012169;
+    linear-gradient(#3c3b6e 0 0) 0 0 / 45% 54% no-repeat,
+    repeating-linear-gradient(to bottom, #b22234 0 7.69%, #ffffff 7.69% 15.38%);
 }
 
 .czj-filter-bar {
