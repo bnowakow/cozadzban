@@ -12,7 +12,6 @@ import com.vaadin.flow.component.dialog.Dialog
 import com.vaadin.flow.component.grid.Grid
 import com.vaadin.flow.component.html.H2
 import com.vaadin.flow.component.html.H3
-import com.vaadin.flow.component.html.Paragraph
 import com.vaadin.flow.component.html.Span
 import com.vaadin.flow.component.icon.VaadinIcon
 import com.vaadin.flow.component.notification.Notification
@@ -475,11 +474,7 @@ class AdminView(
         textArea.value = entry.content
         textArea.setSizeFull()
         textArea.minHeight = "400px"
-
-        val truncatedNote = if (entry.truncated) {
-            Paragraph("⚠ Content was truncated to 5 MB at capture time.")
-        } else null
-        truncatedNote?.addClassName("czj-admin-warning")
+        textArea.element.classList.set("czj-admin-content-truncated", entry.truncated)
 
         val closeButton = Button("Close")
         closeButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY)
@@ -495,7 +490,6 @@ class AdminView(
         dialog.setHeight("80vh")
         val content = VerticalLayout(urlField, textArea)
         content.addClassName("czj-admin-content-dialog")
-        if (truncatedNote != null) content.addComponentAsFirst(truncatedNote)
         content.setSizeFull()
         dialog.add(content)
         refreshButton.addClickListener {

@@ -107,13 +107,14 @@ class ArticleRepositoryCustomImpl(
         val (whereClause, params) = buildWhereClause(language, publishedFrom, publishedTo, createdFrom, createdTo)
         params["limit"] = size
         params["offset"] = page * size
+        val tieBreaker = if (sortField == "publishedAt") " NULLS LAST, created_at DESC" else ""
         // column and direction are from a closed allowlist — safe to interpolate
         val sql = """
             SELECT id, url, language, title, thumbnail, favicon, lead, quote, ai_summary,
                    created_by_user_id, created_at, published_at
               FROM article
              $whereClause
-             ORDER BY $column $direction
+             ORDER BY $column $direction$tieBreaker
              LIMIT :limit OFFSET :offset
         """.trimIndent()
         return jdbc.query(sql, params, ARTICLE_ROW_MAPPER)

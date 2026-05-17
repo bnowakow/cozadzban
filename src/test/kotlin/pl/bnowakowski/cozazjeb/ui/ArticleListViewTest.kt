@@ -8,7 +8,6 @@ import com.vaadin.flow.component.button.Button
 import com.vaadin.flow.component.UI
 import com.vaadin.flow.component.dialog.Dialog
 import com.vaadin.flow.component.html.Anchor
-import com.vaadin.flow.component.html.Div
 import com.vaadin.flow.component.html.Span
 import com.vaadin.flow.component.radiobutton.RadioButtonGroup
 import com.vaadin.flow.component.textfield.TextField
@@ -205,29 +204,6 @@ class ArticleListViewTest {
         assertTrue(spans.any { it.hasClassName("czj-language-flag-en") })
     }
 
-    @Test
-    fun `long article lead is trimmed with visible notice`() {
-        stubArticles()
-        val view = ArticleListView(
-            articleRepository,
-            articleService,
-            facebookProfileArticleImporter,
-            appUserRepository,
-            buildProperties,
-        )
-        val method = view.javaClass.getDeclaredMethod("buildLead", String::class.java)
-        method.isAccessible = true
-        val longLead = List(260) { "word$it" }.joinToString(" ")
-
-        val lead = method.invoke(view, longLead) as Div
-
-        val spans = findComponents(lead, Span::class.java)
-        val renderedLead = spans.single { it.hasClassName("czj-article-lead-text") }.text
-        assertTrue(renderedLead.length <= 1_203)
-        assertTrue(renderedLead.endsWith("..."))
-        assertTrue(spans.any { it.text == "Lead trimmed because it was too long to show." })
-    }
-
     private fun authenticateAs(email: String) {
         SecurityContextHolder.getContext().authentication =
             UsernamePasswordAuthenticationToken(
@@ -242,7 +218,7 @@ class ArticleListViewTest {
             articleRepository.findPage(
                 0,
                 20,
-                "createdAt",
+                "publishedAt",
                 "desc",
                 null,
                 null,

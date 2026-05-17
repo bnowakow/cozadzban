@@ -60,6 +60,23 @@ class ArticleRepositoryCustomImplTest {
     }
 
     @Test
+    fun `findPage sorts published date with nulls last and created date tie breaker`() {
+        whenever(
+            jdbc.query(
+                any<String>(),
+                any<Map<String, Any?>>(),
+                any<RowMapper<Article>>(),
+            ),
+        ).thenReturn(emptyList())
+
+        repository.findPage(0, 20, "publishedAt", "desc")
+
+        val sqlCaptor = argumentCaptor<String>()
+        verify(jdbc).query(sqlCaptor.capture(), any<Map<String, Any?>>(), any<RowMapper<Article>>())
+        assertTrue(sqlCaptor.firstValue.contains("ORDER BY published_at DESC NULLS LAST, created_at DESC"))
+    }
+
+    @Test
     fun `findFaviconBackfillCandidates selects rows without local cached favicon`() {
         whenever(
             jdbc.query(

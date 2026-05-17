@@ -185,7 +185,9 @@ class ArticleOwnershipIT {
         val id = createArticle(url = uniqueUrl("fb-full-lead"))
 
         val content = articleContentRepository.findById(id).orElseThrow()
-        assertEquals(fullLead, content.content)
+        assertTrue(content.content.length <= 1_203)
+        assertTrue(fullLead.startsWith(content.content.removeSuffix("...")))
+        assertTrue(content.truncated)
     }
 
     @Test

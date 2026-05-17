@@ -5,6 +5,7 @@ package pl.bnowakowski.cozazjeb.article
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.any
@@ -264,6 +265,33 @@ class ArticleServiceTitleTest {
 
         assertEquals(postText, savedContent.content)
         verify(articleRepository).save(article.copy(title = postText.excerptForArticleTitle()))
+    }
+
+    @Test
+    fun `preserved article content cache is trimmed without changing title`() {
+        val articleContentRepository = mock<ArticleContentRepository>()
+        val service = ArticleService(
+            articleRepository = mock<ArticleRepository>(),
+            enrichmentService = mock<EnrichmentService>(),
+            appUserRepository = mock<AppUserRepository>(),
+            articleContentRepository = articleContentRepository,
+        )
+        val longContent = List(260) { "word$it" }.joinToString(" ")
+        val contentCaptor = argumentCaptor<ArticleContent>()
+        val method = ArticleService::class.java.getDeclaredMethod(
+            "preserveContent",
+            Long::class.javaPrimitiveType,
+            String::class.java,
+        )
+        method.isAccessible = true
+
+        method.invoke(service, 42L, longContent)
+
+        verify(articleContentRepository).insert(contentCaptor.capture())
+        assertEquals(42L, contentCaptor.firstValue.articleId)
+        assertTrue(contentCaptor.firstValue.content.length <= 1_203)
+        assertTrue(contentCaptor.firstValue.content.endsWith("..."))
+        assertEquals(true, contentCaptor.firstValue.truncated)
     }
 
     private fun titleForSave(url: String, title: String?, lead: String?, contentForCache: String?): String? {

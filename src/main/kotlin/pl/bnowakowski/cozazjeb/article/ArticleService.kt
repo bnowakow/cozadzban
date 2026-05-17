@@ -367,12 +367,32 @@ class ArticleService(
      */
     private fun preserveContent(articleId: Long, plainText: String?) {
         if (plainText.isNullOrBlank()) return
-        val bytes = plainText.toByteArray(Charsets.UTF_8)
+        val cacheLimitedText = trimContentCache(plainText)
+        val bytes = cacheLimitedText.toByteArray(Charsets.UTF_8)
         val truncated = bytes.size > MAX_CONTENT_BYTES
-        val storedText = if (truncated) String(bytes, 0, MAX_CONTENT_BYTES, Charsets.UTF_8) else plainText
+        val storedText = if (truncated) String(bytes, 0, MAX_CONTENT_BYTES, Charsets.UTF_8) else cacheLimitedText
+        val wasTrimmed = cacheLimitedText.length < plainText.trim().length
         // Upsert: replace any existing content row for this article
         articleContentRepository.deleteByArticleId(articleId)
-        articleContentRepository.insert(ArticleContent(articleId = articleId, content = storedText, truncated = truncated, capturedAt = java.time.Instant.now()))
+        articleContentRepository.insert(
+            ArticleContent(
+                articleId = articleId,
+                content = storedText,
+                truncated = truncated || wasTrimmed,
+                capturedAt = java.time.Instant.now(),
+            ),
+        )
+    }
+
+    private fun trimContentCache(plainText: String): String {
+        val normalized = plainText.trim()
+        if (normalized.length <= MAX_CONTENT_CACHE_CHARS) return normalized
+
+        val candidate = normalized.take(MAX_CONTENT_CACHE_CHARS)
+        val wordBoundary = candidate.lastIndexOfAny(charArrayOf(' ', '\n', '\t'))
+            .takeIf { it >= MIN_CONTENT_CACHE_WORD_BOUNDARY_CHARS }
+        val base = wordBoundary?.let { candidate.take(it) } ?: candidate
+        return "${base.trimEnd()}..."
     }
 
     private fun preserveContentAndFacebookPostTitle(article: Article, contentForCache: String) {
@@ -996,6 +1016,8 @@ class ArticleService(
         """.trimIndent()
         /** 5 MB in bytes — maximum size for preserved plain-text content. */
         private const val MAX_CONTENT_BYTES = 5 * 1024 * 1024
+        private const val MAX_CONTENT_CACHE_CHARS = 1_200
+        private const val MIN_CONTENT_CACHE_WORD_BOUNDARY_CHARS = 900
 
         /**
          * Normalizes a language tag to lowercase and validates it against the BCP-47-like
