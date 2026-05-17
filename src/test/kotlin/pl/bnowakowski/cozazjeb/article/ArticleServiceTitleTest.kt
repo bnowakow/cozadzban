@@ -113,6 +113,69 @@ class ArticleServiceTitleTest {
     }
 
     @Test
+    fun `create rejects Facebook article with same published time and normalized content prefix`() {
+        val articleRepository: ArticleRepository = mock()
+        val enrichmentService: EnrichmentService = mock()
+        val articleContentRepository: ArticleContentRepository = mock()
+        val service = ArticleService(
+            articleRepository,
+            enrichmentService,
+            mock<AppUserRepository>(),
+            articleContentRepository,
+        )
+        val publishedAt = Instant.parse("2026-05-07T19:07:02Z")
+        val postText = "Mili Panstwo, patrzcie na to: " +
+            "Tylko w latach 2021-2024 UE zaplacila za import surowcow kopalnych 1,8 bln euro. " +
+            "To jest rownowartosc dwukrotnosci polskiego PKB z 2025 r. " +
+            "Pierwsze 44 dni wojny w Zatoce Perskiej kosztowaly UE dodatkowe miliardy."
+        val photoText = "Mili Panstwo, patrzcie na to: " +
+            "Tylko w latach 2021-2024 UE zaplacila za import surowcow kopalnych 1,8 bln euro. " +
+            "To jest rownowartosc dwukrotnosci polskiego PKB z 2025 r. ... " +
+            "Pierwsze 44 dni wojny w Zatoce Perskiej kosztowaly UE dodatkowe miliardy."
+        whenever(articleRepository.existsByUrl(any())).thenReturn(false)
+        whenever(enrichmentService.enrich(any())).thenReturn(
+            EnrichmentResult(
+                title = "Facebook photo",
+                thumbnail = "https://scontent-waw2-1.xx.fbcdn.net/v/t39.30808-6/688084211_1496190558542372_428040976938426255_n.jpg",
+                lead = photoText,
+                plainText = photoText,
+                publishedAt = publishedAt,
+            ),
+        )
+        whenever(articleRepository.findFacebookDuplicateCandidatesByPublishedAt(publishedAt)).thenReturn(
+            listOf(
+                ArticleDuplicateCandidate(
+                    article = Article(
+                        id = 240L,
+                        url = "https://www.facebook.com/jakub.wiech.mikroblog/posts/pfbid0cmzW1Mr2ZtDhdBUVJEJWVzXNHRfkr3g8RbAEG5rhtV8ZCMzG9jXjZXFPQJeNNfFdl",
+                        language = "pl",
+                        thumbnail = "https://lookaside.fbsbx.com/lookaside/crawler/media/?media_id=1496190555209039",
+                        createdByUserId = 7L,
+                        publishedAt = publishedAt,
+                    ),
+                    content = postText,
+                ),
+            ),
+        )
+
+        val exception = assertThrows(ArticleUrlConflictException::class.java) {
+            service.create(
+                ArticleInput(
+                    url = "https://www.facebook.com/photo/?fbid=1496190555209039&set=a.248625223298918",
+                    language = "pl",
+                ),
+                creatorId = 7L,
+            )
+        }
+
+        assertEquals(
+            "https://www.facebook.com/jakub.wiech.mikroblog/posts/pfbid0cmzW1Mr2ZtDhdBUVJEJWVzXNHRfkr3g8RbAEG5rhtV8ZCMzG9jXjZXFPQJeNNfFdl",
+            exception.url,
+        )
+        verify(articleRepository, org.mockito.kotlin.never()).save(any())
+    }
+
+    @Test
     fun `Facebook reel placeholder title is replaced with full lead`() {
         val lead = "This Facebook reel has enough useful text to become the article title instead of the placeholder."
         val title = titleForSave(

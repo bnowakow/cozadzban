@@ -460,7 +460,10 @@ class ArticleService(
     }
 
     private fun normalizeContentFingerprintText(text: String): String =
-        text.replace(LOG_WHITESPACE_PATTERN, " ").trim()
+        text
+            .replace(Regex("""\s*(?:\.{3}|…)\s*"""), " ")
+            .replace(LOG_WHITESPACE_PATTERN, " ")
+            .trim()
 
     private fun preserveContentAndFacebookPostTitle(article: Article, contentForCache: String) {
         preserveContent(article.id!!, article.url, contentForCache)
@@ -1081,7 +1084,7 @@ class ArticleService(
         private const val MAX_CONTENT_CACHE_CHARS = 1_200
         private const val MIN_CONTENT_CACHE_WORD_BOUNDARY_CHARS = 900
         private const val MIN_FACEBOOK_DUPLICATE_CONTENT_CHARS = 120
-        private const val FACEBOOK_DUPLICATE_PREFIX_CHARS = 180
+        private const val FACEBOOK_DUPLICATE_PREFIX_CHARS = 120
 
         /**
          * Normalizes a language tag to lowercase and validates it against the BCP-47-like
