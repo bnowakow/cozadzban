@@ -95,7 +95,7 @@ class ArticleService(
             logFacebookPhotoDuplicateUrlConflict("create", url, input.url, articleRepository.findByUrl(url))
             throw ArticleUrlConflictException(url)
         }
-        val enrichment = enrichmentService.enrich(url)
+        val enrichment = enrichArticleUrl("create", url)
         val publishedAt = input.publishedAt ?: enrichment.publishedAt
         val contentForCache = selectContentForCache(url, enrichment.plainText, enrichment.lead, enrichment.title)
         val title = titleForSave(url, enrichment.title, enrichment.lead, contentForCache)
@@ -157,7 +157,7 @@ class ArticleService(
             logFacebookPhotoDuplicateUrlConflict("replace", url, input.url, articleRepository.findByUrl(url))
             throw ArticleUrlConflictException(url)
         }
-        val enrichment = enrichmentService.enrich(url)
+        val enrichment = enrichArticleUrl("replace", url)
         val publishedAt = input.publishedAt ?: enrichment.publishedAt
         val contentForCache = selectContentForCache(url, enrichment.plainText, enrichment.lead, enrichment.title)
         val title = titleForSave(url, enrichment.title, enrichment.lead, contentForCache)
@@ -248,7 +248,7 @@ class ArticleService(
                 logFacebookPhotoDuplicateUrlConflict("patch", newUrl, patch["url"] as? String, articleRepository.findByUrl(newUrl))
                 throw ArticleUrlConflictException(newUrl)
             }
-            enrichmentService.enrich(newUrl)
+            enrichArticleUrl("patch-url-change", newUrl)
         } else {
             null
         }
@@ -324,7 +324,7 @@ class ArticleService(
 
     fun refreshPublishedAt(id: Long): Article {
         val existing = findById(id)
-        val enrichment = enrichmentService.enrich(existing.url)
+        val enrichment = enrichArticleUrl("refresh-published-at", existing.url)
         val publishedAt = enrichment.publishedAt
             ?: throw NoSuchElementException("No published date found on the article page")
 
@@ -333,7 +333,7 @@ class ArticleService(
 
     fun refreshContentCache(id: Long): ArticleContent {
         val existing = findById(id)
-        val enrichment = enrichmentService.enrich(existing.url)
+        val enrichment = enrichArticleUrl("refresh-content-cache", existing.url)
         val contentForCache = selectContentForCache(existing.url, enrichment.plainText, enrichment.lead, enrichment.title)
             ?: throw NoSuchElementException("No cacheable content found on the article page")
 
@@ -368,6 +368,93 @@ class ArticleService(
         val favicon: String?,
         val lead: String?,
     )
+
+    private fun enrichArticleUrl(operation: String, url: String): EnrichmentResult {
+        val startedAt = System.nanoTime()
+        val facebookUrl = isFacebookUrl(url)
+        if (facebookUrl) {
+            LOG.info(
+                "Facebook ArticleService enrichment started; operation={}; url='{}'; kind={}; request={}; auth={}; caller={}",
+                operation,
+                url,
+                facebookUrlKind(url),
+                requestDiagnostic(),
+                authenticationDiagnostic(),
+                callerDiagnostic(),
+            )
+        }
+
+        return try {
+            val enrichment = enrichmentService.enrich(url)
+            val durationMs = elapsedMs(startedAt)
+            if (facebookUrl || durationMs >= SLOW_ENRICHMENT_WARN_MS) {
+                val message = "ArticleService enrichment completed; operation={}; url='{}'; kind={}; durationMs={}; " +
+                    "result={}; request={}; auth={}; caller={}"
+                if (durationMs >= SLOW_ENRICHMENT_WARN_MS) {
+                    LOG.warn(
+                        message,
+                        operation,
+                        url,
+                        facebookUrlKind(url),
+                        durationMs,
+                        enrichmentDiagnostic(enrichment),
+                        requestDiagnostic(),
+                        authenticationDiagnostic(),
+                        callerDiagnostic(),
+                    )
+                } else {
+                    LOG.info(
+                        message,
+                        operation,
+                        url,
+                        facebookUrlKind(url),
+                        durationMs,
+                        enrichmentDiagnostic(enrichment),
+                        requestDiagnostic(),
+                        authenticationDiagnostic(),
+                        callerDiagnostic(),
+                    )
+                }
+            }
+            enrichment
+        } catch (ex: Exception) {
+            if (facebookUrl) {
+                LOG.warn(
+                    "Facebook ArticleService enrichment failed; operation={}; url='{}'; kind={}; durationMs={}; " +
+                        "exception={}; request={}; auth={}; caller={}",
+                    operation,
+                    url,
+                    facebookUrlKind(url),
+                    elapsedMs(startedAt),
+                    exceptionDiagnostic(ex),
+                    requestDiagnostic(),
+                    authenticationDiagnostic(),
+                    callerDiagnostic(),
+                )
+            }
+            throw ex
+        }
+    }
+
+    private fun enrichmentDiagnostic(enrichment: EnrichmentResult): String =
+        "title=${valueDiagnostic(enrichment.title)},thumbnail=${valueDiagnostic(enrichment.thumbnail)}," +
+            "lead=${valueDiagnostic(enrichment.lead)},favicon=${valueDiagnostic(enrichment.favicon)}," +
+            "publishedAt=${enrichment.publishedAt},plainText=${valueDiagnostic(enrichment.plainText)}"
+
+    private fun elapsedMs(startedAt: Long): Long =
+        (System.nanoTime() - startedAt) / 1_000_000
+
+    private fun exceptionDiagnostic(ex: Throwable): String {
+        val root = rootCause(ex)
+        return "${ex.javaClass.simpleName}: ${ex.message.normalizedForLog()}; " +
+            "rootCause=${root.javaClass.simpleName}: ${root.message.normalizedForLog()}"
+    }
+
+    private fun rootCause(ex: Throwable): Throwable =
+        ex.cause?.let { rootCause(it) } ?: ex
+
+    private fun String?.normalizedForLog(): String =
+        this?.replace(LOG_WHITESPACE_PATTERN, " ")?.trim()?.takeIf { it.isNotBlank() } ?: "absent"
 
     /**
      * Persists plain-text content for an article, truncating to [MAX_CONTENT_BYTES] if needed.
@@ -966,7 +1053,8 @@ class ArticleService(
             ?: return "absent"
         val request = attributes.request
         return "method=${request.method},uri=${request.requestURI},query=${request.queryString ?: "absent"}," +
-            "dispatcher=${request.dispatcherType},contentType=${request.contentType ?: "absent"}"
+            "dispatcher=${request.dispatcherType},contentType=${request.contentType ?: "absent"}," +
+            "importRequestId=${request.getHeader(IMPORT_REQUEST_ID_HEADER) ?: "absent"}"
     }
 
     private fun authenticationDiagnostic(): String {
@@ -1074,6 +1162,8 @@ class ArticleService(
         private const val GENERIC_FACEBOOK_REEL_TITLE = "Facebook reel"
         private const val GENERIC_FACEBOOK_PHOTO_TITLE = "Facebook photo"
         private const val MAX_LOGGED_VALUE_CHARS = 180
+        private const val SLOW_ENRICHMENT_WARN_MS = 30_000
+        private const val IMPORT_REQUEST_ID_HEADER = "X-CoZaZjeb-Import-Request-Id"
         private val LOG_WHITESPACE_PATTERN = Regex("""\s+""")
         private const val OTHER98_HEGSETH_FACEBOOK_URL =
             "https://www.facebook.com/TheOther98/posts/pfbid0yidDpVT2Xxb2cM56G33f91qTRSSYW1bpixPNNQ7DLkHdCUD5oEhRL58Mjmo3ierxl"

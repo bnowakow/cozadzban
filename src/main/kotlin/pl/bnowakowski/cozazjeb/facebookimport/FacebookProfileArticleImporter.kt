@@ -1654,7 +1654,7 @@ class FacebookProfileArticleImporter(
         var attempt = 1
         while (true) {
             try {
-                return createArticle(candidate, creatorId)
+                return createArticleAttempt(candidate, creatorId, attempt)
             } catch (ex: RestClientException) {
                 val retryDelay = retryDelayForArticleCreateFailure(ex, attempt) ?: throw ex
                 logger.warn(
@@ -1697,7 +1697,10 @@ class FacebookProfileArticleImporter(
         ex.statusCode.value() == HttpStatus.UNPROCESSABLE_ENTITY.value() &&
             ex.responseBodyAsString.contains("URL enrichment failed: target returned HTTP 400")
 
-    private fun createArticle(candidate: FacebookPostCandidate, creatorId: Long): ArticleResponse {
+    private fun createArticle(candidate: FacebookPostCandidate, creatorId: Long): ArticleResponse =
+        createArticleAttempt(candidate, creatorId, attempt = 1)
+
+    private fun createArticleAttempt(candidate: FacebookPostCandidate, creatorId: Long, attempt: Int): ArticleResponse {
         logFacebookPhotoCreateMode(candidate, creatorId)
         if (!isRemoteArticleApiConfigured()) {
             if (properties.targetApiBaseUrl.isNotBlank() || properties.targetApiKey.isNotBlank()) {
@@ -1728,20 +1731,29 @@ class FacebookProfileArticleImporter(
             return ArticleResponse.from(article, null)
         }
 
+        val requestId = remoteArticleCreateRequestId(attempt)
+        val startedAt = System.nanoTime()
         try {
             if (isFacebookPhotoUrl(candidate.url)) {
                 logger.warn(
-                    "Facebook photo import remote create request for {}; targetPath='{}'; candidateText={}",
+                    "Facebook photo import remote create request starting for {}; requestId={}; attempt={}; targetBase={}; " +
+                        "targetPath='{}'; connectTimeoutMs={}; readTimeoutMs={}; candidateText={}",
                     candidate.url,
+                    requestId,
+                    attempt,
+                    remoteTargetBaseDiagnostic(),
                     properties.targetArticlePath,
+                    REMOTE_API_CONNECT_TIMEOUT_MS,
+                    REMOTE_API_READ_TIMEOUT_MS,
                     valueDiagnostic(candidate.text),
                 )
             }
-            return remoteArticleClient()
+            val article = remoteArticleClient()
                 .post()
                 .uri(properties.targetArticlePath)
                 .contentType(MediaType.APPLICATION_JSON)
                 .header(properties.targetApiKeyHeader, properties.targetApiKey)
+                .header(REMOTE_CREATE_REQUEST_ID_HEADER, requestId)
                 .body(
                     ArticleInput(
                         url = candidate.url,
@@ -1752,7 +1764,19 @@ class FacebookProfileArticleImporter(
                 .retrieve()
                 .body(ArticleResponse::class.java)
                 ?: throw IllegalStateException("Remote article API did not return a created article")
+            if (isFacebookUrl(candidate.url)) {
+                logger.warn(
+                    "Facebook import remote create response received for {}; requestId={}; attempt={}; durationMs={}; article={}",
+                    candidate.url,
+                    requestId,
+                    attempt,
+                    elapsedMs(startedAt),
+                    articleResponseDiagnostic(article),
+                )
+            }
+            return article
         } catch (ex: RestClientResponseException) {
+            logRemoteArticleCreateHttpFailure(candidate, requestId, attempt, startedAt, ex)
             if (ex.statusCode.value() == HttpStatus.CONFLICT.value()) {
                 throw ArticleUrlConflictException(candidate.url)
             }
@@ -1766,7 +1790,57 @@ class FacebookProfileArticleImporter(
                 )
             }
             throw ex
+        } catch (ex: RestClientException) {
+            logRemoteArticleCreateTransportFailure(candidate, requestId, attempt, startedAt, ex)
+            throw ex
         }
+    }
+
+    private fun logRemoteArticleCreateHttpFailure(
+        candidate: FacebookPostCandidate,
+        requestId: String,
+        attempt: Int,
+        startedAt: Long,
+        ex: RestClientResponseException,
+    ) {
+        if (!isFacebookUrl(candidate.url)) return
+
+        logger.warn(
+            "Facebook import remote create HTTP failure for {}; requestId={}; attempt={}; durationMs={}; status={}; " +
+                "targetBase={}; targetPath='{}'; responseBody={}",
+            candidate.url,
+            requestId,
+            attempt,
+            elapsedMs(startedAt),
+            ex.statusCode.value(),
+            remoteTargetBaseDiagnostic(),
+            properties.targetArticlePath,
+            valueDiagnostic(ex.responseBodyAsString),
+        )
+    }
+
+    private fun logRemoteArticleCreateTransportFailure(
+        candidate: FacebookPostCandidate,
+        requestId: String,
+        attempt: Int,
+        startedAt: Long,
+        ex: RestClientException,
+    ) {
+        if (!isFacebookUrl(candidate.url)) return
+
+        logger.warn(
+            "Facebook import remote create transport failure for {}; requestId={}; attempt={}; durationMs={}; " +
+                "targetBase={}; targetPath='{}'; connectTimeoutMs={}; readTimeoutMs={}; exception={}",
+            candidate.url,
+            requestId,
+            attempt,
+            elapsedMs(startedAt),
+            remoteTargetBaseDiagnostic(),
+            properties.targetArticlePath,
+            REMOTE_API_CONNECT_TIMEOUT_MS,
+            REMOTE_API_READ_TIMEOUT_MS,
+            exceptionDiagnostic(ex),
+        )
     }
 
     private fun logFacebookPhotoCreateMode(candidate: FacebookPostCandidate, creatorId: Long) {
@@ -1834,6 +1908,36 @@ class FacebookProfileArticleImporter(
             isFacebookPostUrl(candidate.url),
         )
     }
+
+    private fun remoteArticleCreateRequestId(attempt: Int): String =
+        "facebook-import-create-${REMOTE_CREATE_REQUEST_ID_SEQUENCE.incrementAndGet()}-attempt-$attempt"
+
+    private fun remoteTargetBaseDiagnostic(): String {
+        val uri = runCatching { URI(properties.targetApiBaseUrl) }.getOrNull()
+            ?: return "invalid"
+        val port = uri.port.takeIf { it >= 0 }?.toString() ?: "default"
+        return "scheme=${uri.scheme ?: "absent"},host=${uri.host ?: "absent"},port=$port"
+    }
+
+    private fun articleResponseDiagnostic(article: ArticleResponse): String =
+        "id=${article.id},url='${article.url}',title=${valueDiagnostic(article.title)}," +
+            "thumbnail=${valueDiagnostic(article.thumbnail)},lead=${valueDiagnostic(article.lead)}," +
+            "publishedAt=${article.publishedAt}"
+
+    private fun elapsedMs(startedAt: Long): Long =
+        (System.nanoTime() - startedAt) / 1_000_000
+
+    private fun exceptionDiagnostic(ex: Throwable): String {
+        val root = rootCause(ex)
+        return "${ex.javaClass.simpleName}: ${ex.message.normalizedForLog()}; " +
+            "rootCause=${root.javaClass.simpleName}: ${root.message.normalizedForLog()}"
+    }
+
+    private fun rootCause(ex: Throwable): Throwable =
+        ex.cause?.let { rootCause(it) } ?: ex
+
+    private fun String?.normalizedForLog(): String =
+        this?.cleanText()?.takeIf { it.isNotBlank() } ?: "absent"
 
     private fun String.cleanText(): String =
         replace(Regex("\\s+"), " ").trim()
@@ -1978,6 +2082,11 @@ class FacebookProfileArticleImporter(
         if (isMarkupNoiseUrl(url)) return false
         if (host == "messenger.com" || host.endsWith(".messenger.com")) return false
         return true
+    }
+
+    private fun isFacebookUrl(url: String): Boolean {
+        val host = runCatching { URI(url).host?.lowercase() }.getOrNull() ?: return false
+        return host == "facebook.com" || host.endsWith(".facebook.com")
     }
 
     private fun isFacebookPostUrl(url: String): Boolean {
@@ -2143,6 +2252,7 @@ class FacebookProfileArticleImporter(
         private const val LOG_TEXT_PREVIEW_LIMIT = 500
         private const val REMOTE_API_CONNECT_TIMEOUT_MS = 3_000
         private const val REMOTE_API_READ_TIMEOUT_MS = 60_000
+        private const val REMOTE_CREATE_REQUEST_ID_HEADER = "X-CoZaZjeb-Import-Request-Id"
         private const val MAX_NESTED_FACEBOOK_POSTS_TO_OPEN = 2
         private val IMPORT_ARTIFACT_TIMESTAMP_FORMATTER: DateTimeFormatter =
             DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'").withZone(ZoneOffset.UTC)
@@ -2165,6 +2275,7 @@ class FacebookProfileArticleImporter(
         )
         private val CANDIDATE_APPROVAL_ID_SEQUENCE = AtomicLong()
         private val IMPORT_ID_SEQUENCE = AtomicLong()
+        private val REMOTE_CREATE_REQUEST_ID_SEQUENCE = AtomicLong()
     }
 
     private fun ensureDriver(): WebDriver = synchronized(stateLock) {

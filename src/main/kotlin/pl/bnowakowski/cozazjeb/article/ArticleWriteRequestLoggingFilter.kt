@@ -30,6 +30,7 @@ class ArticleWriteRequestLoggingFilter : OncePerRequestFilter() {
     ) {
         val wrappedRequest = ContentCachingRequestWrapper(request, MAX_CACHED_REQUEST_BYTES)
         val started = System.nanoTime()
+        logExchangeStarted(request)
         var thrown: Throwable? = null
         try {
             filterChain.doFilter(wrappedRequest, response)
@@ -38,10 +39,11 @@ class ArticleWriteRequestLoggingFilter : OncePerRequestFilter() {
             throw ex
         } finally {
             val durationMs = ((System.nanoTime() - started) / 1_000_000.0).roundToLong()
-            LOG.debug(
+            val message =
                 "Article write HTTP exchange; method={}; uri={}; query={}; status={}; durationMs={}; " +
                     "requestContentType={}; requestContentLength={}; cachedRequestBody={}; responseLocation={}; " +
-                    "m2mHeaderPresent={}; authorizationHeaderPresent={}; authAfterChain={}; exception={}",
+                    "m2mHeaderPresent={}; authorizationHeaderPresent={}; importRequestId={}; authAfterChain={}; exception={}"
+            val args = arrayOf(
                 request.method,
                 request.requestURI,
                 request.queryString ?: "absent",
@@ -53,15 +55,47 @@ class ArticleWriteRequestLoggingFilter : OncePerRequestFilter() {
                 response.getHeader("Location") ?: "absent",
                 request.getHeader(MACHINE_HEADER_NAME) != null,
                 request.getHeader("Authorization") != null,
+                importRequestId(request),
                 authenticationDiagnostic(),
                 thrown?.let { "${it.javaClass.simpleName}: ${it.message}" } ?: "absent",
             )
+            if (durationMs >= SLOW_ARTICLE_WRITE_WARN_MS || thrown != null || importRequestId(request) != "absent") {
+                LOG.warn(message, *args)
+            } else {
+                LOG.debug(message, *args)
+            }
+        }
+    }
+
+    private fun logExchangeStarted(request: HttpServletRequest) {
+        val message = "Article write HTTP exchange started; method={}; uri={}; query={}; requestContentType={}; " +
+            "requestContentLength={}; m2mHeaderPresent={}; authorizationHeaderPresent={}; importRequestId={}; " +
+            "remoteAddr={}; forwardedFor={}"
+        val args = arrayOf(
+            request.method,
+            request.requestURI,
+            request.queryString ?: "absent",
+            request.contentType ?: "absent",
+            request.contentLengthLong,
+            request.getHeader(MACHINE_HEADER_NAME) != null,
+            request.getHeader("Authorization") != null,
+            importRequestId(request),
+            request.remoteAddr ?: "absent",
+            request.getHeader("X-Forwarded-For") ?: "absent",
+        )
+        if (importRequestId(request) != "absent") {
+            LOG.info(message, *args)
+        } else {
+            LOG.debug(message, *args)
         }
     }
 
     private fun isArticleWrite(request: HttpServletRequest): Boolean =
         (request.method == "POST" || request.method == "PATCH") &&
             (request.requestURI == "/api/articles" || request.requestURI.startsWith("/api/articles/"))
+
+    private fun importRequestId(request: HttpServletRequest): String =
+        request.getHeader(IMPORT_REQUEST_ID_HEADER)?.takeIf { it.isNotBlank() } ?: "absent"
 
     private fun bodyDiagnostic(request: ContentCachingRequestWrapper): String {
         val bytes = request.contentAsByteArray
@@ -144,5 +178,7 @@ class ArticleWriteRequestLoggingFilter : OncePerRequestFilter() {
         private const val LOG_EXCERPT_LENGTH = 500
         private const val MAX_CACHED_REQUEST_BYTES = 32 * 1024
         private const val MACHINE_HEADER_NAME = "X-CoZaZjeb-M2M-Key"
+        private const val IMPORT_REQUEST_ID_HEADER = "X-CoZaZjeb-Import-Request-Id"
+        private const val SLOW_ARTICLE_WRITE_WARN_MS = 30_000
     }
 }
