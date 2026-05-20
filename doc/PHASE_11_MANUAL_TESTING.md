@@ -12,7 +12,7 @@ export SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_AUDIENCES="your-google-client-i
 ## Step 1: Start the Application
 
 ```bash
-cd /Users/sup/code/cozazjeb
+cd /Users/sup/code/cozadzban
 ./gradlew bootRun
 ```
 

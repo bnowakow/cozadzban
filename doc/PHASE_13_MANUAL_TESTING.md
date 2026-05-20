@@ -196,7 +196,7 @@
 2. View page source or inspect the document head
 3. **Expected:** page includes:
    ```html
-   <link rel="alternate" type="application/rss+xml" title="Co za zjeb RSS" href="/rss">
+   <link rel="alternate" type="application/rss+xml" title="Co za dzban RSS" href="/rss">
    ```
 4. Check the article list top bar
 5. **Expected:** visible RSS icon/link is present and points to `/rss`

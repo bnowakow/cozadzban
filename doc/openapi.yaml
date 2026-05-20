@@ -1,9 +1,9 @@
 openapi: 3.0.3
 info:
-  title: CoZaZjeb API
+  title: CoZaDzban API
   description: |
     ## Overview
-    CoZaZjeb is a link-collecting application. Users submit a URL and a language
+    CoZaDzban is a link-collecting application. Users submit a URL and a language
     tag; the server fetches the target page and automatically enriches the record
     with title, thumbnail, favicon, lead, and best-effort publication date before persisting it.
 
@@ -51,7 +51,7 @@ info:
     - Write endpoints additionally require the token email to be present in
       database allowlist (`app_user` entity managed via API).
     - Roles: USER can write articles; ADMIN can manage allowlist users.
-    - COZAZJEB_BOOTSTRAP_ADMIN_EMAIL is only required when no ADMIN exists
+    - COZADZBAN_BOOTSTRAP_ADMIN_EMAIL is only required when no ADMIN exists
       in `app_user`; if ADMINs already exist the var is ignored.
     - If required and missing/empty/invalid, startup fails fast.
     - If required and valid, startup seeds one ADMIN row (or promotes USER).
@@ -89,21 +89,21 @@ x-security-policy:
     emailNormalization: trim+lowercase
   machineToMachine:
     enabled: true
-    headerName: X-CoZaZjeb-M2M-Key
+    headerName: X-CoZaDzban-M2M-Key
     apiKeyEnvVar: APP_MACHINE_AUTH_API_KEY
     principalEmailEnvVar: APP_MACHINE_AUTH_PRINCIPAL_EMAIL
     allowedForEndpoints:
       - POST /api/articles
       - PATCH /api/articles/{id}
   bootstrap:
-    adminEmailEnvVar: COZAZJEB_BOOTSTRAP_ADMIN_EMAIL
+    adminEmailEnvVar: COZADZBAN_BOOTSTRAP_ADMIN_EMAIL
     enforcedOnlyWhenNoAdminsExist: true
     failFastWhenRequiredButMissingOrEmpty: true
     failFastOnInvalidEmail: true
     seedAdminRow: true
     promoteExistingUserToAdmin: true
   cors:
-    allowedOrigins: [https://cozazjeb.pl]
+    allowedOrigins: [https://cozadzban.pl]
     allowedMethods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
     allowedHeaders: [Authorization, Content-Type]
     preflightMaxAgeSeconds: 600
@@ -122,23 +122,23 @@ x-runtime-configuration:
 
 x-problem-types:
   articleUrlConflict:
-    uri: https://cozazjeb.pl/problems/article-url-conflict
+    uri: https://cozadzban.pl/problems/article-url-conflict
     status: 409
     title: Article URL Already Exists
   allowlistEmailConflict:
-    uri: https://cozazjeb.pl/problems/allowlist-email-conflict
+    uri: https://cozadzban.pl/problems/allowlist-email-conflict
     status: 409
     title: Allowlisted Email Already Exists
   lastAdminRequired:
-    uri: https://cozazjeb.pl/problems/last-admin-required
+    uri: https://cozadzban.pl/problems/last-admin-required
     status: 409
     title: Last Admin Required
   facebookImportBusy:
-    uri: https://cozazjeb.pl/problems/facebook-import-busy
+    uri: https://cozadzban.pl/problems/facebook-import-busy
     status: 409
     title: Facebook Import Already Running
   facebookImportNotRunning:
-    uri: https://cozazjeb.pl/problems/facebook-import-not-running
+    uri: https://cozadzban.pl/problems/facebook-import-not-running
     status: 409
     title: No Active Facebook Import
 
@@ -538,18 +538,18 @@ paths:
       operationId: getRssFeed
       security: []
       x-rss-channel:
-        title: Co za zjeb
-        link: https://cozazjeb.pl
+        title: Co za dzban
+        link: https://cozadzban.pl
         description: fucked up news
         language:
           default: en
           note: accepts normalized BCP-47-like tags
-        generator: cozazjeb.pl
+        generator: cozadzban.pl
         lastBuildDateSource: app.build.timestamp injected by Gradle as ISO-8601 UTC
         lastBuildDateFormat: RFC-822 UTC (converted by RSS controller from ISO-8601)
         lastBuildDateFallback: fail-fast when app.build.timestamp is missing or unparseable
       x-html-discovery:
-        linkRelAlternate: '<link rel="alternate" type="application/rss+xml" title="Co za zjeb RSS" href="/rss">'
+        linkRelAlternate: '<link rel="alternate" type="application/rss+xml" title="Co za dzban RSS" href="/rss">'
         visibleUiLink: ArticleListView top bar includes an RSS icon/link to /rss
       description: >
         Returns an RSS 2.0 feed of articles ordered by creation date (newest first).
@@ -769,7 +769,7 @@ components:
     machineApiKey:
       type: apiKey
       in: header
-      name: X-CoZaZjeb-M2M-Key
+      name: X-CoZaDzban-M2M-Key
       description: Machine credential used by the remote Facebook importer to write articles
 
     cookieAuth:
@@ -954,7 +954,7 @@ components:
           minLength: 1
           maxLength: 254
           description: Email to add to the write-operation allowlist (RFC 5321 max 254 chars)
-          example: admin@cozazjeb.pl
+          example: admin@cozadzban.pl
         role:
           type: string
           enum: [USER, ADMIN]
@@ -979,7 +979,7 @@ components:
           type: string
           format: email
           maxLength: 254
-          example: admin@cozazjeb.pl
+          example: admin@cozadzban.pl
         role:
           type: string
           enum: [USER, ADMIN]
@@ -1151,7 +1151,7 @@ components:
             articleUrlConflict:
               summary: Duplicate article URL
               value:
-                type: https://cozazjeb.pl/problems/article-url-conflict
+                type: https://cozadzban.pl/problems/article-url-conflict
                 title: Article URL Already Exists
                 status: 409
                 detail: "Article with this URL already exists (canonicalized: <url>)."
@@ -1161,7 +1161,7 @@ components:
             allowlistEmailConflict:
               summary: Duplicate allowlist email
               value:
-                type: https://cozazjeb.pl/problems/allowlist-email-conflict
+                type: https://cozadzban.pl/problems/allowlist-email-conflict
                 title: Allowlisted Email Already Exists
                 status: 409
                 detail: User with this email is already allowlisted.
@@ -1171,7 +1171,7 @@ components:
             lastAdminRequired:
               summary: Attempt to remove final admin
               value:
-                type: https://cozazjeb.pl/problems/last-admin-required
+                type: https://cozadzban.pl/problems/last-admin-required
                 title: Last Admin Required
                 status: 409
                 detail: Operation would leave the system without an ADMIN user.
@@ -1180,7 +1180,7 @@ components:
             facebookImportBusy:
               summary: Facebook import already running
               value:
-                type: https://cozazjeb.pl/problems/facebook-import-busy
+                type: https://cozadzban.pl/problems/facebook-import-busy
                 title: Facebook Import Already Running
                 status: 409
                 detail: Facebook import is already running.
@@ -1188,7 +1188,7 @@ components:
             facebookImportNotRunning:
               summary: No Facebook import to terminate
               value:
-                type: https://cozazjeb.pl/problems/facebook-import-not-running
+                type: https://cozadzban.pl/problems/facebook-import-not-running
                 title: No Active Facebook Import
                 status: 409
                 detail: No Facebook import job is currently running.

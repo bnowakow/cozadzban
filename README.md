@@ -1,4 +1,4 @@
-# Co za zjeb
+# Co za dzban
 
 A news article aggregator with Google OIDC authentication.
 
@@ -38,7 +38,7 @@ Then edit the matching file for the role you are setting up:
 | `SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_AUDIENCES` | Google OAuth2 client ID (used to validate JWT `aud` claim) | _(required for auth to work)_ |
 | `SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_ID` | Google OAuth2 client ID (used by UI login) | _(required for UI login)_ |
 | `SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_SECRET` | Google OAuth2 client secret (used by UI login) | _(required for UI login)_ |
-| `COZAZJEB_BOOTSTRAP_ADMIN_EMAIL` | Email of the first admin user — only required when the `app_user` table has no ADMIN rows (first run). Ignored once an admin exists. | _(required on first run)_ |
+| `COZADZBAN_BOOTSTRAP_ADMIN_EMAIL` | Email of the first admin user — only required when the `app_user` table has no ADMIN rows (first run). Ignored once an admin exists. | _(required on first run)_ |
 | `GOOGLE_ANALYTICS_MEASUREMENT_ID` | Google Analytics 4 Measurement ID (e.g. `G-XXXXXXXXXX`). Leave blank to disable GA. | _(optional)_ |
 | `STATCOUNTER_PROJECT_ID` | StatCounter project ID. Leave blank to disable StatCounter. | _(optional)_ |
 | `STATCOUNTER_SECURITY_ID` | StatCounter security code for the project. Required when `STATCOUNTER_PROJECT_ID` is set. | _(optional)_ |
@@ -49,7 +49,7 @@ Then edit the matching file for the role you are setting up:
 
 The app can run a Selenium import for posts on
 `https://www.facebook.com/bartek.dobrowolski.nowakowski` that contain the marker phrase
-`co za zjeb`. It is disabled by default and only runs when explicitly triggered.
+`co za dzban`. It is disabled by default and only runs when explicitly triggered.
 
 Minimum configuration:
 
@@ -75,9 +75,9 @@ If you run the importer locally but want it to create articles on the public ser
 local database, configure the remote API target and machine key:
 
 ```sh
-APP_FACEBOOK_IMPORT_TARGET_API_BASE_URL=https://cozazjeb.pl
+APP_FACEBOOK_IMPORT_TARGET_API_BASE_URL=https://cozadzban.pl
 APP_FACEBOOK_IMPORT_TARGET_API_KEY=...
-APP_FACEBOOK_IMPORT_TARGET_API_KEY_HEADER=X-CoZaZjeb-M2M-Key
+APP_FACEBOOK_IMPORT_TARGET_API_KEY_HEADER=X-CoZaDzban-M2M-Key
 APP_FACEBOOK_IMPORT_TARGET_ARTICLE_PATH=/api/articles
 ```
 
@@ -85,9 +85,9 @@ On the server, configure the matching machine-to-machine credential:
 
 ```sh
 APP_MACHINE_AUTH_ENABLED=true
-APP_MACHINE_AUTH_HEADER_NAME=X-CoZaZjeb-M2M-Key
+APP_MACHINE_AUTH_HEADER_NAME=X-CoZaDzban-M2M-Key
 APP_MACHINE_AUTH_API_KEY=...
-APP_MACHINE_AUTH_PRINCIPAL_EMAIL=facebook-import-bot@cozazjeb.pl
+APP_MACHINE_AUTH_PRINCIPAL_EMAIL=facebook-import-bot@cozadzban.pl
 ```
 
 Generate the shared secret once, then paste the same value into both places. A simple option is:
@@ -183,13 +183,13 @@ The repository includes a multi-stage `Dockerfile`:
 Build it manually with:
 
 ```sh
-docker build -t cozazjeb:local .
+docker build -t cozadzban:local .
 ```
 
 For equivalent cached manual builds, enable BuildKit:
 
 ```sh
-DOCKER_BUILDKIT=1 docker build -t cozazjeb:local .
+DOCKER_BUILDKIT=1 docker build -t cozadzban:local .
 ```
 
 ### Docker resource limits
@@ -220,12 +220,12 @@ Set the following environment variables on your deployment platform (no `.env` f
 | `SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_AUDIENCES` | Google OAuth2 client ID |
 | `SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_ID` | Google OAuth2 client ID |
 | `SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_SECRET` | Google OAuth2 client secret |
-| `COZAZJEB_BOOTSTRAP_ADMIN_EMAIL` | First admin email (required until at least one ADMIN row exists) |
+| `COZADZBAN_BOOTSTRAP_ADMIN_EMAIL` | First admin email (required until at least one ADMIN row exists) |
 
 ### Production TODOs
 
-- TODO: Fix Nginx virtual host configuration for `www.cozazjeb.bnowakowski.pl`.
+- TODO: Fix Nginx virtual host configuration for `www.cozadzban.bnowakowski.pl`.
   Current installer error:
-  `Could not automatically find a matching server block for www.cozazjeb.bnowakowski.pl. Set the server_name directive to use the Nginx installer.`
+  `Could not automatically find a matching server block for www.cozadzban.bnowakowski.pl. Set the server_name directive to use the Nginx installer.`
 - TODO: Update Google OAuth authorized redirect URI from the temporary HTTP callback to
-  `https://cozazjeb.bnowakowski.pl/login/oauth2/code/google` once HTTPS/DNS is stable.
+  `https://cozadzban.bnowakowski.pl/login/oauth2/code/google` once HTTPS/DNS is stable.
