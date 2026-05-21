@@ -56,6 +56,7 @@ export APP_BUILD_COMMIT
 
 # Start local development environment from compose.yaml
 docker-up: docker-data-permissions
+	@printf 'server springboot:8080 max_fails=3 fail_timeout=10s;\n' > ./docker-data/nginx/upstream.conf
 	docker compose -f compose.yaml up -d postgres zipkin springboot reverse-proxy
 	@echo ""
 	@echo "✓ Services started:"
