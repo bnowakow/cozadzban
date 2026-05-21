@@ -30,7 +30,7 @@ else
     DOCKER_BUILDKIT=1 docker compose -f "$compose_file" build --pull springboot
 fi
 
-docker compose -f "$compose_file" up -d postgres zipkin reverse-proxy
+docker compose -f "$compose_file" up -d postgres zipkin "$old_service" reverse-proxy
 docker compose -f "$compose_file" up -d --no-deps --force-recreate "$new_service"
 
 echo "Waiting for $new_service to report healthy..."
