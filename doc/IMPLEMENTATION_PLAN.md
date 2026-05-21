@@ -1,4 +1,4 @@
-# CoZaZjeb — Implementation Plan
+# CoZaDzban — Implementation Plan
 
 Bottom-up plan respecting compile-time dependencies.
 Phases 4 and 5 are independent and can be developed in parallel.
@@ -42,7 +42,7 @@ Phases 4 and 5 are independent and can be developed in parallel.
 11. **`AllowlistAuthorizationManager`** — loads `app_user` row by normalized email,
     checks role; used as method-security guard on write endpoints
 12. **`BootstrapAdminService`** — `ApplicationReadyEvent` listener: counts ADMIN rows,
-    reads `COZAZJEB_BOOTSTRAP_ADMIN_EMAIL`, seeds/promotes or fails fast (BR-20)
+    reads `COZADZBAN_BOOTSTRAP_ADMIN_EMAIL`, seeds/promotes or fails fast (BR-20)
 
 ---
 
@@ -198,10 +198,10 @@ Phases 4 and 5 are independent and can be developed in parallel.
 38. **PostgreSQL healthcheck** — make the app wait for PostgreSQL readiness through
     `depends_on: condition: service_healthy`
 39. **TODO: Nginx server block for production domain** — fix
-    `Could not automatically find a matching server block for www.cozazjeb.bnowakowski.pl. Set the server_name directive to use the Nginx installer.`
-    by setting the appropriate `server_name` directive for `www.cozazjeb.bnowakowski.pl`
+    `Could not automatically find a matching server block for www.cozadzban.bnowakowski.pl. Set the server_name directive to use the Nginx installer.`
+    by setting the appropriate `server_name` directive for `www.cozadzban.bnowakowski.pl`
 40. **TODO: Google OAuth HTTPS redirect URI** — replace the temporary HTTP callback in Google
-    OAuth settings with `https://cozazjeb.bnowakowski.pl/login/oauth2/code/google` once
+    OAuth settings with `https://cozadzban.bnowakowski.pl/login/oauth2/code/google` once
     HTTPS/DNS is stable
 
 ---
@@ -262,7 +262,7 @@ Phases 4 and 5 are independent and can be developed in parallel.
     Support clearing the field to persist `null`. Keep creator immutable and hidden from form
     inputs.
 57. **RSS discovery in UI** — advertise the feed in page HTML with
-    `<link rel="alternate" type="application/rss+xml" title="Co za zjeb RSS" href="/rss">`
+    `<link rel="alternate" type="application/rss+xml" title="Co za dzban RSS" href="/rss">`
     and add a visible RSS icon/link in the article list top bar for users.
 58. **Favicon metadata** — store nullable `article.favicon`, download/cache the source site's
     declared icon metadata as a local `/favicons/...` asset when available, expose it in article

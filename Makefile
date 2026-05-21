@@ -5,7 +5,7 @@
 
 # Default target
 help:
-	@printf "CoZaZjeb — Makefile targets\n"
+	@printf "CoZaDzban — Makefile targets\n"
 	@printf "\n"
 	@printf "  PostgreSQL port from .env: $(POSTGRES_PORT)\n"
 	@printf "\n"
@@ -51,7 +51,7 @@ APP_BUILD_COMMIT ?= $(shell git rev-parse --short=8 HEAD 2>/dev/null || echo unk
 CODEX_HOME ?= $(HOME)/.codex
 CRON_SCHEDULE ?= 0 2 * * *
 CRON_MAKE ?= $(shell command -v make 2>/dev/null || echo make)
-PG_BACKUP_CRON_MARKER ?= cozazjeb-docker-pg-backup
+PG_BACKUP_CRON_MARKER ?= cozadzban-docker-pg-backup
 export APP_BUILD_COMMIT
 
 # Start local development environment from compose.yaml
@@ -91,7 +91,7 @@ docker-pg-nuke:
 docker-pg-backup: docker-data-permissions
 	@mkdir -p ./docker-data/backup/postgres
 	@timestamp=$$(date +"%Y-%m-%d_%H-%M-%S"); \
-	base="cozazjeb-postgres-$$timestamp"; \
+	base="cozadzban-postgres-$$timestamp"; \
 	sql_path="./docker-data/backup/postgres/$$base.sql"; \
 	zip_path="./docker-data/backup/postgres/$$base.zip"; \
 	echo "Dumping PostgreSQL database '$(POSTGRES_DB)' to $$sql_path ..."; \

@@ -13,7 +13,7 @@ plugins {
 }
 
 group = "pl.bnowakowski"
-version = "0.49.2-SNAPSHOT"
+version = "0.50.0-SNAPSHOT"
 
 java {
 	toolchain {
@@ -92,7 +92,7 @@ tasks.withType<Test> {
 	useJUnitPlatform()
 	if (!isDockerAvailable()) {
 		logger.lifecycle("Docker is not available; excluding Docker-backed integration tests.")
-		exclude("**/*IT.class", "**/CozazjebApplicationTests.class")
+		exclude("**/*IT.class", "**/CozadzbanApplicationTests.class")
 	}
 }
 

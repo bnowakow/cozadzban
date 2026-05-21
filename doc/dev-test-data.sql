@@ -1,6 +1,6 @@
 -- Dev test data with long titles for UI evaluation.
 -- Run against the local DB:
---   psql -h localhost -U cozazjeb -d cozazjeb -f doc/dev-test-data.sql
+--   psql -h localhost -U cozadzban -d cozadzban -f doc/dev-test-data.sql
 --
 -- Requires at least one app_user row (created by bootstrap admin on first run).
 
