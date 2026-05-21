@@ -96,18 +96,22 @@ tasks.withType<Test> {
 	}
 }
 
-fun isDockerAvailable(): Boolean =
-	runCatching {
-		val process = ProcessBuilder("docker", "info")
-			.redirectErrorStream(true)
-			.start()
-		if (!process.waitFor(5, TimeUnit.SECONDS)) {
-			process.destroyForcibly()
-			false
-		} else {
-			process.exitValue() == 0
-		}
-	}.getOrDefault(false)
+fun isDockerAvailable(): Boolean {
+	val candidates = listOf("docker", "/opt/homebrew/bin/docker", "/usr/local/bin/docker")
+	return candidates.any { command ->
+		runCatching {
+			val process = ProcessBuilder(command, "info")
+				.redirectErrorStream(true)
+				.start()
+			if (!process.waitFor(5, TimeUnit.SECONDS)) {
+				process.destroyForcibly()
+				false
+			} else {
+				process.exitValue() == 0
+			}
+		}.getOrDefault(false)
+	}
+}
 
 tasks.named<ProcessResources>("processResources") {
 	val timestamp = Instant.now().toString()
