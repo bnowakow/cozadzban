@@ -7,6 +7,7 @@ import jakarta.annotation.PreDestroy
 import org.openqa.selenium.By
 import org.openqa.selenium.JavascriptExecutor
 import org.openqa.selenium.Keys
+import org.openqa.selenium.NoSuchWindowException
 import org.openqa.selenium.StaleElementReferenceException
 import org.openqa.selenium.WebDriver
 import org.openqa.selenium.WebElement
@@ -75,6 +76,13 @@ class FacebookProfileArticleImporter(
                 } catch (ex: InterruptedException) {
                     Thread.currentThread().interrupt()
                     logger.info("Facebook import was interrupted")
+                } catch (ex: NoSuchWindowException) {
+                    discardDriver()
+                    if (Thread.currentThread().isInterrupted) {
+                        logger.info("Facebook import was interrupted")
+                    } else {
+                        logger.info("Facebook import stopped because the browser window was closed")
+                    }
                 } catch (ex: Exception) {
                     logger.warn("Facebook import job failed", ex)
                 } finally {
@@ -2295,7 +2303,16 @@ class FacebookProfileArticleImporter(
     }
 
     private fun isDriverAlive(driver: WebDriver): Boolean =
-        runCatching { driver.windowHandles }.isSuccess
+        runCatching {
+            val windowHandles = driver.windowHandles
+            windowHandles.isNotEmpty() && driver.windowHandle in windowHandles
+        }.getOrDefault(false)
+
+    private fun discardDriver() {
+        synchronized(stateLock) {
+            driver = null
+        }
+    }
 
     private fun isRemoteArticleApiConfigured(): Boolean =
         properties.targetApiBaseUrl.isNotBlank() && properties.targetApiKey.isNotBlank()

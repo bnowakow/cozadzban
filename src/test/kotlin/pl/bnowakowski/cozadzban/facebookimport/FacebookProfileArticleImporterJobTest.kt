@@ -14,9 +14,11 @@ import org.mockito.kotlin.any
 import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.doNothing
 import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.doThrow
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
 import org.mockito.kotlin.spy
+import org.mockito.kotlin.times
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import pl.bnowakowski.cozadzban.article.Article
@@ -34,6 +36,7 @@ import java.net.URLDecoder
 import java.time.Duration
 import java.time.Instant
 import org.openqa.selenium.Cookie
+import org.openqa.selenium.NoSuchWindowException
 import org.openqa.selenium.WebDriver
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
@@ -74,6 +77,7 @@ class FacebookProfileArticleImporterJobTest {
         whenever(options.getCookieNamed("xs")).thenReturn(Cookie("xs", "abc"))
         whenever(driver.currentUrl).thenReturn("https://www.facebook.com/admin.example")
         whenever(driver.windowHandles).thenReturn(setOf("main"))
+        whenever(driver.windowHandle).thenReturn("main")
         doNothing().whenever(driver).get(any())
         whenever(driver.findElements(any())).thenReturn(emptyList())
         doReturn(driver).whenever(importer).openDriver()
@@ -85,6 +89,95 @@ class FacebookProfileArticleImporterJobTest {
         assertDoesNotThrow { importer.startImport() }
         waitUntil("second facebook import to finish") { !importer.isImportRunning() }
         verify(importer).openDriver()
+    }
+
+    @Test
+    fun `startImport replaces a cached driver when the current window is gone`() {
+        val importer = spy(
+            FacebookProfileArticleImporter(
+                FacebookImportProperties(
+                    username = "admin@example.com",
+                    password = "secret",
+                    scrolls = 0,
+                    waitAfterPageOpen = Duration.ZERO,
+                    waitAfterScroll = Duration.ZERO,
+                    manualLoginTimeout = Duration.ofSeconds(1),
+                ),
+                appUserRepository,
+                articleService,
+            ),
+        )
+        val firstDriver = mock<WebDriver>()
+        val firstOptions = mock<WebDriver.Options>()
+        val secondDriver = mock<WebDriver>()
+        val secondOptions = mock<WebDriver.Options>()
+
+        whenever(appUserRepository.findByEmail("admin@example.com")).thenReturn(
+            AppUser(1L, "admin@example.com", Role.ADMIN),
+        )
+        whenever(firstDriver.manage()).thenReturn(firstOptions)
+        whenever(firstOptions.getCookieNamed("c_user")).thenReturn(Cookie("c_user", "123"))
+        whenever(firstOptions.getCookieNamed("xs")).thenReturn(Cookie("xs", "abc"))
+        whenever(firstDriver.currentUrl).thenReturn("https://www.facebook.com/admin.example")
+        whenever(firstDriver.windowHandles).thenReturn(emptySet())
+        doNothing().whenever(firstDriver).get(any())
+        whenever(secondDriver.manage()).thenReturn(secondOptions)
+        whenever(secondOptions.getCookieNamed("c_user")).thenReturn(Cookie("c_user", "123"))
+        whenever(secondOptions.getCookieNamed("xs")).thenReturn(Cookie("xs", "abc"))
+        whenever(secondDriver.currentUrl).thenReturn("https://www.facebook.com/admin.example")
+        doNothing().whenever(secondDriver).get(any())
+        doReturn(firstDriver, secondDriver).whenever(importer).openDriver()
+
+        importer.startImport()
+        waitUntil("first facebook import to finish") { !importer.isImportRunning() }
+        importer.startImport()
+        waitUntil("second facebook import to finish") { !importer.isImportRunning() }
+
+        verify(importer, times(2)).openDriver()
+        verify(firstDriver).quit()
+    }
+
+    @Test
+    fun `startImport clears the cached driver when the browser window is discarded during navigation`() {
+        val importer = spy(
+            FacebookProfileArticleImporter(
+                FacebookImportProperties(
+                    username = "admin@example.com",
+                    password = "secret",
+                    scrolls = 0,
+                    waitAfterPageOpen = Duration.ZERO,
+                    waitAfterScroll = Duration.ZERO,
+                    manualLoginTimeout = Duration.ofSeconds(1),
+                ),
+                appUserRepository,
+                articleService,
+            ),
+        )
+        val firstDriver = mock<WebDriver>()
+        val secondDriver = mock<WebDriver>()
+        val secondOptions = mock<WebDriver.Options>()
+
+        whenever(appUserRepository.findByEmail("admin@example.com")).thenReturn(
+            AppUser(1L, "admin@example.com", Role.ADMIN),
+        )
+        whenever(firstDriver.windowHandles).thenReturn(setOf("main"))
+        whenever(firstDriver.windowHandle).thenReturn("main")
+        doThrow(NoSuchWindowException("Browsing context has been discarded"))
+            .whenever(firstDriver)
+            .get(any())
+        whenever(secondDriver.manage()).thenReturn(secondOptions)
+        whenever(secondOptions.getCookieNamed("c_user")).thenReturn(Cookie("c_user", "123"))
+        whenever(secondOptions.getCookieNamed("xs")).thenReturn(Cookie("xs", "abc"))
+        whenever(secondDriver.currentUrl).thenReturn("https://www.facebook.com/admin.example")
+        doNothing().whenever(secondDriver).get(any())
+        doReturn(firstDriver, secondDriver).whenever(importer).openDriver()
+
+        importer.startImport()
+        waitUntil("discarded-window facebook import to finish") { !importer.isImportRunning() }
+        importer.startImport()
+        waitUntil("second facebook import to finish") { !importer.isImportRunning() }
+
+        verify(importer, times(2)).openDriver()
     }
 
     @Test
