@@ -13,6 +13,21 @@ if [ ! -f "$upstream_file" ]; then
     printf 'server springboot:8080 max_fails=3 fail_timeout=10s;\n' > "$upstream_file"
 fi
 
+write_upstream() {
+    tmp_file="$upstream_file.tmp"
+    : > "$tmp_file"
+    for upstream in "$@"; do
+        printf '%s\n' "$upstream" >> "$tmp_file"
+    done
+    cat "$tmp_file" > "$upstream_file"
+    rm -f "$tmp_file"
+}
+
+reload_nginx() {
+    docker compose -f "$compose_file" exec -T reverse-proxy nginx -t
+    docker compose -f "$compose_file" exec -T reverse-proxy nginx -s reload
+}
+
 if grep -q 'springboot-green' "$upstream_file"; then
     old_service="springboot-green"
     new_service="springboot"
@@ -51,18 +66,20 @@ if ! docker compose -f "$compose_file" exec -T reverse-proxy \
     exit 1
 fi
 
-tmp_file="$upstream_file.tmp"
-printf 'server %s:8080 max_fails=3 fail_timeout=10s;\n' "$new_service" > "$tmp_file"
-cat "$tmp_file" > "$upstream_file"
-rm -f "$tmp_file"
-
-docker compose -f "$compose_file" exec -T reverse-proxy nginx -s reload
-echo "Reverse proxy now points to $new_service"
+write_upstream \
+    "server $new_service:8080 max_fails=1 fail_timeout=5s;" \
+    "server $old_service:8080 backup max_fails=1 fail_timeout=5s;"
+reload_nginx
+echo "Reverse proxy now prefers $new_service and keeps $old_service as a temporary backup"
 
 if [ "$drain_seconds" -gt 0 ]; then
     echo "Waiting ${drain_seconds}s before stopping $old_service..."
     sleep "$drain_seconds"
 fi
+
+write_upstream "server $new_service:8080 max_fails=3 fail_timeout=10s;"
+reload_nginx
+echo "Reverse proxy now points only to $new_service"
 
 docker compose -f "$compose_file" stop "$old_service" >/dev/null 2>&1 || true
 docker compose -f "$compose_file" ps

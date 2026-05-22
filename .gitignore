@@ -14,6 +14,7 @@ docker-data/*
 !docker-data/nginx/
 docker-data/nginx/*
 !docker-data/nginx/default.conf
+!docker-data/nginx/upgrading.html
 docker-data/backup/*
 docker-data/backup/postgres/*
 data/
