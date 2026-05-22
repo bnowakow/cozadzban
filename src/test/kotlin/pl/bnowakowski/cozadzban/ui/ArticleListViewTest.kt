@@ -32,6 +32,7 @@ import pl.bnowakowski.cozadzban.article.Article
 import pl.bnowakowski.cozadzban.article.ArticleContent
 import pl.bnowakowski.cozadzban.article.ArticleContentRepository
 import pl.bnowakowski.cozadzban.article.ArticleService
+import pl.bnowakowski.cozadzban.enrichment.LanguageFlagCache
 import pl.bnowakowski.cozadzban.facebookimport.FacebookCandidateApproval
 import pl.bnowakowski.cozadzban.facebookimport.FacebookCandidateApprovalDecision
 import pl.bnowakowski.cozadzban.facebookimport.FacebookProfileArticleImporter
@@ -54,6 +55,7 @@ class ArticleListViewTest {
         version = "0.8.0",
         commit = "abc12345",
     )
+    private val languageFlagCache: LanguageFlagCache = mock()
 
     @AfterEach
     fun tearDown() {
@@ -79,6 +81,7 @@ class ArticleListViewTest {
             facebookProfileArticleImporter,
             appUserRepository,
             buildProperties,
+            languageFlagCache,
         )
         val buttons = findComponents(view, Button::class.java)
         val importButton = buttons.firstOrNull { it.text == "Import Facebook Posts" }
@@ -115,6 +118,7 @@ class ArticleListViewTest {
             facebookProfileArticleImporter,
             appUserRepository,
             buildProperties,
+            languageFlagCache,
         )
         val stopButton = findFacebookStopButton(view)
 
@@ -146,6 +150,7 @@ class ArticleListViewTest {
             facebookProfileArticleImporter,
             appUserRepository,
             buildProperties,
+            languageFlagCache,
         )
         val buttons = findComponents(view, Button::class.java)
         val importButton = buttons.firstOrNull { it.text == "Import Facebook Posts" }
@@ -187,6 +192,7 @@ class ArticleListViewTest {
             facebookProfileArticleImporter,
             appUserRepository,
             buildProperties,
+            languageFlagCache,
         )
 
         val buttons = findComponents(view, Button::class.java)
@@ -212,6 +218,7 @@ class ArticleListViewTest {
             facebookProfileArticleImporter,
             appUserRepository,
             buildProperties,
+            languageFlagCache,
         )
         val method = view.javaClass.getDeclaredMethod(
             "buildFacebookCandidateApprovalDialog",
@@ -270,6 +277,7 @@ class ArticleListViewTest {
             facebookProfileArticleImporter,
             appUserRepository,
             buildProperties,
+            languageFlagCache,
         )
 
         val spans = findComponents(view, Span::class.java)
@@ -281,6 +289,8 @@ class ArticleListViewTest {
     @Test
     fun `polish and english language filter chips show flags`() {
         stubArticles(topLanguages = listOf("pl", "en"))
+        whenever(languageFlagCache.flagPath("pl")).thenReturn("/flags/pl.svg")
+        whenever(languageFlagCache.flagPath("en")).thenReturn("/flags/us.svg")
 
         val view = ArticleListView(
             articleRepository,
@@ -289,15 +299,17 @@ class ArticleListViewTest {
             facebookProfileArticleImporter,
             appUserRepository,
             buildProperties,
+            languageFlagCache,
         )
 
         val buttons = findComponents(view, Button::class.java)
-        val spans = findComponents(view, Span::class.java)
+        val flagSpans = findComponents(view, Span::class.java).filter { it.hasClassName("czj-language-flag") }
+        val backgrounds = flagSpans.map { it.element.style.get("background-image").orEmpty() }
 
         assertTrue(buttons.any { it.text == "pl" })
         assertTrue(buttons.any { it.text == "en" })
-        assertTrue(spans.any { it.hasClassName("czj-language-flag-pl") })
-        assertTrue(spans.any { it.hasClassName("czj-language-flag-en") })
+        assertTrue(backgrounds.any { it.contains("/flags/pl.svg") })
+        assertTrue(backgrounds.any { it.contains("/flags/us.svg") })
     }
 
     @Test
@@ -320,6 +332,7 @@ class ArticleListViewTest {
             facebookProfileArticleImporter,
             appUserRepository,
             buildProperties,
+            languageFlagCache,
         )
         val method = view.javaClass.getDeclaredMethod("buildArticleCard", Article::class.java)
         method.isAccessible = true
@@ -359,6 +372,7 @@ class ArticleListViewTest {
             facebookProfileArticleImporter,
             appUserRepository,
             buildProperties,
+            languageFlagCache,
         )
         val method = view.javaClass.getDeclaredMethod("buildArticleCard", Article::class.java)
         method.isAccessible = true
@@ -398,6 +412,7 @@ class ArticleListViewTest {
             facebookProfileArticleImporter,
             appUserRepository,
             buildProperties,
+            languageFlagCache,
         )
         val method = view.javaClass.getDeclaredMethod("buildArticleCard", Article::class.java)
         method.isAccessible = true
@@ -437,6 +452,7 @@ class ArticleListViewTest {
             facebookProfileArticleImporter,
             appUserRepository,
             buildProperties,
+            languageFlagCache,
         )
         val method = view.javaClass.getDeclaredMethod("buildArticleCard", Article::class.java)
         method.isAccessible = true
@@ -469,6 +485,7 @@ class ArticleListViewTest {
             facebookProfileArticleImporter,
             appUserRepository,
             buildProperties,
+            languageFlagCache,
         )
         val method = view.javaClass.getDeclaredMethod("buildArticleCard", Article::class.java)
         method.isAccessible = true

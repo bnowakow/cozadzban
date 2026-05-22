@@ -45,6 +45,7 @@ import pl.bnowakowski.cozadzban.article.ArticleService
 import pl.bnowakowski.cozadzban.facebookimport.FacebookCandidateApproval
 import pl.bnowakowski.cozadzban.facebookimport.FacebookCandidateApprovalDecision
 import pl.bnowakowski.cozadzban.facebookimport.FacebookCandidateApprovalHandler
+import pl.bnowakowski.cozadzban.enrichment.LanguageFlagCache
 import pl.bnowakowski.cozadzban.facebookimport.FacebookProfileArticleImporter
 import pl.bnowakowski.cozadzban.security.AllowlistAuthorizationManager
 import pl.bnowakowski.cozadzban.user.AppUser
@@ -72,6 +73,7 @@ class ArticleListView(
     private val facebookProfileArticleImporter: FacebookProfileArticleImporter,
     private val appUserRepository: AppUserRepository,
     private val buildProperties: AppBuildProperties,
+    private val languageFlagCache: LanguageFlagCache,
 ) : VerticalLayout() {
 
     private val feed = VirtualList<Article>()
@@ -450,12 +452,12 @@ class ArticleListView(
     }
 
     private fun languageFlagIcon(language: String?): Span? {
-        val normalized = language?.trim()?.lowercase() ?: return null
-        if (normalized != "pl" && normalized != "en") return null
-
+        val path = languageFlagCache.flagPath(language) ?: return null
         val flag = Span()
         flag.addClassName("czj-language-flag")
-        flag.addClassName("czj-language-flag-$normalized")
+        flag.element.style.set("background-image", "url('$path')")
+        flag.element.style.set("background-size", "cover")
+        flag.element.style.set("background-position", "center")
         flag.element.setAttribute("aria-hidden", "true")
         return flag
     }
