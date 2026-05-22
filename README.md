@@ -172,6 +172,7 @@ make dev-down      # Stop and remove containers
 
 ### Additional docs
 
+- [Project documentation](doc/README.md) - specs, implementation plan, manual testing guides, and dev aids.
 - [Codex skills](doc/codex-skills/README.md) - repository-provided Codex skills and prompts.
 - [Utilities](utilities/README.md) - helper scripts for imports, local data, and manual browser tasks.
 
