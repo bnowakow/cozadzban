@@ -40,6 +40,7 @@ Then edit the matching file for the role you are setting up:
 | `SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_SECRET` | Google OAuth2 client secret (used by UI login) | _(required for UI login)_ |
 | `COZADZBAN_BOOTSTRAP_ADMIN_EMAIL` | Email of the first admin user — only required when the `app_user` table has no ADMIN rows (first run). Ignored once an admin exists. | _(required on first run)_ |
 | `GOOGLE_ANALYTICS_MEASUREMENT_ID` | Google Analytics 4 Measurement ID (e.g. `G-XXXXXXXXXX`). Leave blank to disable GA. | _(optional)_ |
+| `GOOGLE_ANALYTICS_API_SECRET` | Google Analytics 4 Measurement Protocol API secret. Required for server-side `/rss` reached events. | _(optional)_ |
 | `STATCOUNTER_PROJECT_ID` | StatCounter project ID. Leave blank to disable StatCounter. | _(optional)_ |
 | `STATCOUNTER_SECURITY_ID` | StatCounter security code for the project. Required when `STATCOUNTER_PROJECT_ID` is set. | _(optional)_ |
 

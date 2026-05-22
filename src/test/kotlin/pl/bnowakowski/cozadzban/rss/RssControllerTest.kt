@@ -6,6 +6,7 @@ package pl.bnowakowski.cozadzban.rss
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.isNull
+import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
@@ -17,6 +18,7 @@ import org.springframework.test.context.TestPropertySource
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
 import pl.bnowakowski.cozadzban.NO_DATABASE_AUTOCONFIGURATION
+import pl.bnowakowski.cozadzban.analytics.RssEndpointAnalyticsTracker
 import pl.bnowakowski.cozadzban.article.Article
 import pl.bnowakowski.cozadzban.article.ArticleRepository
 import pl.bnowakowski.cozadzban.article.ArticleService
@@ -46,6 +48,7 @@ class RssControllerTest {
     @MockitoBean private lateinit var appUserRepository: AppUserRepository
     @MockitoBean private lateinit var articleRepository: ArticleRepository
     @MockitoBean private lateinit var articleService: ArticleService
+    @MockitoBean private lateinit var rssEndpointAnalyticsTracker: RssEndpointAnalyticsTracker
 
     private val sampleArticles = listOf(
         Article(
@@ -137,6 +140,8 @@ class RssControllerTest {
                     string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("<title>Article One</title>")))
                 }
             }
+
+        verify(rssEndpointAnalyticsTracker).recordRssFeedReached("pl")
     }
 
     @Test

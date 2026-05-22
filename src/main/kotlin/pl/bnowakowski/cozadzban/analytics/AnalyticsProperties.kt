@@ -9,12 +9,15 @@ import org.springframework.boot.context.properties.ConfigurationProperties
 data class AnalyticsProperties(
     /** Google Analytics 4 Measurement ID, e.g. "G-XXXXXXXXXX". Blank = disabled. */
     val googleMeasurementId: String = "",
+    /** Google Analytics 4 Measurement Protocol API secret. Required for server-side events. */
+    val googleApiSecret: String = "",
     /** StatCounter project ID. Blank = disabled. */
     val statcounterProjectId: String = "",
     /** StatCounter security code. Required when statcounterProjectId is set. */
     val statcounterSecurityId: String = "",
 ) {
     val isGoogleEnabled: Boolean get() = googleMeasurementId.isNotBlank()
+    val isGoogleServerEventEnabled: Boolean get() = isGoogleEnabled && googleApiSecret.isNotBlank()
     val isStatcounterEnabled: Boolean get() = statcounterProjectId.isNotBlank() && statcounterSecurityId.isNotBlank()
     val isAnyEnabled: Boolean get() = isGoogleEnabled || isStatcounterEnabled
 }

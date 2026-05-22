@@ -151,7 +151,9 @@ x-architecture:
       description: >
         Google Analytics and StatCounter scripts are rendered only when their
         IDs are configured and the user has explicitly accepted analytics
-        cookies. Consent is analytics-only and can be changed later.
+        cookies. Consent is analytics-only and can be changed later. RSS feed
+        requests emit best-effort server-side analytics events when the matching
+        server-side analytics credentials are configured.
     - name: Article content preservation cache
       technology: Future PostgreSQL-backed content cache
       description: >
@@ -619,7 +621,9 @@ x-business-rules:
       must make clear tracking is for analytics only, and users can reject or
       later revoke consent. The consent banner is shown by default (when
       analytics is configured) and remains visible until the user explicitly
-      accepts or declines.
+      accepts or declines. RSS feed requests MAY emit best-effort server-side
+      analytics events using configured analytics credentials; these events MUST
+      NOT block the RSS response.
   - id: BR-44
     name: RSS discovery
     description: >

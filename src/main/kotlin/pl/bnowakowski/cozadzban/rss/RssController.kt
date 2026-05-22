@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.client.RestClient
 import org.springframework.web.server.ResponseStatusException
+import pl.bnowakowski.cozadzban.analytics.RssEndpointAnalyticsTracker
 import pl.bnowakowski.cozadzban.article.Article
 import pl.bnowakowski.cozadzban.article.ArticleRepository
 import java.time.Instant
@@ -27,6 +28,7 @@ import java.util.Locale
 @RestController
 class RssController(
     private val articleRepository: ArticleRepository,
+    private val rssEndpointAnalyticsTracker: RssEndpointAnalyticsTracker,
     restClientBuilder: RestClient.Builder,
     @Value("\${app.build.timestamp:}") buildTimestampRaw: String,
 ) {
@@ -46,6 +48,7 @@ class RssController(
     @GetMapping("/rss", produces = ["application/rss+xml"])
     fun getRssFeed(@RequestParam(required = false) lang: String?): ResponseEntity<String> {
         val filter = lang?.trim()?.takeIf { it.isNotEmpty() }
+        rssEndpointAnalyticsTracker.recordRssFeedReached(filter)
         val channelLanguage = filter ?: "en"
         val articles = articleRepository.findForRss(filter)
 
