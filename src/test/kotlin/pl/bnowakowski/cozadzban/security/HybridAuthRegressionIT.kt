@@ -193,6 +193,15 @@ class HybridAuthRegressionIT {
         }
     }
 
+    @Test
+    fun `anonymous user can access actuator readiness probe`() {
+        mockMvc.get("/actuator/health/readiness")
+            .andExpect {
+                status { isOk() }
+                jsonPath("$.status") { value("UP") }
+            }
+    }
+
     // ─── Step 30: OAuth2 login/session lifecycle ──────────────────────────────
 
     @Test

@@ -4,8 +4,8 @@ set -eu
 compose_file="${COMPOSE_FILE:-compose.yaml}"
 upstream_file="${UPSTREAM_FILE:-docker-data/nginx/upstream.conf}"
 health_timeout_seconds="${HEALTH_TIMEOUT_SECONDS:-180}"
-health_sleep_seconds="${HEALTH_SLEEP_SECONDS:-5}"
-drain_seconds="${DRAIN_SECONDS:-10}"
+health_sleep_seconds="${HEALTH_SLEEP_SECONDS:-1}"
+drain_seconds="${DRAIN_SECONDS:-3}"
 no_cache="${NO_CACHE:-false}"
 
 mkdir -p "$(dirname "$upstream_file")"
@@ -26,6 +26,11 @@ write_upstream() {
 reload_nginx() {
     docker compose -f "$compose_file" exec -T reverse-proxy nginx -t
     docker compose -f "$compose_file" exec -T reverse-proxy nginx -s reload
+}
+
+is_healthy() {
+    docker compose -f "$compose_file" exec -T reverse-proxy \
+        wget -qO- "http://$1:8080/actuator/health/readiness" | grep -q '"status":"UP"'
 }
 
 if grep -q 'springboot-green' "$upstream_file"; then
@@ -50,25 +55,25 @@ docker compose -f "$compose_file" up -d --no-deps --force-recreate "$new_service
 
 echo "Waiting for $new_service to report healthy..."
 deadline=$(( $(date +%s) + health_timeout_seconds ))
+healthy=false
 while [ "$(date +%s)" -lt "$deadline" ]; do
-    if docker compose -f "$compose_file" exec -T reverse-proxy \
-        wget -qO- "http://$new_service:8080/actuator/health" | grep -q '"status":"UP"'; then
+    if is_healthy "$new_service"; then
         echo "$new_service is healthy"
+        healthy=true
         break
     fi
     sleep "$health_sleep_seconds"
 done
 
-if ! docker compose -f "$compose_file" exec -T reverse-proxy \
-    wget -qO- "http://$new_service:8080/actuator/health" | grep -q '"status":"UP"'; then
+if [ "$healthy" != "true" ]; then
     echo "Timed out waiting for $new_service health endpoint" >&2
     docker compose -f "$compose_file" logs --tail=100 "$new_service" >&2
     exit 1
 fi
 
 write_upstream \
-    "server $new_service:8080 max_fails=1 fail_timeout=5s;" \
-    "server $old_service:8080 backup max_fails=1 fail_timeout=5s;"
+    "server $new_service:8080 max_fails=1 fail_timeout=1s;" \
+    "server $old_service:8080 backup max_fails=1 fail_timeout=1s;"
 reload_nginx
 echo "Reverse proxy now prefers $new_service and keeps $old_service as a temporary backup"
 
@@ -77,10 +82,11 @@ if [ "$drain_seconds" -gt 0 ]; then
     sleep "$drain_seconds"
 fi
 
-write_upstream "server $new_service:8080 max_fails=3 fail_timeout=10s;"
+docker compose -f "$compose_file" stop "$old_service" >/dev/null 2>&1 || true
+
+write_upstream "server $new_service:8080 max_fails=1 fail_timeout=5s;"
 reload_nginx
 echo "Reverse proxy now points only to $new_service"
 
-docker compose -f "$compose_file" stop "$old_service" >/dev/null 2>&1 || true
 docker compose -f "$compose_file" ps
 echo "Old Spring service stopped: $old_service"

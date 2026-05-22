@@ -62,8 +62,8 @@ class SecurityConfig(
                 auth.requestMatchers(HttpMethod.GET, "/auth/me").authenticated()
                 auth.requestMatchers(HttpMethod.POST, "/auth/logout").authenticated()
 
-                // /actuator/health is always public (load balancer / k8s probes)
-                auth.requestMatchers("/actuator/health").permitAll()
+                // /actuator/health and probe subpaths are always public (load balancer / k8s probes)
+                auth.requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
                 // Public machine-readable API documentation.
                 auth.requestMatchers(
                     "/v3/api-docs",
