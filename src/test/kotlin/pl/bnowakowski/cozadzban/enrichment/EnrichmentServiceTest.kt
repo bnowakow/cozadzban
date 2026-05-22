@@ -12,12 +12,17 @@ import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
+import org.slf4j.LoggerFactory
 import org.springframework.boot.test.system.CapturedOutput
 import org.springframework.boot.test.system.OutputCaptureExtension
+import org.springframework.http.HttpHeaders
+import org.springframework.http.HttpStatus
+import org.springframework.web.client.HttpClientErrorException
 import org.springframework.web.client.RestClient
 import java.net.InetSocketAddress
 import java.net.HttpURLConnection
 import java.net.URI
+import java.nio.charset.StandardCharsets
 import java.time.Instant
 
 @ExtendWith(OutputCaptureExtension::class)
@@ -302,6 +307,18 @@ class EnrichmentServiceTest {
         assertTrue(diagnostics.contains("rejectReasons=final-uri-facebook-login|facebook-login-document"))
         assertTrue(diagnostics.contains("documentKind=facebook-login"))
         assertTrue(diagnostics.contains("facebookPostText=absent"))
+    }
+
+    @Test
+    fun `skips Facebook photo raw HTTP probes when debug logging is disabled`() {
+        val diagnostics = withEnrichmentServiceLogLevel(ch.qos.logback.classic.Level.INFO) {
+            facebookPhotoRawHttpProbes(
+                url = "https://www.facebook.com/photo/?fbid=122175696182723345&set=a.122114684240723345",
+                responseBody = "<html><body>Sorry, something went wrong.</body></html>",
+            )
+        }
+
+        assertEquals("skipped-debug-disabled", diagnostics)
     }
 
     @Test
@@ -1486,6 +1503,38 @@ class EnrichmentServiceTest {
         )
         method.isAccessible = true
         return method.invoke(service, html) as String
+    }
+
+    private fun facebookPhotoRawHttpProbes(url: String, responseBody: String): String {
+        val service = EnrichmentService(RestClient.builder())
+        val method = EnrichmentService::class.java.getDeclaredMethod(
+            "facebookPhotoRawHttpProbes",
+            String::class.java,
+            org.springframework.web.client.RestClientResponseException::class.java,
+        )
+        method.isAccessible = true
+        val failure = HttpClientErrorException.create(
+            HttpStatus.BAD_REQUEST,
+            "Bad Request",
+            HttpHeaders.EMPTY,
+            responseBody.toByteArray(StandardCharsets.UTF_8),
+            StandardCharsets.UTF_8,
+        )
+        return method.invoke(service, url, failure) as String
+    }
+
+    private fun <T> withEnrichmentServiceLogLevel(
+        level: ch.qos.logback.classic.Level,
+        block: () -> T,
+    ): T {
+        val logger = LoggerFactory.getLogger(EnrichmentService::class.java) as ch.qos.logback.classic.Logger
+        val previousLevel = logger.level
+        logger.level = level
+        return try {
+            block()
+        } finally {
+            logger.level = previousLevel
+        }
     }
 
     private fun parseNytOEmbedResult(response: String): EnrichmentResult? {

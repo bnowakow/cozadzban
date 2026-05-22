@@ -358,6 +358,71 @@ class FacebookProfileArticleImporterJobTest {
     }
 
     @Test
+    fun `remote article api read timeout is configurable`() {
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/api/articles") { exchange ->
+            Thread.sleep(1_000)
+            runCatching {
+                exchange.respondJson(
+                    """
+                    {
+                      "id": 43,
+                      "url": "https://example.com/slow",
+                      "language": "pl",
+                      "title": "Slow article",
+                      "thumbnail": null,
+                      "favicon": null,
+                      "lead": null,
+                      "quote": null,
+                      "aiSummary": null,
+                      "publishedAt": null,
+                      "createdAt": null,
+                      "createdBy": null
+                    }
+                    """.trimIndent(),
+                )
+            }
+        }
+        server.start()
+        try {
+            val importer = FacebookProfileArticleImporter(
+                FacebookImportProperties(
+                    language = "pl",
+                    targetApiBaseUrl = "http://127.0.0.1:${server.address.port}",
+                    targetApiKey = "test-machine-key",
+                    targetApiReadTimeout = Duration.ofMillis(100),
+                ),
+                appUserRepository,
+                articleService,
+            )
+            val candidateClass = Class.forName(
+                "pl.bnowakowski.cozadzban.facebookimport.FacebookProfileArticleImporter\$FacebookPostCandidate",
+            )
+            val constructor = candidateClass.getDeclaredConstructor(
+                String::class.java,
+                String::class.java,
+                String::class.java,
+                String::class.java,
+            )
+            constructor.isAccessible = true
+            val candidate = constructor.newInstance(
+                "https://example.com/slow",
+                "Co za dzban What a fucker https://example.com/slow",
+                "https://www.facebook.com/source/posts/123",
+                "pl",
+            )
+            val method = importer.javaClass.getDeclaredMethod("createArticle", candidateClass, Long::class.javaPrimitiveType)
+            method.isAccessible = true
+
+            val exception = runCatching { method.invoke(importer, candidate, 7L) }.exceptionOrNull()
+
+            assertTrue(exception?.cause is ResourceAccessException)
+        } finally {
+            server.stop(0)
+        }
+    }
+
+    @Test
     fun `failed url summary prints unique urls on separate lines`() {
         val importer = FacebookProfileArticleImporter(
             FacebookImportProperties(),

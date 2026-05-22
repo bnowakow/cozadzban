@@ -501,6 +501,7 @@ class EnrichmentService(
 
     private fun logFacebookPhotoPrimaryFetchAttempt(url: String) {
         if (!isFacebookHostUrl(url)) return
+        if (!LOG.isDebugEnabled) return
 
         LOG.debug(
             "Facebook primary fetch attempt; url='{}'; diagnostics={}; network={}; requestProfile={}; runtime={}",
@@ -514,6 +515,7 @@ class EnrichmentService(
 
     private fun logFacebookPhotoPrimaryFetchSuccess(url: String, html: String) {
         if (!isFacebookHostUrl(url)) return
+        if (!LOG.isDebugEnabled) return
 
         LOG.debug(
             "Facebook primary fetch succeeded; url='{}'; diagnostics={}; network={}; response={}; requestProfile={}; runtime={}",
@@ -528,6 +530,7 @@ class EnrichmentService(
 
     private fun logFacebookPhotoPrimaryFetchHttpFailure(url: String, ex: RestClientResponseException) {
         if (!isFacebookHostUrl(url)) return
+        if (!LOG.isDebugEnabled) return
 
         LOG.debug(
             "Facebook primary fetch returned HTTP {}; url='{}'; diagnostics={}; network={}; response={}; " +
@@ -549,6 +552,7 @@ class EnrichmentService(
         rootCause: Throwable,
     ) {
         if (!isFacebookHostUrl(url)) return
+        if (!LOG.isDebugEnabled) return
 
         LOG.debug(
             "Facebook primary fetch access failure; url='{}'; reason={}; diagnostics={}; network={}; rootCause={}: {}; " +
@@ -566,6 +570,7 @@ class EnrichmentService(
 
     private fun logFacebookPhotoPrimaryFetchClientFailure(url: String, ex: RestClientException) {
         if (!isFacebookHostUrl(url)) return
+        if (!LOG.isDebugEnabled) return
 
         LOG.debug(
             "Facebook primary fetch client failure; url='{}'; diagnostics={}; network={}; exception={}: {}; " +
@@ -591,6 +596,7 @@ class EnrichmentService(
 
     private fun logFacebookPhotoGenericErrorRecoverySkipped(url: String, ex: RestClientResponseException) {
         if (!isFacebookPhotoUrl(url)) return
+        if (!LOG.isDebugEnabled) return
 
         LOG.debug(
             "Facebook photo generic HTTP 400 minimal recovery skipped; url='{}'; " +
@@ -666,6 +672,9 @@ class EnrichmentService(
         ).joinToString(",")
 
     private fun facebookPhotoRawHttpProbes(url: String, ex: RestClientResponseException): String {
+        if (!LOG.isDebugEnabled) {
+            return "skipped-debug-disabled"
+        }
         if (!shouldSkipFacebookPhotoGenericErrorRecovery(url, ex.statusCode.value(), ex.responseBodyAsString)) {
             return "skipped-non-generic-facebook-photo-400"
         }

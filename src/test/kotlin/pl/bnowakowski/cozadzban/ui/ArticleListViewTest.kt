@@ -81,15 +81,48 @@ class ArticleListViewTest {
         )
         val buttons = findComponents(view, Button::class.java)
         val importButton = buttons.firstOrNull { it.text == "Import Facebook Posts" }
+        val stopButton = findFacebookStopButton(view)
 
         assertTrue(buttons.any { it.text == "Add Article" })
         assertTrue(importButton != null, "Expected admin import button to be present")
         assertTrue(importButton!!.isEnabled, "Expected configured import button to be enabled")
+        assertTrue(stopButton != null, "Expected admin stop import button to be present")
+        assertFalse(stopButton!!.isEnabled, "Expected stop button to be disabled when no import is running")
 
         UI.setCurrent(UI())
         importButton.click()
 
         verify(facebookProfileArticleImporter).startImport(any())
+    }
+
+    @Test
+    fun `admin users can stop a running facebook import`() {
+        val adminEmail = "admin@example.com"
+        authenticateAs(adminEmail)
+        UI.setCurrent(UI())
+        stubArticles()
+        whenever(appUserRepository.findByEmail(adminEmail)).thenReturn(
+            AppUser(1L, adminEmail, Role.ADMIN, AppUserStatus.ACTIVE),
+        )
+        whenever(facebookProfileArticleImporter.facebookImportUnavailableReason()).thenReturn(null)
+        whenever(facebookProfileArticleImporter.isImportRunning()).thenReturn(true)
+
+        val view = ArticleListView(
+            articleRepository,
+            articleContentRepository,
+            articleService,
+            facebookProfileArticleImporter,
+            appUserRepository,
+            buildProperties,
+        )
+        val stopButton = findFacebookStopButton(view)
+
+        assertTrue(stopButton != null, "Expected admin stop import button to be present")
+        assertTrue(stopButton!!.isEnabled, "Expected stop button to be enabled while import is running")
+
+        stopButton.click()
+
+        verify(facebookProfileArticleImporter).terminateImport()
     }
 
     @Test
@@ -115,6 +148,7 @@ class ArticleListViewTest {
         )
         val buttons = findComponents(view, Button::class.java)
         val importButton = buttons.firstOrNull { it.text == "Import Facebook Posts" }
+        val stopButton = findFacebookStopButton(view)
 
         assertTrue(importButton != null, "Expected admin import button to be present")
         assertFalse(importButton!!.isEnabled, "Expected misconfigured import button to be disabled")
@@ -122,10 +156,18 @@ class ArticleListViewTest {
             "app.facebook-import.username must point to an existing app user",
             importButton.element.getAttribute("title"),
         )
+        assertTrue(stopButton != null, "Expected admin stop import button to be present")
+        assertFalse(stopButton!!.isEnabled, "Expected misconfigured stop button to be disabled")
+        assertEquals(
+            "app.facebook-import.username must point to an existing app user",
+            stopButton.element.getAttribute("title"),
+        )
 
         importButton.click()
+        stopButton.click()
 
         verify(facebookProfileArticleImporter, never()).startImport(any())
+        verify(facebookProfileArticleImporter, never()).terminateImport()
     }
 
     @Test
@@ -150,6 +192,7 @@ class ArticleListViewTest {
 
         assertTrue(buttons.any { it.text == "Add Article" })
         assertFalse(buttons.any { it.text == "Import Facebook Posts" })
+        assertTrue(findFacebookStopButton(view) == null)
     }
 
     @Test
@@ -480,4 +523,8 @@ class ArticleListViewTest {
         walk(root)
         return found
     }
+
+    private fun findFacebookStopButton(root: Component): Button? =
+        findComponents(root, Button::class.java)
+            .firstOrNull { it.element.getAttribute("aria-label")?.startsWith("Stop Facebook import") == true }
 }

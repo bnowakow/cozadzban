@@ -26,6 +26,8 @@ data class FacebookImportProperties(
     val targetApiKey: String = "",
     val targetApiKeyHeader: String = "X-CoZaDzban-M2M-Key",
     val targetArticlePath: String = "/api/articles",
+    val targetApiConnectTimeout: Duration = Duration.ofSeconds(3),
+    val targetApiReadTimeout: Duration = Duration.ofMinutes(5),
     val rejectionArtifactDir: String = "logs/facebook-import-rejections",
 ) {
     enum class Browser {

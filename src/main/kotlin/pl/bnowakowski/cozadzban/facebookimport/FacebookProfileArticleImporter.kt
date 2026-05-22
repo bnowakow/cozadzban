@@ -1743,8 +1743,8 @@ class FacebookProfileArticleImporter(
                     attempt,
                     remoteTargetBaseDiagnostic(),
                     properties.targetArticlePath,
-                    REMOTE_API_CONNECT_TIMEOUT_MS,
-                    REMOTE_API_READ_TIMEOUT_MS,
+                    targetApiConnectTimeoutMs(),
+                    targetApiReadTimeoutMs(),
                     valueDiagnostic(candidate.text),
                 )
             }
@@ -1837,8 +1837,8 @@ class FacebookProfileArticleImporter(
             elapsedMs(startedAt),
             remoteTargetBaseDiagnostic(),
             properties.targetArticlePath,
-            REMOTE_API_CONNECT_TIMEOUT_MS,
-            REMOTE_API_READ_TIMEOUT_MS,
+            targetApiConnectTimeoutMs(),
+            targetApiReadTimeoutMs(),
             exceptionDiagnostic(ex),
         )
     }
@@ -1918,6 +1918,12 @@ class FacebookProfileArticleImporter(
         val port = uri.port.takeIf { it >= 0 }?.toString() ?: "default"
         return "scheme=${uri.scheme ?: "absent"},host=${uri.host ?: "absent"},port=$port"
     }
+
+    private fun targetApiConnectTimeoutMs(): Long =
+        properties.targetApiConnectTimeout.toMillis()
+
+    private fun targetApiReadTimeoutMs(): Long =
+        properties.targetApiReadTimeout.toMillis()
 
     private fun articleResponseDiagnostic(article: ArticleResponse): String =
         "id=${article.id},url='${article.url}',title=${valueDiagnostic(article.title)}," +
@@ -2250,8 +2256,6 @@ class FacebookProfileArticleImporter(
         private const val LOG_URL_LIMIT = 12
         private const val LOG_DIAGNOSTIC_LIMIT = 24
         private const val LOG_TEXT_PREVIEW_LIMIT = 500
-        private const val REMOTE_API_CONNECT_TIMEOUT_MS = 3_000
-        private const val REMOTE_API_READ_TIMEOUT_MS = 60_000
         private const val REMOTE_CREATE_REQUEST_ID_HEADER = "X-CoZaDzban-Import-Request-Id"
         private const val MAX_NESTED_FACEBOOK_POSTS_TO_OPEN = 2
         private val IMPORT_ARTIFACT_TIMESTAMP_FORMATTER: DateTimeFormatter =
@@ -2301,10 +2305,10 @@ class FacebookProfileArticleImporter(
             .requestFactory(
                 JdkClientHttpRequestFactory(
                     HttpClient.newBuilder()
-                        .connectTimeout(Duration.ofMillis(REMOTE_API_CONNECT_TIMEOUT_MS.toLong()))
+                        .connectTimeout(properties.targetApiConnectTimeout)
                         .build(),
                 ).apply {
-                    setReadTimeout(Duration.ofMillis(REMOTE_API_READ_TIMEOUT_MS.toLong()))
+                    setReadTimeout(properties.targetApiReadTimeout)
                 }
             )
             .baseUrl(properties.targetApiBaseUrl)

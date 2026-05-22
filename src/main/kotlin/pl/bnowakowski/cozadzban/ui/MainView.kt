@@ -257,10 +257,25 @@ class ArticleListView(
                 val importFacebookButton = Button("Import Facebook Posts", VaadinIcon.DOWNLOAD.create())
                 importFacebookButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY)
                 importFacebookButton.element.setAttribute("aria-label", "Import Facebook Posts")
+                val stopFacebookImportButton = Button(VaadinIcon.STOP.create())
+                stopFacebookImportButton.addThemeVariants(
+                    ButtonVariant.LUMO_SMALL,
+                    ButtonVariant.LUMO_TERTIARY,
+                    ButtonVariant.LUMO_ERROR,
+                    ButtonVariant.LUMO_ICON,
+                )
                 val facebookImportUnavailableReason = facebookProfileArticleImporter.facebookImportUnavailableReason()
                 if (facebookImportUnavailableReason == null) {
                     importFacebookButton.element.setAttribute("title", "Import Facebook Posts")
-                    importFacebookButton.addClickListener { triggerFacebookImport() }
+                    importFacebookButton.addClickListener {
+                        triggerFacebookImport()
+                        updateStopFacebookImportButton(stopFacebookImportButton)
+                    }
+                    updateStopFacebookImportButton(stopFacebookImportButton)
+                    stopFacebookImportButton.addClickListener {
+                        triggerFacebookImportTermination()
+                        updateStopFacebookImportButton(stopFacebookImportButton)
+                    }
                 } else {
                     importFacebookButton.isEnabled = false
                     importFacebookButton.element.setAttribute("title", facebookImportUnavailableReason)
@@ -268,8 +283,14 @@ class ArticleListView(
                         "aria-label",
                         "Import Facebook Posts unavailable: $facebookImportUnavailableReason",
                     )
+                    stopFacebookImportButton.isEnabled = false
+                    stopFacebookImportButton.element.setAttribute("title", facebookImportUnavailableReason)
+                    stopFacebookImportButton.element.setAttribute(
+                        "aria-label",
+                        "Stop Facebook import unavailable: $facebookImportUnavailableReason",
+                    )
                 }
-                actions.add(importFacebookButton)
+                actions.add(importFacebookButton, stopFacebookImportButton)
 
                 val manageUsersButton = Button(VaadinIcon.USERS.create())
                 manageUsersButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY, ButtonVariant.LUMO_ICON)
@@ -854,6 +875,31 @@ class ArticleListView(
             showSuccess("Facebook import started")
         } catch (ex: Exception) {
             showError(ex.message ?: "Failed to start Facebook import")
+        }
+    }
+
+    private fun triggerFacebookImportTermination() {
+        try {
+            facebookProfileArticleImporter.terminateImport()
+            showSuccess("Facebook import stop requested")
+        } catch (ex: Exception) {
+            showError(ex.message ?: "Failed to stop Facebook import")
+        }
+    }
+
+    private fun updateStopFacebookImportButton(button: Button) {
+        val running = facebookProfileArticleImporter.isImportRunning()
+        if (running) {
+            button.isEnabled = true
+            button.element.setAttribute("title", "Stop Facebook import")
+            button.element.setAttribute("aria-label", "Stop Facebook import")
+        } else {
+            button.isEnabled = false
+            button.element.setAttribute("title", "No Facebook import job is currently running")
+            button.element.setAttribute(
+                "aria-label",
+                "Stop Facebook import unavailable: no Facebook import job is currently running",
+            )
         }
     }
 
