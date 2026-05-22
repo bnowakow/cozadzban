@@ -12,6 +12,7 @@ import com.vaadin.flow.component.html.Div
 import com.vaadin.flow.component.html.Image
 import com.vaadin.flow.component.html.Span
 import com.vaadin.flow.component.radiobutton.RadioButtonGroup
+import com.vaadin.flow.component.shared.Tooltip
 import com.vaadin.flow.component.textfield.TextField
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -154,13 +155,13 @@ class ArticleListViewTest {
         assertFalse(importButton!!.isEnabled, "Expected misconfigured import button to be disabled")
         assertEquals(
             "app.facebook-import.username must point to an existing app user",
-            importButton.element.getAttribute("title"),
+            Tooltip.forComponent(importButton.parent.get()).text,
         )
         assertTrue(stopButton != null, "Expected admin stop import button to be present")
         assertFalse(stopButton!!.isEnabled, "Expected misconfigured stop button to be disabled")
         assertEquals(
             "app.facebook-import.username must point to an existing app user",
-            stopButton.element.getAttribute("title"),
+            Tooltip.forComponent(stopButton.parent.get()).text,
         )
 
         importButton.click()

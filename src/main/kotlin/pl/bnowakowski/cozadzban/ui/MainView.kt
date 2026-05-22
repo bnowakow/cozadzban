@@ -24,6 +24,7 @@ import com.vaadin.flow.component.orderedlayout.HorizontalLayout
 import com.vaadin.flow.component.orderedlayout.VerticalLayout
 import com.vaadin.flow.component.radiobutton.RadioButtonGroup
 import com.vaadin.flow.component.select.Select
+import com.vaadin.flow.component.shared.Tooltip
 import com.vaadin.flow.component.textfield.TextArea
 import com.vaadin.flow.component.textfield.TextField
 import com.vaadin.flow.data.provider.DataProvider
@@ -276,21 +277,30 @@ class ArticleListView(
                         triggerFacebookImportTermination()
                         updateStopFacebookImportButton(stopFacebookImportButton)
                     }
+                    actions.add(importFacebookButton, stopFacebookImportButton)
                 } else {
                     importFacebookButton.isEnabled = false
-                    importFacebookButton.element.setAttribute("title", facebookImportUnavailableReason)
                     importFacebookButton.element.setAttribute(
                         "aria-label",
                         "Import Facebook Posts unavailable: $facebookImportUnavailableReason",
                     )
                     stopFacebookImportButton.isEnabled = false
-                    stopFacebookImportButton.element.setAttribute("title", facebookImportUnavailableReason)
                     stopFacebookImportButton.element.setAttribute(
                         "aria-label",
                         "Stop Facebook import unavailable: $facebookImportUnavailableReason",
                     )
+                    // Wrap in Divs so the Vaadin tooltip overlay still triggers on hover
+                    // — disabled buttons swallow pointer events.
+                    val importWrapper = Div(importFacebookButton).apply {
+                        element.style.set("display", "inline-flex")
+                    }
+                    val stopWrapper = Div(stopFacebookImportButton).apply {
+                        element.style.set("display", "inline-flex")
+                    }
+                    Tooltip.forComponent(importWrapper).text = facebookImportUnavailableReason
+                    Tooltip.forComponent(stopWrapper).text = facebookImportUnavailableReason
+                    actions.add(importWrapper, stopWrapper)
                 }
-                actions.add(importFacebookButton, stopFacebookImportButton)
 
                 val manageUsersButton = Button(VaadinIcon.USERS.create())
                 manageUsersButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY, ButtonVariant.LUMO_ICON)
