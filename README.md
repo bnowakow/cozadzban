@@ -170,6 +170,11 @@ make docker-logs   # Follow Docker logs
 make dev-down      # Stop and remove containers
 ```
 
+### Additional docs
+
+- [Codex skills](doc/codex-skills/README.md) - repository-provided Codex skills and prompts.
+- [Utilities](utilities/README.md) - helper scripts for imports, local data, and manual browser tasks.
+
 ### Docker image
 
 The repository includes a multi-stage `Dockerfile`:

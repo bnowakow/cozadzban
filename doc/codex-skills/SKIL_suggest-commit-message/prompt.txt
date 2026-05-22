@@ -1,0 +1,1 @@
+Use the suggest-commit-message skill to propose a concise commit message for the current git changes.
