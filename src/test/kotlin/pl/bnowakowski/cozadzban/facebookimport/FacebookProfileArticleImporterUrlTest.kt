@@ -962,6 +962,20 @@ class FacebookProfileArticleImporterUrlTest {
     }
 
     @Test
+    fun `allegro marketplace offers are ignored as article urls`() {
+        val importer = FacebookProfileArticleImporter(
+            FacebookImportProperties(),
+            mock<AppUserRepository>(),
+            mock<ArticleService>(),
+        )
+
+        val method = importer.javaClass.getDeclaredMethod("isExternalArticleUrl", String::class.java)
+        method.isAccessible = true
+
+        assertEquals(false, method.invoke(importer, "https://allegro.pl/oferta/pilka-fifa-world-"))
+    }
+
+    @Test
     fun `instagram profile urls are ignored as article urls`() {
         val importer = FacebookProfileArticleImporter(
             FacebookImportProperties(),

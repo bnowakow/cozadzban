@@ -211,6 +211,53 @@ class FacebookArticleProposalServiceTest {
     }
 
     @Test
+    fun `recordLoginRequired publishes first login required event`() {
+        val publisher: ApplicationEventPublisher = mock()
+        val eventingService = proposalService(publisher)
+        whenever(
+            runRepository.recordLoginRequired(
+                eq("run-login"),
+                eq(FacebookImportTrigger.SCHEDULED),
+                eq("https://www.facebook.com/profile"),
+                any(),
+            ),
+        ).thenReturn(true)
+
+        eventingService.recordLoginRequired(
+            "run-login",
+            FacebookImportLoginRequiredRequest(
+                trigger = FacebookImportTrigger.SCHEDULED,
+                profileUrl = "https://www.facebook.com/profile",
+                detectedAt = Instant.parse("2026-05-24T10:00:00Z"),
+            ),
+        )
+
+        val eventCaptor = argumentCaptor<Any>()
+        verify(publisher).publishEvent(eventCaptor.capture())
+        val event = eventCaptor.firstValue as FacebookImportLoginRequiredEvent
+        assertEquals("run-login", event.importRunId)
+        assertEquals(FacebookImportTrigger.SCHEDULED, event.trigger)
+        assertEquals("https://www.facebook.com/profile", event.profileUrl)
+    }
+
+    @Test
+    fun `recordLoginRequired suppresses duplicate login required event for same run`() {
+        val publisher: ApplicationEventPublisher = mock()
+        val eventingService = proposalService(publisher)
+        whenever(runRepository.recordLoginRequired(any(), any(), any(), any())).thenReturn(false)
+
+        eventingService.recordLoginRequired(
+            "run-login",
+            FacebookImportLoginRequiredRequest(
+                trigger = FacebookImportTrigger.SCHEDULED,
+                profileUrl = "https://www.facebook.com/profile",
+            ),
+        )
+
+        verify(publisher, never()).publishEvent(any<Any>())
+    }
+
+    @Test
     fun `accept creates article as import bot and marks proposal accepted`() {
         val pending = proposal(status = null)
         val accepted = pending.copy(status = FacebookArticleProposalStatus.ACCEPTED, articleId = 99L)

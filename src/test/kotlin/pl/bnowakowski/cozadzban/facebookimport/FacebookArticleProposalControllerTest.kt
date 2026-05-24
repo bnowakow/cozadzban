@@ -6,6 +6,8 @@ package pl.bnowakowski.cozadzban.facebookimport
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.any
+import org.mockito.kotlin.eq
+import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
@@ -120,6 +122,45 @@ class FacebookArticleProposalControllerTest {
                 it.claim("email_verified", true)
             })
             param("url", "https://example.com/story")
+        }.andExpect {
+            status { isForbidden() }
+        }
+    }
+
+    @Test
+    fun `login required endpoint accepts machine credential`() {
+        mockMvc.post("/api/facebook-import/runs/run-1/login-required") {
+            header("X-CoZaDzban-M2M-Key", "secret")
+            contentType = MediaType.APPLICATION_JSON
+            content = """
+                {
+                  "trigger": "SCHEDULED",
+                  "profileUrl": "https://www.facebook.com/profile",
+                  "detectedAt": "2026-05-24T10:00:00Z"
+                }
+            """.trimIndent()
+        }.andExpect {
+            status { isNoContent() }
+        }
+
+        verify(proposalService).recordLoginRequired(eq("run-1"), any())
+    }
+
+    @Test
+    fun `login required endpoint rejects normal bearer auth`() {
+        mockMvc.post("/api/facebook-import/runs/run-1/login-required") {
+            with(jwt().jwt {
+                it.subject("admin@test.com")
+                it.claim("email", "admin@test.com")
+                it.claim("email_verified", true)
+            })
+            contentType = MediaType.APPLICATION_JSON
+            content = """
+                {
+                  "trigger": "SCHEDULED",
+                  "profileUrl": "https://www.facebook.com/profile"
+                }
+            """.trimIndent()
         }.andExpect {
             status { isForbidden() }
         }

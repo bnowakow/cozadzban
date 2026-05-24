@@ -251,6 +251,18 @@ class ArticleListView(
         actions.element.style.set("padding-right", "0.25rem")
 
         if (isAuthenticated && authenticatedUser?.status == AppUserStatus.ACTIVE) {
+            val notificationSettingsButton = Button(VaadinIcon.BELL.create())
+            notificationSettingsButton.addThemeVariants(
+                ButtonVariant.LUMO_SMALL,
+                ButtonVariant.LUMO_TERTIARY,
+                ButtonVariant.LUMO_ICON,
+            )
+            notificationSettingsButton.element.setAttribute("aria-label", "Notification settings")
+            notificationSettingsButton.element.setAttribute("title", "Notification settings")
+            val notificationSettingsLink = Anchor("/notification-settings")
+            notificationSettingsLink.add(notificationSettingsButton)
+            actions.add(notificationSettingsLink)
+
             val proposalsButton = Button("Article Proposals", VaadinIcon.LIST.create())
             proposalsButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY)
             proposalsButton.addClickListener { ui.ifPresent { it.navigate("article-proposals") } }
