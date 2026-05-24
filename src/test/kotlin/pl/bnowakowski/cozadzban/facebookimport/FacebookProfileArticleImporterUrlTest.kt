@@ -1377,6 +1377,49 @@ class FacebookProfileArticleImporterUrlTest {
     }
 
     @Test
+    fun `opened photo posts ignore external links from the opened photo page`() {
+        val importer = FacebookProfileArticleImporter(
+            FacebookImportProperties(waitAfterPageOpen = Duration.ZERO),
+            mock<AppUserRepository>(),
+            mock<ArticleService>(),
+        )
+
+        val method = importer.javaClass.getDeclaredMethod("findPostUrl", WebDriver::class.java, WebElement::class.java)
+        method.isAccessible = true
+
+        val driver = mockitoMock(
+            WebDriver::class.java,
+            withSettings().extraInterfaces(JavascriptExecutor::class.java),
+        ) as WebDriver
+        val targetLocator = mock<TargetLocator>()
+        val element = mock<WebElement>()
+        val photoLink = mock<WebElement>()
+        val body = mock<WebElement>()
+        val openedArticleLink = mock<WebElement>()
+        val photoUrl = "https://www.facebook.com/photo/?fbid=983286114627177&set=pcb.983297487959373"
+        val openedArticleUrl = "http://arianagrande.lnk.to/htimylm"
+
+        whenever(element.text).thenReturn("Co za zjeb Sławosz Uznański-Wiśniewski · Nie mogę odnieść się do treści listu.")
+        whenever(element.findElements(any())).thenReturn(listOf(photoLink))
+        whenever(photoLink.getAttribute("href")).thenReturn(photoUrl)
+        whenever(driver.windowHandle).thenReturn("main")
+        whenever(driver.windowHandles).thenReturn(setOf("main"), setOf("main", "popup"), setOf("main"))
+        whenever(driver.switchTo()).thenReturn(targetLocator)
+        whenever(targetLocator.window(any())).thenReturn(driver)
+        whenever(driver.findElements(any())).thenReturn(
+            emptyList(),
+            listOf(openedArticleLink),
+            listOf(openedArticleLink),
+        )
+        whenever(openedArticleLink.getAttribute("href")).thenReturn(openedArticleUrl)
+        whenever(driver.findElement(any())).thenReturn(body)
+        whenever(body.text).thenReturn("Ariana Grande\n$openedArticleUrl")
+        whenever(driver.pageSource).thenReturn("""<a href="$openedArticleUrl">arianagrande.lnk.to/htimylm</a>""")
+
+        assertEquals(photoUrl, method.invoke(importer, driver, element))
+    }
+
+    @Test
     fun `opened photo posts do not import unrelated nested facebook posts when original text has no url`() {
         val importer = FacebookProfileArticleImporter(
             FacebookImportProperties(waitAfterPageOpen = Duration.ZERO),
