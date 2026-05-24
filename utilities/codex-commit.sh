@@ -44,7 +44,7 @@ confirm() {
 	local text=$2
 
 	if command -v whiptail >/dev/null 2>&1 && [ -r /dev/tty ] && [ -w /dev/tty ]; then
-		whiptail --title "$title" --yesno "$text" 10 76 >/dev/tty 2>&1 </dev/tty
+		whiptail --title "$title" --yesno "$text" 20 90 >/dev/tty 2>&1 </dev/tty
 		return
 	fi
 
@@ -233,7 +233,15 @@ else
 	echo "No upstream branch is configured; git push will use Git's default behavior."
 fi
 
-if confirm "Push" "Run git push now?"; then
+push_summary=$(
+	printf '1. git log message\n'
+	git log -1 --format=%B
+	printf '\n2. git status\n'
+	git status --short --branch
+	printf '\nRun git push now?'
+)
+
+if confirm "Push" "$push_summary"; then
 	git push
 else
 	echo "Push skipped."
