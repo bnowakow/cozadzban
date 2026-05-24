@@ -244,7 +244,7 @@ bump-minor:
 
 # Stage all changes, ask Codex for a commit message, commit, and optionally push.
 codex-commit:
-	scripts/codex-commit.sh
+	utilities/codex-commit.sh
 
 # Follow docker-compose logs
 docker-logs:
