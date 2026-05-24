@@ -738,12 +738,12 @@ class FacebookProfileArticleImporter(
             return selectedFromOpenedPost
         }
 
-        extractExternalArticleUrlFromHtml(driver, element)?.let {
+        extractExternalArticleUrlFromHtml(driver, element, text)?.let {
             logPostUrlDecision("html-url", it, text, facebookPostUrls, links)
             return PostUrlSelection(it, containerSourcePostUrl)
         }
 
-        links.firstOrNull { isExternalArticleUrl(it) }?.let {
+        links.firstOrNull { isExternalArticleUrl(it) && isUrlHostMentionedInText(it, text) }?.let {
             logPostUrlDecision("link-url", it, text, facebookPostUrls, links)
             return PostUrlSelection(it, containerSourcePostUrl)
         }
@@ -775,13 +775,17 @@ class FacebookProfileArticleImporter(
             }
         }.distinct()
 
-    private fun extractExternalArticleUrlFromHtml(driver: WebDriver, element: WebElement): String? {
+    private fun extractExternalArticleUrlFromHtml(
+        driver: WebDriver,
+        element: WebElement,
+        visibleText: String,
+    ): String? {
         val html = elementOuterHtml(driver, element) ?: return null
-        extractExternalArticleUrlFromText(html)?.let { return it }
+        extractExternalArticleUrlFromText(html, visibleText = visibleText)?.let { return it }
         return HREF_VALUE_REGEX.findAll(html)
             .mapNotNull { it.groupValues[1].decodeHtmlEntities().toCleanFacebookUrl() }
             .distinct()
-            .firstOrNull { isExternalArticleUrl(it) }
+            .firstOrNull { isExternalArticleUrl(it) && isUrlHostMentionedInText(it, visibleText) }
     }
 
     private fun extractCandidateUrlFromFacebookPost(

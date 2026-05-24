@@ -1095,6 +1095,48 @@ class FacebookProfileArticleImporterUrlTest {
     }
 
     @Test
+    fun `shared photo posts ignore unrelated container links and fall back to source post url`() {
+        val importer = FacebookProfileArticleImporter(
+            FacebookImportProperties(waitAfterPageOpen = Duration.ZERO),
+            mock<AppUserRepository>(),
+            mock<ArticleService>(),
+        )
+
+        val method = importer.javaClass.getDeclaredMethod("findPostUrl", WebDriver::class.java, WebElement::class.java)
+        method.isAccessible = true
+
+        val driver = mockitoMock(
+            WebDriver::class.java,
+            withSettings().extraInterfaces(JavascriptExecutor::class.java),
+        ) as WebDriver
+        val targetLocator = mock<TargetLocator>()
+        val element = mock<WebElement>()
+        val photoLink = mock<WebElement>()
+        val unrelatedLink = mock<WebElement>()
+        val body = mock<WebElement>()
+        val photoUrl = "https://www.facebook.com/photo/?fbid=983286114627177&set=pcb.983297487959373"
+        val unrelatedUrl = "http://arianagrande.lnk.to/htimylm"
+
+        whenever(element.text).thenReturn(
+            "Bartek Dobrowolski-Nowakowski · Co za zjeb · Sławosz Uznański-Wiśniewski · " +
+                "Nie mogę odnieść się do treści listu napisanego przez Panią Prezes Polskiej Agencji Kosmicznej.",
+        )
+        whenever(element.findElements(any())).thenReturn(listOf(photoLink, unrelatedLink))
+        whenever(photoLink.getAttribute("href")).thenReturn(photoUrl)
+        whenever(unrelatedLink.getAttribute("href")).thenReturn(unrelatedUrl)
+        whenever(driver.windowHandle).thenReturn("main")
+        whenever(driver.windowHandles).thenReturn(setOf("main"), setOf("main", "popup"), setOf("main"))
+        whenever(driver.switchTo()).thenReturn(targetLocator)
+        whenever(targetLocator.window(any())).thenReturn(driver)
+        whenever(driver.findElements(any())).thenReturn(emptyList())
+        whenever(driver.findElement(any())).thenReturn(body)
+        whenever(body.text).thenReturn("Only Facebook photo content\n$photoUrl")
+        whenever(driver.pageSource).thenReturn("Only Facebook photo content\n$photoUrl")
+
+        assertEquals(photoUrl, method.invoke(importer, driver, element))
+    }
+
+    @Test
     fun `opened photo posts prefer visible article links over unrelated container links`() {
         val importer = FacebookProfileArticleImporter(
             FacebookImportProperties(waitAfterPageOpen = Duration.ZERO),
