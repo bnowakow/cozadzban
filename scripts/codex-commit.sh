@@ -1,0 +1,174 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root=$(git rev-parse --show-toplevel)
+cd "$repo_root"
+
+prompt_menu() {
+	local title=$1
+	local text=$2
+	shift 2
+
+	if command -v whiptail >/dev/null 2>&1 && [ -r /dev/tty ] && [ -w /dev/tty ]; then
+		whiptail --title "$title" --menu "$text" 15 76 5 "$@" \
+			3>&1 1>/dev/tty 2>&3 </dev/tty
+		return
+	fi
+
+	local choices=("$@")
+	local index=1
+	local i
+	printf '%s\n%s\n' "$title" "$text" >&2
+	for ((i = 0; i < ${#choices[@]}; i += 2)); do
+		printf '  %d. %s - %s\n' "$index" "${choices[$i]}" "${choices[$((i + 1))]}" >&2
+		index=$((index + 1))
+	done
+	printf 'Choose [1-%d]: ' "$((index - 1))" >&2
+	read -r answer
+	if ! [[ "$answer" =~ ^[0-9]+$ ]] || [ "$answer" -lt 1 ] || [ "$answer" -ge "$index" ]; then
+		return 1
+	fi
+	printf '%s\n' "${choices[$(((answer - 1) * 2))]}"
+}
+
+confirm() {
+	local title=$1
+	local text=$2
+
+	if command -v whiptail >/dev/null 2>&1 && [ -r /dev/tty ] && [ -w /dev/tty ]; then
+		whiptail --title "$title" --yesno "$text" 10 76 >/dev/tty 2>&1 </dev/tty
+		return
+	fi
+
+	local answer
+	printf '%s\n%s [y/N]: ' "$title" "$text" >&2
+	read -r answer
+	[[ "$answer" =~ ^[Yy]$|^[Yy][Ee][Ss]$ ]]
+}
+
+has_worktree_changes() {
+	! git diff --quiet || ! git diff --cached --quiet || [ -n "$(git ls-files --others --exclude-standard)" ]
+}
+
+has_version_change() {
+	git diff -- build.gradle.kts | grep -Eq '^[-+]version[[:space:]]*=' ||
+		git diff --cached -- build.gradle.kts | grep -Eq '^[-+]version[[:space:]]*='
+}
+
+extract_commit_message() {
+	local output_file=$1
+	local message
+
+	message=$(
+		awk '
+			/^```/ {
+				if (!seen) {
+					seen = 1
+					in_block = 1
+					next
+				}
+				if (in_block) {
+					exit
+				}
+			}
+			in_block {
+				print
+			}
+		' "$output_file" | sed '/^[[:space:]]*$/d; s/[[:space:]]*$//'
+	)
+
+	if [ -z "$message" ]; then
+		message=$(sed '/^[[:space:]]*$/d; /^```/d; s/[[:space:]]*$//' "$output_file" | head -n 1)
+	fi
+
+	printf '%s\n' "$message"
+}
+
+if ! has_worktree_changes; then
+	echo "No git changes to commit."
+	exit 0
+fi
+
+if ! has_version_change; then
+	choice=$(
+		prompt_menu \
+			"Version bump" \
+			"No version change was found in git diff. Choose whether to bump before committing." \
+			patch "Run make bump-patch" \
+			minor "Run make bump-minor" \
+			none "Continue without bumping"
+	) || {
+		echo "Cancelled."
+		exit 1
+	}
+
+	case "$choice" in
+		patch) make bump-patch ;;
+		minor) make bump-minor ;;
+		none) ;;
+		*)
+			echo "Unexpected choice: $choice" >&2
+			exit 1
+			;;
+	esac
+fi
+
+git add --all
+
+if git diff --cached --quiet; then
+	echo "No staged changes to commit."
+	exit 0
+fi
+
+if ! command -v codex >/dev/null 2>&1; then
+	echo "codex command not found." >&2
+	exit 1
+fi
+
+codex_output=$(mktemp "${TMPDIR:-/tmp}/cozazjeb-codex-commit.XXXXXX")
+trap 'rm -f "$codex_output"' EXIT
+
+codex exec \
+	-C "$repo_root" \
+	--sandbox read-only \
+	--output-last-message "$codex_output" \
+	'Use the repository-provided suggest-commit-message skill at doc/codex-skills/SKIL_suggest-commit-message/SKILL.md to propose a concise commit message for the currently staged changes. Return the final answer in the documented response shape, with the recommended commit message as the first fenced code block.' >/dev/null
+
+commit_message=$(extract_commit_message "$codex_output")
+if [ -z "$commit_message" ]; then
+	echo "Could not parse a commit message from Codex output:" >&2
+	cat "$codex_output" >&2
+	exit 1
+fi
+
+git commit -m "$commit_message"
+
+printf '\nCommitted with message:\n'
+printf '%s\n' "$commit_message"
+
+printf '\nCurrent git status:\n'
+git status --short --branch
+
+upstream=
+if upstream=$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null); then
+	echo "Fetching $upstream before push check..."
+	git fetch --quiet
+	read -r ahead behind < <(git rev-list --left-right --count HEAD..."$upstream")
+
+	if [ "$behind" -gt 0 ]; then
+		if confirm "Pull before push" "Upstream $upstream has $behind commit(s) not in this branch. Run git pull --rebase before push?"; then
+			git pull --rebase
+		else
+			echo "Skipping push because upstream has new commits."
+			exit 0
+		fi
+	fi
+else
+	echo "No upstream branch is configured; git push will use Git's default behavior."
+fi
+
+if confirm "Push" "Run git push now?"; then
+	git push
+else
+	echo "Push skipped."
+fi

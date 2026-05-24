@@ -1,5 +1,5 @@
 
-.PHONY: help docker-up docker-down docker-data-permissions docker-pg-nuke docker-pg-backup install-pg-backup-cron ensure-pg-backup-cron build run run-local run-prod test clean docker-logs docker-spring-shell docker-pg-shell docker-upgrade docker-upgrade-no-cache bump-patch bump-minor install-git-hooks install-codex-skills codex-skill-prompts
+.PHONY: help docker-up docker-down docker-data-permissions docker-pg-nuke docker-pg-backup install-pg-backup-cron ensure-pg-backup-cron build run run-local run-prod test clean docker-logs docker-spring-shell docker-pg-shell docker-upgrade docker-upgrade-no-cache bump-patch bump-minor codex-commit install-git-hooks install-codex-skills codex-skill-prompts
 
 -include .env
 
@@ -37,6 +37,7 @@ help:
 	@printf "    %-31s %s\n" "bump-minor" "Auto-increment minor and reset patch for x.y.z-SNAPSHOT versions"
 	@printf "\n"
 	@printf "  \033[1;94m%s\033[0m\n" "Repository"
+	@printf "    %-31s %s\n" "codex-commit" "Bump version if needed, stage, commit with Codex, and optionally push"
 	@printf "    %-31s %s\n" "install-git-hooks" "Configure repository git hooks"
 	@printf "    %-31s %s\n" "install-codex-skills" "Install all project Codex skills into CODEX_HOME"
 	@printf "    %-31s %s\n" "codex-skill-prompts" "Show sample prompts for project Codex skills"
@@ -237,6 +238,10 @@ bump-minor:
 		echo "Current version '$$current' is not x.y.z-SNAPSHOT; cannot auto-bump minor"; \
 		exit 1; \
 	fi
+
+# Stage all changes, ask Codex for a commit message, commit, and optionally push.
+codex-commit:
+	scripts/codex-commit.sh
 
 # Follow docker-compose logs
 docker-logs:
