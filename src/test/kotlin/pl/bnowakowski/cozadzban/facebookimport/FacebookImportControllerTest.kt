@@ -49,7 +49,7 @@ class FacebookImportControllerTest {
     @MockitoBean private lateinit var articleService: ArticleService
     @MockitoBean private lateinit var articleContentRepository: ArticleContentRepository
     @MockitoBean private lateinit var appUserService: AppUserService
-    @MockitoBean private lateinit var facebookProfileArticleImporter: FacebookProfileArticleImporter
+    @MockitoBean private lateinit var facebookImportJobService: FacebookImportJobService
 
     private val adminEmail = "admin@test.com"
     private val userEmail = "user@test.com"
@@ -63,7 +63,7 @@ class FacebookImportControllerTest {
 
     @Test
     fun `run endpoint returns 202 for admin bearer token`() {
-        doNothing().whenever(facebookProfileArticleImporter).startImport()
+        whenever(facebookImportJobService.startImport()).thenReturn("run-1")
 
         mockMvc.post("/api/admin/facebook-import/run") {
             with(jwt().jwt {
@@ -100,7 +100,7 @@ class FacebookImportControllerTest {
 
     @Test
     fun `run endpoint returns 409 when import is already active`() {
-        doThrow(FacebookImportAlreadyRunningException()).whenever(facebookProfileArticleImporter).startImport()
+        doThrow(FacebookImportAlreadyRunningException()).whenever(facebookImportJobService).startImport()
 
         mockMvc.post("/api/admin/facebook-import/run") {
             with(jwt().jwt {
@@ -117,7 +117,7 @@ class FacebookImportControllerTest {
 
     @Test
     fun `terminate endpoint returns 202 for admin bearer token`() {
-        doNothing().whenever(facebookProfileArticleImporter).terminateImport()
+        doNothing().whenever(facebookImportJobService).terminateImport()
 
         mockMvc.post("/api/admin/facebook-import/terminate") {
             with(jwt().jwt {
@@ -131,8 +131,29 @@ class FacebookImportControllerTest {
     }
 
     @Test
+    fun `terminate endpoint returns 401 without token`() {
+        mockMvc.post("/api/admin/facebook-import/terminate")
+            .andExpect {
+                status { isUnauthorized() }
+            }
+    }
+
+    @Test
+    fun `terminate endpoint returns 403 for non-admin bearer token`() {
+        mockMvc.post("/api/admin/facebook-import/terminate") {
+            with(jwt().jwt {
+                it.subject(userEmail)
+                it.claim("email", userEmail)
+                it.claim("email_verified", true)
+            })
+        }.andExpect {
+            status { isForbidden() }
+        }
+    }
+
+    @Test
     fun `terminate endpoint returns 409 when nothing is running`() {
-        doThrow(FacebookImportNotRunningException()).whenever(facebookProfileArticleImporter).terminateImport()
+        doThrow(FacebookImportNotRunningException()).whenever(facebookImportJobService).terminateImport()
 
         mockMvc.post("/api/admin/facebook-import/terminate") {
             with(jwt().jwt {

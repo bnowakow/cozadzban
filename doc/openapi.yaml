@@ -24,11 +24,11 @@ info:
        (add/soft-delete/restore/update users) and at `/admin/article-content-cache`
        to inspect, refresh, edit, and purge preserved article content cache entries,
        using server-side service calls.
-    8. **Facebook import job** — admin-only REST endpoints and UI button trigger a
-       long-lived Selenium job that reuses one browser session, verifies Facebook
-       login state before each run, and re-authenticates when necessary. The worker
-       submits discovered candidates as stored article proposals instead of creating
-       Articles directly.
+    8. **Facebook import job** — Spring Batch runs a single Selenium tasklet, either
+       from ADMIN REST/UI triggers or the worker schedule (`run now`, then every
+       configured interval). The worker reuses one browser session, emits a login
+       required event when manual Facebook 2FA is needed, and submits discovered
+       candidates as stored article proposals instead of creating Articles directly.
     9. **Article proposal inbox** — ACTIVE logged-in users review Facebook import
        proposals at `/article-proposals`, correct language, and accept/reject.
     10. **Machine-to-machine writes** — the Facebook importer submits proposals and
@@ -152,7 +152,7 @@ tags:
   - name: Authentication
     description: UI authentication and session endpoints
   - name: Facebook Import
-    description: Admin-triggered Facebook post import job endpoints
+    description: Manual Facebook post import job endpoints; scheduled worker launches use the same Batch job internally
 
 paths:
 
@@ -376,12 +376,13 @@ paths:
         - googleOidc: []
       description: >
         Starts the Facebook import job if no other import is currently running.
-        The job reuses a long-lived Selenium browser session, opens the browser
-        on demand, and verifies Facebook login before scanning posts. Returns
-        202 Accepted when the job is launched. REST-triggered jobs are
-        non-interactive and accept all non-duplicate discovered candidates; the
-        Vaadin ADMIN UI start path adds a same-session candidate approval modal
-        before importing.
+        The request launches the same Spring Batch facebookImportJob used by the
+        worker scheduler. The job reuses a long-lived Selenium browser session,
+        opens the browser on demand, verifies Facebook login before scanning posts,
+        and emits a login-required event if manual/two-factor login is needed.
+        Returns 202 Accepted when the job is accepted. Discovery is non-blocking
+        and submits non-duplicate candidates to the article proposal inbox; no
+        same-session approval modal is shown.
       responses:
         '202':
           description: Facebook import job accepted for execution

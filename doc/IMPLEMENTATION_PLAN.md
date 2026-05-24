@@ -274,13 +274,21 @@ Phases 4 and 5 are independent and can be developed in parallel.
 ## Phase 19 — Facebook import job orchestration (NEW)
 
 58. **`FacebookProfileArticleImporter` service** — own a long-lived Selenium WebDriver,
-    start imports on demand, reuse the browser between runs, verify Facebook login before
-    each scan, and keep at most one active import thread at a time. The worker discovers
-    marked posts, guesses language, skips URLs that already exist as Articles or Proposals,
-    and submits proposal batches to the target server instead of creating Articles directly.
+    run synchronously inside a Spring Batch tasklet, reuse the browser between runs, verify
+    Facebook login before each scan, and keep at most one active import at a time per worker.
+    The worker generates the import run ID before login, waits for manual/two-factor login
+    when Facebook logs out, discovers marked posts, guesses language, skips URLs that already
+    exist as Articles or Proposals, and submits proposal batches to the target server instead
+    of creating Articles directly.
+58a. **Spring Batch scheduled worker** — add Flyway-managed Spring Batch 6 JDBC metadata
+    (`V19__spring_batch_metadata.sql`), define `facebookImportJob` as a one-step tasklet job,
+    disable automatic Batch startup/schema initialization, and launch the job immediately on
+    worker startup then at `APP_FACEBOOK_IMPORT_SCHEDULE_INTERVAL` when scheduling is enabled. Use Spring Batch
+    metadata plus an in-process guard for v1 single-worker exclusivity.
 59. **`FacebookImportController`** — expose admin-only `POST /api/admin/facebook-import/run`
-    and `POST /api/admin/facebook-import/terminate` endpoints for manual or cron-triggered
-    job control; return `202` on accepted start/terminate and `409` for busy/not-running.
+    and `POST /api/admin/facebook-import/terminate` endpoints for manual job control; return
+    `202` on accepted start/terminate and `409` for busy/not-running. Manual and scheduled
+    triggers both launch the same Spring Batch job asynchronously.
 60. **`ArticleListView` admin action** — add an admin-only "Import Facebook Posts" button
     next to "Add Article" that calls the import trigger endpoint/service from the UI.
 60a. **Facebook proposal inbox** — add `facebook_import_run` and
@@ -294,6 +302,9 @@ Phases 4 and 5 are independent and can be developed in parallel.
     failures mark the proposal `FAILED` for retry.
 61. **Lifecycle cleanup** — remove startup auto-run and stop closing the Selenium browser
     after every import; keep the window alive until application shutdown.
+61a. **Notification-ready events** — emit Spring application events for future delivery:
+    login required on the worker, proposal batch submitted on the server only when new
+    proposals are accepted, and import run completed when the server records completion.
 
 ---
 

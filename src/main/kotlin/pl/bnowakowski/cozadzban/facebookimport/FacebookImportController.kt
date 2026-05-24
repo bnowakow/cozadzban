@@ -11,18 +11,18 @@ import org.springframework.web.bind.annotation.RestController
 @RestController
 @RequestMapping("/api/admin/facebook-import")
 class FacebookImportController(
-    private val facebookProfileArticleImporter: FacebookProfileArticleImporter,
+    private val facebookImportJobService: FacebookImportJobService,
 ) {
 
     @PostMapping("/run")
     fun runImport(): ResponseEntity<Void> {
-        facebookProfileArticleImporter.startImport()
+        facebookImportJobService.startImport()
         return ResponseEntity.accepted().build()
     }
 
     @PostMapping("/terminate")
     fun terminateImport(): ResponseEntity<Void> {
-        facebookProfileArticleImporter.terminateImport()
+        facebookImportJobService.terminateImport()
         return ResponseEntity.accepted().build()
     }
 }

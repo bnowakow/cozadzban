@@ -15,12 +15,19 @@ Configure the worker with the matching key and proposal endpoints:
 
 ```bash
 APP_FACEBOOK_IMPORT_ENABLED=true
+APP_FACEBOOK_IMPORT_SCHEDULE_ENABLED=true
+APP_FACEBOOK_IMPORT_SCHEDULE_INTERVAL=8h
+APP_FACEBOOK_IMPORT_SCHEDULE_INITIAL_DELAY=0s
 APP_FACEBOOK_IMPORT_TARGET_API_BASE_URL=http://localhost:8080
 APP_FACEBOOK_IMPORT_TARGET_API_KEY=<shared-secret>
 APP_FACEBOOK_IMPORT_TARGET_PROPOSAL_PATH=/api/facebook-import/proposals
 APP_FACEBOOK_IMPORT_TARGET_PROPOSAL_EXISTS_PATH=/api/facebook-import/proposals/exists
 APP_FACEBOOK_IMPORT_TARGET_RUN_PATH=/api/facebook-import/runs
 ```
+
+The worker uses Spring Batch for import lifecycle/history. `spring.batch.job.enabled=false`
+must remain set so jobs only start through the worker scheduler or admin trigger, and
+`spring.batch.jdbc.initialize-schema=never` keeps Batch metadata DDL owned by Flyway.
 
 Log in through the Vaadin UI as an ACTIVE USER or ADMIN.
 
@@ -48,7 +55,23 @@ Log in through the Vaadin UI as an ACTIVE USER or ADMIN.
 
 ---
 
-## Step 3: Proposal grid
+## Step 3: Scheduled worker and Facebook login
+
+1. Start the worker with `APP_FACEBOOK_IMPORT_SCHEDULE_ENABLED=true` and
+   `APP_FACEBOOK_IMPORT_SCHEDULE_INITIAL_DELAY=0s`.
+2. Confirm the worker attempts a scheduled import after startup.
+3. If Facebook opens a login or two-factor screen, complete the manual login in the Selenium
+   browser before `APP_FACEBOOK_IMPORT_MANUAL_LOGIN_TIMEOUT`.
+4. Confirm logs contain a login-required event/message and the run continues after login.
+5. Temporarily reduce `APP_FACEBOOK_IMPORT_SCHEDULE_INTERVAL` in a local test environment and
+   confirm a new tick is skipped while a previous import is still active.
+
+**Expected:** scheduled imports use the same non-blocking proposal flow, login-required runs wait
+for manual authorization, and only one import runs at a time on the worker.
+
+---
+
+## Step 4: Proposal grid
 
 1. Confirm the grid is sorted by **Submitted** descending.
 2. Confirm the default status filter shows only pending proposals.
@@ -59,7 +82,7 @@ Log in through the Vaadin UI as an ACTIVE USER or ADMIN.
 
 ---
 
-## Step 4: Language correction and accept
+## Step 5: Language correction and accept
 
 1. Open a pending proposal with **Review** or row double-click.
 2. Correct the language field if needed.
@@ -70,7 +93,7 @@ import bot user, and the proposal becomes `accepted`.
 
 ---
 
-## Step 5: Reject and failed retry
+## Step 6: Reject and failed retry
 
 1. Reject a pending proposal.
 2. Confirm it disappears from the default pending filter and appears under **Rejected**.
@@ -82,7 +105,7 @@ import bot user, and the proposal becomes `accepted`.
 
 ---
 
-## Step 6: Duplicate prevention
+## Step 7: Duplicate prevention
 
 1. Submit a proposal for a URL that already exists in `article`.
 2. Submit the same proposal URL twice with different Facebook post URLs.

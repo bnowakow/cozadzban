@@ -4,6 +4,7 @@
 package pl.bnowakowski.cozadzban.facebookimport
 
 import org.slf4j.LoggerFactory
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.bnowakowski.cozadzban.article.ArticleInput
@@ -22,6 +23,7 @@ class FacebookArticleProposalService(
     private val articleService: ArticleService,
     private val appUserRepository: AppUserRepository,
     private val machineProperties: MachineToMachineProperties,
+    private val eventPublisher: ApplicationEventPublisher? = null,
 ) {
     @Transactional(readOnly = true)
     fun existsByArticleUrl(rawUrl: String): Boolean {
@@ -82,6 +84,18 @@ class FacebookArticleProposalService(
             logsCompressed = GzipTextCodec.compress(request.logs),
         )
 
+        if (submitted > 0) {
+            eventPublisher?.publishEvent(
+                FacebookProposalBatchSubmittedEvent(
+                    importRunId = request.importRunId,
+                    passIndex = request.passIndex,
+                    passCount = request.passCount,
+                    submitted = submitted,
+                    skippedExisting = skippedExisting,
+                ),
+            )
+        }
+
         return FacebookProposalBatchResponse(
             importRunId = request.importRunId,
             submitted = submitted,
@@ -99,6 +113,16 @@ class FacebookArticleProposalService(
             skippedExistingCount = request.skippedExistingCount,
             failedCount = request.failedCount,
             logsCompressed = GzipTextCodec.compress(request.logs),
+        )
+        eventPublisher?.publishEvent(
+            FacebookImportRunCompletedEvent(
+                importRunId = importRunId,
+                status = request.status,
+                discoveredCount = request.discoveredCount,
+                submittedCount = request.submittedCount,
+                skippedExistingCount = request.skippedExistingCount,
+                failedCount = request.failedCount,
+            ),
         )
     }
 

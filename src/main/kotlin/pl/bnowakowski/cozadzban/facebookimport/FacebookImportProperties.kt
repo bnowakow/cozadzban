@@ -32,7 +32,14 @@ data class FacebookImportProperties(
     val targetApiConnectTimeout: Duration = Duration.ofSeconds(3),
     val targetApiReadTimeout: Duration = Duration.ofMinutes(5),
     val rejectionArtifactDir: String = "logs/facebook-import-rejections",
+    val schedule: Schedule = Schedule(),
 ) {
+    data class Schedule(
+        val enabled: Boolean = false,
+        val interval: Duration = Duration.ofHours(8),
+        val initialDelay: Duration = Duration.ZERO,
+    )
+
     enum class Browser {
         FIREFOX,
         CHROME,

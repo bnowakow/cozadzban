@@ -46,7 +46,7 @@ import pl.bnowakowski.cozadzban.facebookimport.FacebookCandidateApproval
 import pl.bnowakowski.cozadzban.facebookimport.FacebookCandidateApprovalDecision
 import pl.bnowakowski.cozadzban.facebookimport.FacebookCandidateApprovalHandler
 import pl.bnowakowski.cozadzban.enrichment.LanguageFlagCache
-import pl.bnowakowski.cozadzban.facebookimport.FacebookProfileArticleImporter
+import pl.bnowakowski.cozadzban.facebookimport.FacebookImportJobService
 import pl.bnowakowski.cozadzban.security.AllowlistAuthorizationManager
 import pl.bnowakowski.cozadzban.user.AppUser
 import pl.bnowakowski.cozadzban.user.AppUserRepository
@@ -70,7 +70,7 @@ class ArticleListView(
     private val articleRepository: ArticleRepository,
     private val articleContentRepository: ArticleContentRepository,
     private val articleService: ArticleService,
-    private val facebookProfileArticleImporter: FacebookProfileArticleImporter,
+    private val facebookImportJobService: FacebookImportJobService,
     private val appUserRepository: AppUserRepository,
     private val buildProperties: AppBuildProperties,
     private val languageFlagCache: LanguageFlagCache,
@@ -272,7 +272,7 @@ class ArticleListView(
                     ButtonVariant.LUMO_ERROR,
                     ButtonVariant.LUMO_ICON,
                 )
-                val facebookImportUnavailableReason = facebookProfileArticleImporter.facebookImportUnavailableReason()
+                val facebookImportUnavailableReason = facebookImportJobService.facebookImportUnavailableReason()
                 if (facebookImportUnavailableReason == null) {
                     importFacebookButton.element.setAttribute("title", "Import Facebook Posts")
                     importFacebookButton.addClickListener {
@@ -888,7 +888,7 @@ class ArticleListView(
 
     private fun triggerFacebookImport() {
         try {
-            facebookProfileArticleImporter.startImport()
+            facebookImportJobService.startImport()
             showSuccess("Facebook import started")
         } catch (ex: Exception) {
             showError(ex.message ?: "Failed to start Facebook import")
@@ -897,7 +897,7 @@ class ArticleListView(
 
     private fun triggerFacebookImportTermination() {
         try {
-            facebookProfileArticleImporter.terminateImport()
+            facebookImportJobService.terminateImport()
             showSuccess("Facebook import stop requested")
         } catch (ex: Exception) {
             showError(ex.message ?: "Failed to stop Facebook import")
@@ -905,7 +905,7 @@ class ArticleListView(
     }
 
     private fun updateStopFacebookImportButton(button: Button) {
-        val running = facebookProfileArticleImporter.isImportRunning()
+        val running = facebookImportJobService.isImportRunning()
         if (running) {
             button.isEnabled = true
             button.element.setAttribute("title", "Stop Facebook import")

@@ -18,6 +18,7 @@ import org.openqa.selenium.firefox.FirefoxDriver
 import org.openqa.selenium.firefox.FirefoxOptions
 import org.openqa.selenium.firefox.FirefoxProfile
 import org.slf4j.LoggerFactory
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Component
 import pl.bnowakowski.cozadzban.article.ArticleInput
 import pl.bnowakowski.cozadzban.article.ArticleResponse
@@ -51,6 +52,7 @@ class FacebookProfileArticleImporter(
     private val appUserRepository: AppUserRepository,
     private val articleService: ArticleService,
     private val proposalClient: FacebookImportProposalClient? = null,
+    private val eventPublisher: ApplicationEventPublisher? = null,
 ) {
 
     private val logger = LoggerFactory.getLogger(javaClass)
@@ -72,9 +74,10 @@ class FacebookProfileArticleImporter(
                 throw FacebookImportAlreadyRunningException()
             }
 
+            val importRunId = newImportRunId()
             val importThread = Thread {
                 try {
-                    runImport()
+                    runImport(importRunId, FacebookImportTrigger.MANUAL)
                 } catch (ex: InterruptedException) {
                     Thread.currentThread().interrupt()
                     logger.info("Facebook import was interrupted")
@@ -125,12 +128,70 @@ class FacebookProfileArticleImporter(
             activeImportThread?.isAlive == true
         }
 
-    private fun runImport() {
-        val driver = ensureDriver()
-        prepareProfileAndLogin(driver)
-        sleep(properties.waitAfterPageOpen)
-        val facebookImportId = facebookImportId()
+    fun newImportRunId(generatedAt: Instant = Instant.now()): String =
+        facebookImportId(generatedAt)
+
+    fun runImport(importRunId: String, trigger: FacebookImportTrigger = FacebookImportTrigger.MANUAL) {
+        facebookImportUnavailableReason()?.let { throw IllegalArgumentException(it) }
+        val currentThread = Thread.currentThread()
+        synchronized(stateLock) {
+            val activeThread = activeImportThread
+            if (activeThread?.isAlive == true && activeThread !== currentThread) {
+                throw FacebookImportAlreadyRunningException()
+            }
+            activeImportThread = currentThread
+        }
+
         val summary = ProposalImportSummary()
+        var completionStatus = FacebookImportRunStatus.FINISHED
+        var completionLogs = ""
+        try {
+            runImportInternal(importRunId, trigger, summary)
+            if (summary.failed > 0) {
+                completionStatus = FacebookImportRunStatus.FAILED
+            }
+            completionLogs =
+                "Facebook import finished: ${summary.discovered} discovered, ${summary.submitted} submitted, " +
+                    "${summary.skippedExisting} skipped existing, ${summary.failed} failed."
+        } catch (ex: InterruptedException) {
+            Thread.currentThread().interrupt()
+            completionStatus = FacebookImportRunStatus.TERMINATED
+            completionLogs = "Facebook import was terminated."
+            logger.info("Facebook import {} was interrupted", importRunId)
+            throw ex
+        } catch (ex: NoSuchWindowException) {
+            discardDriver()
+            completionStatus = if (Thread.currentThread().isInterrupted) {
+                FacebookImportRunStatus.TERMINATED
+            } else {
+                FacebookImportRunStatus.FAILED
+            }
+            completionLogs = "Facebook import stopped because the browser window was closed: ${failureMessage(ex)}"
+            logger.warn("Facebook import {} stopped because the browser window was closed", importRunId, ex)
+            throw ex
+        } catch (ex: Exception) {
+            completionStatus = FacebookImportRunStatus.FAILED
+            completionLogs = "Facebook import failed: ${failureMessage(ex)}"
+            logger.warn("Facebook import {} failed", importRunId, ex)
+            throw ex
+        } finally {
+            completeRunSafely(importRunId, completionStatus, summary, completionLogs)
+            synchronized(stateLock) {
+                if (activeImportThread === currentThread) {
+                    activeImportThread = null
+                }
+            }
+        }
+    }
+
+    private fun runImportInternal(
+        facebookImportId: String,
+        trigger: FacebookImportTrigger,
+        summary: ProposalImportSummary,
+    ) {
+        val driver = ensureDriver()
+        prepareProfileAndLogin(driver, facebookImportId, trigger)
+        sleep(properties.waitAfterPageOpen)
         val passCount = (1 until properties.scrolls step 2).count()
         logger.info(
             "Facebook import {} starting {} discovery passes with up to {} configured scrolls",
@@ -256,17 +317,6 @@ class FacebookProfileArticleImporter(
                 summary.failed,
             )
         }
-        proposalClient?.completeRun(
-            facebookImportId,
-            FacebookImportRunCompletionRequest(
-                status = if (summary.failed > 0) FacebookImportRunStatus.FAILED else FacebookImportRunStatus.FINISHED,
-                discoveredCount = summary.discovered,
-                submittedCount = summary.submitted,
-                skippedExistingCount = summary.skippedExisting,
-                failedCount = summary.failed,
-                logs = "Facebook import finished: ${summary.discovered} discovered, ${summary.submitted} submitted, ${summary.skippedExisting} skipped existing, ${summary.failed} failed.",
-            ),
-        )
         logger.info(
             "Facebook import finished: {} discovered, {} submitted, {} skipped existing, {} failed",
             summary.discovered,
@@ -275,6 +325,38 @@ class FacebookProfileArticleImporter(
             summary.failed,
         )
     }
+
+    private fun completeRunSafely(
+        importRunId: String,
+        status: FacebookImportRunStatus,
+        summary: ProposalImportSummary,
+        logs: String,
+    ) {
+        try {
+            proposalClient?.completeRun(
+                importRunId,
+                FacebookImportRunCompletionRequest(
+                    status = status,
+                    discoveredCount = summary.discovered,
+                    submittedCount = summary.submitted,
+                    skippedExistingCount = summary.skippedExisting,
+                    failedCount = summary.failed,
+                    logs = logs,
+                ),
+            )
+        } catch (ex: Exception) {
+            logger.warn(
+                "Facebook import {} could not record terminal status {}; reason={}",
+                importRunId,
+                status,
+                failureMessage(ex),
+                ex,
+            )
+        }
+    }
+
+    private fun failureMessage(ex: Throwable): String =
+        ex.message?.takeIf { it.isNotBlank() } ?: ex.javaClass.simpleName
 
     fun openDriver(): WebDriver {
         val driver = when (properties.browser) {
@@ -299,7 +381,11 @@ class FacebookProfileArticleImporter(
         return driver
     }
 
-    fun prepareProfileAndLogin(driver: WebDriver) {
+    fun prepareProfileAndLogin(
+        driver: WebDriver,
+        importRunId: String? = null,
+        trigger: FacebookImportTrigger = FacebookImportTrigger.MANUAL,
+    ) {
         driver.get(properties.profileUrl)
         sleep(properties.waitAfterPageOpen)
 
@@ -308,6 +394,21 @@ class FacebookProfileArticleImporter(
             return
         }
 
+        importRunId?.let {
+            eventPublisher?.publishEvent(
+                FacebookImportLoginRequiredEvent(
+                    importRunId = it,
+                    trigger = trigger,
+                    profileUrl = properties.profileUrl,
+                ),
+            )
+        }
+        logger.warn(
+            "LOGIN_REQUIRED Facebook login is required before import can continue; importRunId={}; trigger={}; manualLoginTimeout={}",
+            importRunId ?: "<unknown>",
+            trigger,
+            properties.manualLoginTimeout,
+        )
         login(driver)
         waitForLogin(driver)
         driver.get(properties.profileUrl)

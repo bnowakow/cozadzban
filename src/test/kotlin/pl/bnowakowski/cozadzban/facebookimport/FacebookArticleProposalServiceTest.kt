@@ -14,6 +14,7 @@ import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
+import org.springframework.context.ApplicationEventPublisher
 import pl.bnowakowski.cozadzban.article.Article
 import pl.bnowakowski.cozadzban.article.ArticleInput
 import pl.bnowakowski.cozadzban.article.ArticleService
@@ -28,7 +29,9 @@ class FacebookArticleProposalServiceTest {
     private val runRepository: FacebookImportRunRepository = mock()
     private val articleService: ArticleService = mock()
     private val appUserRepository: AppUserRepository = mock()
-    private val service = FacebookArticleProposalService(
+    private val service = proposalService()
+
+    private fun proposalService(eventPublisher: ApplicationEventPublisher? = null) = FacebookArticleProposalService(
         proposalRepository,
         runRepository,
         articleService,
@@ -38,6 +41,7 @@ class FacebookArticleProposalServiceTest {
             apiKey = "machine-key",
             principalEmail = "facebook-import-bot@cozadzban.pl",
         ),
+        eventPublisher,
     )
 
     @Test
@@ -113,6 +117,97 @@ class FacebookArticleProposalServiceTest {
         val logs = GzipTextCodec.decompress(logsCaptor.firstValue)
         assertTrue(logs.contains("old logs"))
         assertTrue(logs.contains("new logs"))
+    }
+
+    @Test
+    fun `submit batch publishes event when new proposals are accepted`() {
+        val publisher: ApplicationEventPublisher = mock()
+        val eventingService = proposalService(publisher)
+        whenever(articleService.existsByUrl("https://example.com/new-story")).thenReturn(false)
+        whenever(proposalRepository.findByCanonicalArticleUrl("https://example.com/new-story")).thenReturn(null)
+        whenever(proposalRepository.insert(any(), any(), any(), any(), any(), any(), any())).thenReturn(
+            proposal(status = null, logsCompressed = GzipTextCodec.compress("candidate logs")),
+        )
+
+        eventingService.submitBatch(
+            FacebookProposalBatchRequest(
+                importRunId = "run-event",
+                passIndex = 2,
+                passCount = 3,
+                proposals = listOf(
+                    FacebookProposalSubmission(
+                        candidateId = "candidate-event",
+                        articleUrl = "https://example.com/new-story",
+                        facebookPostUrl = "https://www.facebook.com/source/posts/event",
+                        language = "pl",
+                        logs = "candidate logs",
+                    ),
+                ),
+            ),
+        )
+
+        val eventCaptor = argumentCaptor<Any>()
+        verify(publisher).publishEvent(eventCaptor.capture())
+        val event = eventCaptor.firstValue as FacebookProposalBatchSubmittedEvent
+        assertEquals("run-event", event.importRunId)
+        assertEquals(2, event.passIndex)
+        assertEquals(3, event.passCount)
+        assertEquals(1, event.submitted)
+        assertEquals(0, event.skippedExisting)
+    }
+
+    @Test
+    fun `submit batch does not publish proposal event when all proposals are skipped`() {
+        val publisher: ApplicationEventPublisher = mock()
+        val eventingService = proposalService(publisher)
+        whenever(articleService.existsByUrl("https://example.com/existing")).thenReturn(true)
+
+        eventingService.submitBatch(
+            FacebookProposalBatchRequest(
+                importRunId = "run-skip",
+                passIndex = 1,
+                passCount = 1,
+                proposals = listOf(
+                    FacebookProposalSubmission(
+                        candidateId = "candidate-skip",
+                        articleUrl = "https://example.com/existing",
+                        facebookPostUrl = "https://www.facebook.com/source/posts/skip",
+                        language = "pl",
+                        logs = "candidate logs",
+                    ),
+                ),
+            ),
+        )
+
+        verify(publisher, never()).publishEvent(any<Any>())
+    }
+
+    @Test
+    fun `completeRun publishes run completed event`() {
+        val publisher: ApplicationEventPublisher = mock()
+        val eventingService = proposalService(publisher)
+
+        eventingService.completeRun(
+            "run-complete",
+            FacebookImportRunCompletionRequest(
+                status = FacebookImportRunStatus.TERMINATED,
+                discoveredCount = 7,
+                submittedCount = 3,
+                skippedExistingCount = 2,
+                failedCount = 1,
+                logs = "terminated by admin",
+            ),
+        )
+
+        val eventCaptor = argumentCaptor<Any>()
+        verify(publisher).publishEvent(eventCaptor.capture())
+        val event = eventCaptor.firstValue as FacebookImportRunCompletedEvent
+        assertEquals("run-complete", event.importRunId)
+        assertEquals(FacebookImportRunStatus.TERMINATED, event.status)
+        assertEquals(7, event.discoveredCount)
+        assertEquals(3, event.submittedCount)
+        assertEquals(2, event.skippedExistingCount)
+        assertEquals(1, event.failedCount)
     }
 
     @Test

@@ -17,7 +17,8 @@ Project documentation, specs, and developer aids.
 - **PHASE_\*\_MANUAL_TESTING.md** — manual test guides for specific phases:
   [11](PHASE_11_MANUAL_TESTING.md), [13](PHASE_13_MANUAL_TESTING.md),
   [16](PHASE_16_MANUAL_TESTING.md), [17](PHASE_17_MANUAL_TESTING.md),
-  [24](PHASE_24_MANUAL_TESTING.md).
+  [24](PHASE_24_MANUAL_TESTING.md). Phase 24 covers the Facebook proposal inbox and
+  scheduled Spring Batch import worker.
 
 ## Developer aids
 

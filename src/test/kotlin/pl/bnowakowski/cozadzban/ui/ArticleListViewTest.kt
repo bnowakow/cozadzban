@@ -35,7 +35,7 @@ import pl.bnowakowski.cozadzban.article.ArticleService
 import pl.bnowakowski.cozadzban.enrichment.LanguageFlagCache
 import pl.bnowakowski.cozadzban.facebookimport.FacebookCandidateApproval
 import pl.bnowakowski.cozadzban.facebookimport.FacebookCandidateApprovalDecision
-import pl.bnowakowski.cozadzban.facebookimport.FacebookProfileArticleImporter
+import pl.bnowakowski.cozadzban.facebookimport.FacebookImportJobService
 import pl.bnowakowski.cozadzban.user.AppUser
 import pl.bnowakowski.cozadzban.user.AppUserRepository
 import pl.bnowakowski.cozadzban.user.AppUserStatus
@@ -49,7 +49,7 @@ class ArticleListViewTest {
     private val articleRepository: ArticleRepository = mock()
     private val articleContentRepository: ArticleContentRepository = mock()
     private val articleService: ArticleService = mock()
-    private val facebookProfileArticleImporter: FacebookProfileArticleImporter = mock()
+    private val facebookImportJobService: FacebookImportJobService = mock()
     private val appUserRepository: AppUserRepository = mock()
     private val buildProperties = AppBuildProperties(
         version = "0.8.0",
@@ -72,13 +72,14 @@ class ArticleListViewTest {
         whenever(appUserRepository.findByEmail(adminEmail)).thenReturn(
             AppUser(1L, adminEmail, Role.ADMIN, AppUserStatus.ACTIVE),
         )
-        whenever(facebookProfileArticleImporter.facebookImportUnavailableReason()).thenReturn(null)
+        whenever(facebookImportJobService.facebookImportUnavailableReason()).thenReturn(null)
+        whenever(facebookImportJobService.startImport()).thenReturn("run-1")
 
         val view = ArticleListView(
             articleRepository,
             articleContentRepository,
             articleService,
-            facebookProfileArticleImporter,
+            facebookImportJobService,
             appUserRepository,
             buildProperties,
             languageFlagCache,
@@ -97,7 +98,7 @@ class ArticleListViewTest {
         UI.setCurrent(UI())
         importButton.click()
 
-        verify(facebookProfileArticleImporter).startImport()
+        verify(facebookImportJobService).startImport()
     }
 
     @Test
@@ -109,14 +110,14 @@ class ArticleListViewTest {
         whenever(appUserRepository.findByEmail(adminEmail)).thenReturn(
             AppUser(1L, adminEmail, Role.ADMIN, AppUserStatus.ACTIVE),
         )
-        whenever(facebookProfileArticleImporter.facebookImportUnavailableReason()).thenReturn(null)
-        whenever(facebookProfileArticleImporter.isImportRunning()).thenReturn(true)
+        whenever(facebookImportJobService.facebookImportUnavailableReason()).thenReturn(null)
+        whenever(facebookImportJobService.isImportRunning()).thenReturn(true)
 
         val view = ArticleListView(
             articleRepository,
             articleContentRepository,
             articleService,
-            facebookProfileArticleImporter,
+            facebookImportJobService,
             appUserRepository,
             buildProperties,
             languageFlagCache,
@@ -129,7 +130,7 @@ class ArticleListViewTest {
         UI.setCurrent(UI())
         stopButton.click()
 
-        verify(facebookProfileArticleImporter).terminateImport()
+        verify(facebookImportJobService).terminateImport()
     }
 
     @Test
@@ -141,7 +142,7 @@ class ArticleListViewTest {
         whenever(appUserRepository.findByEmail(adminEmail)).thenReturn(
             AppUser(1L, adminEmail, Role.ADMIN, AppUserStatus.ACTIVE),
         )
-        whenever(facebookProfileArticleImporter.facebookImportUnavailableReason()).thenReturn(
+        whenever(facebookImportJobService.facebookImportUnavailableReason()).thenReturn(
             "app.facebook-import.username must point to an existing app user",
         )
 
@@ -149,7 +150,7 @@ class ArticleListViewTest {
             articleRepository,
             articleContentRepository,
             articleService,
-            facebookProfileArticleImporter,
+            facebookImportJobService,
             appUserRepository,
             buildProperties,
             languageFlagCache,
@@ -174,8 +175,8 @@ class ArticleListViewTest {
         importButton.click()
         stopButton.click()
 
-        verify(facebookProfileArticleImporter, never()).startImport()
-        verify(facebookProfileArticleImporter, never()).terminateImport()
+        verify(facebookImportJobService, never()).startImport()
+        verify(facebookImportJobService, never()).terminateImport()
     }
 
     @Test
@@ -191,7 +192,7 @@ class ArticleListViewTest {
             articleRepository,
             articleContentRepository,
             articleService,
-            facebookProfileArticleImporter,
+            facebookImportJobService,
             appUserRepository,
             buildProperties,
             languageFlagCache,
@@ -218,7 +219,7 @@ class ArticleListViewTest {
             articleRepository,
             articleContentRepository,
             articleService,
-            facebookProfileArticleImporter,
+            facebookImportJobService,
             appUserRepository,
             buildProperties,
             languageFlagCache,
@@ -277,7 +278,7 @@ class ArticleListViewTest {
             articleRepository,
             articleContentRepository,
             articleService,
-            facebookProfileArticleImporter,
+            facebookImportJobService,
             appUserRepository,
             buildProperties,
             languageFlagCache,
@@ -299,7 +300,7 @@ class ArticleListViewTest {
             articleRepository,
             articleContentRepository,
             articleService,
-            facebookProfileArticleImporter,
+            facebookImportJobService,
             appUserRepository,
             buildProperties,
             languageFlagCache,
@@ -332,7 +333,7 @@ class ArticleListViewTest {
             articleRepository,
             articleContentRepository,
             articleService,
-            facebookProfileArticleImporter,
+            facebookImportJobService,
             appUserRepository,
             buildProperties,
             languageFlagCache,
@@ -372,7 +373,7 @@ class ArticleListViewTest {
             articleRepository,
             articleContentRepository,
             articleService,
-            facebookProfileArticleImporter,
+            facebookImportJobService,
             appUserRepository,
             buildProperties,
             languageFlagCache,
@@ -412,7 +413,7 @@ class ArticleListViewTest {
             articleRepository,
             articleContentRepository,
             articleService,
-            facebookProfileArticleImporter,
+            facebookImportJobService,
             appUserRepository,
             buildProperties,
             languageFlagCache,
@@ -452,7 +453,7 @@ class ArticleListViewTest {
             articleRepository,
             articleContentRepository,
             articleService,
-            facebookProfileArticleImporter,
+            facebookImportJobService,
             appUserRepository,
             buildProperties,
             languageFlagCache,
@@ -485,7 +486,7 @@ class ArticleListViewTest {
             articleRepository,
             articleContentRepository,
             articleService,
-            facebookProfileArticleImporter,
+            facebookImportJobService,
             appUserRepository,
             buildProperties,
             languageFlagCache,

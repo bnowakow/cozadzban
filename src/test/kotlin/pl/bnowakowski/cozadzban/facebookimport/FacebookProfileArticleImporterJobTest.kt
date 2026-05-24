@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Assertions.assertDoesNotThrow
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -15,6 +16,7 @@ import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.doNothing
 import org.mockito.kotlin.doReturn
 import org.mockito.kotlin.doThrow
+import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
 import org.mockito.kotlin.spy
@@ -39,6 +41,7 @@ import org.openqa.selenium.Cookie
 import org.openqa.selenium.NoSuchWindowException
 import org.openqa.selenium.WebDriver
 import org.openqa.selenium.WebElement
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
 import org.springframework.web.client.HttpClientErrorException
@@ -62,6 +65,7 @@ class FacebookProfileArticleImporterJobTest {
                     password = "secret",
                     scrolls = 0,
                     waitAfterPageOpen = Duration.ZERO,
+                    waitAfterLogin = Duration.ZERO,
                     waitAfterScroll = Duration.ZERO,
                     manualLoginTimeout = Duration.ofSeconds(1),
                 ),
@@ -267,6 +271,106 @@ class FacebookProfileArticleImporterJobTest {
 
         importer.terminateImport()
         waitUntil("facebook import to stop") { !importer.isImportRunning() }
+    }
+
+    @Test
+    fun `login required event is emitted and manual login timeout records failed run`() {
+        val eventPublisher: ApplicationEventPublisher = mock()
+        val importer = spy(
+            FacebookProfileArticleImporter(
+                FacebookImportProperties(
+                    enabled = true,
+                    username = "",
+                    password = "",
+                    scrolls = 0,
+                    waitAfterPageOpen = Duration.ZERO,
+                    waitAfterScroll = Duration.ZERO,
+                    manualLoginTimeout = Duration.ZERO,
+                ),
+                appUserRepository,
+                articleService,
+                proposalClient,
+                eventPublisher,
+            ),
+        )
+        val driver = mock<WebDriver>()
+        val options = mock<WebDriver.Options>()
+
+        whenever(driver.manage()).thenReturn(options)
+        whenever(options.getCookieNamed("c_user")).thenReturn(null)
+        whenever(options.getCookieNamed("xs")).thenReturn(null)
+        whenever(driver.currentUrl).thenReturn("https://www.facebook.com/login")
+        whenever(driver.windowHandles).thenReturn(setOf("main"))
+        whenever(driver.windowHandle).thenReturn("main")
+        doNothing().whenever(driver).get(any())
+        doReturn(driver).whenever(importer).openDriver()
+
+        assertThrows(Exception::class.java) {
+            importer.runImport("run-login", FacebookImportTrigger.SCHEDULED)
+        }
+
+        val eventCaptor = argumentCaptor<Any>()
+        verify(eventPublisher).publishEvent(eventCaptor.capture())
+        val event = eventCaptor.firstValue as FacebookImportLoginRequiredEvent
+        assertEquals("run-login", event.importRunId)
+        assertEquals(FacebookImportTrigger.SCHEDULED, event.trigger)
+
+        val completionCaptor = argumentCaptor<FacebookImportRunCompletionRequest>()
+        verify(proposalClient).completeRun(eq("run-login"), completionCaptor.capture())
+        assertEquals(FacebookImportRunStatus.FAILED, completionCaptor.firstValue.status)
+        assertEquals(0, completionCaptor.firstValue.discoveredCount)
+        assertEquals(0, completionCaptor.firstValue.submittedCount)
+        assertEquals(0, completionCaptor.firstValue.skippedExistingCount)
+        assertEquals(0, completionCaptor.firstValue.failedCount)
+    }
+
+    @Test
+    fun `manual login completion lets the batch import continue`() {
+        val eventPublisher: ApplicationEventPublisher = mock()
+        val importer = spy(
+            FacebookProfileArticleImporter(
+                FacebookImportProperties(
+                    enabled = true,
+                    username = "",
+                    password = "",
+                    scrolls = 0,
+                    waitAfterPageOpen = Duration.ZERO,
+                    waitAfterScroll = Duration.ZERO,
+                    manualLoginTimeout = Duration.ofSeconds(1),
+                ),
+                appUserRepository,
+                articleService,
+                proposalClient,
+                eventPublisher,
+            ),
+        )
+        val driver = mock<WebDriver>()
+        val options = mock<WebDriver.Options>()
+        val emailField = mock<WebElement>()
+        val passwordField = mock<WebElement>()
+
+        whenever(driver.manage()).thenReturn(options)
+        whenever(options.getCookieNamed("c_user")).thenReturn(null, Cookie("c_user", "123"))
+        whenever(options.getCookieNamed("xs")).thenReturn(Cookie("xs", "abc"))
+        whenever(driver.currentUrl).thenReturn("https://www.facebook.com/home")
+        whenever(driver.pageSource).thenReturn("")
+        whenever(driver.windowHandles).thenReturn(setOf("main"))
+        whenever(driver.windowHandle).thenReturn("main")
+        doNothing().whenever(driver).get(any())
+        whenever(driver.findElement(any())).thenReturn(emailField, passwordField)
+        doReturn(driver).whenever(importer).openDriver()
+
+        importer.runImport("run-manual-login", FacebookImportTrigger.MANUAL)
+
+        val eventCaptor = argumentCaptor<Any>()
+        verify(eventPublisher).publishEvent(eventCaptor.capture())
+        val event = eventCaptor.firstValue as FacebookImportLoginRequiredEvent
+        assertEquals("run-manual-login", event.importRunId)
+        assertEquals(FacebookImportTrigger.MANUAL, event.trigger)
+
+        val completionCaptor = argumentCaptor<FacebookImportRunCompletionRequest>()
+        verify(proposalClient).completeRun(eq("run-manual-login"), completionCaptor.capture())
+        assertEquals(FacebookImportRunStatus.FINISHED, completionCaptor.firstValue.status)
     }
 
     @Test

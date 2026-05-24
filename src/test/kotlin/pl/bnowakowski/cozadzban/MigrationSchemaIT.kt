@@ -4,15 +4,23 @@
 package pl.bnowakowski.cozadzban
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.springframework.aop.support.AopUtils
+import org.springframework.batch.core.job.Job
+import org.springframework.batch.core.repository.JobRepository
+import org.springframework.batch.core.repository.support.ResourcelessJobRepository
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.annotation.Import
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.security.oauth2.jwt.JwtDecoder
 import org.springframework.test.context.TestPropertySource
 import org.springframework.test.context.bean.override.mockito.MockitoBean
+import pl.bnowakowski.cozadzban.facebookimport.FACEBOOK_IMPORT_JOB_NAME
 
 /**
  * Phase 21 / Item 64 — Migration tests.
@@ -22,6 +30,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean
  * - article.published_at is nullable (BR-41)
  * - article_content table exists (Phase 20)
  * - facebook_article_proposal and facebook_import_run tables exist (Phase 24 rewrite)
+ * - Spring Batch JDBC metadata tables/sequences exist (scheduled import worker)
  * - app_user.status column exists (BR-40)
  * - article_published_at_idx index exists (BR-41)
  * - created_by_user_id NOT NULL constraint is enforced at the DB level
@@ -37,6 +46,8 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean
 class MigrationSchemaIT {
 
     @Autowired private lateinit var jdbc: JdbcTemplate
+    @Autowired private lateinit var jobRepository: JobRepository
+    @Autowired @Qualifier(FACEBOOK_IMPORT_JOB_NAME) private lateinit var facebookImportJob: Job
 
     @MockitoBean private lateinit var jwtDecoder: JwtDecoder
 
@@ -145,6 +156,53 @@ class MigrationSchemaIT {
                 url,
             )
         }
+    }
+
+    @Test
+    fun `spring batch metadata tables and sequences exist after V19 migration`() {
+        val tableCount = jdbc.queryForObject(
+            """
+            SELECT COUNT(*) FROM information_schema.tables
+             WHERE lower(table_name) IN (
+               'batch_job_instance',
+               'batch_job_execution',
+               'batch_job_execution_params',
+               'batch_step_execution',
+               'batch_step_execution_context',
+               'batch_job_execution_context'
+             )
+            """,
+            Int::class.java,
+        )
+        val sequenceCount = jdbc.queryForObject(
+            """
+            SELECT COUNT(*) FROM pg_class
+             WHERE relkind = 'S'
+               AND lower(relname) IN (
+                 'batch_step_execution_seq',
+                 'batch_job_execution_seq',
+                 'batch_job_instance_seq'
+               )
+            """,
+            Int::class.java,
+        )
+
+        assertEquals(6, tableCount, "Spring Batch metadata tables should exist after V19 migration")
+        assertEquals(3, sequenceCount, "Spring Batch metadata sequences should exist after V19 migration")
+    }
+
+    @Test
+    fun `spring batch jdbc repository starts with facebook import job`() {
+        assertEquals(FACEBOOK_IMPORT_JOB_NAME, facebookImportJob.name)
+        val repositoryClass = AopUtils.getTargetClass(jobRepository)
+        assertTrue(
+            repositoryClass.name.contains("SimpleJobRepository"),
+            "Spring Batch should use the JDBC-backed SimpleJobRepository; actual=${repositoryClass.name}",
+        )
+        assertFalse(
+            ResourcelessJobRepository::class.java.isAssignableFrom(repositoryClass),
+            "Spring Batch should not use the resourceless JobRepository",
+        )
     }
 
     @Test
