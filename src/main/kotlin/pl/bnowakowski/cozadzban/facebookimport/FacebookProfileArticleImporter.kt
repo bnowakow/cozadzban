@@ -925,18 +925,22 @@ class FacebookProfileArticleImporter(
             val preferredExternalArticleUrl = preferredExternalArticleUrlForFacebookPost(
                 postUrl,
                 linkArticleUrls + listOfNotNull(pageTextArticleUrl) + pageHrefArticleUrls,
-            )
+            )?.takeIf { !isFacebookPhotoUrl(postUrl) || hasOpenedPhotoPostTextForExternalUrl(bodyText, it) }
             val weakExternalArticleUrl = if (!allowWeakExternalArticleUrls) {
                 null
             } else if (isFacebookPhotoUrl(postUrl)) {
-                linkArticleUrls.bestSpecificExternalArticleUrl()
+                linkArticleUrls
+                    .filter { hasOpenedPhotoPostTextForExternalUrl(bodyText, it) }
+                    .bestSpecificExternalArticleUrl()
             } else {
                 linkArticleUrls.bestExternalArticleUrl()
                     ?: pageTextArticleUrl
                     ?: pageHrefArticleUrls.bestExternalArticleUrl()
             }
             val visibleBodyTextArticleUrl = if (isFacebookPhotoUrl(postUrl)) {
-                bodyTextArticleUrl?.takeIf { isSpecificExternalArticleUrl(it) }
+                bodyTextArticleUrl
+                    ?.takeIf { isSpecificExternalArticleUrl(it) }
+                    ?.takeIf { hasOpenedPhotoPostTextForExternalUrl(bodyText, it) }
             } else {
                 bodyTextArticleUrl
             }
@@ -1219,6 +1223,21 @@ class FacebookProfileArticleImporter(
             ?.filter { it.isNotBlank() }
             ?: emptyList()
         return pathSegments.size >= 2
+    }
+
+    private fun hasOpenedPhotoPostTextForExternalUrl(text: String, url: String): Boolean {
+        val textWithoutUrls = TEXT_URL_REGEX.replace(text, " ").cleanText()
+        val normalizedText = textWithoutUrls.filter(Char::isLetterOrDigit).lowercase()
+        if (normalizedText.isBlank()) return false
+
+        val hostToken = runCatching { URI(url).host?.lowercase()?.removePrefix("www.")?.urlOwnerToken() }
+            .getOrNull()
+            .orEmpty()
+            .filter(Char::isLetterOrDigit)
+        val isOnlyLinkOwnerLabel = hostToken.isNotBlank() &&
+            normalizedText.length <= hostToken.length + 4 &&
+            (normalizedText.contains(hostToken) || hostToken.contains(normalizedText))
+        return !isOnlyLinkOwnerLabel
     }
 
     private fun isGenericFacebookFeedPage(text: String): Boolean {
