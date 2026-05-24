@@ -12,6 +12,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
+ui_fallback_explained=0
+
 codex_command=()
 resolve_codex_command() {
 	if command -v codex >/dev/null 2>&1; then
@@ -32,16 +34,95 @@ resolve_codex_command() {
 	return 1
 }
 
+terminal_ui_unavailable_reason() {
+	if [ ! -e /dev/tty ]; then
+		printf 'no controlling terminal is available'
+		return 0
+	fi
+
+	if [ ! -r /dev/tty ] || [ ! -w /dev/tty ]; then
+		printf '/dev/tty is not readable and writable'
+		return 0
+	fi
+
+	if [ -z "${TERM:-}" ]; then
+		printf 'TERM is not set'
+		return 0
+	fi
+
+	if [ "${TERM:-}" = "dumb" ]; then
+		printf 'TERM=dumb'
+		return 0
+	fi
+
+	if ! infocmp "$TERM" >/dev/null 2>&1; then
+		printf 'no terminfo entry exists for TERM=%s' "$TERM"
+		return 0
+	fi
+
+	return 1
+}
+
+can_use_terminal_ui() {
+	! terminal_ui_unavailable_reason >/dev/null
+}
+
+can_use_dialog() {
+	command -v dialog >/dev/null 2>&1 && can_use_terminal_ui
+}
+
+can_use_whiptail() {
+	command -v whiptail >/dev/null 2>&1 && can_use_terminal_ui
+}
+
+explain_plain_prompt_fallback() {
+	local reason
+
+	if [ "$ui_fallback_explained" -eq 1 ]; then
+		return
+	fi
+
+	ui_fallback_explained=1
+
+	if reason=$(terminal_ui_unavailable_reason); then
+		printf 'Using plain terminal prompts because the dialog UI is unavailable: %s.\n' "$reason" >&2
+		return
+	fi
+
+	if ! command -v dialog >/dev/null 2>&1 && ! command -v whiptail >/dev/null 2>&1; then
+		printf 'Using plain terminal prompts because neither dialog nor whiptail is on PATH.\n' >&2
+	fi
+}
+
+read_prompt_answer() {
+	local variable_name=$1
+
+	if [ -r /dev/tty ] && [ -w /dev/tty ]; then
+		IFS= read -r "$variable_name" </dev/tty
+		return
+	fi
+
+	IFS= read -r "$variable_name"
+}
+
 prompt_menu() {
 	local title=$1
 	local text=$2
 	shift 2
 
-	if command -v whiptail >/dev/null 2>&1 && [ -r /dev/tty ] && [ -w /dev/tty ]; then
+	if can_use_dialog; then
+		dialog --stdout --title "$title" --menu "$text" 15 76 5 "$@" \
+			2>/dev/tty </dev/tty
+		return
+	fi
+
+	if can_use_whiptail; then
 		whiptail --title "$title" --menu "$text" 15 76 5 "$@" \
 			3>&1 1>/dev/tty 2>&3 </dev/tty
 		return
 	fi
+
+	explain_plain_prompt_fallback
 
 	local choices=("$@")
 	local index=1
@@ -52,7 +133,10 @@ prompt_menu() {
 		index=$((index + 1))
 	done
 	printf 'Choose [1-%d]: ' "$((index - 1))" >&2
-	read -r answer
+	if ! read_prompt_answer answer; then
+		printf '\nNo interactive input was available.\n' >&2
+		return 1
+	fi
 	if ! [[ "$answer" =~ ^[0-9]+$ ]] || [ "$answer" -lt 1 ] || [ "$answer" -ge "$index" ]; then
 		return 1
 	fi
@@ -63,14 +147,24 @@ confirm() {
 	local title=$1
 	local text=$2
 
-	if command -v whiptail >/dev/null 2>&1 && [ -r /dev/tty ] && [ -w /dev/tty ]; then
+	if can_use_dialog; then
+		dialog --title "$title" --yesno "$text" 20 90 >/dev/tty 2>&1 </dev/tty
+		return
+	fi
+
+	if can_use_whiptail; then
 		whiptail --title "$title" --yesno "$text" 20 90 >/dev/tty 2>&1 </dev/tty
 		return
 	fi
 
+	explain_plain_prompt_fallback
+
 	local answer
 	printf '%s\n%s [y/N]: ' "$title" "$text" >&2
-	read -r answer
+	if ! read_prompt_answer answer; then
+		printf '\nNo interactive input was available.\n' >&2
+		return 1
+	fi
 	[[ "$answer" =~ ^[Yy]$|^[Yy][Ee][Ss]$ ]]
 }
 
@@ -82,7 +176,7 @@ prompt_push_action() {
 	local text=$1
 	local status
 
-	if command -v dialog >/dev/null 2>&1 && [ -r /dev/tty ] && [ -w /dev/tty ]; then
+	if can_use_dialog; then
 		dialog \
 			--title "Push" \
 			--yes-button "Push" \
@@ -101,7 +195,7 @@ prompt_push_action() {
 		return
 	fi
 
-	if command -v whiptail >/dev/null 2>&1 && [ -r /dev/tty ] && [ -w /dev/tty ]; then
+	if can_use_whiptail; then
 		if whiptail_supports_extra_button; then
 			whiptail \
 				--title "Push" \
