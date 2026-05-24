@@ -158,8 +158,8 @@ class FacebookArticleProposalView(
                 gridCell(proposal.effectiveLanguage),
                 gridCell(externalLink(proposal.articleUrl)),
                 gridCell(proposal.facebookPostUrl?.let(::externalLink) ?: Span("-")),
-                gridCell(proposal.candidateId),
-                gridCell(proposal.importRunId),
+                gridCell(copyablePrefixedId(proposal.candidateId, "facebook-import-candidate-")),
+                gridCell(copyablePrefixedId(proposal.importRunId, "facebook-import-")),
                 gridCell(
                     Button("Review") { openReviewDialog(proposal.id) }
                         .apply { addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY) },
@@ -172,9 +172,9 @@ class FacebookArticleProposalView(
             element.style.set("display", "grid")
             element.style.set(
                 "grid-template-columns",
-                "minmax(11rem, 13rem) minmax(5rem, 7rem) minmax(4rem, 5rem) minmax(18rem, 1.4fr) minmax(14rem, 1fr) minmax(13rem, 14rem) minmax(16rem, 17rem) minmax(6rem, 7rem)",
+                "minmax(11rem, 13rem) minmax(5rem, 7rem) minmax(4rem, 5rem) minmax(18rem, 1.4fr) minmax(14rem, 1fr) minmax(7rem, 8rem) minmax(7rem, 8rem) minmax(6rem, 7rem)",
             )
-            element.style.set("min-width", "96rem")
+            element.style.set("min-width", "76rem")
             element.style.set("width", "100%")
         }
 
@@ -189,6 +189,29 @@ class FacebookArticleProposalView(
             element.style.set("padding", "0.6rem 0.75rem")
             element.style.set("text-overflow", "ellipsis")
         }
+
+    private fun copyablePrefixedId(value: String, prefix: String): Component {
+        val displayedValue = Span(value.removePrefix(prefix)).apply {
+            element.style.set("overflow", "hidden")
+            element.style.set("text-overflow", "ellipsis")
+            element.style.set("white-space", "nowrap")
+        }
+        val copyButton = Button(VaadinIcon.COPY.create()).apply {
+            addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY, ButtonVariant.LUMO_ICON)
+            element.setAttribute("aria-label", "Copy full ID")
+            element.setAttribute("title", "Copy full ID")
+            element.setProperty("copyValue", value)
+            element.setAttribute("onclick", "navigator.clipboard.writeText(this.copyValue)")
+            addClickListener { showSuccess("Copied ID") }
+        }
+        return HorizontalLayout(displayedValue, copyButton).apply {
+            defaultVerticalComponentAlignment = Alignment.CENTER
+            isPadding = false
+            isSpacing = true
+            setWidthFull()
+            expand(displayedValue)
+        }
+    }
 
     private fun openReviewDialog(proposalId: Long) {
         val proposal = proposalService.findById(proposalId)
