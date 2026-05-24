@@ -150,13 +150,14 @@ class FacebookProfileArticleImporter(
             if (summary.failed > 0) {
                 completionStatus = FacebookImportRunStatus.FAILED
             }
-            completionLogs =
+            completionLogs = summary.logsWith(
                 "Facebook import finished: ${summary.discovered} discovered, ${summary.submitted} submitted, " +
-                    "${summary.skippedExisting} skipped existing, ${summary.failed} failed."
+                    "${summary.skippedExisting} skipped existing, ${summary.failed} failed.",
+            )
         } catch (ex: InterruptedException) {
             Thread.currentThread().interrupt()
             completionStatus = FacebookImportRunStatus.TERMINATED
-            completionLogs = "Facebook import was terminated."
+            completionLogs = summary.logsWith("Facebook import was terminated.")
             logger.info("Facebook import {} was interrupted", importRunId)
             throw ex
         } catch (ex: NoSuchWindowException) {
@@ -166,12 +167,14 @@ class FacebookProfileArticleImporter(
             } else {
                 FacebookImportRunStatus.FAILED
             }
-            completionLogs = "Facebook import stopped because the browser window was closed: ${failureMessage(ex)}"
+            completionLogs = summary.logsWith(
+                "Facebook import stopped because the browser window was closed: ${failureMessage(ex)}",
+            )
             logger.warn("Facebook import {} stopped because the browser window was closed", importRunId, ex)
             throw ex
         } catch (ex: Exception) {
             completionStatus = FacebookImportRunStatus.FAILED
-            completionLogs = "Facebook import failed: ${failureMessage(ex)}"
+            completionLogs = summary.logsWith("Facebook import failed: ${failureMessage(ex)}")
             logger.warn("Facebook import {} failed", importRunId, ex)
             throw ex
         } finally {
@@ -226,9 +229,17 @@ class FacebookProfileArticleImporter(
                 passCount,
                 candidates.size,
             )
+            val candidateDecisionLogs = mutableListOf<String>()
             val proposals = candidates.mapIndexedNotNull { index, candidate ->
                 val candidateId = candidateApprovalId()
                 if (!isImportableCandidateUrl(candidate.url, candidate.text)) {
+                    candidateDecisionLogs += workerCandidateDecisionLogs(
+                        candidateId = candidateId,
+                        candidateNumber = index + 1,
+                        candidateTotal = candidates.size,
+                        candidate = candidate,
+                        action = "skipped-non-importable",
+                    )
                     logger.info(
                         "Facebook import discovery pass {}/{} candidate {}/{} importId={} candidateId={} url={} sourcePostUrl={} skippedNonImportable=true",
                         passIndex + 1,
@@ -245,6 +256,13 @@ class FacebookProfileArticleImporter(
                 val exists = proposalExists(candidate.url, candidateId)
                 if (exists) {
                     summary.skippedExisting++
+                    candidateDecisionLogs += workerCandidateDecisionLogs(
+                        candidateId = candidateId,
+                        candidateNumber = index + 1,
+                        candidateTotal = candidates.size,
+                        candidate = candidate,
+                        action = "skipped-existing",
+                    )
                     logger.info(
                         "Facebook import discovery pass {}/{} candidate {}/{} importId={} candidateId={} url={} sourcePostUrl={} skippedExisting=true",
                         passIndex + 1,
@@ -259,6 +277,14 @@ class FacebookProfileArticleImporter(
                     null
                 } else {
                     val language = guessCandidateLanguage(candidate)
+                    candidateDecisionLogs += workerCandidateDecisionLogs(
+                        candidateId = candidateId,
+                        candidateNumber = index + 1,
+                        candidateTotal = candidates.size,
+                        candidate = candidate,
+                        action = "proposal-submit",
+                        language = language,
+                    )
                     logger.info(
                         "Facebook import discovery pass {}/{} candidate {}/{} importId={} candidateId={} url={} sourcePostUrl={} language={} skippedExisting=false action=proposal-submit",
                         passIndex + 1,
@@ -281,6 +307,14 @@ class FacebookProfileArticleImporter(
                 }
             }
             summary.discovered += candidates.size
+            val passLogs = workerPassLogs(
+                passIndex = passIndex + 1,
+                passCount = passCount,
+                candidateCount = candidates.size,
+                proposalCount = proposals.size,
+                candidateDecisionLogs = candidateDecisionLogs,
+            )
+            summary.recordWorkerLogs(passLogs)
             if (proposals.isNotEmpty() || candidates.isNotEmpty()) {
                 try {
                     val response = proposalClient?.submitBatch(
@@ -289,7 +323,7 @@ class FacebookProfileArticleImporter(
                             passIndex = passIndex + 1,
                             passCount = passCount,
                             proposals = proposals,
-                            logs = "Facebook import discovery pass ${passIndex + 1}/$passCount found ${candidates.size} candidates and submitted ${proposals.size} proposals.",
+                            logs = passLogs,
                         ),
                     ) ?: FacebookProposalBatchResponse(facebookImportId, proposals.size, 0)
                     summary.submitted += response.submitted
@@ -394,15 +428,7 @@ class FacebookProfileArticleImporter(
             return
         }
 
-        importRunId?.let {
-            eventPublisher?.publishEvent(
-                FacebookImportLoginRequiredEvent(
-                    importRunId = it,
-                    trigger = trigger,
-                    profileUrl = properties.profileUrl,
-                ),
-            )
-        }
+        importRunId?.let { publishLoginRequired(it, trigger) }
         logger.warn(
             "LOGIN_REQUIRED Facebook login is required before import can continue; importRunId={}; trigger={}; manualLoginTimeout={}",
             importRunId ?: "<unknown>",
@@ -413,6 +439,34 @@ class FacebookProfileArticleImporter(
         waitForLogin(driver)
         driver.get(properties.profileUrl)
         sleep(properties.waitAfterPageOpen)
+    }
+
+    private fun publishLoginRequired(importRunId: String, trigger: FacebookImportTrigger) {
+        val request = FacebookImportLoginRequiredRequest(
+            trigger = trigger,
+            profileUrl = properties.profileUrl,
+        )
+        if (proposalClient != null) {
+            try {
+                proposalClient.recordLoginRequired(importRunId, request)
+                return
+            } catch (ex: Exception) {
+                logger.warn(
+                    "Facebook import {} could not report login-required event to target server; reason={}",
+                    importRunId,
+                    failureMessage(ex),
+                    ex,
+                )
+            }
+        }
+        eventPublisher?.publishEvent(
+            FacebookImportLoginRequiredEvent(
+                importRunId = importRunId,
+                trigger = trigger,
+                profileUrl = properties.profileUrl,
+                detectedAt = request.detectedAt,
+            ),
+        )
     }
 
     private fun login(driver: WebDriver) {
@@ -1445,6 +1499,40 @@ class FacebookProfileArticleImporter(
             appendLine(candidate.text)
         }
 
+    private fun workerCandidateDecisionLogs(
+        candidateId: String,
+        candidateNumber: Int,
+        candidateTotal: Int,
+        candidate: FacebookPostCandidate,
+        action: String,
+        language: String? = null,
+    ): String =
+        buildString {
+            appendLine("candidate=$candidateNumber/$candidateTotal")
+            appendLine("candidateId=$candidateId")
+            appendLine("action=$action")
+            language?.let { appendLine("language=$it") }
+            append(candidateProposalLogs(candidate))
+        }.trimEnd()
+
+    private fun workerPassLogs(
+        passIndex: Int,
+        passCount: Int,
+        candidateCount: Int,
+        proposalCount: Int,
+        candidateDecisionLogs: List<String>,
+    ): String =
+        buildString {
+            appendLine(
+                "Facebook import discovery pass $passIndex/$passCount found $candidateCount candidates " +
+                    "and submitted $proposalCount proposals.",
+            )
+            candidateDecisionLogs.forEach { candidateLogs ->
+                appendLine()
+                appendLine(candidateLogs)
+            }
+        }.trimEnd()
+
     private fun guessCandidateLanguage(candidate: FacebookPostCandidate): String {
         val fallback = normalizedLanguageOrNull(properties.language) ?: "pl"
         return metadataLanguage(candidate.url)
@@ -1843,7 +1931,28 @@ class FacebookProfileArticleImporter(
         var submitted: Int = 0,
         var skippedExisting: Int = 0,
         var failed: Int = 0,
-    )
+        private val workerLogs: MutableList<String> = mutableListOf(),
+    ) {
+        fun recordWorkerLogs(logs: String) {
+            logs.takeIf { it.isNotBlank() }?.let { workerLogs += it }
+        }
+
+        fun logsWith(terminalLog: String): String =
+            buildString {
+                workerLogs.forEachIndexed { index, logs ->
+                    if (index > 0) {
+                        appendLine()
+                        appendLine("---")
+                    }
+                    appendLine(logs.trimEnd())
+                }
+                if (isNotEmpty()) {
+                    appendLine()
+                    appendLine("---")
+                }
+                append(terminalLog)
+            }
+    }
 
     private fun importProgress(candidateNumber: Int, candidateTotal: Int): String =
         "Facebook import candidate $candidateNumber/$candidateTotal:"
@@ -2238,8 +2347,19 @@ class FacebookProfileArticleImporter(
         if (host == "meta.ai" || host.endsWith(".meta.ai")) return false
         if (isMediaOrThumbnailUrl(url)) return false
         if (isMarkupNoiseUrl(url)) return false
+        if (isKnownMarketplaceOfferUrl(uri)) return false
         if (host == "messenger.com" || host.endsWith(".messenger.com")) return false
         return true
+    }
+
+    private fun isKnownMarketplaceOfferUrl(uri: URI): Boolean {
+        val host = uri.host?.lowercase()?.removePrefix("www.") ?: return false
+        val firstPathSegment = uri.path
+            ?.trim('/')
+            ?.substringBefore('/')
+            ?.lowercase()
+            ?: return false
+        return host == "allegro.pl" && firstPathSegment == "oferta"
     }
 
     private fun isVisiblyTruncatedUrl(uri: URI): Boolean {

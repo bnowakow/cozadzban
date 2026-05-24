@@ -62,6 +62,21 @@ class FacebookImportProposalClient(
         }
     }
 
+    fun recordLoginRequired(importRunId: String, request: FacebookImportLoginRequiredRequest) {
+        if (isRemoteConfigured()) {
+            remoteClient()
+                .post()
+                .uri("${properties.targetRunPath}/{importRunId}/login-required", importRunId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .header(properties.targetApiKeyHeader, properties.targetApiKey)
+                .body(request)
+                .retrieve()
+                .toBodilessEntity()
+        } else {
+            proposalService.recordLoginRequired(importRunId, request)
+        }
+    }
+
     private fun isRemoteConfigured(): Boolean =
         properties.targetApiBaseUrl.isNotBlank() && properties.targetApiKey.isNotBlank()
 

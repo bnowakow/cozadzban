@@ -302,9 +302,10 @@ Phases 4 and 5 are independent and can be developed in parallel.
     failures mark the proposal `FAILED` for retry.
 61. **Lifecycle cleanup** — remove startup auto-run and stop closing the Selenium browser
     after every import; keep the window alive until application shutdown.
-61a. **Notification-ready events** — emit Spring application events for future delivery:
-    login required on the worker, proposal batch submitted on the server only when new
-    proposals are accepted, and import run completed when the server records completion.
+61a. **Pushover notifications** — store encrypted self-service notification preferences,
+    report worker login-required events to the server over the machine API, and deliver
+    best-effort Pushover alerts for scheduled Facebook login-required events and completed
+    imports that submitted new proposals.
 
 ---
 

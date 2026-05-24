@@ -31,8 +31,12 @@ info:
        candidates as stored article proposals instead of creating Articles directly.
     9. **Article proposal inbox** — ACTIVE logged-in users review Facebook import
        proposals at `/article-proposals`, correct language, and accept/reject.
-    10. **Machine-to-machine writes** — the Facebook importer submits proposals and
-       run completion events using a dedicated API key tied to an allowlisted bot user.
+    10. **Machine-to-machine writes** — the Facebook importer submits proposals,
+       login-required reports, and run completion events using a dedicated API key
+       tied to an allowlisted bot user.
+    11. **Notifications** — ACTIVE users can configure Pushover delivery in the
+       server-side UI. Proposal summaries are sent to opted-in ACTIVE users; scheduled
+       Facebook login/2FA alerts are sent only to opted-in ACTIVE ADMIN users.
     ## Implementation notes
     - Language is normalized to lowercase and validated against a conservative
       BCP-47-like pattern (e.g. `pl`, `en`, `en-gb`).
@@ -119,6 +123,10 @@ x-runtime-configuration:
     statCounterSecurityIdEnvVar: STATCOUNTER_SECURITY_ID
     renderOnlyWhenConfigured: true
     requiresUserConsent: true
+  notifications:
+    enabledEnvVar: APP_NOTIFICATIONS_ENABLED
+    pushoverAppTokenEnvVar: APP_NOTIFICATIONS_PUSHOVER_APP_TOKEN
+    encryptionKeyEnvVar: APP_NOTIFICATIONS_ENCRYPTION_KEY
 
 x-problem-types:
   articleUrlConflict:
@@ -496,6 +504,36 @@ paths:
       responses:
         '204':
           description: Import run completion recorded
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/facebook-import/runs/{importRunId}/login-required:
+
+    post:
+      tags: [Facebook Import]
+      summary: Record that a Facebook import run needs manual login
+      operationId: recordFacebookImportLoginRequired
+      security:
+        - machineApiKey: []
+      parameters:
+        - name: importRunId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FacebookImportLoginRequiredRequest'
+      responses:
+        '204':
+          description: Login-required event recorded
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -1016,6 +1054,24 @@ components:
         logs:
           type: string
           nullable: true
+
+    FacebookImportLoginRequiredRequest:
+      type: object
+      required: [trigger, profileUrl]
+      properties:
+        trigger:
+          type: string
+          enum: [MANUAL, SCHEDULED]
+          example: SCHEDULED
+        profileUrl:
+          type: string
+          format: uri
+          example: https://www.facebook.com/bartek.dobrowolski.nowakowski
+        detectedAt:
+          type: string
+          format: date-time
+          description: UTC timestamp when the worker detected the login requirement; defaults server-side if omitted.
+          example: "2026-05-24T10:00:00Z"
 
     ArticlePatch:
       type: object

@@ -126,6 +126,26 @@ class FacebookArticleProposalService(
         )
     }
 
+    fun recordLoginRequired(importRunId: String, request: FacebookImportLoginRequiredRequest) {
+        require(importRunId.isNotBlank()) { "importRunId is required" }
+        val firstForRun = runRepository.recordLoginRequired(
+            importRunId = importRunId,
+            trigger = request.trigger,
+            profileUrl = request.profileUrl,
+            detectedAt = request.detectedAt,
+        )
+        if (firstForRun) {
+            eventPublisher?.publishEvent(
+                FacebookImportLoginRequiredEvent(
+                    importRunId = importRunId,
+                    trigger = request.trigger,
+                    profileUrl = request.profileUrl,
+                    detectedAt = request.detectedAt,
+                ),
+            )
+        }
+    }
+
     @Transactional(readOnly = true)
     fun findPage(statusFilter: FacebookArticleProposalStatusFilter, page: Int, size: Int): List<FacebookArticleProposal> {
         require(page >= 0) { "page must be >= 0" }

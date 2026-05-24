@@ -93,3 +93,9 @@ data class FacebookImportRunCompletionRequest(
     val failedCount: Int = 0,
     val logs: String? = null,
 )
+
+data class FacebookImportLoginRequiredRequest(
+    val trigger: FacebookImportTrigger,
+    val profileUrl: String,
+    val detectedAt: Instant = Instant.now(),
+)

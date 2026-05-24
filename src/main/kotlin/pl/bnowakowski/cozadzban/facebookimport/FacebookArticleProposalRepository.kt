@@ -84,6 +84,40 @@ class FacebookImportRunRepository(
                 .addValue("logsCompressed", logsCompressed),
         )
     }
+
+    fun recordLoginRequired(
+        importRunId: String,
+        trigger: FacebookImportTrigger,
+        profileUrl: String,
+        detectedAt: Instant,
+    ): Boolean {
+        val updated = jdbc.queryForObject(
+            """
+                INSERT INTO facebook_import_run(
+                    import_run_id, status, login_required_first_at, login_required_last_at,
+                    login_required_count, login_required_trigger, login_required_profile_url
+                )
+                VALUES (
+                    :importRunId, 'RUNNING', :detectedAt, :detectedAt,
+                    1, :trigger, :profileUrl
+                )
+                ON CONFLICT (import_run_id) DO UPDATE
+                   SET login_required_first_at = COALESCE(facebook_import_run.login_required_first_at, :detectedAt),
+                       login_required_last_at = :detectedAt,
+                       login_required_count = facebook_import_run.login_required_count + 1,
+                       login_required_trigger = :trigger,
+                       login_required_profile_url = :profileUrl
+                RETURNING login_required_count
+            """.trimIndent(),
+            MapSqlParameterSource()
+                .addValue("importRunId", importRunId)
+                .addValue("trigger", trigger.name)
+                .addValue("profileUrl", profileUrl)
+                .addValue("detectedAt", Timestamp.from(detectedAt)),
+            Int::class.java,
+        ) ?: 0
+        return updated == 1
+    }
 }
 
 @Repository

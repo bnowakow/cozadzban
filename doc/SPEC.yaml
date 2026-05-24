@@ -145,10 +145,20 @@ x-architecture:
         when scheduling is enabled; ADMIN REST/UI triggers launch the same Batch job
         manually. Each run generates its importRunId before login, opens the browser
         on demand if needed, verifies the Facebook login state, emits a login-required
-        event when manual two-factor login is needed, and processes at most one import
-        at a time per worker. The worker submits discovered article proposals to
-        machine-only server endpoints instead of creating Articles directly. Logged-in
-        users review proposals later in a Vaadin inbox.
+        event when manual two-factor login is needed, reports that event to the
+        server over the machine API when running remotely, and processes at most one
+        import at a time per worker. The worker submits discovered article proposals
+        to machine-only server endpoints instead of creating Articles directly.
+        Logged-in users review proposals later in a Vaadin inbox.
+    - name: Notifications
+      technology: Pushover REST API + encrypted per-user preferences
+      description: >
+        ACTIVE logged-in users can configure their own Pushover user key in the
+        Vaadin notification settings view. Pushover keys are encrypted at rest
+        with AES-GCM and are never exposed back to the browser after saving.
+        ACTIVE users can opt into article proposal summary notifications. ACTIVE
+        ADMIN users can additionally opt into scheduled Facebook login/2FA alerts.
+        Manual Facebook imports do not send login-required alerts.
     - name: Analytics and consent
       technology: Vaadin UI + configurable tracking IDs
       description: >
@@ -314,6 +324,26 @@ x-database:
           type: BYTEA
           constraints: nullable
           description: UTF-8 GZIP compressed run diagnostics.
+        - name: login_required_first_at
+          type: TIMESTAMPTZ
+          constraints: nullable
+          description: First time this run required manual Facebook login or two-factor approval.
+        - name: login_required_last_at
+          type: TIMESTAMPTZ
+          constraints: nullable
+          description: Most recent time this run required manual Facebook login or two-factor approval.
+        - name: login_required_count
+          type: INTEGER
+          constraints: "NOT NULL DEFAULT 0"
+          description: Count of login-required reports for this import run.
+        - name: login_required_trigger
+          type: VARCHAR(32)
+          constraints: "nullable CHECK IN (MANUAL, SCHEDULED)"
+          description: Trigger type from the latest login-required report.
+        - name: login_required_profile_url
+          type: TEXT
+          constraints: nullable
+          description: Facebook profile URL involved in the login-required report.
     - name: facebook_article_proposal
       migration: V18__facebook_article_proposals.sql
       description: Stores discovered Facebook import candidates awaiting human review.
@@ -339,6 +369,40 @@ x-database:
         Spring Batch 6 PostgreSQL metadata for durable facebookImportJob run
         lifecycle/history. Flyway owns the BATCH_JOB_*, BATCH_STEP_*, and
         BATCH_*_SEQ objects; Spring Batch schema initialization remains disabled.
+    - name: notification_preference
+      migration: V20__notification_preferences_and_login_required.sql
+      description: Stores encrypted per-user notification settings for Pushover.
+      columns:
+        - name: app_user_id
+          type: BIGINT
+          constraints: "PRIMARY KEY REFERENCES app_user(id) ON DELETE CASCADE"
+        - name: provider
+          type: VARCHAR(32)
+          constraints: "NOT NULL CHECK IN (PUSHOVER)"
+        - name: pushover_user_key_encrypted
+          type: TEXT
+          constraints: NOT NULL
+          description: AES-GCM encrypted Pushover user key.
+        - name: pushover_user_key_suffix
+          type: VARCHAR(12)
+          constraints: NOT NULL
+          description: Non-secret trailing characters used only for display.
+        - name: pushover_device
+          type: VARCHAR(128)
+          constraints: nullable
+          description: Optional Pushover device name.
+        - name: facebook_login_required_enabled
+          type: BOOLEAN
+          constraints: "NOT NULL DEFAULT false"
+        - name: facebook_proposals_submitted_enabled
+          type: BOOLEAN
+          constraints: "NOT NULL DEFAULT false"
+        - name: created_at
+          type: TIMESTAMPTZ
+          constraints: "NOT NULL DEFAULT now()"
+        - name: updated_at
+          type: TIMESTAMPTZ
+          constraints: "NOT NULL DEFAULT now()"
 # ──────────────────────────────────────────────────────────────
 # BUSINESS RULES  (x-business-rules)
 # ──────────────────────────────────────────────────────────────
@@ -714,8 +778,8 @@ x-business-rules:
     name: Machine-to-machine Facebook proposal writes
     description: >
       The Facebook importer writes proposal batches, proposal existence checks,
-      and import-run completion events using a dedicated machine credential. The
-      machine credential must not grant access to allowlist or admin endpoints.
+      import-run completion events, and login-required reports using a dedicated
+      machine credential. The machine credential must not grant access to allowlist or admin endpoints.
       Accepted proposals create Articles owned by the configured ACTIVE import bot user.
   - id: BR-49
     name: Facebook article proposal inbox
@@ -731,14 +795,24 @@ x-business-rules:
       Accept creates a normal Article owned by the configured import bot; if creation
       fails the proposal is marked failed and may be retried.
   - id: BR-50
-    name: Facebook import notification hooks
+    name: Facebook import notifications
     description: >
-      The import system emits Spring application events for future notification
-      delivery without implementing a delivery channel in this phase:
-      FacebookImportLoginRequiredEvent on the worker when manual login or second
-      factor is needed, FacebookProposalBatchSubmittedEvent on the server when a
-      batch accepts at least one new proposal, and FacebookImportRunCompletedEvent
-      when the server records run completion.
+      The import system emits Spring application events and delivers Pushover
+      notifications to opted-in users. FacebookImportLoginRequiredEvent is reported
+      to the server and notifies only ACTIVE ADMIN users who enabled login-required
+      alerts, and only for SCHEDULED imports. Manual imports do not send
+      login-required alerts. FacebookImportRunCompletedEvent notifies ACTIVE
+      users who enabled article proposal notifications when submittedCount > 0.
+      Notification delivery failures are logged and must never block or fail an
+      import run.
+  - id: BR-51
+    name: Notification preference security
+    description: >
+      Pushover user keys are entered only in the server-side Vaadin settings
+      view, validated against Pushover before saving, encrypted at rest with
+      AES-GCM using APP_NOTIFICATIONS_ENCRYPTION_KEY, and never returned in full
+      to the UI. The UI may display only whether a key is configured and a
+      non-secret suffix. Notification preferences belong to ACTIVE logged-in users.
 # ──────────────────────────────────────────────────────────────
 # VAADIN UI SPEC  (x-vaadin-ui)
 # ──────────────────────────────────────────────────────────────
@@ -777,6 +851,7 @@ x-vaadin-ui:
         - "Authenticated users may see creator email/id where useful; anonymous users never see creator data"
         - "Expose RSS discovery via rel=alternate in page HTML and visible RSS icon/link in the top bar"
         - "Analytics consent banner appears only when analytics IDs are configured and controls Google Analytics/StatCounter loading"
+        - "If authenticated: icon-only Notification settings button links to /notification-settings"
 
     - name: AdminView
       route: /admin
@@ -811,6 +886,16 @@ x-vaadin-ui:
         - Default pending-only status filter plus all/accepted/rejected/failed filters
         - Article URL and Facebook post URL render as external links opening in a new tab
         - Review dialog shows compressed diagnostics, editable language, Accept, Reject, and retry for failed proposals
+    - name: NotificationSettingsView
+      route: /notification-settings
+      description: >
+        Self-service notification settings for ACTIVE logged-in users.
+      features:
+        - Users enter and validate their own Pushover user key; saved keys are encrypted and not shown again
+        - Optional Pushover device field
+        - ACTIVE USER and ADMIN accounts can toggle article proposal review notifications
+        - ACTIVE ADMIN accounts can additionally toggle scheduled Facebook login-required notifications
+        - Send test notification button
 # ──────────────────────────────────────────────────────────────
 # API SPEC  (standard OpenAPI)
 # ──────────────────────────────────────────────────────────────
@@ -934,6 +1019,12 @@ x-runtime-configuration:
     statCounterSecurityIdEnvVar: STATCOUNTER_SECURITY_ID
     renderOnlyWhenConfigured: true
     requiresUserConsent: true
+  notifications:
+    enabledEnvVar: APP_NOTIFICATIONS_ENABLED
+    pushoverAppTokenEnvVar: APP_NOTIFICATIONS_PUSHOVER_APP_TOKEN
+    encryptionKeyEnvVar: APP_NOTIFICATIONS_ENCRYPTION_KEY
+    pushoverBaseUrlEnvVar: APP_NOTIFICATIONS_PUSHOVER_BASE_URL
+    deliverySemantics: best-effort; failures are logged and do not block imports
   facebookImport:
     springBatchAutoRunProperty: spring.batch.job.enabled=false
     springBatchSchemaInitializationProperty: spring.batch.jdbc.initialize-schema=never
@@ -1323,6 +1414,36 @@ paths:
       responses:
         '204':
           description: Import run completion recorded
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/facebook-import/runs/{importRunId}/login-required:
+
+    post:
+      tags: [Facebook Import]
+      summary: Record that a Facebook import run needs manual login
+      operationId: recordFacebookImportLoginRequired
+      security:
+        - machineApiKey: []
+      parameters:
+        - name: importRunId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FacebookImportLoginRequiredRequest'
+      responses:
+        '204':
+          description: Login-required event recorded
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -1843,6 +1964,24 @@ components:
         logs:
           type: string
           nullable: true
+
+    FacebookImportLoginRequiredRequest:
+      type: object
+      required: [trigger, profileUrl]
+      properties:
+        trigger:
+          type: string
+          enum: [MANUAL, SCHEDULED]
+          example: SCHEDULED
+        profileUrl:
+          type: string
+          format: uri
+          example: https://www.facebook.com/bartek.dobrowolski.nowakowski
+        detectedAt:
+          type: string
+          format: date-time
+          description: UTC timestamp when the worker detected the login requirement; defaults server-side if omitted.
+          example: "2026-05-24T10:00:00Z"
 
     ArticlePatch:
       type: object

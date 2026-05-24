@@ -9,6 +9,9 @@ APP_MACHINE_AUTH_ENABLED=true
 APP_MACHINE_AUTH_HEADER_NAME=X-CoZaDzban-M2M-Key
 APP_MACHINE_AUTH_API_KEY=<shared-secret>
 APP_MACHINE_AUTH_PRINCIPAL_EMAIL=facebook-import-bot@cozadzban.pl
+APP_NOTIFICATIONS_ENABLED=true
+APP_NOTIFICATIONS_PUSHOVER_APP_TOKEN=<pushover-application-token>
+APP_NOTIFICATIONS_ENCRYPTION_KEY=<base64-or-hex-aes-key>
 ```
 
 Configure the worker with the matching key and proposal endpoints:
@@ -29,7 +32,9 @@ The worker uses Spring Batch for import lifecycle/history. `spring.batch.job.ena
 must remain set so jobs only start through the worker scheduler or admin trigger, and
 `spring.batch.jdbc.initialize-schema=never` keeps Batch metadata DDL owned by Flyway.
 
-Log in through the Vaadin UI as an ACTIVE USER or ADMIN.
+Log in through the Vaadin UI as an ACTIVE USER or ADMIN. For notification checks, open
+`/notification-settings`, save a Pushover user key, enable **Article proposal review
+notifications**, and as ADMIN also enable **Facebook login required notifications**.
 
 ---
 
@@ -63,11 +68,15 @@ Log in through the Vaadin UI as an ACTIVE USER or ADMIN.
 3. If Facebook opens a login or two-factor screen, complete the manual login in the Selenium
    browser before `APP_FACEBOOK_IMPORT_MANUAL_LOGIN_TIMEOUT`.
 4. Confirm logs contain a login-required event/message and the run continues after login.
-5. Temporarily reduce `APP_FACEBOOK_IMPORT_SCHEDULE_INTERVAL` in a local test environment and
+5. Confirm opted-in ADMIN users receive a Pushover login-required notification for the scheduled run.
+6. Trigger a manual import and force the same Facebook login screen.
+7. Confirm manual import login-required events are logged but do not send Pushover login-required notifications.
+8. Temporarily reduce `APP_FACEBOOK_IMPORT_SCHEDULE_INTERVAL` in a local test environment and
    confirm a new tick is skipped while a previous import is still active.
 
 **Expected:** scheduled imports use the same non-blocking proposal flow, login-required runs wait
-for manual authorization, and only one import runs at a time on the worker.
+for manual authorization, only scheduled login-required events notify opted-in admins, and only
+one import runs at a time on the worker.
 
 ---
 
@@ -112,3 +121,13 @@ import bot user, and the proposal becomes `accepted`.
 
 **Expected:** no duplicate pending proposal is created. Canonical article URL is the proposal
 identity; Facebook post URL is review context only.
+
+---
+
+## Step 8: Proposal notifications
+
+1. Complete a scheduled or manual import that submits at least one new proposal.
+2. Confirm opted-in ACTIVE users receive one Pushover summary after the server records run completion.
+3. Complete another import that submits zero new proposals.
+
+**Expected:** proposal-review notifications are sent only when `submittedCount > 0`.

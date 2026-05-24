@@ -33,4 +33,13 @@ class FacebookArticleProposalController(
         proposalService.completeRun(importRunId, request)
         return ResponseEntity.noContent().build()
     }
+
+    @PostMapping("/runs/{importRunId}/login-required")
+    fun recordLoginRequired(
+        @PathVariable importRunId: String,
+        @RequestBody request: FacebookImportLoginRequiredRequest,
+    ): ResponseEntity<Void> {
+        proposalService.recordLoginRequired(importRunId, request)
+        return ResponseEntity.noContent().build()
+    }
 }

@@ -309,11 +309,9 @@ class FacebookProfileArticleImporterJobTest {
             importer.runImport("run-login", FacebookImportTrigger.SCHEDULED)
         }
 
-        val eventCaptor = argumentCaptor<Any>()
-        verify(eventPublisher).publishEvent(eventCaptor.capture())
-        val event = eventCaptor.firstValue as FacebookImportLoginRequiredEvent
-        assertEquals("run-login", event.importRunId)
-        assertEquals(FacebookImportTrigger.SCHEDULED, event.trigger)
+        val loginRequiredCaptor = argumentCaptor<FacebookImportLoginRequiredRequest>()
+        verify(proposalClient).recordLoginRequired(eq("run-login"), loginRequiredCaptor.capture())
+        assertEquals(FacebookImportTrigger.SCHEDULED, loginRequiredCaptor.firstValue.trigger)
 
         val completionCaptor = argumentCaptor<FacebookImportRunCompletionRequest>()
         verify(proposalClient).completeRun(eq("run-login"), completionCaptor.capture())
@@ -362,11 +360,9 @@ class FacebookProfileArticleImporterJobTest {
 
         importer.runImport("run-manual-login", FacebookImportTrigger.MANUAL)
 
-        val eventCaptor = argumentCaptor<Any>()
-        verify(eventPublisher).publishEvent(eventCaptor.capture())
-        val event = eventCaptor.firstValue as FacebookImportLoginRequiredEvent
-        assertEquals("run-manual-login", event.importRunId)
-        assertEquals(FacebookImportTrigger.MANUAL, event.trigger)
+        val loginRequiredCaptor = argumentCaptor<FacebookImportLoginRequiredRequest>()
+        verify(proposalClient).recordLoginRequired(eq("run-manual-login"), loginRequiredCaptor.capture())
+        assertEquals(FacebookImportTrigger.MANUAL, loginRequiredCaptor.firstValue.trigger)
 
         val completionCaptor = argumentCaptor<FacebookImportRunCompletionRequest>()
         verify(proposalClient).completeRun(eq("run-manual-login"), completionCaptor.capture())
@@ -425,6 +421,16 @@ class FacebookProfileArticleImporterJobTest {
         assertEquals(1, requestCaptor.firstValue.proposals.size)
         assertEquals(selectedUrl, requestCaptor.firstValue.proposals.single().articleUrl)
         assertEquals("pl", requestCaptor.firstValue.proposals.single().language)
+        val batchLogs = requestCaptor.firstValue.logs.orEmpty()
+        assertTrue(batchLogs.contains("action=proposal-submit"))
+        assertTrue(batchLogs.contains("selectedUrl=$selectedUrl"))
+        assertTrue(batchLogs.contains("candidateText:"))
+        val completionCaptor = argumentCaptor<FacebookImportRunCompletionRequest>()
+        verify(proposalClient).completeRun(any(), completionCaptor.capture())
+        val completionLogs = completionCaptor.firstValue.logs.orEmpty()
+        assertTrue(completionLogs.contains("action=proposal-submit"))
+        assertTrue(completionLogs.contains("selectedUrl=$selectedUrl"))
+        assertTrue(completionLogs.contains("Facebook import finished: 1 discovered, 1 submitted"))
         verify(articleService, never()).create(any(), any())
     }
 

@@ -192,6 +192,34 @@ class MigrationSchemaIT {
     }
 
     @Test
+    fun `notification preferences and login-required columns exist after V20 migration`() {
+        val preferenceTableCount = jdbc.queryForObject(
+            """
+            SELECT COUNT(*) FROM information_schema.tables
+             WHERE table_name = 'notification_preference'
+            """,
+            Int::class.java,
+        )
+        val loginRequiredColumnCount = jdbc.queryForObject(
+            """
+            SELECT COUNT(*) FROM information_schema.columns
+             WHERE table_name = 'facebook_import_run'
+               AND column_name IN (
+                   'login_required_first_at',
+                   'login_required_last_at',
+                   'login_required_count',
+                   'login_required_trigger',
+                   'login_required_profile_url'
+               )
+            """,
+            Int::class.java,
+        )
+
+        assertEquals(1, preferenceTableCount, "notification_preference table should exist after V20 migration")
+        assertEquals(5, loginRequiredColumnCount, "facebook_import_run login-required audit columns should exist")
+    }
+
+    @Test
     fun `spring batch jdbc repository starts with facebook import job`() {
         assertEquals(FACEBOOK_IMPORT_JOB_NAME, facebookImportJob.name)
         val repositoryClass = AopUtils.getTargetClass(jobRepository)
