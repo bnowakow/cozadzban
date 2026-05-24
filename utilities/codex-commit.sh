@@ -67,6 +67,14 @@ has_unmerged_paths() {
 	[ -n "$(git diff --name-only --diff-filter=U)" ]
 }
 
+view_last_commit_diff() {
+	if [ -r /dev/tty ] && [ -w /dev/tty ]; then
+		git diff HEAD~1 HEAD -- >/dev/tty </dev/tty
+	else
+		git diff HEAD~1 HEAD --
+	fi
+}
+
 resolve_pull_conflict_with_codex() {
 	local conflict_output
 
@@ -243,11 +251,37 @@ push_summary=$(
 	else
 		printf 'No files changed in HEAD~1..HEAD.\n'
 	fi
-	printf '\nRun git push now?'
+	printf '\nChoose the next action.'
 )
 
-if confirm "Push" "$push_summary"; then
-	git push
-else
-	echo "Push skipped."
-fi
+while true; do
+	push_choice=$(
+		prompt_menu \
+			"Push" \
+			"$push_summary" \
+			push "Run git push now" \
+			diff "View diff for HEAD~1..HEAD" \
+			skip "Skip push"
+	) || {
+		echo "Push skipped."
+		exit 0
+	}
+
+	case "$push_choice" in
+		push)
+			git push
+			break
+			;;
+		diff)
+			view_last_commit_diff
+			;;
+		skip)
+			echo "Push skipped."
+			break
+			;;
+		*)
+			echo "Unexpected choice: $push_choice" >&2
+			exit 1
+			;;
+	esac
+done
