@@ -4,6 +4,7 @@
 package pl.bnowakowski.cozadzban.ui
 
 import com.vaadin.flow.component.Component
+import com.vaadin.flow.component.UI
 import com.vaadin.flow.component.button.Button
 import com.vaadin.flow.component.button.ButtonVariant
 import com.vaadin.flow.component.dependency.CssImport
@@ -38,6 +39,7 @@ import pl.bnowakowski.cozadzban.user.AppUserStatus
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
+import java.util.concurrent.CompletableFuture
 
 @Route("article-proposals")
 @PageTitle("Article proposals")
@@ -242,26 +244,11 @@ class FacebookArticleProposalView(
         logArea.setWidthFull()
         logArea.height = "16rem"
 
-        val acceptButton = Button("Accept", VaadinIcon.CHECK.create()) {
-            try {
-                val updated = proposalService.accept(proposalId, language.value.trim(), currentUser.id!!)
-                dialog.close()
-                refreshGrid()
-                showSuccess(
-                    if (updated.status == FacebookArticleProposalStatus.ALREADY_EXISTS) {
-                        "Proposal marked as already existing"
-                    } else {
-                        "Proposal accepted"
-                    },
-                )
-            } catch (ex: Exception) {
-                refreshGrid()
-                showError(ex.message ?: "Failed to accept proposal")
-            }
+        val actionStatus = Span().apply {
+            addClassName("czj-admin-muted")
         }
-        acceptButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY, ButtonVariant.LUMO_SUCCESS)
-        acceptButton.isEnabled = proposal.status != FacebookArticleProposalStatus.ACCEPTED
 
+        val acceptButton = Button("Accept", VaadinIcon.CHECK.create())
         val rejectButton = Button("Reject", VaadinIcon.CLOSE_SMALL.create()) {
             try {
                 proposalService.reject(proposalId, language.value.trim(), currentUser.id!!)
@@ -273,13 +260,51 @@ class FacebookArticleProposalView(
                 showError(ex.message ?: "Failed to reject proposal")
             }
         }
+        acceptButton.addClickListener {
+            val currentUi = UI.getCurrent()
+            val languageValue = language.value.trim()
+            acceptButton.isEnabled = false
+            rejectButton.isEnabled = false
+            language.isReadOnly = true
+            actionStatus.text = "Accepting proposal..."
+
+            CompletableFuture
+                .supplyAsync {
+                    proposalService.accept(proposalId, languageValue, currentUser.id!!)
+                }
+                .whenComplete { updated, failure ->
+                    currentUi.access {
+                        if (failure == null) {
+                            dialog.close()
+                            refreshGrid()
+                            showSuccess(
+                                if (updated.status == FacebookArticleProposalStatus.ALREADY_EXISTS) {
+                                    "Proposal marked as already existing"
+                                } else {
+                                    "Proposal accepted"
+                                },
+                            )
+                        } else {
+                            acceptButton.isEnabled = proposal.status != FacebookArticleProposalStatus.ACCEPTED
+                            rejectButton.isEnabled = proposal.status != FacebookArticleProposalStatus.ACCEPTED
+                            language.isReadOnly = false
+                            actionStatus.text = ""
+                            refreshGrid()
+                            showError(failure.cause?.message ?: failure.message ?: "Failed to accept proposal")
+                        }
+                    }
+                }
+        }
+        acceptButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY, ButtonVariant.LUMO_SUCCESS)
+        acceptButton.isEnabled = proposal.status != FacebookArticleProposalStatus.ACCEPTED
+
         rejectButton.addThemeVariants(ButtonVariant.LUMO_ERROR, ButtonVariant.LUMO_TERTIARY)
         rejectButton.isEnabled = proposal.status != FacebookArticleProposalStatus.ACCEPTED
 
         val closeButton = Button("Close") { dialog.close() }
         closeButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY)
 
-        val actions = HorizontalLayout(acceptButton, rejectButton, closeButton)
+        val actions = HorizontalLayout(acceptButton, rejectButton, closeButton, actionStatus)
         actions.defaultVerticalComponentAlignment = Alignment.CENTER
 
         val content = VerticalLayout(articleLink, facebookLink, language, logArea, actions)
