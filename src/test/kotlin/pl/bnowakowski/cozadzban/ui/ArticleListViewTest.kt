@@ -152,6 +152,7 @@ class ArticleListViewTest {
                 startedAt = Instant.now().minusSeconds(125),
                 lastUpdatedAt = Instant.parse("2026-05-24T10:15:30Z"),
                 phase = "Sending proposals",
+                detail = "Facebook import discovery pass 2/4 scroll 3/3",
                 phaseIndex = 8,
                 phaseCount = 8,
                 passIndex = 2,
@@ -181,6 +182,7 @@ class ArticleListViewTest {
         assertTrue(progressPanel!!.isVisible, "Expected Facebook import progress panel to be visible")
         assertTrue(spans.contains("Facebook import is running"))
         assertTrue(spans.contains("Sending proposals"))
+        assertTrue(spans.contains("Facebook import discovery pass 2/4 scroll 3/3"))
         assertTrue(spans.contains("Matched posts"))
         assertTrue(spans.contains("9"))
         assertTrue(spans.contains("Already imported"))

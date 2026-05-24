@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import org.mockito.kotlin.any
 import org.mockito.kotlin.argumentCaptor
+import org.mockito.kotlin.atLeastOnce
 import org.mockito.kotlin.doNothing
 import org.mockito.kotlin.doReturn
 import org.mockito.kotlin.doThrow
@@ -429,6 +430,18 @@ class FacebookProfileArticleImporterJobTest {
         assertTrue(batchLogs.contains("action=proposal-submit"))
         assertTrue(batchLogs.contains("selectedUrl=$selectedUrl"))
         assertTrue(batchLogs.contains("candidateText:"))
+        val progressCaptor = argumentCaptor<FacebookImportProgressRequest>()
+        verify(proposalClient, atLeastOnce()).recordProgress(any(), progressCaptor.capture())
+        assertTrue(
+            progressCaptor.allValues.any {
+                it.detail?.matches(Regex("""Facebook discovery post \d+/\d+:""")) == true
+            },
+        )
+        assertTrue(
+            progressCaptor.allValues.any {
+                it.detail?.matches(Regex("""Facebook import discovery pass \d+/\d+ scroll \d+/\d+""")) == true
+            },
+        )
         val completionCaptor = argumentCaptor<FacebookImportRunCompletionRequest>()
         verify(proposalClient).completeRun(any(), completionCaptor.capture())
         val completionLogs = completionCaptor.firstValue.logs.orEmpty()

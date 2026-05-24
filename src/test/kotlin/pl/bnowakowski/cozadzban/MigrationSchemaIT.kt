@@ -243,7 +243,7 @@ class MigrationSchemaIT {
     }
 
     @Test
-    fun `facebook import progress columns exist after V24 migration`() {
+    fun `facebook import progress columns exist after migrations`() {
         val progressColumnCount = jdbc.queryForObject(
             """
             SELECT COUNT(*) FROM information_schema.columns
@@ -252,6 +252,7 @@ class MigrationSchemaIT {
                    'current_pass_index',
                    'pass_count',
                    'phase',
+                   'status_detail',
                    'phase_index',
                    'phase_count',
                    'last_status_at'
@@ -260,7 +261,7 @@ class MigrationSchemaIT {
             Int::class.java,
         )
 
-        assertEquals(6, progressColumnCount, "facebook_import_run should store current progress")
+        assertEquals(7, progressColumnCount, "facebook_import_run should store current progress")
     }
 
     @Test

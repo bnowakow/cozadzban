@@ -555,7 +555,13 @@ class ArticleListView(
             metrics.add(facebookImportMetric("Failed", progress.failedCount.toString()))
         }
 
-        content.add(header, metrics)
+        val detail = progress.detail?.takeIf { it.isNotBlank() }?.let {
+            Span(it).apply { addClassName("czj-facebook-import-progress-detail") }
+        }
+
+        content.add(header)
+        detail?.let { content.add(it) }
+        content.add(metrics)
         return content
     }
 

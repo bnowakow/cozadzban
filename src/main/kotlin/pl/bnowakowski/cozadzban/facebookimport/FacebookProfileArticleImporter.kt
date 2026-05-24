@@ -62,6 +62,8 @@ class FacebookProfileArticleImporter(
     @Volatile private var activeImportThread: Thread? = null
     @Volatile private var driver: WebDriver? = null
     @Volatile private var lastProgressReportedAt: Instant? = null
+    @Volatile private var activeImportStartedAt: Instant? = null
+    @Volatile private var latestProgressSnapshot: FacebookImportProgressSnapshot? = null
 
     fun startImport() {
         startImport(FacebookCandidateApprovalHandler.acceptAll())
@@ -129,6 +131,9 @@ class FacebookProfileArticleImporter(
             activeImportThread?.isAlive == true
         }
 
+    fun currentProgressSnapshot(): FacebookImportProgressSnapshot? =
+        latestProgressSnapshot
+
     fun newImportRunId(generatedAt: Instant = Instant.now()): String =
         facebookImportId(generatedAt)
 
@@ -147,6 +152,8 @@ class FacebookProfileArticleImporter(
         var completionStatus = FacebookImportRunStatus.FINISHED
         var completionLogs = ""
         lastProgressReportedAt = null
+        activeImportStartedAt = Instant.now()
+        latestProgressSnapshot = null
         reportProgress(importRunId, trigger, FacebookImportProgressPhase.STARTING, summary, force = true)
         try {
             runImportInternal(importRunId, trigger, summary)
@@ -225,12 +232,9 @@ class FacebookProfileArticleImporter(
             )
             repeat(scrollsThisPass) { index ->
                 driver.findElement(By.tagName("body")).sendKeys(Keys.PAGE_DOWN)
+                val scrollProgress = scrollProgress(passIndex + 1, passCount, index + 1, scrollsThisPass)
                 logger.info(
-                    "Facebook import discovery pass {}/{} scroll {}/{}",
-                    passIndex + 1,
-                    passCount,
-                    index + 1,
-                    scrollsThisPass,
+                    scrollProgress,
                 )
                 reportProgress(
                     facebookImportId,
@@ -239,6 +243,8 @@ class FacebookProfileArticleImporter(
                     summary,
                     passIndex = passIndex + 1,
                     passCount = passCount,
+                    detail = scrollProgress,
+                    force = true,
                 )
                 sleep(properties.waitAfterScroll)
             }
@@ -262,7 +268,18 @@ class FacebookProfileArticleImporter(
                 passCount = passCount,
                 force = true,
             )
-            val candidates = findCandidatePosts(driver)
+            val candidates = findCandidatePosts(driver) { detail ->
+                reportProgress(
+                    facebookImportId,
+                    trigger,
+                    FacebookImportProgressPhase.COLLECTING_POSTS,
+                    summary,
+                    passIndex = passIndex + 1,
+                    passCount = passCount,
+                    detail = detail,
+                    force = true,
+                )
+            }
             summary.discovered += candidates.size
             logger.info(
                 "Facebook import discovery pass {}/{} found {} marked posts",
@@ -434,6 +451,7 @@ class FacebookProfileArticleImporter(
         summary: ProposalImportSummary,
         passIndex: Int = 0,
         passCount: Int = 0,
+        detail: String? = null,
         force: Boolean = false,
     ) {
         val now = Instant.now()
@@ -444,6 +462,7 @@ class FacebookProfileArticleImporter(
         lastProgressReportedAt = now
         val request = FacebookImportProgressRequest(
             phase = phase.label,
+            detail = detail,
             phaseIndex = phase.phaseIndex,
             phaseCount = FACEBOOK_IMPORT_PROGRESS_PHASE_COUNT,
             passIndex = passIndex,
@@ -453,6 +472,22 @@ class FacebookProfileArticleImporter(
             skippedExistingCount = summary.skippedExisting,
             failedCount = summary.failed,
             occurredAt = now,
+        )
+        latestProgressSnapshot = FacebookImportProgressSnapshot(
+            importRunId = importRunId,
+            status = FacebookImportRunStatus.RUNNING,
+            startedAt = activeImportStartedAt ?: now,
+            lastUpdatedAt = now,
+            phase = request.phase,
+            detail = request.detail,
+            phaseIndex = request.phaseIndex,
+            phaseCount = request.phaseCount,
+            passIndex = request.passIndex,
+            passCount = request.passCount,
+            matchedPostCount = request.matchedPostCount,
+            submittedCount = request.submittedCount,
+            skippedExistingCount = request.skippedExistingCount,
+            failedCount = request.failedCount,
         )
         try {
             proposalClient?.recordProgress(importRunId, request)
@@ -779,7 +814,10 @@ class FacebookProfileArticleImporter(
             true
         }.getOrDefault(false)
 
-    private fun findCandidatePosts(driver: WebDriver): List<FacebookPostCandidate> {
+    private fun findCandidatePosts(
+        driver: WebDriver,
+        progressReporter: ((String) -> Unit)? = null,
+    ): List<FacebookPostCandidate> {
         val posts = collectPostContainers(driver)
         val markers = candidateMarkerPhrases()
         val markedPosts = posts.mapNotNull { element ->
@@ -794,11 +832,13 @@ class FacebookProfileArticleImporter(
             markers,
         )
         return markedPosts.mapIndexedNotNull { index, markedPost ->
+            val progress = discoveryProgress(index + 1, markedPosts.size)
+            progressReporter?.invoke(progress)
             logMarkedPostCandidate(driver, index + 1, markedPosts.size, markedPost)
             val postUrl = findPostUrlSelection(
                 driver,
                 markedPost.element,
-                discoveryProgress(index + 1, markedPosts.size),
+                progress,
                 markedPost.text,
             )
                 ?: return@mapIndexedNotNull null
@@ -2109,6 +2149,9 @@ class FacebookProfileArticleImporter(
 
     private fun discoveryProgress(postNumber: Int, postTotal: Int): String =
         "Facebook discovery post $postNumber/$postTotal:"
+
+    private fun scrollProgress(passIndex: Int, passCount: Int, scrollIndex: Int, scrollCount: Int): String =
+        "Facebook import discovery pass $passIndex/$passCount scroll $scrollIndex/$scrollCount"
 
     private fun importFailureReason(ex: Exception): String =
         when (ex) {

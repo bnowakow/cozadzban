@@ -15,6 +15,8 @@ import org.mockito.kotlin.never
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import org.springframework.context.ApplicationEventPublisher
+import org.springframework.transaction.annotation.Propagation
+import org.springframework.transaction.annotation.Transactional
 import pl.bnowakowski.cozadzban.article.Article
 import pl.bnowakowski.cozadzban.article.ArticleInput
 import pl.bnowakowski.cozadzban.article.ArticleService
@@ -43,6 +45,14 @@ class FacebookArticleProposalServiceTest {
         ),
         eventPublisher,
     )
+
+    @Test
+    fun `worker-facing write methods commit outside the long batch transaction`() {
+        assertRequiresNew("submitBatch", FacebookProposalBatchRequest::class.java)
+        assertRequiresNew("recordProgress", String::class.java, FacebookImportProgressRequest::class.java)
+        assertRequiresNew("completeRun", String::class.java, FacebookImportRunCompletionRequest::class.java)
+        assertRequiresNew("recordLoginRequired", String::class.java, FacebookImportLoginRequiredRequest::class.java)
+    }
 
     @Test
     fun `gzip text codec round trips proposal logs`() {
@@ -382,4 +392,12 @@ class FacebookArticleProposalServiceTest {
             lastSeenAt = Instant.parse("2026-05-24T10:00:00Z"),
             logsCompressed = logsCompressed,
         )
+
+    private fun assertRequiresNew(methodName: String, vararg parameterTypes: Class<*>) {
+        val transactional = FacebookArticleProposalService::class.java
+            .getDeclaredMethod(methodName, *parameterTypes)
+            .getAnnotation(Transactional::class.java)
+
+        assertEquals(Propagation.REQUIRES_NEW, transactional?.propagation)
+    }
 }

@@ -13,7 +13,7 @@ plugins {
 }
 
 group = "pl.bnowakowski"
-version = "0.55.0-SNAPSHOT"
+version = "0.55.1-SNAPSHOT"
 
 java {
 	toolchain {

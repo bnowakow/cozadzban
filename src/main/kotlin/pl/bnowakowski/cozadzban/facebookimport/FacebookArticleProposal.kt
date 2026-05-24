@@ -53,6 +53,7 @@ data class FacebookImportRun(
     val currentPassIndex: Int,
     val passCount: Int,
     val phase: String?,
+    val statusDetail: String?,
     val phaseIndex: Int,
     val phaseCount: Int,
     val lastStatusAt: Instant,
@@ -125,6 +126,7 @@ data class FacebookImportLoginRequiredRequest(
 
 data class FacebookImportProgressRequest(
     val phase: String,
+    val detail: String? = null,
     val phaseIndex: Int,
     val phaseCount: Int,
     val passIndex: Int = 0,
@@ -142,6 +144,7 @@ data class FacebookImportProgressSnapshot(
     val startedAt: Instant,
     val lastUpdatedAt: Instant,
     val phase: String?,
+    val detail: String?,
     val phaseIndex: Int,
     val phaseCount: Int,
     val passIndex: Int,

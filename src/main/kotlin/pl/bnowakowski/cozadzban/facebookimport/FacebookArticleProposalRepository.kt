@@ -28,11 +28,11 @@ class FacebookImportRunRepository(
                 INSERT INTO facebook_import_run(
                     import_run_id, status, discovered_count, submitted_count,
                     skipped_existing_count, current_pass_index, pass_count,
-                    phase, phase_index, phase_count, last_status_at, summary_logs_compressed
+                    phase, status_detail, phase_index, phase_count, last_status_at, summary_logs_compressed
                 )
                 VALUES (
                     :importRunId, 'RUNNING', :discoveredCount, :submittedCount,
-                    :skippedExistingCount, :passIndex, :passCount, :phase, :phaseIndex, :phaseCount, now(), :logsCompressed
+                    :skippedExistingCount, :passIndex, :passCount, :phase, NULL, :phaseIndex, :phaseCount, now(), :logsCompressed
                 )
                 ON CONFLICT (import_run_id) DO UPDATE
                    SET discovered_count = facebook_import_run.discovered_count + :discoveredCount,
@@ -41,6 +41,7 @@ class FacebookImportRunRepository(
                        current_pass_index = :passIndex,
                        pass_count = :passCount,
                        phase = :phase,
+                       status_detail = NULL,
                        phase_index = :phaseIndex,
                        phase_count = :phaseCount,
                        last_status_at = now(),
@@ -66,12 +67,12 @@ class FacebookImportRunRepository(
                 INSERT INTO facebook_import_run(
                     import_run_id, status, discovered_count, submitted_count,
                     skipped_existing_count, failed_count, current_pass_index, pass_count,
-                    phase, phase_index, phase_count, last_status_at
+                    phase, status_detail, phase_index, phase_count, last_status_at
                 )
                 VALUES (
                     :importRunId, 'RUNNING', :matchedPostCount, :submittedCount,
                     :skippedExistingCount, :failedCount, :passIndex, :passCount,
-                    :phase, :phaseIndex, :phaseCount, :occurredAt
+                    :phase, :statusDetail, :phaseIndex, :phaseCount, :occurredAt
                 )
                 ON CONFLICT (import_run_id) DO UPDATE
                    SET status = CASE
@@ -85,6 +86,7 @@ class FacebookImportRunRepository(
                        current_pass_index = :passIndex,
                        pass_count = :passCount,
                        phase = :phase,
+                       status_detail = :statusDetail,
                        phase_index = :phaseIndex,
                        phase_count = :phaseCount,
                        last_status_at = :occurredAt
@@ -98,6 +100,7 @@ class FacebookImportRunRepository(
                 .addValue("passIndex", request.passIndex.coerceAtLeast(0))
                 .addValue("passCount", request.passCount.coerceAtLeast(0))
                 .addValue("phase", request.phase.trim().ifBlank { "Running" })
+                .addValue("statusDetail", request.detail?.trim()?.takeIf { it.isNotEmpty() })
                 .addValue("phaseIndex", request.phaseIndex.coerceAtLeast(0))
                 .addValue("phaseCount", request.phaseCount.coerceAtLeast(0))
                 .addValue("occurredAt", Timestamp.from(request.occurredAt)),
@@ -117,12 +120,12 @@ class FacebookImportRunRepository(
             """
                 INSERT INTO facebook_import_run(
                     import_run_id, status, finished_at, discovered_count, submitted_count,
-                    skipped_existing_count, failed_count, phase, phase_index,
+                    skipped_existing_count, failed_count, phase, status_detail, phase_index,
                     phase_count, last_status_at, summary_logs_compressed
                 )
                 VALUES (
                     :importRunId, :status, now(), :discoveredCount, :submittedCount,
-                    :skippedExistingCount, :failedCount, :phase, :phaseIndex,
+                    :skippedExistingCount, :failedCount, :phase, NULL, :phaseIndex,
                     :phaseCount, now(), :logsCompressed
                 )
                 ON CONFLICT (import_run_id) DO UPDATE
@@ -133,6 +136,7 @@ class FacebookImportRunRepository(
                        skipped_existing_count = GREATEST(facebook_import_run.skipped_existing_count, :skippedExistingCount),
                        failed_count = GREATEST(facebook_import_run.failed_count, :failedCount),
                        phase = :phase,
+                       status_detail = NULL,
                        phase_index = :phaseIndex,
                        phase_count = :phaseCount,
                        last_status_at = now(),
@@ -163,12 +167,12 @@ class FacebookImportRunRepository(
                 INSERT INTO facebook_import_run(
                     import_run_id, status, login_required_first_at, login_required_last_at,
                     login_required_count, login_required_trigger, login_required_profile_url,
-                    phase, phase_index, phase_count, last_status_at
+                    phase, status_detail, phase_index, phase_count, last_status_at
                 )
                 VALUES (
                     :importRunId, 'RUNNING', :detectedAt, :detectedAt,
                     1, :trigger, :profileUrl,
-                    :phase, :phaseIndex, :phaseCount, :detectedAt
+                    :phase, NULL, :phaseIndex, :phaseCount, :detectedAt
                 )
                 ON CONFLICT (import_run_id) DO UPDATE
                    SET login_required_first_at = COALESCE(facebook_import_run.login_required_first_at, :detectedAt),
@@ -177,6 +181,7 @@ class FacebookImportRunRepository(
                        login_required_trigger = :trigger,
                        login_required_profile_url = :profileUrl,
                        phase = :phase,
+                       status_detail = NULL,
                        phase_index = :phaseIndex,
                        phase_count = :phaseCount,
                        last_status_at = :detectedAt
@@ -198,7 +203,7 @@ class FacebookImportRunRepository(
     fun findLatestRunningProgress(): FacebookImportProgressSnapshot? =
         jdbc.query(
             """
-                SELECT import_run_id, status, started_at, last_status_at, phase, phase_index,
+                SELECT import_run_id, status, started_at, last_status_at, phase, status_detail, phase_index,
                        phase_count, current_pass_index, pass_count, discovered_count,
                        submitted_count, skipped_existing_count, failed_count
                   FROM facebook_import_run
@@ -226,6 +231,7 @@ class FacebookImportRunRepository(
                 startedAt = rs.getTimestamp("started_at").toInstant(),
                 lastUpdatedAt = rs.getTimestamp("last_status_at").toInstant(),
                 phase = rs.getString("phase"),
+                detail = rs.getString("status_detail"),
                 phaseIndex = rs.getInt("phase_index"),
                 phaseCount = rs.getInt("phase_count"),
                 passIndex = rs.getInt("current_pass_index"),

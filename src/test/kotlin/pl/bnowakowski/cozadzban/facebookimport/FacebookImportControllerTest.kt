@@ -109,6 +109,7 @@ class FacebookImportControllerTest {
                 startedAt = Instant.parse("2026-05-24T09:58:00Z"),
                 lastUpdatedAt = Instant.parse("2026-05-24T10:00:00Z"),
                 phase = "Sending proposals",
+                detail = "Facebook discovery post 4/6:",
                 phaseIndex = 8,
                 phaseCount = 8,
                 passIndex = 2,
@@ -130,6 +131,7 @@ class FacebookImportControllerTest {
             status { isOk() }
             jsonPath("$.importRunId") { value("run-1") }
             jsonPath("$.phase") { value("Sending proposals") }
+            jsonPath("$.detail") { value("Facebook discovery post 4/6:") }
             jsonPath("$.matchedPostCount") { value(5) }
             jsonPath("$.skippedExistingCount") { value(1) }
             jsonPath("$.lastUpdatedAt") { value("2026-05-24T10:00:00Z") }

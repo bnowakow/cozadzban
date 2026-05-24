@@ -6,6 +6,7 @@ package pl.bnowakowski.cozadzban.facebookimport
 import org.slf4j.LoggerFactory
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
 import pl.bnowakowski.cozadzban.article.ArticleInput
 import pl.bnowakowski.cozadzban.article.ArticleService
@@ -33,6 +34,7 @@ class FacebookArticleProposalService(
             proposalRepository.existsByCanonicalArticleUrl(canonicalUrl)
     }
 
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     fun submitBatch(request: FacebookProposalBatchRequest): FacebookProposalBatchResponse {
         require(request.importRunId.isNotBlank()) { "importRunId is required" }
 
@@ -106,6 +108,7 @@ class FacebookArticleProposalService(
         )
     }
 
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     fun recordProgress(importRunId: String, request: FacebookImportProgressRequest) {
         require(importRunId.isNotBlank()) { "importRunId is required" }
         require(request.phaseIndex <= request.phaseCount || request.phaseCount == 0) {
@@ -118,6 +121,7 @@ class FacebookArticleProposalService(
     fun latestRunningProgress(): FacebookImportProgressSnapshot? =
         runRepository.findLatestRunningProgress()
 
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     fun completeRun(importRunId: String, request: FacebookImportRunCompletionRequest) {
         require(importRunId.isNotBlank()) { "importRunId is required" }
         runRepository.complete(
@@ -141,6 +145,7 @@ class FacebookArticleProposalService(
         )
     }
 
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     fun recordLoginRequired(importRunId: String, request: FacebookImportLoginRequiredRequest) {
         require(importRunId.isNotBlank()) { "importRunId is required" }
         val firstForRun = runRepository.recordLoginRequired(

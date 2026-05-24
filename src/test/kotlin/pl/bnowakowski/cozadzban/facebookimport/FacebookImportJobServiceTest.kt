@@ -19,6 +19,7 @@ import org.springframework.batch.core.job.JobInstance
 import org.springframework.batch.core.job.parameters.JobParameters
 import org.springframework.batch.core.launch.JobOperator
 import org.springframework.beans.factory.ObjectProvider
+import java.time.Instant
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -83,6 +84,48 @@ class FacebookImportJobServiceTest {
         verify(jobOperator).start(eq(job), parameters.capture())
         assertEquals("run-scheduled", parameters.firstValue.getString("facebookImportId"))
         assertEquals(FacebookImportTrigger.SCHEDULED.name, parameters.firstValue.getString("trigger"))
+    }
+
+    @Test
+    fun `currentProgress uses importer snapshot while batch launch is active`() {
+        val latch = CountDownLatch(1)
+        val snapshot = FacebookImportProgressSnapshot(
+            importRunId = "run-1",
+            status = FacebookImportRunStatus.RUNNING,
+            startedAt = Instant.parse("2026-05-24T10:00:00Z"),
+            lastUpdatedAt = Instant.parse("2026-05-24T10:01:00Z"),
+            phase = "Collecting marked posts",
+            detail = "Facebook discovery post 2/6:",
+            phaseIndex = 6,
+            phaseCount = 8,
+            passIndex = 2,
+            passCount = 4,
+            matchedPostCount = 2,
+            submittedCount = 0,
+            skippedExistingCount = 1,
+            failedCount = 0,
+        )
+        whenever(jobOperatorProvider.getIfAvailable()).thenReturn(jobOperator)
+        whenever(jobProvider.getIfAvailable()).thenReturn(job)
+        whenever(importer.facebookImportUnavailableReason()).thenReturn(null)
+        whenever(importer.newImportRunId(any())).thenReturn("run-1")
+        whenever(importer.isImportRunning()).thenReturn(false)
+        whenever(importer.currentProgressSnapshot()).thenReturn(snapshot)
+        whenever(proposalService.latestRunningProgress()).thenReturn(null)
+        whenever(jobOperator.start(eq(job), any())).thenAnswer {
+            latch.countDown()
+            Thread.sleep(5_000)
+            JobExecution(99L, JobInstance(1L, FACEBOOK_IMPORT_JOB_NAME), it.getArgument(1))
+        }
+        val service = FacebookImportJobService(jobOperatorProvider, jobProvider, importer, proposalService)
+
+        service.startImport()
+        assertTrue(latch.await(1, TimeUnit.SECONDS))
+
+        assertEquals(snapshot, service.currentProgress())
+
+        service.terminateImport()
+        waitUntil { !service.isImportRunning() }
     }
 
     @Test

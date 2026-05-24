@@ -126,12 +126,17 @@ class FacebookImportJobService(
             }
         } ?: return null
 
+        importer.currentProgressSnapshot()
+            ?.takeIf { it.importRunId == fallback.first }
+            ?.let { return it }
+
         return FacebookImportProgressSnapshot(
             importRunId = fallback.first,
             status = FacebookImportRunStatus.RUNNING,
             startedAt = fallback.second,
             lastUpdatedAt = Instant.now(),
             phase = FacebookImportProgressPhase.STARTING.label,
+            detail = null,
             phaseIndex = FacebookImportProgressPhase.STARTING.phaseIndex,
             phaseCount = FACEBOOK_IMPORT_PROGRESS_PHASE_COUNT,
             passIndex = 0,
