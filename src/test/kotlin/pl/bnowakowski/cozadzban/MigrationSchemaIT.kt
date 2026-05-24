@@ -21,6 +21,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean
  * - article.created_by_user_id is NOT NULL (BR-37)
  * - article.published_at is nullable (BR-41)
  * - article_content table exists (Phase 20)
+ * - facebook_article_proposal and facebook_import_run tables exist (Phase 24 rewrite)
  * - app_user.status column exists (BR-40)
  * - article_published_at_idx index exists (BR-41)
  * - created_by_user_id NOT NULL constraint is enforced at the DB level
@@ -77,6 +78,73 @@ class MigrationSchemaIT {
             Int::class.java,
         )
         assertEquals(1, count, "article_content table should exist after V5 migration")
+    }
+
+    @Test
+    fun `facebook proposal inbox tables exist after V18 migration`() {
+        val proposalCount = jdbc.queryForObject(
+            """
+            SELECT COUNT(*) FROM information_schema.tables
+             WHERE table_name = 'facebook_article_proposal'
+            """,
+            Int::class.java,
+        )
+        val runCount = jdbc.queryForObject(
+            """
+            SELECT COUNT(*) FROM information_schema.tables
+             WHERE table_name = 'facebook_import_run'
+            """,
+            Int::class.java,
+        )
+
+        assertEquals(1, proposalCount, "facebook_article_proposal table should exist after V18 migration")
+        assertEquals(1, runCount, "facebook_import_run table should exist after V18 migration")
+    }
+
+    @Test
+    fun `facebook proposal canonical article url is unique and status is nullable`() {
+        jdbc.update(
+            "INSERT INTO facebook_import_run(import_run_id) VALUES (?)",
+            "schema-run-${System.nanoTime()}",
+        )
+        val runId = jdbc.queryForObject(
+            "SELECT import_run_id FROM facebook_import_run ORDER BY started_at DESC LIMIT 1",
+            String::class.java,
+        )!!
+        val url = "https://proposal-schema.test/${System.nanoTime()}"
+        jdbc.update(
+            """
+            INSERT INTO facebook_article_proposal(
+                candidate_id, import_run_id, article_url, canonical_article_url, guessed_language
+            )
+            VALUES (?, ?, ?, ?, 'en')
+            """,
+            "candidate-1",
+            runId,
+            url,
+            url,
+        )
+        val status = jdbc.queryForObject(
+            "SELECT status FROM facebook_article_proposal WHERE canonical_article_url = ?",
+            String::class.java,
+            url,
+        )
+        assertEquals(null, status, "pending proposal status should be nullable")
+
+        assertThrows(Exception::class.java) {
+            jdbc.update(
+                """
+                INSERT INTO facebook_article_proposal(
+                    candidate_id, import_run_id, article_url, canonical_article_url, guessed_language
+                )
+                VALUES (?, ?, ?, ?, 'en')
+                """,
+                "candidate-2",
+                runId,
+                "$url?source=again",
+                url,
+            )
+        }
     }
 
     @Test

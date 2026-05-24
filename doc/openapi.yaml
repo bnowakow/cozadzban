@@ -26,13 +26,13 @@ info:
        using server-side service calls.
     8. **Facebook import job** — admin-only REST endpoints and UI button trigger a
        long-lived Selenium job that reuses one browser session, verifies Facebook
-       login state before each run, and re-authenticates when necessary. UI-started
-       imports pause after each discovery pass for same-session ADMIN approval of
-       candidate URLs after filtering out already-imported URLs. The UI approval
-       modal includes the source Facebook post URL when known; REST-triggered
-       imports remain non-interactive.
-    9. **Machine-to-machine writes** — the Facebook importer may write articles to
-       the remote API using a dedicated API key tied to an allowlisted bot user.
+       login state before each run, and re-authenticates when necessary. The worker
+       submits discovered candidates as stored article proposals instead of creating
+       Articles directly.
+    9. **Article proposal inbox** — ACTIVE logged-in users review Facebook import
+       proposals at `/article-proposals`, correct language, and accept/reject.
+    10. **Machine-to-machine writes** — the Facebook importer submits proposals and
+       run completion events using a dedicated API key tied to an allowlisted bot user.
     ## Implementation notes
     - Language is normalized to lowercase and validated against a conservative
       BCP-47-like pattern (e.g. `pl`, `en`, `en-gb`).
@@ -415,6 +415,93 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
 
+  /api/facebook-import/proposals/exists:
+
+    get:
+      tags: [Facebook Import]
+      summary: Check whether an article URL already exists as an Article or proposal
+      operationId: facebookProposalExists
+      security:
+        - machineApiKey: []
+      parameters:
+        - name: url
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uri
+            maxLength: 2048
+            pattern: '^https?://.+'
+      responses:
+        '200':
+          description: Existing Article or proposal state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FacebookProposalExistsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/facebook-import/proposals:
+
+    post:
+      tags: [Facebook Import]
+      summary: Submit discovered Facebook article proposals
+      operationId: submitFacebookArticleProposals
+      security:
+        - machineApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FacebookProposalBatchRequest'
+      responses:
+        '200':
+          description: Proposal batch processed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FacebookProposalBatchResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/facebook-import/runs/{importRunId}/complete:
+
+    post:
+      tags: [Facebook Import]
+      summary: Mark a Facebook import run completed
+      operationId: completeFacebookImportRun
+      security:
+        - machineApiKey: []
+      parameters:
+        - name: importRunId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FacebookImportRunCompletionRequest'
+      responses:
+        '204':
+          description: Import run completion recorded
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
   /api/articles/{id}:
 
     parameters:
@@ -770,7 +857,7 @@ components:
       type: apiKey
       in: header
       name: X-CoZaDzban-M2M-Key
-      description: Machine credential used by the remote Facebook importer to write articles
+      description: Machine credential used by the remote Facebook importer to submit proposals
 
     cookieAuth:
       type: apiKey
@@ -830,6 +917,104 @@ components:
         exists:
           type: boolean
           example: true
+
+    FacebookProposalExistsResponse:
+      type: object
+      required: [exists]
+      properties:
+        exists:
+          type: boolean
+          description: True when the canonical URL already exists as an Article or proposal.
+          example: false
+
+    FacebookProposalSubmission:
+      type: object
+      required: [candidateId, articleUrl, language]
+      properties:
+        candidateId:
+          type: string
+          example: facebook-import-candidate-42
+        articleUrl:
+          type: string
+          format: uri
+          maxLength: 2048
+          pattern: '^https?://.+'
+          example: https://example.com/story
+        facebookPostUrl:
+          type: string
+          format: uri
+          nullable: true
+          example: https://www.facebook.com/source/posts/123
+        language:
+          type: string
+          maxLength: 20
+          pattern: '^[a-z]{2,3}(-[a-z0-9]{2,8})*$'
+          description: Worker-guessed language; users may correct it before accepting.
+          example: pl
+        logs:
+          type: string
+          nullable: true
+          description: Worker diagnostics stored server-side as compressed UTF-8 GZIP bytes.
+
+    FacebookProposalBatchRequest:
+      type: object
+      required: [importRunId, passIndex, passCount, proposals]
+      properties:
+        importRunId:
+          type: string
+          example: facebook-import-20260524T100000Z-1
+        passIndex:
+          type: integer
+          minimum: 1
+          example: 1
+        passCount:
+          type: integer
+          minimum: 1
+          example: 4
+        proposals:
+          type: array
+          items:
+            $ref: '#/components/schemas/FacebookProposalSubmission'
+        logs:
+          type: string
+          nullable: true
+
+    FacebookProposalBatchResponse:
+      type: object
+      required: [importRunId, submitted, skippedExisting]
+      properties:
+        importRunId:
+          type: string
+        submitted:
+          type: integer
+          example: 3
+        skippedExisting:
+          type: integer
+          example: 1
+
+    FacebookImportRunCompletionRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [RUNNING, FINISHED, FAILED, TERMINATED]
+          example: FINISHED
+        discoveredCount:
+          type: integer
+          default: 0
+        submittedCount:
+          type: integer
+          default: 0
+        skippedExistingCount:
+          type: integer
+          default: 0
+        failedCount:
+          type: integer
+          default: 0
+        logs:
+          type: string
+          nullable: true
 
     ArticlePatch:
       type: object

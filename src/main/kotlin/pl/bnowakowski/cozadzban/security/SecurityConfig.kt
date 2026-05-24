@@ -94,6 +94,15 @@ class SecurityConfig(
                     AuthorizationDecision(allowlist.checkAdmin(authentication.get()))
                 }
 
+                // Worker proposal inbox endpoints are machine-only. Human review is server-side Vaadin.
+                auth.requestMatchers("/api/facebook-import/**").access { authentication, _ ->
+                    val authValue = authentication.get()
+                    AuthorizationDecision(
+                        authValue is MachineToMachineAuthenticationToken &&
+                            allowlist.checkMachine(authValue),
+                    )
+                }
+
                 // Allowlist management endpoints are ADMIN-only (BR-17, BR-21)
                 auth.requestMatchers("/api/users/**").access { authentication, _ ->
                     AuthorizationDecision(allowlist.checkAdmin(authentication.get()))

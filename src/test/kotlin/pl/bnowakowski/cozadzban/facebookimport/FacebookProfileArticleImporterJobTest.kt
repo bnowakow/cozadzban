@@ -38,6 +38,7 @@ import java.time.Instant
 import org.openqa.selenium.Cookie
 import org.openqa.selenium.NoSuchWindowException
 import org.openqa.selenium.WebDriver
+import org.openqa.selenium.WebElement
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
 import org.springframework.web.client.HttpClientErrorException
@@ -49,12 +50,14 @@ class FacebookProfileArticleImporterJobTest {
 
     private val articleService: ArticleService = mock()
     private val appUserRepository: AppUserRepository = mock()
+    private val proposalClient: FacebookImportProposalClient = mock()
 
     @Test
     fun `startImport launches a background job and reuses the opened driver`() {
         val importer = spy(
             FacebookProfileArticleImporter(
                 FacebookImportProperties(
+                    enabled = true,
                     username = "admin@example.com",
                     password = "secret",
                     scrolls = 0,
@@ -96,6 +99,7 @@ class FacebookProfileArticleImporterJobTest {
         val importer = spy(
             FacebookProfileArticleImporter(
                 FacebookImportProperties(
+                    enabled = true,
                     username = "admin@example.com",
                     password = "secret",
                     scrolls = 0,
@@ -142,6 +146,7 @@ class FacebookProfileArticleImporterJobTest {
         val importer = spy(
             FacebookProfileArticleImporter(
                 FacebookImportProperties(
+                    enabled = true,
                     username = "admin@example.com",
                     password = "secret",
                     scrolls = 0,
@@ -185,6 +190,7 @@ class FacebookProfileArticleImporterJobTest {
         val importer = spy(
             FacebookProfileArticleImporter(
                 FacebookImportProperties(
+                    enabled = true,
                     username = "admin@example.com",
                     password = "",
                     scrolls = 0,
@@ -225,6 +231,7 @@ class FacebookProfileArticleImporterJobTest {
         val importer = spy(
             FacebookProfileArticleImporter(
                 FacebookImportProperties(
+                    enabled = true,
                     username = "admin@example.com",
                     password = "",
                     scrolls = 0,
@@ -260,6 +267,61 @@ class FacebookProfileArticleImporterJobTest {
 
         importer.terminateImport()
         waitUntil("facebook import to stop") { !importer.isImportRunning() }
+    }
+
+    @Test
+    fun `startImport submits discovered candidates as proposals instead of creating articles`() {
+        val importer = spy(
+            FacebookProfileArticleImporter(
+                FacebookImportProperties(
+                    enabled = true,
+                    username = "admin@example.com",
+                    password = "secret",
+                    scrolls = 2,
+                    waitAfterPageOpen = Duration.ZERO,
+                    waitAfterScroll = Duration.ZERO,
+                    manualLoginTimeout = Duration.ofSeconds(1),
+                ),
+                appUserRepository,
+                articleService,
+                proposalClient,
+            ),
+        )
+        val driver = mock<WebDriver>()
+        val options = mock<WebDriver.Options>()
+        val body = mock<WebElement>()
+        val post = mock<WebElement>()
+        val selectedUrl = "https://www.facebook.com/reel/2758125771253657/"
+
+        whenever(driver.manage()).thenReturn(options)
+        whenever(options.getCookieNamed("c_user")).thenReturn(Cookie("c_user", "123"))
+        whenever(options.getCookieNamed("xs")).thenReturn(Cookie("xs", "abc"))
+        whenever(driver.currentUrl).thenReturn("https://www.facebook.com/admin.example")
+        whenever(driver.windowHandles).thenReturn(setOf("main"))
+        whenever(driver.windowHandle).thenReturn("main")
+        doNothing().whenever(driver).get(any())
+        whenever(driver.findElement(any())).thenReturn(body)
+        whenever(driver.findElements(any())).thenAnswer { invocation ->
+            val selector = invocation.arguments.first().toString()
+            if (selector.contains("See original")) emptyList<WebElement>() else listOf(post)
+        }
+        whenever(post.text).thenReturn("Co za dzban żółć $selectedUrl")
+        whenever(post.findElements(any())).thenReturn(emptyList())
+        doReturn(driver).whenever(importer).openDriver()
+        whenever(proposalClient.existsByArticleUrl(selectedUrl)).thenReturn(false)
+        whenever(proposalClient.submitBatch(any())).thenReturn(
+            FacebookProposalBatchResponse("run-1", submitted = 1, skippedExisting = 0),
+        )
+
+        importer.startImport()
+        waitUntil("facebook import to finish") { !importer.isImportRunning() }
+
+        val requestCaptor = argumentCaptor<FacebookProposalBatchRequest>()
+        verify(proposalClient).submitBatch(requestCaptor.capture())
+        assertEquals(1, requestCaptor.firstValue.proposals.size)
+        assertEquals(selectedUrl, requestCaptor.firstValue.proposals.single().articleUrl)
+        assertEquals("pl", requestCaptor.firstValue.proposals.single().language)
+        verify(articleService, never()).create(any(), any())
     }
 
     @Test

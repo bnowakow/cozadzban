@@ -136,16 +136,16 @@ x-architecture:
         View invokes application services server-side from Vaadin event handlers;
         no browser-side token forwarding is used.
     - name: Facebook import orchestration
-      technology: Spring-managed Selenium WebDriver + admin REST trigger + Vaadin action
+      technology: Spring-managed Selenium WebDriver + admin REST trigger + proposal inbox
       description: >
         A long-lived Selenium browser session is owned by the app and reused across
         import runs. The job is triggered manually or by cron via admin-only REST
         endpoints or the admin-only UI button on ArticleListView. Each run opens the
         browser on demand if needed, verifies the Facebook login state, performs
         login again when the session is no longer authenticated, and processes at
-        most one import at a time. In remote mode the worker writes imported
-        articles to the server-side article API over HTTPS and patches preserved
-        Facebook post content using a dedicated machine credential.
+        most one import at a time. The worker submits discovered article proposals
+        to machine-only server endpoints instead of creating Articles directly.
+        Logged-in users review proposals later in a Vaadin inbox.
     - name: Analytics and consent
       technology: Vaadin UI + configurable tracking IDs
       description: >
@@ -291,6 +291,45 @@ x-database:
           type: TIMESTAMPTZ
           constraints: nullable
           description: Timestamp of when content was last captured.
+    - name: facebook_import_run
+      migration: V18__facebook_article_proposals.sql
+      description: Stores Facebook import run metadata for proposal batches and future notifications.
+      columns:
+        - name: import_run_id
+          type: TEXT
+          constraints: PRIMARY KEY
+        - name: status
+          type: VARCHAR(32)
+          constraints: "NOT NULL CHECK IN (RUNNING, FINISHED, FAILED, TERMINATED)"
+        - name: started_at
+          type: TIMESTAMPTZ
+          constraints: "NOT NULL DEFAULT now()"
+        - name: finished_at
+          type: TIMESTAMPTZ
+          constraints: nullable
+        - name: summary_logs_compressed
+          type: BYTEA
+          constraints: nullable
+          description: UTF-8 GZIP compressed run diagnostics.
+    - name: facebook_article_proposal
+      migration: V18__facebook_article_proposals.sql
+      description: Stores discovered Facebook import candidates awaiting human review.
+      columns:
+        - name: id
+          type: BIGSERIAL
+          constraints: PRIMARY KEY
+        - name: canonical_article_url
+          type: TEXT
+          constraints: "NOT NULL UNIQUE"
+          description: Canonical article URL; identity for duplicate prevention.
+        - name: status
+          type: VARCHAR(32)
+          constraints: "nullable CHECK IN (ACCEPTED, REJECTED, FAILED)"
+          description: NULL means pending review.
+        - name: logs_compressed
+          type: BYTEA
+          constraints: nullable
+          description: UTF-8 GZIP compressed proposal diagnostics.
 # ──────────────────────────────────────────────────────────────
 # BUSINESS RULES  (x-business-rules)
 # ──────────────────────────────────────────────────────────────
@@ -647,7 +686,8 @@ x-business-rules:
       Selenium browser session is reused across runs. The app must verify whether
       Facebook is already logged in before each import; if not, it must run the
       login flow again. Only one import may run at a time, and the browser window
-      remains open until application shutdown.
+      remains open until application shutdown. Discovery submits proposal batches
+      and must not block on a human approval modal or create Articles directly.
   - id: BR-47
     name: Facebook import admin access
     description: >
@@ -656,29 +696,25 @@ x-business-rules:
       not see the control in the UI and must receive 403/Forbidden when calling
       the admin endpoints directly.
   - id: BR-48
-    name: Machine-to-machine article writes
+    name: Machine-to-machine Facebook proposal writes
     description: >
-      The Facebook importer may write to the remote article API using a dedicated
-      machine credential. The machine credential is limited to article create and
-      article content patch requests and must not grant access to allowlist or
-      admin endpoints. The remote server treats the machine credential as the
-      allowlisted bot user configured for the importer.
+      The Facebook importer writes proposal batches, proposal existence checks,
+      and import-run completion events using a dedicated machine credential. The
+      machine credential must not grant access to allowlist or admin endpoints.
+      Accepted proposals create Articles owned by the configured ACTIVE import bot user.
   - id: BR-49
-    name: Facebook import candidate approval
+    name: Facebook article proposal inbox
     description: >
-      When an ADMIN starts Facebook import from the Vaadin UI, each discovery pass
-      must pause after candidate discovery and show a modal only in that same
-      admin UI session. The modal lists every candidate URL as an external link,
-      shows the Facebook source post URL when known, shows the configured import
-      language, defaults each candidate to Accept, requires exactly one Accept/Reject
-      decision per candidate, and resumes only after Submit or Enter. URLs already
-      present in the article store must be filtered out before the modal and must
-      not be imported again. Rejected URLs must not be sent to the article server
-      and must be included in the final rejected URL summary. The modal and approval
-      log lines must include a runtime-unique candidateId and sourcePostUrl so a
-      decision can be correlated with discovery/import diagnostics without confusing
-      repeated URLs or later discovery passes.
-      REST-triggered admin imports remain non-interactive and accept all non-duplicate candidates.
+      The worker submits candidates as stored article proposals with candidateId,
+      article URL, source Facebook post URL, guessed language, importRunId, and
+      compressed diagnostics. Canonical article URL is unique across proposals;
+      if the URL already exists as an Article or Proposal the worker/server skips it.
+      Rediscovery updates lastSeen/log diagnostics without resetting an existing decision.
+      Proposal status is null for pending or one of accepted, rejected, failed.
+      All ACTIVE logged-in users may review proposals at /article-proposals, open
+      article/Facebook links in a new tab, correct language, and accept or reject.
+      Accept creates a normal Article owned by the configured import bot; if creation
+      fails the proposal is marked failed and may be retried.
 # ──────────────────────────────────────────────────────────────
 # VAADIN UI SPEC  (x-vaadin-ui)
 # ──────────────────────────────────────────────────────────────
@@ -706,8 +742,9 @@ x-vaadin-ui:
         - "Logout button click -> invalidates server session, clears security context, redirects to /"
         - "Login button click -> navigates to GET /auth/login (OAuth flow)"
         - "If authenticated: Add Article button in toolbar"
+        - "If authenticated: Article Proposals button links to /article-proposals"
         - "If authenticated and ADMIN: Import Facebook Posts button next to Add Article triggers the Facebook import job"
-        - "UI-started Facebook import shows an ADMIN-only candidate approval modal after each discovery pass; accepted candidates continue to import, rejected candidates are skipped and summarized"
+        - "Facebook import is non-blocking and submits proposals to /article-proposals; no approval modal is shown during discovery"
         - "Click Add Article -> modal with form (url, language, quote, optional publishedAt date/time)"
         - "Form validation: url required (^https?://.+), language required and normalized lowercase, quote optional, publishedAt optional"
         - "Submit server-side via ArticleService with loading spinner; on success close modal + refresh grid + success toast"
@@ -741,6 +778,15 @@ x-vaadin-ui:
         - Filters for article ID, article URL, publishedAt range, and createdAt range
         - View dialog for preserved content with refresh-from-source, edit, save, and purge actions
         - Navigation back to user management and the public feed
+    - name: FacebookArticleProposalView
+      route: /article-proposals
+      description: >
+        Proposal inbox for ACTIVE logged-in users to review Facebook import candidates.
+      features:
+        - Grid sorted by submittedAt descending
+        - Default pending-only status filter plus all/accepted/rejected/failed filters
+        - Article URL and Facebook post URL render as external links opening in a new tab
+        - Review dialog shows compressed diagnostics, editable language, Accept, Reject, and retry for failed proposals
 # ──────────────────────────────────────────────────────────────
 # API SPEC  (standard OpenAPI)
 # ──────────────────────────────────────────────────────────────
@@ -771,13 +817,13 @@ info:
        using server-side service calls.
     8. **Facebook import job** — admin-only REST endpoints and UI button trigger a
        long-lived Selenium job that reuses one browser session, verifies Facebook
-       login state before each run, and re-authenticates when necessary. UI-started
-       imports pause after each discovery pass for same-session ADMIN approval of
-       candidate URLs after filtering out already-imported URLs. The UI approval
-       modal includes the source Facebook post URL when known; REST-triggered
-       imports remain non-interactive.
-    9. **Machine-to-machine writes** — the Facebook importer may write articles to
-       the remote API using a dedicated API key tied to an allowlisted bot user.
+       login state before each run, and re-authenticates when necessary. The worker
+       submits discovered candidates as stored article proposals instead of creating
+       Articles directly.
+    9. **Article proposal inbox** — ACTIVE logged-in users review Facebook import
+       proposals at `/article-proposals`, correct language, and accept/reject.
+    10. **Machine-to-machine writes** — the Facebook importer submits proposals and
+       run completion events using a dedicated API key tied to an allowlisted bot user.
     ## Implementation notes
     - Language is normalized to lowercase and validated against a conservative
       BCP-47-like pattern (e.g. `pl`, `en`, `en-gb`).
@@ -1160,6 +1206,93 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
 
+  /api/facebook-import/proposals/exists:
+
+    get:
+      tags: [Facebook Import]
+      summary: Check whether an article URL already exists as an Article or proposal
+      operationId: facebookProposalExists
+      security:
+        - machineApiKey: []
+      parameters:
+        - name: url
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uri
+            maxLength: 2048
+            pattern: '^https?://.+'
+      responses:
+        '200':
+          description: Existing Article or proposal state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FacebookProposalExistsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/facebook-import/proposals:
+
+    post:
+      tags: [Facebook Import]
+      summary: Submit discovered Facebook article proposals
+      operationId: submitFacebookArticleProposals
+      security:
+        - machineApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FacebookProposalBatchRequest'
+      responses:
+        '200':
+          description: Proposal batch processed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FacebookProposalBatchResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/facebook-import/runs/{importRunId}/complete:
+
+    post:
+      tags: [Facebook Import]
+      summary: Mark a Facebook import run completed
+      operationId: completeFacebookImportRun
+      security:
+        - machineApiKey: []
+      parameters:
+        - name: importRunId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FacebookImportRunCompletionRequest'
+      responses:
+        '204':
+          description: Import run completion recorded
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
   /api/articles/{id}:
 
     parameters:
@@ -1515,7 +1648,7 @@ components:
       type: apiKey
       in: header
       name: X-CoZaDzban-M2M-Key
-      description: Machine credential used by the remote Facebook importer to write articles
+      description: Machine credential used by the remote Facebook importer to submit proposals
 
     cookieAuth:
       type: apiKey
@@ -1575,6 +1708,104 @@ components:
         exists:
           type: boolean
           example: true
+
+    FacebookProposalExistsResponse:
+      type: object
+      required: [exists]
+      properties:
+        exists:
+          type: boolean
+          description: True when the canonical URL already exists as an Article or proposal.
+          example: false
+
+    FacebookProposalSubmission:
+      type: object
+      required: [candidateId, articleUrl, language]
+      properties:
+        candidateId:
+          type: string
+          example: facebook-import-candidate-42
+        articleUrl:
+          type: string
+          format: uri
+          maxLength: 2048
+          pattern: '^https?://.+'
+          example: https://example.com/story
+        facebookPostUrl:
+          type: string
+          format: uri
+          nullable: true
+          example: https://www.facebook.com/source/posts/123
+        language:
+          type: string
+          maxLength: 20
+          pattern: '^[a-z]{2,3}(-[a-z0-9]{2,8})*$'
+          description: Worker-guessed language; users may correct it before accepting.
+          example: pl
+        logs:
+          type: string
+          nullable: true
+          description: Worker diagnostics stored server-side as compressed UTF-8 GZIP bytes.
+
+    FacebookProposalBatchRequest:
+      type: object
+      required: [importRunId, passIndex, passCount, proposals]
+      properties:
+        importRunId:
+          type: string
+          example: facebook-import-20260524T100000Z-1
+        passIndex:
+          type: integer
+          minimum: 1
+          example: 1
+        passCount:
+          type: integer
+          minimum: 1
+          example: 4
+        proposals:
+          type: array
+          items:
+            $ref: '#/components/schemas/FacebookProposalSubmission'
+        logs:
+          type: string
+          nullable: true
+
+    FacebookProposalBatchResponse:
+      type: object
+      required: [importRunId, submitted, skippedExisting]
+      properties:
+        importRunId:
+          type: string
+        submitted:
+          type: integer
+          example: 3
+        skippedExisting:
+          type: integer
+          example: 1
+
+    FacebookImportRunCompletionRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [RUNNING, FINISHED, FAILED, TERMINATED]
+          example: FINISHED
+        discoveredCount:
+          type: integer
+          default: 0
+        submittedCount:
+          type: integer
+          default: 0
+        skippedExistingCount:
+          type: integer
+          default: 0
+        failedCount:
+          type: integer
+          default: 0
+        logs:
+          type: string
+          nullable: true
 
     ArticlePatch:
       type: object

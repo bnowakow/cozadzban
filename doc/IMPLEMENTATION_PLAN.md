@@ -275,21 +275,23 @@ Phases 4 and 5 are independent and can be developed in parallel.
 
 58. **`FacebookProfileArticleImporter` service** — own a long-lived Selenium WebDriver,
     start imports on demand, reuse the browser between runs, verify Facebook login before
-    each scan, and keep at most one active import thread at a time. In remote mode, the
-    worker posts new articles to the target server's article API and uses a machine key
-    for create/patch requests instead of calling `ArticleService` directly.
+    each scan, and keep at most one active import thread at a time. The worker discovers
+    marked posts, guesses language, skips URLs that already exist as Articles or Proposals,
+    and submits proposal batches to the target server instead of creating Articles directly.
 59. **`FacebookImportController`** — expose admin-only `POST /api/admin/facebook-import/run`
     and `POST /api/admin/facebook-import/terminate` endpoints for manual or cron-triggered
     job control; return `202` on accepted start/terminate and `409` for busy/not-running.
 60. **`ArticleListView` admin action** — add an admin-only "Import Facebook Posts" button
     next to "Add Article" that calls the import trigger endpoint/service from the UI.
-60a. **Facebook candidate approval modal** — when an ADMIN starts import from the
-    Vaadin UI, pause each discovery pass after candidate detection, show a modal
-    in that same admin UI session with candidate URL, source Facebook post URL,
-    configured language, and Accept/Reject radio options defaulting to Accept,
-    filter out already-imported URLs before approval, then import only accepted
-    URLs and include rejected URLs in the final summary. The modal and approval
-    logs include a runtime-unique `candidateId` and `sourcePostUrl` for diagnostics.
+60a. **Facebook proposal inbox** — add `facebook_import_run` and
+    `facebook_article_proposal` tables plus machine-only proposal submission,
+    proposal existence precheck, and run completion endpoints. Proposal logs are
+    stored compressed; canonical article URL is unique across proposals.
+60b. **Article proposal review view** — add `/article-proposals` for all ACTIVE
+    logged-in users. The grid defaults to pending proposals, filters by status,
+    opens article/Facebook links in new tabs, and allows language correction before
+    Accept/Reject. Accept creates a normal Article owned by the configured import bot;
+    failures mark the proposal `FAILED` for retry.
 61. **Lifecycle cleanup** — remove startup auto-run and stop closing the Selenium browser
     after every import; keep the window alive until application shutdown.
 

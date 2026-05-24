@@ -4,6 +4,7 @@
 package pl.bnowakowski.cozadzban.facebookimport
 
 import jakarta.annotation.PreDestroy
+import org.jsoup.Jsoup
 import org.openqa.selenium.By
 import org.openqa.selenium.JavascriptExecutor
 import org.openqa.selenium.Keys
@@ -27,6 +28,8 @@ import java.io.File
 import java.net.URI
 import java.net.URLDecoder
 import java.net.http.HttpClient
+import java.net.http.HttpRequest
+import java.net.http.HttpResponse
 import java.nio.charset.StandardCharsets
 import java.time.Duration
 import java.time.Instant
@@ -47,6 +50,7 @@ class FacebookProfileArticleImporter(
     private val properties: FacebookImportProperties,
     private val appUserRepository: AppUserRepository,
     private val articleService: ArticleService,
+    private val proposalClient: FacebookImportProposalClient? = null,
 ) {
 
     private val logger = LoggerFactory.getLogger(javaClass)
@@ -62,8 +66,6 @@ class FacebookProfileArticleImporter(
 
     fun startImport(approvalHandler: FacebookCandidateApprovalHandler) {
         facebookImportUnavailableReason()?.let { throw IllegalArgumentException(it) }
-        val creator = appUserRepository.findByEmail(properties.username)
-            ?: throw IllegalArgumentException(FACEBOOK_IMPORT_USER_CONFIGURATION_ERROR)
 
         synchronized(stateLock) {
             if (activeImportThread?.isAlive == true) {
@@ -72,7 +74,7 @@ class FacebookProfileArticleImporter(
 
             val importThread = Thread {
                 try {
-                    runImport(creator.id!!, approvalHandler)
+                    runImport()
                 } catch (ex: InterruptedException) {
                     Thread.currentThread().interrupt()
                     logger.info("Facebook import was interrupted")
@@ -102,14 +104,13 @@ class FacebookProfileArticleImporter(
     }
 
     fun facebookImportUnavailableReason(): String? {
-        if (properties.username.isBlank()) {
-            return FACEBOOK_IMPORT_USER_CONFIGURATION_ERROR
+        if (!properties.enabled) {
+            return "app.facebook-import.enabled must be true"
         }
-        return if (appUserRepository.findByEmail(properties.username) == null) {
-            FACEBOOK_IMPORT_USER_CONFIGURATION_ERROR
-        } else {
-            null
+        if (properties.targetApiBaseUrl.isNotBlank() != properties.targetApiKey.isNotBlank()) {
+            return "Remote Facebook import is misconfigured: set both APP_FACEBOOK_IMPORT_TARGET_API_BASE_URL and APP_FACEBOOK_IMPORT_TARGET_API_KEY"
         }
+        return null
     }
 
     fun terminateImport() {
@@ -124,13 +125,13 @@ class FacebookProfileArticleImporter(
             activeImportThread?.isAlive == true
         }
 
-    private fun runImport(creatorId: Long, approvalHandler: FacebookCandidateApprovalHandler) {
+    private fun runImport() {
         val driver = ensureDriver()
         prepareProfileAndLogin(driver)
         sleep(properties.waitAfterPageOpen)
         val facebookImportId = facebookImportId()
-        val summary = ImportSummary()
-        val passCount = (2 until properties.scrolls step 2).count()
+        val summary = ProposalImportSummary()
+        val passCount = (1 until properties.scrolls step 2).count()
         logger.info(
             "Facebook import {} starting {} discovery passes with up to {} configured scrolls",
             facebookImportId,
@@ -164,110 +165,115 @@ class FacebookProfileArticleImporter(
                 passCount,
                 candidates.size,
             )
-            val candidateApprovalEntries = candidates.mapIndexed { index, candidate ->
-                CandidateApprovalEntry(
-                    candidate = candidate.copy(language = properties.language),
-                    discoveryIndex = index + 1,
-                    approval = FacebookCandidateApproval(
-                        url = candidate.url,
-                        language = properties.language,
-                        candidateId = candidateApprovalId(),
-                        sourcePostUrl = candidate.sourcePostUrl,
-                    ),
-                )
-            }
-            val approvalEntries = candidateApprovalEntries.filter { entry ->
-                val alreadyImported = isAlreadyImportedCandidateUrl(entry.candidate.url)
-                if (alreadyImported) {
+            val proposals = candidates.mapIndexedNotNull { index, candidate ->
+                val candidateId = candidateApprovalId()
+                if (!isImportableCandidateUrl(candidate.url, candidate.text)) {
                     logger.info(
-                        "Facebook import discovery pass {}/{} candidate {}/{} candidateId={} url={} sourcePostUrl={} language={} alreadyImported=true approved=false",
+                        "Facebook import discovery pass {}/{} candidate {}/{} importId={} candidateId={} url={} sourcePostUrl={} skippedNonImportable=true",
                         passIndex + 1,
                         passCount,
-                        entry.discoveryIndex,
+                        index + 1,
                         candidates.size,
-                        entry.approval.candidateId,
-                        entry.candidate.url,
-                        entry.candidate.sourcePostUrl ?: "<none>",
-                        properties.language,
+                        facebookImportId,
+                        candidateId,
+                        candidate.url,
+                        candidate.sourcePostUrl ?: "<none>",
                     )
-                    summary.record(ImportOutcome.ALREADY_IMPORTED, entry.candidate.url)
+                    return@mapIndexedNotNull null
                 }
-                !alreadyImported
-            }
-            val approvalsByUrl = approveCandidateDecisions(approvalEntries, approvalHandler)
-            val approvedCandidates = approvedCandidates(approvalEntries, approvalsByUrl)
-            val approvedUrls = approvedCandidates.map { it.url }.toSet()
-            approvalEntries.forEachIndexed { index, entry ->
-                val candidate = entry.candidate
-                val approval = approvalsByUrl[candidate.url] ?: entry.approval
-                val approved = candidate.url in approvedUrls
-                logger.info(
-                    "Facebook import discovery pass {}/{} candidate {}/{} importId={} candidateId={} url={} sourcePostUrl={} language={} alreadyImported=false approved={}",
-                    passIndex + 1,
-                    passCount,
-                    index + 1,
-                    approvalEntries.size,
-                    facebookImportId,
-                    entry.approval.candidateId,
-                    candidate.url,
-                    candidate.sourcePostUrl ?: "<none>",
-                    approval.language,
-                    approved,
-                )
-                if (!approved) {
-                    summary.recordRejected(candidate.url)
-                    writeRejectedCandidateArtifact(
-                        facebookImportId = facebookImportId,
-                        generatedAt = Instant.now(),
-                        passIndex = passIndex + 1,
-                        passCount = passCount,
-                        candidateIndex = index + 1,
-                        candidateCount = approvalEntries.size,
-                        entry = entry.copy(approval = approval),
+                val exists = proposalExists(candidate.url, candidateId)
+                if (exists) {
+                    summary.skippedExisting++
+                    logger.info(
+                        "Facebook import discovery pass {}/{} candidate {}/{} importId={} candidateId={} url={} sourcePostUrl={} skippedExisting=true",
+                        passIndex + 1,
+                        passCount,
+                        index + 1,
+                        candidates.size,
+                        facebookImportId,
+                        candidateId,
+                        candidate.url,
+                        candidate.sourcePostUrl ?: "<none>",
+                    )
+                    null
+                } else {
+                    val language = guessCandidateLanguage(candidate)
+                    logger.info(
+                        "Facebook import discovery pass {}/{} candidate {}/{} importId={} candidateId={} url={} sourcePostUrl={} language={} skippedExisting=false action=proposal-submit",
+                        passIndex + 1,
+                        passCount,
+                        index + 1,
+                        candidates.size,
+                        facebookImportId,
+                        candidateId,
+                        candidate.url,
+                        candidate.sourcePostUrl ?: "<none>",
+                        language,
+                    )
+                    FacebookProposalSubmission(
+                        candidateId = candidateId,
+                        articleUrl = candidate.url,
+                        facebookPostUrl = candidate.sourcePostUrl,
+                        language = language,
+                        logs = candidateProposalLogs(candidate),
                     )
                 }
             }
-            approvedCandidates.forEachIndexed { index, candidate ->
-                summary.record(
-                    importCandidate(candidate, creatorId, index + 1, approvedCandidates.size),
-                    candidate.url,
-                )
+            summary.discovered += candidates.size
+            if (proposals.isNotEmpty() || candidates.isNotEmpty()) {
+                try {
+                    val response = proposalClient?.submitBatch(
+                        FacebookProposalBatchRequest(
+                            importRunId = facebookImportId,
+                            passIndex = passIndex + 1,
+                            passCount = passCount,
+                            proposals = proposals,
+                            logs = "Facebook import discovery pass ${passIndex + 1}/$passCount found ${candidates.size} candidates and submitted ${proposals.size} proposals.",
+                        ),
+                    ) ?: FacebookProposalBatchResponse(facebookImportId, proposals.size, 0)
+                    summary.submitted += response.submitted
+                    summary.skippedExisting += response.skippedExisting
+                } catch (ex: Exception) {
+                    summary.failed += proposals.size
+                    logger.warn(
+                        "Facebook import discovery pass {}/{} could not submit proposal batch; importId={}; proposalCount={}; reason={}",
+                        passIndex + 1,
+                        passCount,
+                        facebookImportId,
+                        proposals.size,
+                        importFailureReason(ex),
+                        ex,
+                    )
+                }
             }
             logger.info(
-                "Facebook import discovery pass {}/{} finished: {} processed, {} imported, {} already imported, {} skipped, {} failed, {} rejected so far",
+                "Facebook import discovery pass {}/{} finished: {} discovered, {} submitted, {} skipped existing, {} failed so far",
                 passIndex + 1,
                 passCount,
-                summary.processed,
-                summary.imported,
-                summary.alreadyImported,
-                summary.skipped,
+                summary.discovered,
+                summary.submitted,
+                summary.skippedExisting,
                 summary.failed,
-                summary.rejected,
             )
         }
-        if (summary.failedUrls.isEmpty() && summary.rejectedUrls.isEmpty()) {
-            logger.info(
-                "Facebook import finished: {} processed, {} imported, {} already imported, {} skipped, {} failed, {} rejected",
-                summary.processed,
-                summary.imported,
-                summary.alreadyImported,
-                summary.skipped,
-                summary.failed,
-                summary.rejected,
-            )
-        } else {
-            logger.info(
-                "Facebook import finished: {} processed, {} imported, {} already imported, {} skipped, {} failed, {} rejected; failed URLs:\n{}\nrejected URLs:\n{}",
-                summary.processed,
-                summary.imported,
-                summary.alreadyImported,
-                summary.skipped,
-                summary.failed,
-                summary.rejected,
-                formatFailedUrls(summary.failedUrls),
-                formatFailedUrls(summary.rejectedUrls),
-            )
-        }
+        proposalClient?.completeRun(
+            facebookImportId,
+            FacebookImportRunCompletionRequest(
+                status = if (summary.failed > 0) FacebookImportRunStatus.FAILED else FacebookImportRunStatus.FINISHED,
+                discoveredCount = summary.discovered,
+                submittedCount = summary.submitted,
+                skippedExistingCount = summary.skippedExisting,
+                failedCount = summary.failed,
+                logs = "Facebook import finished: ${summary.discovered} discovered, ${summary.submitted} submitted, ${summary.skippedExisting} skipped existing, ${summary.failed} failed.",
+            ),
+        )
+        logger.info(
+            "Facebook import finished: {} discovered, {} submitted, {} skipped existing, {} failed",
+            summary.discovered,
+            summary.submitted,
+            summary.skippedExisting,
+            summary.failed,
+        )
     }
 
     fun openDriver(): WebDriver {
@@ -1293,6 +1299,91 @@ class FacebookProfileArticleImporter(
         }
     }
 
+    private fun proposalExists(url: String, candidateId: String): Boolean =
+        runCatching { proposalClient?.existsByArticleUrl(url) ?: false }
+            .onFailure { ex ->
+                logger.warn(
+                    "Facebook import proposal precheck failed; candidateId={}; url={}; treating as existing; reason={}",
+                    candidateId,
+                    url,
+                    importFailureReason(ex as? Exception ?: RuntimeException(ex)),
+                )
+            }
+            .getOrDefault(true)
+
+    private fun candidateProposalLogs(candidate: FacebookPostCandidate): String =
+        buildString {
+            appendLine("selectedUrl=${candidate.url}")
+            appendLine("sourcePostUrl=${candidate.sourcePostUrl ?: "<none>"}")
+            appendLine("candidateTextLength=${candidate.text.length}")
+            appendLine("candidateTextPreview=${candidate.text.cleanText().abbreviateForLog()}")
+            appendLine("candidateText:")
+            appendLine(candidate.text)
+        }
+
+    private fun guessCandidateLanguage(candidate: FacebookPostCandidate): String {
+        val fallback = normalizedLanguageOrNull(properties.language) ?: "pl"
+        return metadataLanguage(candidate.url)
+            ?: urlLanguage(candidate.url)
+            ?: textLanguage(candidate.text)
+            ?: fallback
+    }
+
+    private fun metadataLanguage(url: String): String? {
+        if (isFacebookUrl(url)) return null
+        return runCatching {
+            val request = HttpRequest.newBuilder(URI(url))
+                .timeout(Duration.ofSeconds(5))
+                .header("User-Agent", "cozadzban-facebook-import-language-guess/1.0")
+                .GET()
+                .build()
+            val response = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(3))
+                .followRedirects(HttpClient.Redirect.NORMAL)
+                .build()
+                .send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8))
+            val body = response.body().orEmpty()
+            val doc = Jsoup.parse(body)
+            val htmlLang = doc.selectFirst("html[lang]")?.attr("lang")
+            val contentLanguage = response.headers().firstValue("Content-Language").orElse(null)
+            val ogLocale = doc.selectFirst("meta[property=og:locale], meta[name=og:locale]")?.attr("content")
+            listOf(htmlLang, contentLanguage, ogLocale)
+                .asSequence()
+                .mapNotNull(::normalizedLanguageOrNull)
+                .firstOrNull()
+        }.getOrNull()
+    }
+
+    private fun urlLanguage(url: String): String? {
+        val host = runCatching { URI(url).host?.lowercase()?.removePrefix("www.") }.getOrNull() ?: return null
+        return when {
+            host.endsWith(".pl") || host in POLISH_LANGUAGE_HOSTS -> "pl"
+            host.endsWith(".uk") || host.endsWith(".us") || host in ENGLISH_LANGUAGE_HOSTS -> "en"
+            else -> null
+        }
+    }
+
+    private fun textLanguage(text: String): String? {
+        val normalized = text.lowercase()
+        val polishSignals = listOf("ą", "ć", "ę", "ł", "ń", "ó", "ś", "ź", "ż", " że ", " się ", " nie ", " oraz ")
+        if (polishSignals.any { normalized.contains(it) }) return "pl"
+        val englishSignals = listOf(" the ", " and ", " is ", " of ", " with ", " for ")
+        return if (englishSignals.any { normalized.contains(it) }) "en" else null
+    }
+
+    private fun normalizedLanguageOrNull(raw: String?): String? {
+        val candidate = raw
+            ?.trim()
+            ?.substringBefore(',')
+            ?.substringBefore(';')
+            ?.replace('_', '-')
+            ?.lowercase()
+            ?.takeIf { it.isNotBlank() }
+            ?.substringBefore('-')
+            ?: return null
+        return runCatching { ArticleService.normalizeLanguage(candidate) }.getOrNull()
+    }
+
     private fun approveCandidates(
         entries: List<CandidateApprovalEntry>,
         approvalHandler: FacebookCandidateApprovalHandler,
@@ -1622,6 +1713,13 @@ class FacebookProfileArticleImporter(
             rejectedUrls += url
         }
     }
+
+    private data class ProposalImportSummary(
+        var discovered: Int = 0,
+        var submitted: Int = 0,
+        var skippedExisting: Int = 0,
+        var failed: Int = 0,
+    )
 
     private fun importProgress(candidateNumber: Int, candidateTotal: Int): String =
         "Facebook import candidate $candidateNumber/$candidateTotal:"
@@ -2284,6 +2382,23 @@ class FacebookProfileArticleImporter(
             "permalink.php",
             "share",
             "shares",
+        )
+        private val POLISH_LANGUAGE_HOSTS = setOf(
+            "donald.pl",
+            "tvn24.pl",
+            "gazeta.pl",
+            "onet.pl",
+            "wp.pl",
+            "rmf24.pl",
+        )
+        private val ENGLISH_LANGUAGE_HOSTS = setOf(
+            "bbc.com",
+            "cnn.com",
+            "theguardian.com",
+            "nytimes.com",
+            "wsj.com",
+            "reuters.com",
+            "apnews.com",
         )
         private val CANDIDATE_APPROVAL_ID_SEQUENCE = AtomicLong()
         private val IMPORT_ID_SEQUENCE = AtomicLong()

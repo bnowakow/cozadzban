@@ -88,6 +88,7 @@ class ArticleListViewTest {
         val stopButton = findFacebookStopButton(view)
 
         assertTrue(buttons.any { it.text == "Add Article" })
+        assertTrue(buttons.any { it.text == "Article Proposals" })
         assertTrue(importButton != null, "Expected admin import button to be present")
         assertTrue(importButton!!.isEnabled, "Expected configured import button to be enabled")
         assertTrue(stopButton != null, "Expected admin stop import button to be present")
@@ -96,7 +97,7 @@ class ArticleListViewTest {
         UI.setCurrent(UI())
         importButton.click()
 
-        verify(facebookProfileArticleImporter).startImport(any())
+        verify(facebookProfileArticleImporter).startImport()
     }
 
     @Test
@@ -125,6 +126,7 @@ class ArticleListViewTest {
         assertTrue(stopButton != null, "Expected admin stop import button to be present")
         assertTrue(stopButton!!.isEnabled, "Expected stop button to be enabled while import is running")
 
+        UI.setCurrent(UI())
         stopButton.click()
 
         verify(facebookProfileArticleImporter).terminateImport()
@@ -172,7 +174,7 @@ class ArticleListViewTest {
         importButton.click()
         stopButton.click()
 
-        verify(facebookProfileArticleImporter, never()).startImport(any())
+        verify(facebookProfileArticleImporter, never()).startImport()
         verify(facebookProfileArticleImporter, never()).terminateImport()
     }
 
@@ -198,6 +200,7 @@ class ArticleListViewTest {
         val buttons = findComponents(view, Button::class.java)
 
         assertTrue(buttons.any { it.text == "Add Article" })
+        assertTrue(buttons.any { it.text == "Article Proposals" })
         assertFalse(buttons.any { it.text == "Import Facebook Posts" })
         assertTrue(findFacebookStopButton(view) == null)
     }

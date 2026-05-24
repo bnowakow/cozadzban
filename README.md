@@ -72,17 +72,20 @@ Prefer putting the login values in `.env.worker` using `APP_FACEBOOK_IMPORT_USER
 to resolve the local app user that owns imported articles. If those keys are absent, the app falls
 back to `src/main/resources/facebook.properties`.
 
-If you run the importer locally but want it to create articles on the public server instead of the
+If you run the importer locally but want it to submit proposals to the public server instead of the
 local database, configure the remote API target and machine key:
 
 ```sh
 APP_FACEBOOK_IMPORT_TARGET_API_BASE_URL=https://cozadzban.pl
 APP_FACEBOOK_IMPORT_TARGET_API_KEY=...
 APP_FACEBOOK_IMPORT_TARGET_API_KEY_HEADER=X-CoZaDzban-M2M-Key
-APP_FACEBOOK_IMPORT_TARGET_ARTICLE_PATH=/api/articles
+APP_FACEBOOK_IMPORT_TARGET_PROPOSAL_PATH=/api/facebook-import/proposals
+APP_FACEBOOK_IMPORT_TARGET_PROPOSAL_EXISTS_PATH=/api/facebook-import/proposals/exists
+APP_FACEBOOK_IMPORT_TARGET_RUN_PATH=/api/facebook-import/runs
 ```
 
-On the server, configure the matching machine-to-machine credential:
+On the server, configure the matching machine-to-machine credential. The principal email must belong
+to an ACTIVE app user; accepted proposals create Articles owned by this bot user:
 
 ```sh
 APP_MACHINE_AUTH_ENABLED=true
@@ -107,8 +110,10 @@ from `.env`.
 
 If no Facebook credentials are configured, a non-headless Selenium browser opens and waits for
 manual login. For each marked post, the importer uses the first non-Facebook link in the post as
-the article URL; if none is found, it stores the Facebook post URL and caches the post text as the
-article content.
+the article URL; if none is found, it proposes an importable Facebook post/reel/photo URL. The
+worker no longer creates articles directly. It submits article proposals with guessed language,
+source Facebook post URL, and compressed diagnostics. Logged-in users review them at
+`/article-proposals`, correct language if needed, and accept/reject them there.
 
 ### 2. Start infrastructure
 

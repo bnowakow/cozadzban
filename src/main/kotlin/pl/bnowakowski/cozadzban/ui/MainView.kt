@@ -251,6 +251,11 @@ class ArticleListView(
         actions.element.style.set("padding-right", "0.25rem")
 
         if (isAuthenticated && authenticatedUser?.status == AppUserStatus.ACTIVE) {
+            val proposalsButton = Button("Article Proposals", VaadinIcon.LIST.create())
+            proposalsButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY)
+            proposalsButton.addClickListener { ui.ifPresent { it.navigate("article-proposals") } }
+            actions.add(proposalsButton)
+
             val addArticleButton = Button("Add Article", VaadinIcon.PLUS.create())
             addArticleButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_PRIMARY)
             addArticleButton.addClickListener { openAddArticleDialog() }
@@ -883,7 +888,7 @@ class ArticleListView(
 
     private fun triggerFacebookImport() {
         try {
-            facebookProfileArticleImporter.startImport(buildFacebookCandidateApprovalHandler())
+            facebookProfileArticleImporter.startImport()
             showSuccess("Facebook import started")
         } catch (ex: Exception) {
             showError(ex.message ?: "Failed to start Facebook import")

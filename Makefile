@@ -1,5 +1,5 @@
 
-.PHONY: help docker-up docker-down docker-data-permissions docker-pg-nuke docker-pg-backup install-pg-backup-cron build run run-local run-prod test clean docker-logs docker-spring-shell docker-pg-shell docker-upgrade docker-upgrade-no-cache bump-patch bump-minor install-git-hooks install-codex-skills
+.PHONY: help docker-up docker-down docker-data-permissions docker-pg-nuke docker-pg-backup install-pg-backup-cron build run run-local run-prod test clean docker-logs docker-spring-shell docker-pg-shell docker-upgrade docker-upgrade-no-cache bump-patch bump-minor install-git-hooks install-codex-skills codex-skill-prompts
 
 -include .env
 
@@ -38,6 +38,7 @@ help:
 	@printf "  \033[1;94m%s\033[0m\n" "Repository"
 	@printf "    %-31s %s\n" "install-git-hooks" "Configure repository git hooks"
 	@printf "    %-31s %s\n" "install-codex-skills" "Install all project Codex skills into CODEX_HOME"
+	@printf "    %-31s %s\n" "codex-skill-prompts" "Show sample prompts for project Codex skills"
 	@printf "\n"
 
 # Active Spring profile used by the generic run target.
@@ -150,6 +151,34 @@ install-codex-skills:
 		exit 1; \
 	fi
 	@echo "✓ Codex skills installed to $(CODEX_HOME)/skills"
+
+# Show sample prompts for repository-provided Codex skills.
+codex-skill-prompts:
+	@printf "Codex skill sample prompts\n\n"
+	@count=0; \
+	missing=0; \
+	for skill in doc/codex-skills/SKIL_*; do \
+		if [ -d "$$skill" ]; then \
+			name=$$(basename "$$skill" | sed 's/^SKIL_//'); \
+			prompt="$$skill/prompt.txt"; \
+			printf '\033[1;94m%s\033[0m\n' "$$name"; \
+			if [ -f "$$prompt" ]; then \
+				sed 's/^/  /' "$$prompt"; \
+			else \
+				echo "  Missing $$prompt"; \
+				missing=$$((missing + 1)); \
+			fi; \
+			printf '\n'; \
+			count=$$((count + 1)); \
+		fi; \
+	done; \
+	if [ "$$count" -eq 0 ]; then \
+		echo "No Codex skills found in doc/codex-skills/SKIL_*"; \
+		exit 1; \
+	fi; \
+	if [ "$$missing" -gt 0 ]; then \
+		exit 1; \
+	fi
 
 # Clean build artifacts
 clean:

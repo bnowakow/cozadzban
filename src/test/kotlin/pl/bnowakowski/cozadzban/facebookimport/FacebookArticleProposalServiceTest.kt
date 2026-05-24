@@ -1,0 +1,180 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 https://bnowakowski.pl
+
+package pl.bnowakowski.cozadzban.facebookimport
+
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+import org.mockito.kotlin.any
+import org.mockito.kotlin.argumentCaptor
+import org.mockito.kotlin.eq
+import org.mockito.kotlin.mock
+import org.mockito.kotlin.never
+import org.mockito.kotlin.verify
+import org.mockito.kotlin.whenever
+import pl.bnowakowski.cozadzban.article.Article
+import pl.bnowakowski.cozadzban.article.ArticleInput
+import pl.bnowakowski.cozadzban.article.ArticleService
+import pl.bnowakowski.cozadzban.security.MachineToMachineProperties
+import pl.bnowakowski.cozadzban.user.AppUser
+import pl.bnowakowski.cozadzban.user.AppUserRepository
+import pl.bnowakowski.cozadzban.user.Role
+import java.time.Instant
+
+class FacebookArticleProposalServiceTest {
+    private val proposalRepository: FacebookArticleProposalRepository = mock()
+    private val runRepository: FacebookImportRunRepository = mock()
+    private val articleService: ArticleService = mock()
+    private val appUserRepository: AppUserRepository = mock()
+    private val service = FacebookArticleProposalService(
+        proposalRepository,
+        runRepository,
+        articleService,
+        appUserRepository,
+        MachineToMachineProperties(
+            enabled = true,
+            apiKey = "machine-key",
+            principalEmail = "facebook-import-bot@cozadzban.pl",
+        ),
+    )
+
+    @Test
+    fun `gzip text codec round trips proposal logs`() {
+        val compressed = GzipTextCodec.compress("line one\nline two")
+
+        assertFalse(compressed!!.toString(Charsets.UTF_8).contains("line one"))
+        assertEquals("line one\nline two", GzipTextCodec.decompress(compressed))
+    }
+
+    @Test
+    fun `submit batch skips articles that already exist`() {
+        whenever(articleService.existsByUrl("https://example.com/existing")).thenReturn(true)
+
+        val response = service.submitBatch(
+            FacebookProposalBatchRequest(
+                importRunId = "run-1",
+                passIndex = 1,
+                passCount = 1,
+                proposals = listOf(
+                    FacebookProposalSubmission(
+                        candidateId = "candidate-1",
+                        articleUrl = "https://example.com/existing",
+                        facebookPostUrl = "https://www.facebook.com/source/posts/1",
+                        language = "PL",
+                        logs = "candidate logs",
+                    ),
+                ),
+            ),
+        )
+
+        assertEquals(0, response.submitted)
+        assertEquals(1, response.skippedExisting)
+        verify(proposalRepository, never()).insert(any(), any(), any(), any(), any(), any(), any())
+        verify(runRepository).recordBatch("run-1", 1, 0, 1, null)
+    }
+
+    @Test
+    fun `submit batch updates seen timestamp for existing proposal without resetting decision`() {
+        val existing = proposal(
+            status = FacebookArticleProposalStatus.REJECTED,
+            logsCompressed = GzipTextCodec.compress("old logs"),
+        )
+        whenever(articleService.existsByUrl("https://example.com/story")).thenReturn(false)
+        whenever(proposalRepository.findByCanonicalArticleUrl("https://example.com/story")).thenReturn(existing)
+
+        val response = service.submitBatch(
+            FacebookProposalBatchRequest(
+                importRunId = "run-2",
+                passIndex = 1,
+                passCount = 2,
+                proposals = listOf(
+                    FacebookProposalSubmission(
+                        candidateId = "candidate-2",
+                        articleUrl = "https://example.com/story",
+                        facebookPostUrl = "https://www.facebook.com/source/posts/2",
+                        language = "en",
+                        logs = "new logs",
+                    ),
+                ),
+            ),
+        )
+
+        assertEquals(0, response.submitted)
+        assertEquals(1, response.skippedExisting)
+        val logsCaptor = argumentCaptor<ByteArray>()
+        verify(proposalRepository).updateSeen(
+            eq(existing.id),
+            eq("run-2"),
+            eq("https://www.facebook.com/source/posts/2"),
+            logsCaptor.capture(),
+        )
+        val logs = GzipTextCodec.decompress(logsCaptor.firstValue)
+        assertTrue(logs.contains("old logs"))
+        assertTrue(logs.contains("new logs"))
+    }
+
+    @Test
+    fun `accept creates article as import bot and marks proposal accepted`() {
+        val pending = proposal(status = null)
+        val accepted = pending.copy(status = FacebookArticleProposalStatus.ACCEPTED, articleId = 99L)
+        whenever(proposalRepository.findById(1L)).thenReturn(pending, accepted)
+        whenever(appUserRepository.findByEmail("facebook-import-bot@cozadzban.pl")).thenReturn(
+            AppUser(7L, "facebook-import-bot@cozadzban.pl", Role.USER),
+        )
+        whenever(articleService.create(any(), eq(7L))).thenReturn(
+            Article(
+                id = 99L,
+                url = pending.canonicalArticleUrl,
+                language = "pl",
+                createdByUserId = 7L,
+            ),
+        )
+
+        service.accept(1L, "PL", decidedByUserId = 3L)
+
+        val inputCaptor = argumentCaptor<ArticleInput>()
+        verify(articleService).create(inputCaptor.capture(), eq(7L))
+        assertEquals(pending.canonicalArticleUrl, inputCaptor.firstValue.url)
+        assertEquals("pl", inputCaptor.firstValue.language)
+        verify(proposalRepository).markAccepted(eq(1L), eq(99L), eq(3L), eq("pl"), any())
+    }
+
+    @Test
+    fun `failed accept marks proposal failed`() {
+        val pending = proposal(status = null)
+        whenever(proposalRepository.findById(1L)).thenReturn(pending)
+        whenever(appUserRepository.findByEmail("facebook-import-bot@cozadzban.pl")).thenReturn(
+            AppUser(7L, "facebook-import-bot@cozadzban.pl", Role.USER),
+        )
+        whenever(articleService.create(any(), eq(7L))).thenThrow(IllegalArgumentException("boom"))
+
+        val failure = runCatching { service.accept(1L, "en", decidedByUserId = 3L) }.exceptionOrNull()
+
+        assertTrue(failure is IllegalArgumentException)
+        verify(proposalRepository).markFailed(eq(1L), eq(3L), eq("en"), any())
+    }
+
+    private fun proposal(
+        status: FacebookArticleProposalStatus?,
+        logsCompressed: ByteArray? = null,
+    ): FacebookArticleProposal =
+        FacebookArticleProposal(
+            id = 1L,
+            candidateId = "candidate-1",
+            importRunId = "run-1",
+            articleUrl = "https://example.com/story",
+            canonicalArticleUrl = "https://example.com/story",
+            facebookPostUrl = "https://www.facebook.com/source/posts/1",
+            guessedLanguage = "pl",
+            correctedLanguage = null,
+            status = status,
+            articleId = null,
+            decidedByUserId = null,
+            decidedAt = null,
+            submittedAt = Instant.parse("2026-05-24T10:00:00Z"),
+            lastSeenAt = Instant.parse("2026-05-24T10:00:00Z"),
+            logsCompressed = logsCompressed,
+        )
+}

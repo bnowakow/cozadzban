@@ -6,6 +6,12 @@ Repository-provided Codex skills live in `doc/codex-skills/SKIL_*` and can be in
 make install-codex-skills
 ```
 
+Show all sample prompts with:
+
+```sh
+make codex-skill-prompts
+```
+
 ## Available Skills
 
 | Skill | Description | Prompt |
