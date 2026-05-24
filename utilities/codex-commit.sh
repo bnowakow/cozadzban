@@ -236,8 +236,13 @@ fi
 push_summary=$(
 	printf '1. git log message\n'
 	git log -1 --format=%B
-	printf '\n2. git status\n'
-	git status --short --branch
+	printf '\n2. files changed compared to HEAD\n'
+	changed_files=$(git diff --name-status HEAD --)
+	if [ -n "$changed_files" ]; then
+		printf '%s\n' "$changed_files"
+	else
+		printf 'No files differ from HEAD.\n'
+	fi
 	printf '\nRun git push now?'
 )
 
