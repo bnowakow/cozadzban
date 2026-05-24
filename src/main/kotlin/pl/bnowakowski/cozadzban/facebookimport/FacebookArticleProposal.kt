@@ -9,6 +9,7 @@ enum class FacebookArticleProposalStatus {
     ACCEPTED,
     REJECTED,
     FAILED,
+    ALREADY_EXISTS,
 }
 
 enum class FacebookArticleProposalStatusFilter {
@@ -16,6 +17,7 @@ enum class FacebookArticleProposalStatusFilter {
     ACCEPTED,
     REJECTED,
     FAILED,
+    ALREADY_EXISTS,
     ALL,
 }
 

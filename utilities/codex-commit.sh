@@ -56,26 +56,6 @@ confirm() {
 
 prompt_push_action() {
 	local text=$1
-	local status
-
-	if command -v whiptail >/dev/null 2>&1 && [ -r /dev/tty ] && [ -w /dev/tty ]; then
-		whiptail \
-			--title "Push" \
-			--yes-button "Push" \
-			--extra-button \
-			--extra-label "Show diff" \
-			--no-button "Skip" \
-			--yesno "$text" 20 90 \
-			>/dev/tty 2>&1 </dev/tty
-		status=$?
-		case "$status" in
-			0) printf 'push\n' ;;
-			1) printf 'skip\n' ;;
-			3) printf 'diff\n' ;;
-			*) return 1 ;;
-		esac
-		return
-	fi
 
 	prompt_menu \
 		"Push" \
