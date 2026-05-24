@@ -54,6 +54,37 @@ confirm() {
 	[[ "$answer" =~ ^[Yy]$|^[Yy][Ee][Ss]$ ]]
 }
 
+prompt_push_action() {
+	local text=$1
+	local status
+
+	if command -v whiptail >/dev/null 2>&1 && [ -r /dev/tty ] && [ -w /dev/tty ]; then
+		whiptail \
+			--title "Push" \
+			--yes-button "Push" \
+			--extra-button \
+			--extra-label "Show diff" \
+			--no-button "Skip" \
+			--yesno "$text" 20 90 \
+			>/dev/tty 2>&1 </dev/tty
+		status=$?
+		case "$status" in
+			0) printf 'push\n' ;;
+			1) printf 'skip\n' ;;
+			3) printf 'diff\n' ;;
+			*) return 1 ;;
+		esac
+		return
+	fi
+
+	prompt_menu \
+		"Push" \
+		"$text" \
+		push "Run git push now" \
+		diff "Show diff for HEAD~1..HEAD" \
+		skip "Skip push"
+}
+
 has_worktree_changes() {
 	! git diff --quiet || ! git diff --cached --quiet || [ -n "$(git ls-files --others --exclude-standard)" ]
 }
@@ -256,12 +287,7 @@ push_summary=$(
 
 while true; do
 	push_choice=$(
-		prompt_menu \
-			"Push" \
-			"$push_summary" \
-			push "Run git push now" \
-			diff "View diff for HEAD~1..HEAD" \
-			skip "Skip push"
+		prompt_push_action "$push_summary"
 	) || {
 		echo "Push skipped."
 		exit 0
