@@ -90,6 +90,10 @@ kotlin {
 
 tasks.withType<Test> {
 	useJUnitPlatform()
+	systemProperty("app.facebook-import.enabled", "false")
+	systemProperty("app.facebook-import.schedule.enabled", "false")
+	systemProperty("app.facebook-import.headless", "true")
+	systemProperty("vaadin.launch-browser", "false")
 	if (!isDockerAvailable()) {
 		logger.lifecycle("Docker is not available; excluding Docker-backed integration tests.")
 		exclude("**/*IT.class", "**/CozadzbanApplicationTests.class")

@@ -1,5 +1,5 @@
 
-.PHONY: help docker-up docker-down docker-data-permissions docker-pg-nuke docker-pg-backup install-pg-backup-cron ensure-pg-backup-cron build run run-local run-prod test clean docker-logs docker-spring-shell docker-pg-shell docker-upgrade docker-upgrade-no-cache bump-patch bump-minor install-git-hooks install-codex-skills codex-skill-prompts
+.PHONY: help docker-up docker-down docker-data-permissions docker-pg-nuke docker-pg-backup install-pg-backup-cron ensure-pg-backup-cron build run run-local run-prod test clean docker-logs docker-spring-shell docker-pg-shell docker-upgrade docker-upgrade-no-cache sync-env-files bump-patch bump-minor install-git-hooks install-codex-skills codex-skill-prompts
 
 -include .env
 
@@ -16,6 +16,7 @@ help:
 	@printf "    %-31s %s\n" "docker-spring-shell" "Open bash inside the running Spring Boot container"
 	@printf "    %-31s %s\n" "docker-upgrade" "Pull latest code, rebuild image, and switch Spring traffic after health check"
 	@printf "    %-31s %s\n" "docker-upgrade-no-cache" "Pull latest code, rebuild without Docker cache, and switch after health check"
+	@printf "    %-31s %s\n" "sync-env-files" "Sync server and worker env files, then verify byte-for-byte"
 	@printf "\n"
 	@printf "  \033[1;94m%s\033[0m\n" "PostgreSQL in Docker"
 	@printf "    %-31s %s\n" "docker-pg-nuke" "Recreate PostgreSQL container and reset docker-data/postgres"
@@ -61,6 +62,8 @@ CRON_MAKE ?= $(shell command -v make 2>/dev/null || echo make)
 PG_BACKUP_CRON_MARKER ?= cozazjeb-docker-pg-backup
 PG_BACKUP_CRON_LEGACY_MARKER ?= cozadzban-docker-pg-backup
 PG_BACKUP_CRON_MARKERS := $(PG_BACKUP_CRON_MARKER) $(PG_BACKUP_CRON_LEGACY_MARKER)
+ENV_SYNC_HOST ?= ovh.bnowakowski.pl
+ENV_SYNC_DIR ?= /home/sup/docker/cozazjeb.pl
 export APP_BUILD_COMMIT JAVA_HOME GRADLE_USER_HOME
 
 # Start local development environment from compose.yaml
@@ -257,6 +260,41 @@ docker-upgrade-no-cache: docker-data-permissions
 	git pull --ff-only
 	NO_CACHE=true docker-data/blue-green-upgrade.sh
 	docker compose -f compose.yaml logs -f
+
+# Sync server and worker environment files, then verify the resulting .env files byte-for-byte.
+sync-env-files:
+	@set -e; \
+	blue=$$(printf '\033[1;94m'); \
+	green=$$(printf '\033[1;92m'); \
+	red=$$(printf '\033[1;91m'); \
+	reset=$$(printf '\033[0m'); \
+	remote_env=$$(mktemp); \
+	trap 'rm -f "$$remote_env"' EXIT; \
+	rsync -a -v .env.server $(ENV_SYNC_HOST):$(ENV_SYNC_DIR)/; \
+	ssh $(ENV_SYNC_HOST) "cd ~/docker/cozazjeb.pl; yes | cp .env.server .env"; \
+	cp .env.worker .env; \
+	echo ""; \
+	printf "%sVerifying environment files ...%s\n" "$$blue" "$$reset"; \
+	ssh $(ENV_SYNC_HOST) "cat $(ENV_SYNC_DIR)/.env" > "$$remote_env"; \
+	failed=0; \
+	if cmp -s .env.server "$$remote_env"; then \
+		printf "%s✓ Server .env matches local .env.server%s\n" "$$green" "$$reset"; \
+	else \
+		printf "%s✗ Server .env differs from local .env.server%s\n" "$$red" "$$reset"; \
+		failed=1; \
+	fi; \
+	if cmp -s .env.worker .env; then \
+		printf "%s✓ Local .env matches .env.worker%s\n" "$$green" "$$reset"; \
+	else \
+		printf "%s✗ Local .env differs from .env.worker%s\n" "$$red" "$$reset"; \
+		failed=1; \
+	fi; \
+	if [ "$$failed" -eq 0 ]; then \
+		printf "%s✓ Environment files are in sync%s\n" "$$green" "$$reset"; \
+	else \
+		printf "%sEnvironment file verification failed%s\n" "$$red" "$$reset"; \
+		exit 1; \
+	fi
 
 # Open PostgreSQL shell inside docker container (requires dev-up)
 docker-pg-shell:
