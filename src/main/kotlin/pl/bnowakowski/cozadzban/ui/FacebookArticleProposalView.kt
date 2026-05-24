@@ -35,6 +35,9 @@ import pl.bnowakowski.cozadzban.security.AllowlistAuthorizationManager
 import pl.bnowakowski.cozadzban.user.AppUser
 import pl.bnowakowski.cozadzban.user.AppUserRepository
 import pl.bnowakowski.cozadzban.user.AppUserStatus
+import java.time.Instant
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 
 @Route("article-proposals")
 @PageTitle("Article proposals")
@@ -45,6 +48,8 @@ class FacebookArticleProposalView(
     private val proposalService: FacebookArticleProposalService,
     private val appUserRepository: AppUserRepository,
 ) : VerticalLayout() {
+    private val submittedAtFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+        .withZone(ZoneOffset.UTC)
 
     private val proposalsGrid = VerticalLayout()
     private val statusFilter = Select<FacebookArticleProposalStatusFilter>()
@@ -139,6 +144,7 @@ class FacebookArticleProposalView(
         proposalGridRowBase().apply {
             addClassName("czj-proposal-grid-header")
             add(
+                gridCell("Actions"),
                 gridCell("Submitted"),
                 gridCell("Status"),
                 gridCell("Language"),
@@ -146,24 +152,23 @@ class FacebookArticleProposalView(
                 gridCell("Facebook post"),
                 gridCell("Candidate ID"),
                 gridCell("Import run"),
-                gridCell("Actions"),
             )
         }
 
     private fun proposalGridRow(proposal: FacebookArticleProposal): Div =
         proposalGridRowBase().apply {
             add(
-                gridCell(proposal.submittedAt.toString()),
+                gridCell(
+                    Button("Review") { openReviewDialog(proposal.id) }
+                        .apply { addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY) },
+                ),
+                gridCell(formatSubmittedAt(proposal.submittedAt)),
                 gridCell(statusLabel(proposal.status)),
                 gridCell(proposal.effectiveLanguage),
                 gridCell(externalLink(proposal.articleUrl)),
                 gridCell(proposal.facebookPostUrl?.let(::externalLink) ?: Span("-")),
                 gridCell(copyablePrefixedId(proposal.candidateId, "facebook-import-candidate-")),
                 gridCell(copyablePrefixedId(proposal.importRunId, "facebook-import-")),
-                gridCell(
-                    Button("Review") { openReviewDialog(proposal.id) }
-                        .apply { addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY) },
-                ),
             )
         }
 
@@ -172,11 +177,14 @@ class FacebookArticleProposalView(
             element.style.set("display", "grid")
             element.style.set(
                 "grid-template-columns",
-                "minmax(11rem, 13rem) minmax(5rem, 7rem) minmax(4rem, 5rem) minmax(18rem, 1.4fr) minmax(14rem, 1fr) minmax(7rem, 8rem) minmax(7rem, 8rem) minmax(6rem, 7rem)",
+                "minmax(6rem, 7rem) minmax(9rem, 10rem) minmax(5rem, 7rem) minmax(4rem, 5rem) minmax(18rem, 1.4fr) minmax(14rem, 1fr) minmax(7rem, 8rem) minmax(7rem, 8rem)",
             )
             element.style.set("min-width", "76rem")
             element.style.set("width", "100%")
         }
+
+    private fun formatSubmittedAt(submittedAt: Instant): String =
+        submittedAtFormatter.format(submittedAt)
 
     private fun gridCell(value: String): Div =
         gridCell(Span(value))
