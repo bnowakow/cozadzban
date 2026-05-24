@@ -1,7 +1,24 @@
 # Utilities
 
+- [Codex commit](#codex-commit) — stage changes, ask Codex for a commit message, commit, and optionally push.
 - [Facebook feed auto-scroll](#facebook-feed-auto-scroll) — browser console snippet that scrolls Facebook to load more posts.
 - [Seed sample articles](#seed-sample-articles) — bulk-POST sample URLs to the local API for UI / perf testing.
+
+## Codex commit
+
+`codex-commit.sh` automates the local commit flow from the repo root:
+
+```bash
+./utilities/codex-commit.sh
+```
+
+The script checks for a version bump, stages all current changes, asks the local `codex` command to suggest a commit message using the repository commit-message skill, creates the commit, checks the upstream branch, and optionally pushes.
+
+If the upstream branch has new commits, the script can run `git pull --rebase`. When that pull produces conflicts, it asks Codex to resolve the conflict markers and then continues the rebase if the tree is clean.
+
+### Requirements
+
+`codex` and `git` must be on `PATH`. `whiptail` is optional; without it, prompts fall back to plain terminal input.
 
 ## Facebook feed auto-scroll
 
