@@ -18,6 +18,7 @@ import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequ
 import org.springframework.test.context.TestPropertySource
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
 import pl.bnowakowski.cozadzban.NO_DATABASE_AUTOCONFIGURATION
 import pl.bnowakowski.cozadzban.article.ArticleRepository
@@ -28,6 +29,7 @@ import pl.bnowakowski.cozadzban.user.AppUserRepository
 import pl.bnowakowski.cozadzban.user.AppUserService
 import pl.bnowakowski.cozadzban.user.AppUserStatus
 import pl.bnowakowski.cozadzban.user.Role
+import java.time.Instant
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 @AutoConfigureMockMvc
@@ -95,6 +97,42 @@ class FacebookImportControllerTest {
             })
         }.andExpect {
             status { isForbidden() }
+        }
+    }
+
+    @Test
+    fun `progress endpoint returns current progress for admin bearer token`() {
+        whenever(facebookImportJobService.currentProgress()).thenReturn(
+            FacebookImportProgressSnapshot(
+                importRunId = "run-1",
+                status = FacebookImportRunStatus.RUNNING,
+                startedAt = Instant.parse("2026-05-24T09:58:00Z"),
+                lastUpdatedAt = Instant.parse("2026-05-24T10:00:00Z"),
+                phase = "Sending proposals",
+                phaseIndex = 8,
+                phaseCount = 8,
+                passIndex = 2,
+                passCount = 3,
+                matchedPostCount = 5,
+                submittedCount = 2,
+                skippedExistingCount = 1,
+                failedCount = 0,
+            ),
+        )
+
+        mockMvc.get("/api/admin/facebook-import/progress") {
+            with(jwt().jwt {
+                it.subject(adminEmail)
+                it.claim("email", adminEmail)
+                it.claim("email_verified", true)
+            })
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.importRunId") { value("run-1") }
+            jsonPath("$.phase") { value("Sending proposals") }
+            jsonPath("$.matchedPostCount") { value(5) }
+            jsonPath("$.skippedExistingCount") { value(1) }
+            jsonPath("$.lastUpdatedAt") { value("2026-05-24T10:00:00Z") }
         }
     }
 

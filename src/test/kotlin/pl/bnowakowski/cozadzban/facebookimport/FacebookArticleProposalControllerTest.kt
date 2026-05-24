@@ -147,6 +147,32 @@ class FacebookArticleProposalControllerTest {
     }
 
     @Test
+    fun `progress endpoint accepts machine credential`() {
+        mockMvc.post("/api/facebook-import/runs/run-1/progress") {
+            header("X-CoZaDzban-M2M-Key", "secret")
+            contentType = MediaType.APPLICATION_JSON
+            content = """
+                {
+                  "phase": "Sending proposals",
+                  "phaseIndex": 8,
+                  "phaseCount": 8,
+                  "passIndex": 2,
+                  "passCount": 3,
+                  "matchedPostCount": 5,
+                  "submittedCount": 2,
+                  "skippedExistingCount": 1,
+                  "failedCount": 0,
+                  "occurredAt": "2026-05-24T10:00:00Z"
+                }
+            """.trimIndent()
+        }.andExpect {
+            status { isNoContent() }
+        }
+
+        verify(proposalService).recordProgress(eq("run-1"), any())
+    }
+
+    @Test
     fun `login required endpoint rejects normal bearer auth`() {
         mockMvc.post("/api/facebook-import/runs/run-1/login-required") {
             with(jwt().jwt {

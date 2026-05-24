@@ -62,6 +62,21 @@ class FacebookImportProposalClient(
         }
     }
 
+    fun recordProgress(importRunId: String, request: FacebookImportProgressRequest) {
+        if (isRemoteConfigured()) {
+            remoteClient()
+                .post()
+                .uri("${properties.targetRunPath}/{importRunId}/progress", importRunId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .header(properties.targetApiKeyHeader, properties.targetApiKey)
+                .body(request)
+                .retrieve()
+                .toBodilessEntity()
+        } else {
+            proposalService.recordProgress(importRunId, request)
+        }
+    }
+
     fun recordLoginRequired(importRunId: String, request: FacebookImportLoginRequiredRequest) {
         if (isRemoteConfigured()) {
             remoteClient()

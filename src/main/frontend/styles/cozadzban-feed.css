@@ -460,6 +460,84 @@ html[theme~="dark"] .czj-version-badge {
   color: var(--czj-muted);
 }
 
+.czj-facebook-import-progress {
+  background: var(--czj-card-bg);
+  border: 1px solid var(--czj-border);
+  border-radius: 8px;
+  box-shadow: var(--czj-card-shadow);
+  box-sizing: border-box;
+  color: var(--czj-text);
+  margin-bottom: 1.35rem;
+  overflow: hidden;
+}
+
+.czj-facebook-import-progress-content {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 0.95rem;
+  padding: 1rem 1.15rem;
+  width: 100%;
+}
+
+.czj-facebook-import-progress-header {
+  gap: 0.7rem !important;
+  width: 100%;
+}
+
+.czj-facebook-import-progress-title {
+  color: var(--czj-text);
+  font-size: var(--lumo-font-size-m);
+  font-weight: 800;
+}
+
+.czj-facebook-import-progress-phase {
+  background: var(--lumo-primary-color-10pct);
+  border: 1px solid var(--czj-quote-border);
+  border-radius: 999px;
+  color: var(--lumo-primary-color);
+  font-size: var(--lumo-font-size-xs);
+  font-weight: 800;
+  margin-left: auto;
+  max-width: 100%;
+  padding: 0.18rem 0.55rem;
+  white-space: normal;
+}
+
+.czj-facebook-import-progress-metrics {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
+  width: 100%;
+}
+
+.czj-facebook-import-progress-metric {
+  background: var(--czj-field-bg);
+  border: 1px solid var(--czj-border);
+  border-radius: 8px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+  padding: 0.6rem 0.7rem;
+}
+
+.czj-facebook-import-progress-label {
+  color: var(--czj-muted);
+  font-size: var(--lumo-font-size-xs);
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.czj-facebook-import-progress-value {
+  color: var(--czj-text);
+  font-size: var(--lumo-font-size-s);
+  font-weight: 800;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
 vaadin-button.czj-filter-chip {
   --vaadin-button-background: var(--czj-card-bg);
   --vaadin-button-text-color: var(--czj-text);

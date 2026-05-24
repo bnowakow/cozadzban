@@ -76,7 +76,7 @@ class FacebookArticleProposalServiceTest {
         assertEquals(0, response.submitted)
         assertEquals(1, response.skippedExisting)
         verify(proposalRepository, never()).insert(any(), any(), any(), any(), any(), any(), any())
-        verify(runRepository).recordBatch("run-1", 1, 0, 1, null)
+        verify(runRepository).recordBatch("run-1", 1, 0, 1, null, 1, 1)
     }
 
     @Test
@@ -183,6 +183,27 @@ class FacebookArticleProposalServiceTest {
     }
 
     @Test
+    fun `recordProgress stores worker progress`() {
+        val occurredAt = Instant.parse("2026-05-24T10:00:00Z")
+        val request = FacebookImportProgressRequest(
+            phase = "Sending proposals",
+            phaseIndex = 8,
+            phaseCount = 8,
+            passIndex = 2,
+            passCount = 3,
+            matchedPostCount = 5,
+            submittedCount = 2,
+            skippedExistingCount = 1,
+            failedCount = 0,
+            occurredAt = occurredAt,
+        )
+
+        service.recordProgress("run-progress", request)
+
+        verify(runRepository).recordProgress("run-progress", request)
+    }
+
+    @Test
     fun `completeRun publishes run completed event`() {
         val publisher: ApplicationEventPublisher = mock()
         val eventingService = proposalService(publisher)
@@ -255,6 +276,33 @@ class FacebookArticleProposalServiceTest {
         )
 
         verify(publisher, never()).publishEvent(any<Any>())
+    }
+
+    @Test
+    fun `recordLoginRequired publishes timeout event under login required flow`() {
+        val publisher: ApplicationEventPublisher = mock()
+        val eventingService = proposalService(publisher)
+        whenever(runRepository.recordLoginRequired(any(), any(), any(), any())).thenReturn(false)
+
+        eventingService.recordLoginRequired(
+            "run-login",
+            FacebookImportLoginRequiredRequest(
+                trigger = FacebookImportTrigger.SCHEDULED,
+                profileUrl = "https://www.facebook.com/profile",
+                detectedAt = Instant.parse("2026-05-24T10:03:00Z"),
+                timedOut = true,
+                timeoutMessage = "Facebook login was not detected within PT3M",
+            ),
+        )
+
+        val eventCaptor = argumentCaptor<Any>()
+        verify(publisher).publishEvent(eventCaptor.capture())
+        val event = eventCaptor.firstValue as FacebookImportLoginTimedOutEvent
+        assertEquals("run-login", event.importRunId)
+        assertEquals(FacebookImportTrigger.SCHEDULED, event.trigger)
+        assertEquals("https://www.facebook.com/profile", event.profileUrl)
+        assertEquals("Facebook login was not detected within PT3M", event.timeoutMessage)
+        assertEquals(Instant.parse("2026-05-24T10:03:00Z"), event.timedOutAt)
     }
 
     @Test

@@ -32,6 +32,7 @@ import com.vaadin.flow.data.renderer.ComponentRenderer
 import com.vaadin.flow.router.Route
 import com.vaadin.flow.server.VaadinServletRequest
 import com.vaadin.flow.component.virtuallist.VirtualList
+import com.vaadin.flow.shared.Registration
 import org.slf4j.LoggerFactory
 import com.vaadin.flow.server.auth.AnonymousAllowed
 import org.springframework.security.access.AccessDeniedException
@@ -47,6 +48,7 @@ import pl.bnowakowski.cozadzban.facebookimport.FacebookCandidateApprovalDecision
 import pl.bnowakowski.cozadzban.facebookimport.FacebookCandidateApprovalHandler
 import pl.bnowakowski.cozadzban.enrichment.LanguageFlagCache
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportJobService
+import pl.bnowakowski.cozadzban.facebookimport.FacebookImportProgressSnapshot
 import pl.bnowakowski.cozadzban.security.AllowlistAuthorizationManager
 import pl.bnowakowski.cozadzban.user.AppUser
 import pl.bnowakowski.cozadzban.user.AppUserRepository
@@ -54,6 +56,7 @@ import pl.bnowakowski.cozadzban.user.AppUserStatus
 import pl.bnowakowski.cozadzban.user.Role
 import pl.bnowakowski.cozadzban.version.AppBuildProperties
 import java.net.URI
+import java.time.Duration
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneOffset
@@ -77,6 +80,9 @@ class ArticleListView(
 ) : VerticalLayout() {
 
     private val feed = VirtualList<Article>()
+    private val facebookImportProgressPanel = Div()
+    private var facebookImportProgressPollRegistration: Registration? = null
+    private var stopFacebookImportButton: Button? = null
 
     // Filter state — captured by dataProvider lambdas via `this`
     private var languageFilter: String? = null
@@ -171,6 +177,7 @@ class ArticleListView(
         feedShell.element.style.set("box-sizing", "border-box")
         feedShell.element.style.set("margin", "calc(66px + 1.35rem) auto 0")
 
+        configureFacebookImportProgressPanel()
         val filterBar = buildFilterBar()
 
         feed.setRenderer(ComponentRenderer { article -> buildArticleCard(article) })
@@ -181,7 +188,9 @@ class ArticleListView(
         feed.element.style.set("height", "100%")
 
         refreshData()
-        feedShell.add(filterBar, feed)
+        refreshFacebookImportProgressPanel()
+        configureFacebookImportProgressPolling()
+        feedShell.add(facebookImportProgressPanel, filterBar, feed)
         feedShell.expand(feed)
 
         val versionBadge = buildVersionBadge()
@@ -278,6 +287,7 @@ class ArticleListView(
                 importFacebookButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY)
                 importFacebookButton.element.setAttribute("aria-label", "Import Facebook Posts")
                 val stopFacebookImportButton = Button(VaadinIcon.STOP.create())
+                this.stopFacebookImportButton = stopFacebookImportButton
                 stopFacebookImportButton.addThemeVariants(
                     ButtonVariant.LUMO_SMALL,
                     ButtonVariant.LUMO_TERTIARY,
@@ -466,6 +476,124 @@ class ArticleListView(
 
         filterBar.add(languageRow, publishedDateRow)
         return filterBar
+    }
+
+    private fun configureFacebookImportProgressPanel() {
+        facebookImportProgressPanel.addClassName("czj-facebook-import-progress")
+        facebookImportProgressPanel.setWidth("100%")
+        facebookImportProgressPanel.isVisible = false
+    }
+
+    private fun configureFacebookImportProgressPolling() {
+        if (!canViewFacebookImportProgress()) return
+        val currentUi = UI.getCurrent() ?: return
+        currentUi.pollInterval = FACEBOOK_IMPORT_STATUS_POLL_INTERVAL_MS
+        facebookImportProgressPollRegistration = currentUi.addPollListener {
+            refreshFacebookImportProgressPanel()
+            stopFacebookImportButton?.let { updateStopFacebookImportButton(it) }
+        }
+        addDetachListener {
+            facebookImportProgressPollRegistration?.remove()
+            facebookImportProgressPollRegistration = null
+        }
+    }
+
+    private fun refreshFacebookImportProgressPanel() {
+        val progress = if (canViewFacebookImportProgress()) {
+            facebookImportJobService.currentProgress()
+        } else {
+            null
+        }
+        if (progress == null) {
+            facebookImportProgressPanel.isVisible = false
+            facebookImportProgressPanel.removeAll()
+            return
+        }
+
+        facebookImportProgressPanel.isVisible = true
+        facebookImportProgressPanel.removeAll()
+        facebookImportProgressPanel.add(buildFacebookImportProgressContent(progress))
+    }
+
+    private fun canViewFacebookImportProgress(): Boolean =
+        isAuthenticated &&
+            authenticatedUser?.status == AppUserStatus.ACTIVE &&
+            authenticatedUser?.role == Role.ADMIN
+
+    private fun buildFacebookImportProgressContent(progress: FacebookImportProgressSnapshot): Div {
+        val content = Div()
+        content.addClassName("czj-facebook-import-progress-content")
+
+        val icon = VaadinIcon.DOWNLOAD.create()
+        icon.setSize("1.15rem")
+        icon.color = "var(--lumo-primary-color)"
+
+        val title = Span("Facebook import is running")
+        title.addClassName("czj-facebook-import-progress-title")
+
+        val phase = Span(progress.phase?.takeIf { it.isNotBlank() } ?: "Running")
+        phase.addClassName("czj-facebook-import-progress-phase")
+
+        val header = HorizontalLayout(icon, title, phase)
+        header.addClassName("czj-facebook-import-progress-header")
+        header.isPadding = false
+        header.isSpacing = true
+        header.defaultVerticalComponentAlignment = Alignment.CENTER
+
+        val metrics = Div()
+        metrics.addClassName("czj-facebook-import-progress-metrics")
+        metrics.add(
+            facebookImportMetric("Running", formatDuration(Duration.between(progress.startedAt, Instant.now()))),
+            facebookImportMetric("Pass", formatPass(progress)),
+            facebookImportMetric("Matched posts", progress.matchedPostCount.toString()),
+            facebookImportMetric("Already imported", progress.skippedExistingCount.toString()),
+            facebookImportMetric("Sent", progress.submittedCount.toString()),
+            facebookImportMetric("Phase", formatPhase(progress)),
+            facebookImportMetric("Last updated", formatStatusInstant(progress.lastUpdatedAt)),
+        )
+        if (progress.failedCount > 0) {
+            metrics.add(facebookImportMetric("Failed", progress.failedCount.toString()))
+        }
+
+        content.add(header, metrics)
+        return content
+    }
+
+    private fun facebookImportMetric(labelText: String, valueText: String): Div {
+        val label = Span(labelText)
+        label.addClassName("czj-facebook-import-progress-label")
+        val value = Span(valueText)
+        value.addClassName("czj-facebook-import-progress-value")
+
+        val metric = Div(label, value)
+        metric.addClassName("czj-facebook-import-progress-metric")
+        return metric
+    }
+
+    private fun formatPass(progress: FacebookImportProgressSnapshot): String =
+        if (progress.passCount > 0) {
+            "${progress.passIndex.coerceIn(1, progress.passCount)} of ${progress.passCount}"
+        } else {
+            "Preparing"
+        }
+
+    private fun formatPhase(progress: FacebookImportProgressSnapshot): String =
+        if (progress.phaseCount > 0) {
+            "${progress.phaseIndex.coerceIn(1, progress.phaseCount)} of ${progress.phaseCount}"
+        } else {
+            "Preparing"
+        }
+
+    private fun formatDuration(duration: Duration): String {
+        val totalSeconds = duration.seconds.coerceAtLeast(0)
+        val hours = totalSeconds / 3600
+        val minutes = (totalSeconds % 3600) / 60
+        val seconds = totalSeconds % 60
+        return when {
+            hours > 0 -> "${hours}h ${minutes}m ${seconds}s"
+            minutes > 0 -> "${minutes}m ${seconds}s"
+            else -> "${seconds}s"
+        }
     }
 
     private fun languageFlagIcon(language: String?): Span? {
@@ -901,6 +1029,7 @@ class ArticleListView(
     private fun triggerFacebookImport() {
         try {
             facebookImportJobService.startImport()
+            refreshFacebookImportProgressPanel()
             showSuccess("Facebook import started")
         } catch (ex: Exception) {
             showError(ex.message ?: "Failed to start Facebook import")
@@ -910,6 +1039,7 @@ class ArticleListView(
     private fun triggerFacebookImportTermination() {
         try {
             facebookImportJobService.terminateImport()
+            refreshFacebookImportProgressPanel()
             showSuccess("Facebook import stop requested")
         } catch (ex: Exception) {
             showError(ex.message ?: "Failed to stop Facebook import")
@@ -1572,10 +1702,14 @@ class ArticleListView(
         private const val MAX_FRONTEND_LEAD_CHARS = 1_200
         private const val MIN_FRONTEND_LEAD_WORD_BOUNDARY_CHARS = 900
         private const val FACEBOOK_IMPORT_APPROVAL_POLL_INTERVAL_MS = 1_000
+        private const val FACEBOOK_IMPORT_STATUS_POLL_INTERVAL_MS = 7_000
         private val DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneOffset.UTC)
+        private val STATUS_DATE_FORMATTER =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss 'UTC'").withZone(ZoneOffset.UTC)
         private val SHORT_DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneOffset.UTC)
 
         private fun formatInstant(instant: Instant): String = DATE_FORMATTER.format(instant)
+        private fun formatStatusInstant(instant: Instant): String = STATUS_DATE_FORMATTER.format(instant)
         private fun formatDate(instant: Instant): String = SHORT_DATE_FORMATTER.format(instant)
     }
 }

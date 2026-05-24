@@ -310,8 +310,12 @@ class FacebookProfileArticleImporterJobTest {
         }
 
         val loginRequiredCaptor = argumentCaptor<FacebookImportLoginRequiredRequest>()
-        verify(proposalClient).recordLoginRequired(eq("run-login"), loginRequiredCaptor.capture())
+        verify(proposalClient, times(2)).recordLoginRequired(eq("run-login"), loginRequiredCaptor.capture())
         assertEquals(FacebookImportTrigger.SCHEDULED, loginRequiredCaptor.firstValue.trigger)
+        assertFalse(loginRequiredCaptor.firstValue.timedOut)
+        assertEquals(FacebookImportTrigger.SCHEDULED, loginRequiredCaptor.secondValue.trigger)
+        assertTrue(loginRequiredCaptor.secondValue.timedOut)
+        assertTrue(loginRequiredCaptor.secondValue.timeoutMessage?.endsWith("within PT0S") == true)
 
         val completionCaptor = argumentCaptor<FacebookImportRunCompletionRequest>()
         verify(proposalClient).completeRun(eq("run-login"), completionCaptor.capture())

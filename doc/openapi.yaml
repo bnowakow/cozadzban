@@ -1075,6 +1075,14 @@ components:
           format: date-time
           description: UTC timestamp when the worker detected the login requirement; defaults server-side if omitted.
           example: "2026-05-24T10:00:00Z"
+        timedOut:
+          type: boolean
+          default: false
+          description: True when this report records that the login wait timed out; uses the same notification preference as login-required alerts.
+        timeoutMessage:
+          type: string
+          nullable: true
+          description: Optional worker timeout detail for diagnostics.
 
     ArticlePatch:
       type: object

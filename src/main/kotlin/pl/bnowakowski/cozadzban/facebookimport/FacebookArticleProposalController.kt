@@ -34,6 +34,15 @@ class FacebookArticleProposalController(
         return ResponseEntity.noContent().build()
     }
 
+    @PostMapping("/runs/{importRunId}/progress")
+    fun recordProgress(
+        @PathVariable importRunId: String,
+        @RequestBody request: FacebookImportProgressRequest,
+    ): ResponseEntity<Void> {
+        proposalService.recordProgress(importRunId, request)
+        return ResponseEntity.noContent().build()
+    }
+
     @PostMapping("/runs/{importRunId}/login-required")
     fun recordLoginRequired(
         @PathVariable importRunId: String,

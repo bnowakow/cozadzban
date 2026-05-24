@@ -71,14 +71,17 @@ active Pushover devices for that user key.
    browser before `APP_FACEBOOK_IMPORT_MANUAL_LOGIN_TIMEOUT`.
 4. Confirm logs contain a login-required event/message and the run continues after login.
 5. Confirm opted-in ADMIN users receive a Pushover login-required notification for the scheduled run.
-6. Trigger a manual import and force the same Facebook login screen.
-7. Confirm manual import login-required events are logged but do not send Pushover login-required notifications.
-8. Temporarily reduce `APP_FACEBOOK_IMPORT_SCHEDULE_INTERVAL` in a local test environment and
+6. Let a scheduled run exceed `APP_FACEBOOK_IMPORT_MANUAL_LOGIN_TIMEOUT`.
+7. Confirm opted-in ADMIN users receive a Pushover login-timeout notification through the same
+   **Facebook login required notifications** preference.
+8. Trigger a manual import and force the same Facebook login screen.
+9. Confirm manual import login-required and login-timeout events are logged but do not send Pushover notifications.
+10. Temporarily reduce `APP_FACEBOOK_IMPORT_SCHEDULE_INTERVAL` in a local test environment and
    confirm a new tick is skipped while a previous import is still active.
 
 **Expected:** scheduled imports use the same non-blocking proposal flow, login-required runs wait
-for manual authorization, only scheduled login-required events notify opted-in admins, and only
-one import runs at a time on the worker.
+for manual authorization, only scheduled login-required and login-timeout events notify opted-in
+admins, and only one import runs at a time on the worker.
 
 ---
 

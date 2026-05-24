@@ -17,12 +17,17 @@ class FacebookImportJobService(
     private val jobOperatorProvider: ObjectProvider<JobOperator>,
     @Qualifier(FACEBOOK_IMPORT_JOB_NAME) private val facebookImportJobProvider: ObjectProvider<Job>,
     private val importer: FacebookProfileArticleImporter,
+    private val proposalService: FacebookArticleProposalService,
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
     private val stateLock = Any()
 
     @Volatile
     private var activeLaunchThread: Thread? = null
+    @Volatile
+    private var activeImportRunId: String? = null
+    @Volatile
+    private var activeImportStartedAt: Instant? = null
 
     fun startImport(trigger: FacebookImportTrigger = FacebookImportTrigger.MANUAL): String {
         facebookImportUnavailableReason()?.let { throw IllegalArgumentException(it) }
@@ -32,6 +37,7 @@ class FacebookImportJobService(
             ?: throw IllegalArgumentException("Facebook import Spring Batch job is unavailable")
 
         val importRunId = importer.newImportRunId()
+        val requestedAt = Instant.now()
         synchronized(stateLock) {
             if (activeLaunchThread?.isAlive == true || importer.isImportRunning()) {
                 throw FacebookImportAlreadyRunningException()
@@ -73,6 +79,8 @@ class FacebookImportJobService(
                     synchronized(stateLock) {
                         if (activeLaunchThread === Thread.currentThread()) {
                             activeLaunchThread = null
+                            activeImportRunId = null
+                            activeImportStartedAt = null
                         }
                     }
                 }
@@ -81,6 +89,8 @@ class FacebookImportJobService(
                 isDaemon = true
             }
             activeLaunchThread = launchThread
+            activeImportRunId = importRunId
+            activeImportStartedAt = requestedAt
             launchThread.start()
         }
         return importRunId
@@ -103,6 +113,35 @@ class FacebookImportJobService(
 
     fun isImportRunning(): Boolean =
         activeLaunchThread?.isAlive == true || importer.isImportRunning()
+
+    fun currentProgress(): FacebookImportProgressSnapshot? {
+        proposalService.latestRunningProgress()?.let { return it }
+        val fallback = synchronized(stateLock) {
+            if (activeLaunchThread?.isAlive != true && !importer.isImportRunning()) {
+                null
+            } else {
+                activeImportRunId?.let { importRunId ->
+                    importRunId to (activeImportStartedAt ?: Instant.now())
+                }
+            }
+        } ?: return null
+
+        return FacebookImportProgressSnapshot(
+            importRunId = fallback.first,
+            status = FacebookImportRunStatus.RUNNING,
+            startedAt = fallback.second,
+            lastUpdatedAt = Instant.now(),
+            phase = FacebookImportProgressPhase.STARTING.label,
+            phaseIndex = FacebookImportProgressPhase.STARTING.phaseIndex,
+            phaseCount = FACEBOOK_IMPORT_PROGRESS_PHASE_COUNT,
+            passIndex = 0,
+            passCount = 0,
+            matchedPostCount = 0,
+            submittedCount = 0,
+            skippedExistingCount = 0,
+            failedCount = 0,
+        )
+    }
 
     fun facebookImportUnavailableReason(): String? =
         importer.facebookImportUnavailableReason()

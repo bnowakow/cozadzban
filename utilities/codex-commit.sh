@@ -12,6 +12,26 @@ cleanup() {
 }
 trap cleanup EXIT
 
+codex_command=()
+resolve_codex_command() {
+	if command -v codex >/dev/null 2>&1; then
+		codex_command=(codex)
+		return 0
+	fi
+
+	local candidate
+	for candidate in \
+		"/Applications/Codex.app/Contents/Resources/codex" \
+		"$HOME/Applications/Codex.app/Contents/Resources/codex"; do
+		if [ -x "$candidate" ]; then
+			codex_command=("$candidate")
+			return 0
+		fi
+	done
+
+	return 1
+}
+
 prompt_menu() {
 	local title=$1
 	local text=$2
@@ -157,7 +177,7 @@ resolve_pull_conflict_with_codex() {
 	printf 'Conflicted files:\n'
 	git diff --name-only --diff-filter=U | sed 's/^/  - /'
 
-	if ! codex exec \
+	if ! "${codex_command[@]}" exec \
 		-C "$repo_root" \
 		--sandbox workspace-write \
 		--output-last-message "$conflict_output" \
@@ -256,15 +276,15 @@ if git diff --cached --quiet; then
 	exit 0
 fi
 
-if ! command -v codex >/dev/null 2>&1; then
-	echo "codex command not found." >&2
+if ! resolve_codex_command; then
+	echo "codex command not found. Install the Codex CLI or add Codex.app's bundled CLI to PATH." >&2
 	exit 1
 fi
 
 codex_output=$(mktemp "${TMPDIR:-/tmp}/cozazjeb-codex-commit.XXXXXX")
 tmp_files+=("$codex_output")
 
-codex exec \
+"${codex_command[@]}" exec \
 	-C "$repo_root" \
 	--sandbox read-only \
 	--output-last-message "$codex_output" \

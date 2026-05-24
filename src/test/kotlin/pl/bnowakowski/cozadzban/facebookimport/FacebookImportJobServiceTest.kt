@@ -27,6 +27,7 @@ class FacebookImportJobServiceTest {
     private val jobOperator: JobOperator = mock()
     private val job: Job = mock()
     private val importer: FacebookProfileArticleImporter = mock()
+    private val proposalService: FacebookArticleProposalService = mock()
     private val jobOperatorProvider: ObjectProvider<JobOperator> = mock()
     private val jobProvider: ObjectProvider<Job> = mock()
 
@@ -46,7 +47,7 @@ class FacebookImportJobServiceTest {
                 invocation.getArgument(1),
             )
         }
-        val service = FacebookImportJobService(jobOperatorProvider, jobProvider, importer)
+        val service = FacebookImportJobService(jobOperatorProvider, jobProvider, importer, proposalService)
 
         assertEquals("run-1", service.startImport())
         assertTrue(latch.await(1, TimeUnit.SECONDS))
@@ -73,7 +74,7 @@ class FacebookImportJobServiceTest {
                 invocation.getArgument(1),
             )
         }
-        val service = FacebookImportJobService(jobOperatorProvider, jobProvider, importer)
+        val service = FacebookImportJobService(jobOperatorProvider, jobProvider, importer, proposalService)
 
         assertEquals("run-scheduled", service.startImport(FacebookImportTrigger.SCHEDULED))
         assertTrue(latch.await(1, TimeUnit.SECONDS))
@@ -97,7 +98,7 @@ class FacebookImportJobServiceTest {
             Thread.sleep(5_000)
             JobExecution(99L, JobInstance(1L, FACEBOOK_IMPORT_JOB_NAME), it.getArgument(1))
         }
-        val service = FacebookImportJobService(jobOperatorProvider, jobProvider, importer)
+        val service = FacebookImportJobService(jobOperatorProvider, jobProvider, importer, proposalService)
 
         service.startImport()
         assertTrue(latch.await(1, TimeUnit.SECONDS))

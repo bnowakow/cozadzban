@@ -7,6 +7,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Service
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportLoginRequiredEvent
+import pl.bnowakowski.cozadzban.facebookimport.FacebookImportLoginTimedOutEvent
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportRunCompletedEvent
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportTrigger
 
@@ -26,6 +27,21 @@ class NotificationDeliveryService(
                 recipient,
                 title = "Facebook login required",
                 message = "Scheduled Facebook import ${event.importRunId} needs login or two-factor approval.",
+                url = "https://cozadzban.pl/",
+                urlTitle = "Open Co za dzban",
+            )
+        }
+    }
+
+    @EventListener
+    fun onFacebookLoginTimedOut(event: FacebookImportLoginTimedOutEvent) {
+        if (!properties.pushoverConfigured || event.trigger != FacebookImportTrigger.SCHEDULED) return
+        val recipients = repository.findPushoverRecipientsForFacebookLoginRequired()
+        recipients.forEach { recipient ->
+            deliver(
+                recipient,
+                title = "Facebook login timed out",
+                message = "Scheduled Facebook import ${event.importRunId} timed out waiting for login or two-factor approval.",
                 url = "https://cozadzban.pl/",
                 urlTitle = "Open Co za dzban",
             )

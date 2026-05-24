@@ -61,6 +61,7 @@ class FacebookProfileArticleImporter(
     private val stateLock = Any()
     @Volatile private var activeImportThread: Thread? = null
     @Volatile private var driver: WebDriver? = null
+    @Volatile private var lastProgressReportedAt: Instant? = null
 
     fun startImport() {
         startImport(FacebookCandidateApprovalHandler.acceptAll())
@@ -145,6 +146,8 @@ class FacebookProfileArticleImporter(
         val summary = ProposalImportSummary()
         var completionStatus = FacebookImportRunStatus.FINISHED
         var completionLogs = ""
+        lastProgressReportedAt = null
+        reportProgress(importRunId, trigger, FacebookImportProgressPhase.STARTING, summary, force = true)
         try {
             runImportInternal(importRunId, trigger, summary)
             if (summary.failed > 0) {
@@ -192,7 +195,9 @@ class FacebookProfileArticleImporter(
         trigger: FacebookImportTrigger,
         summary: ProposalImportSummary,
     ) {
+        reportProgress(facebookImportId, trigger, FacebookImportProgressPhase.OPENING_PROFILE, summary, force = true)
         val driver = ensureDriver()
+        reportProgress(facebookImportId, trigger, FacebookImportProgressPhase.CHECKING_LOGIN, summary, force = true)
         prepareProfileAndLogin(driver, facebookImportId, trigger)
         sleep(properties.waitAfterPageOpen)
         val passCount = (1 until properties.scrolls step 2).count()
@@ -209,6 +214,15 @@ class FacebookProfileArticleImporter(
                 passCount,
                 scrollsThisPass,
             )
+            reportProgress(
+                facebookImportId,
+                trigger,
+                FacebookImportProgressPhase.SCROLLING_PROFILE,
+                summary,
+                passIndex = passIndex + 1,
+                passCount = passCount,
+                force = true,
+            )
             repeat(scrollsThisPass) { index ->
                 driver.findElement(By.tagName("body")).sendKeys(Keys.PAGE_DOWN)
                 logger.info(
@@ -218,16 +232,52 @@ class FacebookProfileArticleImporter(
                     index + 1,
                     scrollsThisPass,
                 )
+                reportProgress(
+                    facebookImportId,
+                    trigger,
+                    FacebookImportProgressPhase.SCROLLING_PROFILE,
+                    summary,
+                    passIndex = passIndex + 1,
+                    passCount = passCount,
+                )
                 sleep(properties.waitAfterScroll)
             }
+            reportProgress(
+                facebookImportId,
+                trigger,
+                FacebookImportProgressPhase.EXPANDING_POSTS,
+                summary,
+                passIndex = passIndex + 1,
+                passCount = passCount,
+                force = true,
+            )
             expandSeeOriginalLinks(driver)
 
+            reportProgress(
+                facebookImportId,
+                trigger,
+                FacebookImportProgressPhase.COLLECTING_POSTS,
+                summary,
+                passIndex = passIndex + 1,
+                passCount = passCount,
+                force = true,
+            )
             val candidates = findCandidatePosts(driver)
+            summary.discovered += candidates.size
             logger.info(
                 "Facebook import discovery pass {}/{} found {} marked posts",
                 passIndex + 1,
                 passCount,
                 candidates.size,
+            )
+            reportProgress(
+                facebookImportId,
+                trigger,
+                FacebookImportProgressPhase.CHECKING_EXISTING,
+                summary,
+                passIndex = passIndex + 1,
+                passCount = passCount,
+                force = true,
             )
             val candidateDecisionLogs = mutableListOf<String>()
             val proposals = candidates.mapIndexedNotNull { index, candidate ->
@@ -306,7 +356,6 @@ class FacebookProfileArticleImporter(
                     )
                 }
             }
-            summary.discovered += candidates.size
             val passLogs = workerPassLogs(
                 passIndex = passIndex + 1,
                 passCount = passCount,
@@ -315,6 +364,15 @@ class FacebookProfileArticleImporter(
                 candidateDecisionLogs = candidateDecisionLogs,
             )
             summary.recordWorkerLogs(passLogs)
+            reportProgress(
+                facebookImportId,
+                trigger,
+                FacebookImportProgressPhase.SENDING_PROPOSALS,
+                summary,
+                passIndex = passIndex + 1,
+                passCount = passCount,
+                force = true,
+            )
             if (proposals.isNotEmpty() || candidates.isNotEmpty()) {
                 try {
                     val response = proposalClient?.submitBatch(
@@ -340,6 +398,15 @@ class FacebookProfileArticleImporter(
                         ex,
                     )
                 }
+                reportProgress(
+                    facebookImportId,
+                    trigger,
+                    FacebookImportProgressPhase.SENDING_PROPOSALS,
+                    summary,
+                    passIndex = passIndex + 1,
+                    passCount = passCount,
+                    force = true,
+                )
             }
             logger.info(
                 "Facebook import discovery pass {}/{} finished: {} discovered, {} submitted, {} skipped existing, {} failed so far",
@@ -358,6 +425,47 @@ class FacebookProfileArticleImporter(
             summary.skippedExisting,
             summary.failed,
         )
+    }
+
+    private fun reportProgress(
+        importRunId: String,
+        trigger: FacebookImportTrigger,
+        phase: FacebookImportProgressPhase,
+        summary: ProposalImportSummary,
+        passIndex: Int = 0,
+        passCount: Int = 0,
+        force: Boolean = false,
+    ) {
+        val now = Instant.now()
+        val previous = lastProgressReportedAt
+        if (!force && previous != null && Duration.between(previous, now) < PROGRESS_REPORT_INTERVAL) {
+            return
+        }
+        lastProgressReportedAt = now
+        val request = FacebookImportProgressRequest(
+            phase = phase.label,
+            phaseIndex = phase.phaseIndex,
+            phaseCount = FACEBOOK_IMPORT_PROGRESS_PHASE_COUNT,
+            passIndex = passIndex,
+            passCount = passCount,
+            matchedPostCount = summary.discovered,
+            submittedCount = summary.submitted,
+            skippedExistingCount = summary.skippedExisting,
+            failedCount = summary.failed,
+            occurredAt = now,
+        )
+        try {
+            proposalClient?.recordProgress(importRunId, request)
+        } catch (ex: Exception) {
+            logger.warn(
+                "Facebook import {} could not report progress phase={} trigger={}; reason={}",
+                importRunId,
+                phase.label,
+                trigger,
+                failureMessage(ex),
+                ex,
+            )
+        }
     }
 
     private fun completeRunSafely(
@@ -435,8 +543,13 @@ class FacebookProfileArticleImporter(
             trigger,
             properties.manualLoginTimeout,
         )
-        login(driver)
-        waitForLogin(driver)
+        try {
+            login(driver)
+            waitForLogin(driver)
+        } catch (ex: FacebookLoginTimeoutException) {
+            importRunId?.let { publishLoginTimedOut(it, trigger, ex) }
+            throw ex
+        }
         driver.get(properties.profileUrl)
         sleep(properties.waitAfterPageOpen)
     }
@@ -465,6 +578,41 @@ class FacebookProfileArticleImporter(
                 trigger = trigger,
                 profileUrl = properties.profileUrl,
                 detectedAt = request.detectedAt,
+            ),
+        )
+    }
+
+    private fun publishLoginTimedOut(
+        importRunId: String,
+        trigger: FacebookImportTrigger,
+        ex: FacebookLoginTimeoutException,
+    ) {
+        val request = FacebookImportLoginRequiredRequest(
+            trigger = trigger,
+            profileUrl = properties.profileUrl,
+            timedOut = true,
+            timeoutMessage = failureMessage(ex),
+        )
+        if (proposalClient != null) {
+            try {
+                proposalClient.recordLoginRequired(importRunId, request)
+                return
+            } catch (reportEx: Exception) {
+                logger.warn(
+                    "Facebook import {} could not report login timeout to target server; reason={}",
+                    importRunId,
+                    failureMessage(reportEx),
+                    reportEx,
+                )
+            }
+        }
+        eventPublisher?.publishEvent(
+            FacebookImportLoginTimedOutEvent(
+                importRunId = importRunId,
+                trigger = trigger,
+                profileUrl = properties.profileUrl,
+                timeoutMessage = request.timeoutMessage,
+                timedOutAt = request.detectedAt,
             ),
         )
     }
@@ -558,7 +706,9 @@ class FacebookProfileArticleImporter(
             }
             sleep(Duration.ofSeconds(1))
         }
-        throw NoSuchElementException("Unable to locate Facebook $fieldName field")
+        throw FacebookLoginTimeoutException(
+            "Unable to locate Facebook $fieldName field within ${properties.manualLoginTimeout}",
+        )
     }
 
     private fun clickLoginButtonIfPresent(driver: WebDriver): Boolean {
@@ -611,7 +761,7 @@ class FacebookProfileArticleImporter(
             }
             sleep(Duration.ofSeconds(2))
         }
-        throw IllegalStateException("Facebook login was not detected within ${properties.manualLoginTimeout}")
+        throw FacebookLoginTimeoutException("Facebook login was not detected within ${properties.manualLoginTimeout}")
     }
 
     private fun isLoggedIn(driver: WebDriver): Boolean =
@@ -2608,6 +2758,7 @@ class FacebookProfileArticleImporter(
         private const val LOG_TEXT_PREVIEW_LIMIT = 500
         private const val REMOTE_CREATE_REQUEST_ID_HEADER = "X-CoZaDzban-Import-Request-Id"
         private const val MAX_NESTED_FACEBOOK_POSTS_TO_OPEN = 2
+        private val PROGRESS_REPORT_INTERVAL: Duration = Duration.ofSeconds(5)
         private val IMPORT_ARTIFACT_TIMESTAMP_FORMATTER: DateTimeFormatter =
             DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'").withZone(ZoneOffset.UTC)
         private val REJECTION_ARTIFACT_TIMESTAMP_FORMATTER: DateTimeFormatter =
@@ -2704,3 +2855,5 @@ class FacebookProfileArticleImporter(
         }
     }
 }
+
+private class FacebookLoginTimeoutException(message: String) : RuntimeException(message)

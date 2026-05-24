@@ -18,7 +18,7 @@ If the upstream branch has new commits, the script can run `git pull --rebase`. 
 
 ### Requirements
 
-`codex` and `git` must be on `PATH`. `whiptail` is optional; without it, prompts fall back to plain terminal input.
+`git` must be on `PATH`. The script uses `codex` from `PATH` when available, and on macOS also falls back to the Codex.app bundled CLI in `/Applications/Codex.app/Contents/Resources/codex` or `~/Applications/Codex.app/Contents/Resources/codex`. `whiptail` is optional; without it, prompts fall back to plain terminal input.
 
 ## Facebook feed auto-scroll
 

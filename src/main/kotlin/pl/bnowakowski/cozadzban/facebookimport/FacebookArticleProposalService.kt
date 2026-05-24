@@ -83,6 +83,8 @@ class FacebookArticleProposalService(
             submittedCount = submitted,
             skippedExistingCount = skippedExisting,
             logsCompressed = GzipTextCodec.compress(request.logs),
+            passIndex = request.passIndex,
+            passCount = request.passCount,
         )
 
         if (submitted > 0) {
@@ -103,6 +105,18 @@ class FacebookArticleProposalService(
             skippedExisting = skippedExisting,
         )
     }
+
+    fun recordProgress(importRunId: String, request: FacebookImportProgressRequest) {
+        require(importRunId.isNotBlank()) { "importRunId is required" }
+        require(request.phaseIndex <= request.phaseCount || request.phaseCount == 0) {
+            "phaseIndex cannot exceed phaseCount"
+        }
+        runRepository.recordProgress(importRunId, request)
+    }
+
+    @Transactional(readOnly = true)
+    fun latestRunningProgress(): FacebookImportProgressSnapshot? =
+        runRepository.findLatestRunningProgress()
 
     fun completeRun(importRunId: String, request: FacebookImportRunCompletionRequest) {
         require(importRunId.isNotBlank()) { "importRunId is required" }
@@ -142,6 +156,17 @@ class FacebookArticleProposalService(
                     trigger = request.trigger,
                     profileUrl = request.profileUrl,
                     detectedAt = request.detectedAt,
+                ),
+            )
+        }
+        if (request.timedOut) {
+            eventPublisher?.publishEvent(
+                FacebookImportLoginTimedOutEvent(
+                    importRunId = importRunId,
+                    trigger = request.trigger,
+                    profileUrl = request.profileUrl,
+                    timeoutMessage = request.timeoutMessage,
+                    timedOutAt = request.detectedAt,
                 ),
             )
         }

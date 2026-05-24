@@ -11,6 +11,7 @@ import org.mockito.kotlin.never
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportLoginRequiredEvent
+import pl.bnowakowski.cozadzban.facebookimport.FacebookImportLoginTimedOutEvent
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportRunCompletedEvent
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportRunStatus
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportTrigger
@@ -59,6 +60,46 @@ class NotificationDeliveryServiceTest {
                 importRunId = "run-1",
                 trigger = FacebookImportTrigger.MANUAL,
                 profileUrl = "https://www.facebook.com/profile",
+            ),
+        )
+
+        verify(repository, never()).findPushoverRecipientsForFacebookLoginRequired()
+        verify(pushoverClient, never()).send(org.mockito.kotlin.any())
+    }
+
+    @Test
+    fun `scheduled facebook login timeout sends to opted-in admins`() {
+        whenever(repository.findPushoverRecipientsForFacebookLoginRequired()).thenReturn(
+            listOf(recipient(role = Role.ADMIN)),
+        )
+        whenever(encryptor.decrypt("encrypted")).thenReturn("user-key")
+
+        service.onFacebookLoginTimedOut(
+            FacebookImportLoginTimedOutEvent(
+                importRunId = "run-1",
+                trigger = FacebookImportTrigger.SCHEDULED,
+                profileUrl = "https://www.facebook.com/profile",
+                timeoutMessage = "Facebook login was not detected within PT1M",
+            ),
+        )
+
+        val captor = argumentCaptor<PushoverMessage>()
+        verify(pushoverClient).send(captor.capture())
+        assertEquals("Facebook login timed out", captor.firstValue.title)
+        assertEquals(
+            "Scheduled Facebook import run-1 timed out waiting for login or two-factor approval.",
+            captor.firstValue.message,
+        )
+    }
+
+    @Test
+    fun `manual facebook login timeout sends nothing`() {
+        service.onFacebookLoginTimedOut(
+            FacebookImportLoginTimedOutEvent(
+                importRunId = "run-1",
+                trigger = FacebookImportTrigger.MANUAL,
+                profileUrl = "https://www.facebook.com/profile",
+                timeoutMessage = "Facebook login was not detected within PT1M",
             ),
         )
 

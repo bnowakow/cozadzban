@@ -28,6 +28,19 @@ enum class FacebookImportRunStatus {
     TERMINATED,
 }
 
+const val FACEBOOK_IMPORT_PROGRESS_PHASE_COUNT = 8
+
+enum class FacebookImportProgressPhase(val phaseIndex: Int, val label: String) {
+    STARTING(1, "Starting"),
+    OPENING_PROFILE(2, "Opening Facebook profile"),
+    CHECKING_LOGIN(3, "Checking Facebook login"),
+    SCROLLING_PROFILE(4, "Scrolling profile"),
+    EXPANDING_POSTS(5, "Expanding posts"),
+    COLLECTING_POSTS(6, "Collecting marked posts"),
+    CHECKING_EXISTING(7, "Checking existing imports"),
+    SENDING_PROPOSALS(8, "Sending proposals"),
+}
+
 data class FacebookImportRun(
     val importRunId: String,
     val status: FacebookImportRunStatus,
@@ -37,6 +50,12 @@ data class FacebookImportRun(
     val submittedCount: Int,
     val skippedExistingCount: Int,
     val failedCount: Int,
+    val currentPassIndex: Int,
+    val passCount: Int,
+    val phase: String?,
+    val phaseIndex: Int,
+    val phaseCount: Int,
+    val lastStatusAt: Instant,
     val summaryLogsCompressed: ByteArray?,
 )
 
@@ -100,4 +119,35 @@ data class FacebookImportLoginRequiredRequest(
     val trigger: FacebookImportTrigger,
     val profileUrl: String,
     val detectedAt: Instant = Instant.now(),
+    val timedOut: Boolean = false,
+    val timeoutMessage: String? = null,
+)
+
+data class FacebookImportProgressRequest(
+    val phase: String,
+    val phaseIndex: Int,
+    val phaseCount: Int,
+    val passIndex: Int = 0,
+    val passCount: Int = 0,
+    val matchedPostCount: Int = 0,
+    val submittedCount: Int = 0,
+    val skippedExistingCount: Int = 0,
+    val failedCount: Int = 0,
+    val occurredAt: Instant = Instant.now(),
+)
+
+data class FacebookImportProgressSnapshot(
+    val importRunId: String,
+    val status: FacebookImportRunStatus,
+    val startedAt: Instant,
+    val lastUpdatedAt: Instant,
+    val phase: String?,
+    val phaseIndex: Int,
+    val phaseCount: Int,
+    val passIndex: Int,
+    val passCount: Int,
+    val matchedPostCount: Int,
+    val submittedCount: Int,
+    val skippedExistingCount: Int,
+    val failedCount: Int,
 )

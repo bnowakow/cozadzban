@@ -243,6 +243,27 @@ class MigrationSchemaIT {
     }
 
     @Test
+    fun `facebook import progress columns exist after V24 migration`() {
+        val progressColumnCount = jdbc.queryForObject(
+            """
+            SELECT COUNT(*) FROM information_schema.columns
+             WHERE table_name = 'facebook_import_run'
+               AND column_name IN (
+                   'current_pass_index',
+                   'pass_count',
+                   'phase',
+                   'phase_index',
+                   'phase_count',
+                   'last_status_at'
+               )
+            """,
+            Int::class.java,
+        )
+
+        assertEquals(6, progressColumnCount, "facebook_import_run should store current progress")
+    }
+
+    @Test
     fun `spring batch jdbc repository starts with facebook import job`() {
         assertEquals(FACEBOOK_IMPORT_JOB_NAME, facebookImportJob.name)
         val repositoryClass = AopUtils.getTargetClass(jobRepository)

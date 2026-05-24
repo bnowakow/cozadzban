@@ -36,11 +36,14 @@ import pl.bnowakowski.cozadzban.enrichment.LanguageFlagCache
 import pl.bnowakowski.cozadzban.facebookimport.FacebookCandidateApproval
 import pl.bnowakowski.cozadzban.facebookimport.FacebookCandidateApprovalDecision
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportJobService
+import pl.bnowakowski.cozadzban.facebookimport.FacebookImportProgressSnapshot
+import pl.bnowakowski.cozadzban.facebookimport.FacebookImportRunStatus
 import pl.bnowakowski.cozadzban.user.AppUser
 import pl.bnowakowski.cozadzban.user.AppUserRepository
 import pl.bnowakowski.cozadzban.user.AppUserStatus
 import pl.bnowakowski.cozadzban.user.Role
 import pl.bnowakowski.cozadzban.version.AppBuildProperties
+import java.time.Instant
 import java.util.Optional
 import java.util.concurrent.CompletableFuture
 
@@ -131,6 +134,63 @@ class ArticleListViewTest {
         stopButton.click()
 
         verify(facebookImportJobService).terminateImport()
+    }
+
+    @Test
+    fun `admin users see running facebook import progress above filters`() {
+        val adminEmail = "admin@example.com"
+        authenticateAs(adminEmail)
+        UI.setCurrent(UI())
+        stubArticles()
+        whenever(appUserRepository.findByEmail(adminEmail)).thenReturn(
+            AppUser(1L, adminEmail, Role.ADMIN, AppUserStatus.ACTIVE),
+        )
+        whenever(facebookImportJobService.currentProgress()).thenReturn(
+            FacebookImportProgressSnapshot(
+                importRunId = "run-progress",
+                status = FacebookImportRunStatus.RUNNING,
+                startedAt = Instant.now().minusSeconds(125),
+                lastUpdatedAt = Instant.parse("2026-05-24T10:15:30Z"),
+                phase = "Sending proposals",
+                phaseIndex = 8,
+                phaseCount = 8,
+                passIndex = 2,
+                passCount = 3,
+                matchedPostCount = 9,
+                submittedCount = 4,
+                skippedExistingCount = 5,
+                failedCount = 0,
+            ),
+        )
+
+        val view = ArticleListView(
+            articleRepository,
+            articleContentRepository,
+            articleService,
+            facebookImportJobService,
+            appUserRepository,
+            buildProperties,
+            languageFlagCache,
+        )
+
+        val progressPanel = findComponents(view, Div::class.java)
+            .firstOrNull { it.hasClassName("czj-facebook-import-progress") }
+        val spans = findComponents(view, Span::class.java).map { it.text }
+
+        assertTrue(progressPanel != null, "Expected Facebook import progress panel to be present")
+        assertTrue(progressPanel!!.isVisible, "Expected Facebook import progress panel to be visible")
+        assertTrue(spans.contains("Facebook import is running"))
+        assertTrue(spans.contains("Sending proposals"))
+        assertTrue(spans.contains("Matched posts"))
+        assertTrue(spans.contains("9"))
+        assertTrue(spans.contains("Already imported"))
+        assertTrue(spans.contains("5"))
+        assertTrue(spans.contains("Sent"))
+        assertTrue(spans.contains("4"))
+        assertTrue(spans.contains("Phase"))
+        assertTrue(spans.contains("8 of 8"))
+        assertTrue(spans.contains("Last updated"))
+        assertTrue(spans.contains("2026-05-24 10:15:30 UTC"))
     }
 
     @Test

@@ -17,6 +17,14 @@ data class FacebookImportLoginRequiredEvent(
     val detectedAt: Instant = Instant.now(),
 )
 
+data class FacebookImportLoginTimedOutEvent(
+    val importRunId: String,
+    val trigger: FacebookImportTrigger,
+    val profileUrl: String,
+    val timeoutMessage: String?,
+    val timedOutAt: Instant = Instant.now(),
+)
+
 data class FacebookProposalBatchSubmittedEvent(
     val importRunId: String,
     val passIndex: Int,
