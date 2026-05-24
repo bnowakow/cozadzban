@@ -4,6 +4,14 @@ set -euo pipefail
 repo_root=$(git rev-parse --show-toplevel)
 cd "$repo_root"
 
+tmp_files=()
+cleanup() {
+	if [ "${#tmp_files[@]}" -gt 0 ]; then
+		rm -f "${tmp_files[@]}"
+	fi
+}
+trap cleanup EXIT
+
 prompt_menu() {
 	local title=$1
 	local text=$2
@@ -53,6 +61,54 @@ has_worktree_changes() {
 has_version_change() {
 	git diff -- build.gradle.kts | grep -Eq '^[-+]version[[:space:]]*=' ||
 		git diff --cached -- build.gradle.kts | grep -Eq '^[-+]version[[:space:]]*='
+}
+
+has_unmerged_paths() {
+	[ -n "$(git diff --name-only --diff-filter=U)" ]
+}
+
+resolve_pull_conflict_with_codex() {
+	local conflict_output
+
+	conflict_output=$(mktemp "${TMPDIR:-/tmp}/cozazjeb-codex-conflict.XXXXXX")
+	tmp_files+=("$conflict_output")
+
+	printf '\nGit pull produced conflicts. Attempting to resolve them with Codex...\n'
+	printf 'Conflicted files:\n'
+	git diff --name-only --diff-filter=U | sed 's/^/  - /'
+
+	if ! codex exec \
+		-C "$repo_root" \
+		--sandbox workspace-write \
+		--output-last-message "$conflict_output" \
+		'Git is currently stopped on a pull/rebase conflict. Inspect the conflicted files, resolve the conflict markers in the working tree, preserve the intended behavior from both sides where possible, and do not commit, push, reset, abort, or continue the rebase. After editing, report whether all conflict markers and unmerged paths are resolved.'; then
+		echo "Codex failed while attempting to resolve the pull conflict."
+		cat "$conflict_output" >&2
+		return 1
+	fi
+
+	if has_unmerged_paths; then
+		echo "Codex was not able to resolve all git conflicts."
+		printf 'Still conflicted:\n'
+		git diff --name-only --diff-filter=U | sed 's/^/  - /'
+		cat "$conflict_output" >&2
+		return 1
+	fi
+
+	if git diff --check; then
+		git add --all
+	else
+		echo "Codex edits still contain conflict markers or whitespace errors."
+		return 1
+	fi
+
+	if GIT_EDITOR=true git rebase --continue; then
+		echo "Codex resolved the git conflict and the rebase continued successfully."
+		return 0
+	fi
+
+	echo "Codex resolved the files, but git rebase --continue failed."
+	return 1
 }
 
 extract_commit_message() {
@@ -126,7 +182,7 @@ if ! command -v codex >/dev/null 2>&1; then
 fi
 
 codex_output=$(mktemp "${TMPDIR:-/tmp}/cozazjeb-codex-commit.XXXXXX")
-trap 'rm -f "$codex_output"' EXIT
+tmp_files+=("$codex_output")
 
 codex exec \
 	-C "$repo_root" \
@@ -157,7 +213,17 @@ if upstream=$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null
 
 	if [ "$behind" -gt 0 ]; then
 		if confirm "Pull before push" "Upstream $upstream has $behind commit(s) not in this branch. Run git pull --rebase before push?"; then
-			git pull --rebase
+			if ! git pull --rebase; then
+				if has_unmerged_paths; then
+					resolve_pull_conflict_with_codex || {
+						echo "Aborting codex-commit because the git conflict was not resolved."
+						exit 1
+					}
+				else
+					echo "git pull --rebase failed without unmerged paths. Aborting."
+					exit 1
+				fi
+			fi
 		else
 			echo "Skipping push because upstream has new commits."
 			exit 0
