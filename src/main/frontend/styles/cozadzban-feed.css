@@ -256,7 +256,13 @@ vaadin-radio-button::part(label) {
   border-radius: 8px;
   background: var(--czj-card-bg);
   color: var(--czj-text);
-  overflow: hidden;
+  overflow: auto;
+}
+
+.czj-proposal-grid-header {
+  background: var(--czj-field-bg);
+  color: var(--czj-muted);
+  font-weight: 800;
 }
 
 .czj-admin-grid::part(header-cell) {

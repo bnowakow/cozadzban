@@ -8,8 +8,8 @@ import com.vaadin.flow.component.button.Button
 import com.vaadin.flow.component.button.ButtonVariant
 import com.vaadin.flow.component.dependency.CssImport
 import com.vaadin.flow.component.dialog.Dialog
-import com.vaadin.flow.component.grid.Grid
 import com.vaadin.flow.component.html.Anchor
+import com.vaadin.flow.component.html.Div
 import com.vaadin.flow.component.html.H2
 import com.vaadin.flow.component.html.Image
 import com.vaadin.flow.component.html.Span
@@ -22,7 +22,6 @@ import com.vaadin.flow.component.orderedlayout.VerticalLayout
 import com.vaadin.flow.component.select.Select
 import com.vaadin.flow.component.textfield.TextArea
 import com.vaadin.flow.component.textfield.TextField
-import com.vaadin.flow.data.renderer.ComponentRenderer
 import com.vaadin.flow.router.PageTitle
 import com.vaadin.flow.router.Route
 import jakarta.annotation.security.RolesAllowed
@@ -47,7 +46,7 @@ class FacebookArticleProposalView(
     private val appUserRepository: AppUserRepository,
 ) : VerticalLayout() {
 
-    private val proposalsGrid = Grid(FacebookArticleProposal::class.java, false)
+    private val proposalsGrid = VerticalLayout()
     private val statusFilter = Select<FacebookArticleProposalStatusFilter>()
     private val countLabel = Span()
 
@@ -73,7 +72,6 @@ class FacebookArticleProposalView(
         }
 
         configureGrid()
-        refreshGrid()
 
         val topBar = HorizontalLayout(
             buildTitleGroup(),
@@ -92,6 +90,7 @@ class FacebookArticleProposalView(
 
         add(topBar, proposalsGrid)
         expand(proposalsGrid)
+        refreshGrid()
     }
 
     private fun buildTitleGroup(): HorizontalLayout {
@@ -109,44 +108,86 @@ class FacebookArticleProposalView(
 
     private fun configureGrid() {
         proposalsGrid.addClassName("czj-admin-grid")
-        proposalsGrid.setSizeFull()
-        proposalsGrid.addColumn { it.submittedAt.toString() }
-            .setHeader("Submitted")
-            .setAutoWidth(true)
-        proposalsGrid.addColumn { statusLabel(it.status) }
-            .setHeader("Status")
-            .setAutoWidth(true)
-        proposalsGrid.addColumn { it.effectiveLanguage }
-            .setHeader("Language")
-            .setAutoWidth(true)
-        proposalsGrid.addColumn(ComponentRenderer { proposal -> externalLink(proposal.articleUrl) })
-            .setHeader("Article URL")
-            .setFlexGrow(1)
-        proposalsGrid.addColumn(ComponentRenderer { proposal ->
-            proposal.facebookPostUrl?.let(::externalLink) ?: Span("-")
-        })
-            .setHeader("Facebook post")
-            .setFlexGrow(1)
-        proposalsGrid.addColumn(FacebookArticleProposal::candidateId)
-            .setHeader("Candidate ID")
-            .setAutoWidth(true)
-        proposalsGrid.addColumn(FacebookArticleProposal::importRunId)
-            .setHeader("Import run")
-            .setAutoWidth(true)
-        proposalsGrid.addComponentColumn { proposal ->
-            Button("Review") { openReviewDialog(proposal.id) }
-                .apply { addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY) }
-        }
-            .setHeader("Actions")
-            .setAutoWidth(true)
-        proposalsGrid.addItemDoubleClickListener { openReviewDialog(it.item.id) }
+        proposalsGrid.setWidthFull()
+        proposalsGrid.setMinHeight("24rem")
+        proposalsGrid.isPadding = false
+        proposalsGrid.isSpacing = false
     }
 
     private fun refreshGrid() {
         val filter = statusFilter.value ?: FacebookArticleProposalStatusFilter.PENDING
-        proposalsGrid.setItems(proposalService.findPage(filter, page = 0, size = 100))
-        countLabel.text = "${proposalService.count(filter)} proposals"
+        val proposals = proposalService.findPage(filter, page = 0, size = 100)
+        val count = proposalService.count(filter)
+        countLabel.text = "$count ${if (count == 1L) "proposal" else "proposals"}"
+
+        proposalsGrid.removeAll()
+        proposalsGrid.add(proposalGridHeaderRow())
+        if (proposals.isEmpty()) {
+            proposalsGrid.add(
+                Span(if (count > 0) "No rows loaded for this filter." else "No proposals for this filter.").apply {
+                    addClassName("czj-admin-muted")
+                    element.style.set("padding", "1rem")
+                },
+            )
+            return
+        }
+        proposals.forEach { proposalsGrid.add(proposalGridRow(it)) }
     }
+
+    private fun proposalGridHeaderRow(): Div =
+        proposalGridRowBase().apply {
+            addClassName("czj-proposal-grid-header")
+            add(
+                gridCell("Submitted"),
+                gridCell("Status"),
+                gridCell("Language"),
+                gridCell("Article URL"),
+                gridCell("Facebook post"),
+                gridCell("Candidate ID"),
+                gridCell("Import run"),
+                gridCell("Actions"),
+            )
+        }
+
+    private fun proposalGridRow(proposal: FacebookArticleProposal): Div =
+        proposalGridRowBase().apply {
+            add(
+                gridCell(proposal.submittedAt.toString()),
+                gridCell(statusLabel(proposal.status)),
+                gridCell(proposal.effectiveLanguage),
+                gridCell(externalLink(proposal.articleUrl)),
+                gridCell(proposal.facebookPostUrl?.let(::externalLink) ?: Span("-")),
+                gridCell(proposal.candidateId),
+                gridCell(proposal.importRunId),
+                gridCell(
+                    Button("Review") { openReviewDialog(proposal.id) }
+                        .apply { addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY) },
+                ),
+            )
+        }
+
+    private fun proposalGridRowBase(): Div =
+        Div().apply {
+            element.style.set("display", "grid")
+            element.style.set(
+                "grid-template-columns",
+                "minmax(11rem, 13rem) minmax(5rem, 7rem) minmax(4rem, 5rem) minmax(18rem, 1.4fr) minmax(14rem, 1fr) minmax(13rem, 14rem) minmax(16rem, 17rem) minmax(6rem, 7rem)",
+            )
+            element.style.set("min-width", "96rem")
+            element.style.set("width", "100%")
+        }
+
+    private fun gridCell(value: String): Div =
+        gridCell(Span(value))
+
+    private fun gridCell(value: Component): Div =
+        Div(value).apply {
+            element.style.set("border-bottom", "1px solid var(--czj-border)")
+            element.style.set("box-sizing", "border-box")
+            element.style.set("overflow", "hidden")
+            element.style.set("padding", "0.6rem 0.75rem")
+            element.style.set("text-overflow", "ellipsis")
+        }
 
     private fun openReviewDialog(proposalId: Long) {
         val proposal = proposalService.findById(proposalId)
