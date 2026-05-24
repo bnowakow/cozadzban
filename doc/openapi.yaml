@@ -127,6 +127,9 @@ x-runtime-configuration:
     enabledEnvVar: APP_NOTIFICATIONS_ENABLED
     pushoverAppTokenEnvVar: APP_NOTIFICATIONS_PUSHOVER_APP_TOKEN
     encryptionKeyEnvVar: APP_NOTIFICATIONS_ENCRYPTION_KEY
+    pushoverBaseUrlEnvVar: APP_NOTIFICATIONS_PUSHOVER_BASE_URL
+    pushoverDeviceSemantics: zero selected devices means all active devices; multiple selected devices are sent as comma-separated Pushover device targets
+    pushoverDeviceDiscovery: device suggestions are read from the Pushover user validation response devices array
 
 x-problem-types:
   articleUrlConflict:

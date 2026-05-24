@@ -26,22 +26,31 @@ class NotificationPreferenceService(
         ensureActive(user)
         val appUserId = user.idOrThrow()
         val existing = repository.findByUserId(appUserId)
-        val device = input.pushoverDevice.normalizedDevice()
+        val devices = PushoverDevices.normalize(input.pushoverDevices)
         val userKey = input.pushoverUserKey?.trim()?.takeIf { it.isNotBlank() }
             ?: existing?.let { encryptor.decrypt(it.pushoverUserKeyEncrypted) }
             ?: throw IllegalArgumentException("Pushover user key is required")
 
-        pushoverClient.validateUser(userKey, device)
+        val validation = pushoverClient.validateUser(userKey, devices)
 
         val saved = repository.upsert(
             appUserId = appUserId,
             pushoverUserKeyEncrypted = encryptor.encrypt(userKey),
             pushoverUserKeySuffix = keySuffix(userKey),
-            pushoverDevice = device,
+            pushoverDevices = devices,
             facebookLoginRequiredEnabled = input.facebookLoginRequiredEnabled && user.role == Role.ADMIN,
             facebookProposalsSubmittedEnabled = input.facebookProposalsSubmittedEnabled,
         )
-        return saved.toSummary()
+        return saved.toSummary(validation.devices)
+    }
+
+    fun availablePushoverDevices(user: AppUser, pushoverUserKey: String?): List<String> {
+        ensureActive(user)
+        val existing = repository.findByUserId(user.idOrThrow())
+        val userKey = pushoverUserKey?.trim()?.takeIf { it.isNotBlank() }
+            ?: existing?.let { encryptor.decrypt(it.pushoverUserKeyEncrypted) }
+            ?: throw IllegalArgumentException("Pushover user key is required")
+        return pushoverClient.availableDevices(userKey)
     }
 
     fun sendTest(user: AppUser) {
@@ -51,7 +60,7 @@ class NotificationPreferenceService(
         pushoverClient.send(
             PushoverMessage(
                 userKey = encryptor.decrypt(preference.pushoverUserKeyEncrypted),
-                device = preference.pushoverDevice,
+                devices = preference.pushoverDevices,
                 title = "Co za dzban notifications",
                 message = "Test notification from Co za dzban.",
                 url = "https://cozadzban.pl",
@@ -60,13 +69,16 @@ class NotificationPreferenceService(
         )
     }
 
-    private fun NotificationPreference?.toSummary(): NotificationPreferenceSummary =
+    private fun NotificationPreference?.toSummary(
+        availablePushoverDevices: List<String> = emptyList(),
+    ): NotificationPreferenceSummary =
         NotificationPreferenceSummary(
             pushoverConfigured = this != null,
             pushoverUserKeySuffix = this?.pushoverUserKeySuffix,
-            pushoverDevice = this?.pushoverDevice,
+            pushoverDevices = this?.pushoverDevices.orEmpty(),
             facebookLoginRequiredEnabled = this?.facebookLoginRequiredEnabled == true,
             facebookProposalsSubmittedEnabled = this?.facebookProposalsSubmittedEnabled == true,
+            availablePushoverDevices = availablePushoverDevices,
         )
 
     private fun ensureActive(user: AppUser) {
@@ -75,9 +87,6 @@ class NotificationPreferenceService(
 
     private fun AppUser.idOrThrow(): Long =
         id ?: throw IllegalArgumentException("Current user is not persisted")
-
-    private fun String?.normalizedDevice(): String? =
-        this?.trim()?.takeIf { it.isNotBlank() }
 
     companion object {
         fun keySuffix(userKey: String): String =

@@ -6,6 +6,7 @@ package pl.bnowakowski.cozadzban.ui
 import com.vaadin.flow.component.button.Button
 import com.vaadin.flow.component.button.ButtonVariant
 import com.vaadin.flow.component.checkbox.Checkbox
+import com.vaadin.flow.component.combobox.MultiSelectComboBox
 import com.vaadin.flow.component.dependency.CssImport
 import com.vaadin.flow.component.html.H2
 import com.vaadin.flow.component.html.Image
@@ -17,7 +18,6 @@ import com.vaadin.flow.component.orderedlayout.FlexComponent.Alignment
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout
 import com.vaadin.flow.component.orderedlayout.VerticalLayout
 import com.vaadin.flow.component.textfield.PasswordField
-import com.vaadin.flow.component.textfield.TextField
 import com.vaadin.flow.router.PageTitle
 import com.vaadin.flow.router.Route
 import jakarta.annotation.security.RolesAllowed
@@ -25,6 +25,7 @@ import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.security.oauth2.core.OAuth2AuthenticatedPrincipal
 import pl.bnowakowski.cozadzban.notifications.NotificationPreferenceInput
 import pl.bnowakowski.cozadzban.notifications.NotificationPreferenceService
+import pl.bnowakowski.cozadzban.notifications.PushoverDevices
 import pl.bnowakowski.cozadzban.security.AllowlistAuthorizationManager
 import pl.bnowakowski.cozadzban.user.AppUser
 import pl.bnowakowski.cozadzban.user.AppUserRepository
@@ -42,7 +43,7 @@ class NotificationSettingsView(
 
     private val currentUser = currentActiveUser()
     private val pushoverUserKey = PasswordField("Pushover user key")
-    private val pushoverDevice = TextField("Pushover device")
+    private val pushoverDevices = MultiSelectComboBox<String>("Pushover devices")
     private val proposalNotifications = Checkbox("Article proposal review notifications")
     private val loginRequiredNotifications = Checkbox("Facebook login required notifications")
     private val status = Span()
@@ -59,8 +60,10 @@ class NotificationSettingsView(
         } else {
             "Paste your Pushover user key"
         }
-        pushoverDevice.setWidthFull()
-        pushoverDevice.value = summary.pushoverDevice ?: ""
+        pushoverDevices.setWidthFull()
+        pushoverDevices.placeholder = "All devices"
+        pushoverDevices.setSelectedItemsOnTop(true)
+        applyPushoverDeviceOptions(summary.availablePushoverDevices, summary.pushoverDevices)
         proposalNotifications.value = summary.facebookProposalsSubmittedEnabled
         loginRequiredNotifications.value = summary.facebookLoginRequiredEnabled
         loginRequiredNotifications.isVisible = currentUser.role == Role.ADMIN
@@ -72,18 +75,23 @@ class NotificationSettingsView(
         }
         saveButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY)
 
+        val loadDevicesButton = Button("Load devices", VaadinIcon.REFRESH.create()) {
+            loadPushoverDevices()
+        }
+        loadDevicesButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY)
+
         val testButton = Button("Send test notification", VaadinIcon.BELL.create()) {
             sendTestNotification()
         }
         testButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY)
 
-        val actions = HorizontalLayout(saveButton, testButton)
+        val actions = HorizontalLayout(saveButton, loadDevicesButton, testButton)
         actions.defaultVerticalComponentAlignment = Alignment.CENTER
 
         val form = VerticalLayout(
             status,
             pushoverUserKey,
-            pushoverDevice,
+            pushoverDevices,
             proposalNotifications,
             loginRequiredNotifications,
             actions,
@@ -123,17 +131,29 @@ class NotificationSettingsView(
                 currentUser,
                 NotificationPreferenceInput(
                     pushoverUserKey = pushoverUserKey.value,
-                    pushoverDevice = pushoverDevice.value,
+                    pushoverDevices = pushoverDevices.value,
                     facebookLoginRequiredEnabled = loginRequiredNotifications.value,
                     facebookProposalsSubmittedEnabled = proposalNotifications.value,
                 ),
             )
             pushoverUserKey.clear()
             pushoverUserKey.placeholder = "Configured key ending in ${summary.pushoverUserKeySuffix}"
+            applyPushoverDeviceOptions(summary.availablePushoverDevices, summary.pushoverDevices)
             status.text = "Pushover configured"
             showSuccess("Notification settings saved")
         } catch (ex: Exception) {
             showError(ex.message ?: "Could not save notification settings")
+        }
+    }
+
+    private fun loadPushoverDevices() {
+        try {
+            val devices = preferenceService.availablePushoverDevices(currentUser, pushoverUserKey.value)
+            val selectedDevices = PushoverDevices.normalize(pushoverDevices.value).filter { it in devices }
+            applyPushoverDeviceOptions(devices, selectedDevices)
+            showSuccess("Pushover devices loaded")
+        } catch (ex: Exception) {
+            showError(ex.message ?: "Could not load Pushover devices")
         }
     }
 
@@ -159,6 +179,12 @@ class NotificationSettingsView(
             ?: throw IllegalStateException("Current user is not allowlisted")
         check(user.status == AppUserStatus.ACTIVE) { "Current user is not active" }
         return user
+    }
+
+    private fun applyPushoverDeviceOptions(options: Collection<String>, selected: Collection<String>) {
+        val selectedDevices = PushoverDevices.normalize(selected)
+        pushoverDevices.setItems(PushoverDevices.normalize(options + selectedDevices))
+        pushoverDevices.setValue(selectedDevices)
     }
 
     private fun buildThemeToggleButton(): Button {

@@ -6,7 +6,9 @@ package pl.bnowakowski.cozadzban.ui
 import com.vaadin.flow.component.Component
 import com.vaadin.flow.component.UI
 import com.vaadin.flow.component.checkbox.Checkbox
+import com.vaadin.flow.component.combobox.MultiSelectComboBox
 import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -60,6 +62,25 @@ class NotificationSettingsViewTest {
         assertTrue(checkboxes.single { it.label == "Facebook login required notifications" }.isVisible)
     }
 
+    @Test
+    fun `selected Pushover devices are restored`() {
+        val user = AppUser(2L, "user@example.com", Role.USER)
+        authenticateAs(user.email, Role.USER)
+        UI.setCurrent(UI())
+        whenever(appUserRepository.findByEmail(user.email)).thenReturn(user)
+        whenever(preferenceService.summaryFor(user)).thenReturn(
+            summary(
+                pushoverDevices = listOf("iphone", "mac"),
+                availablePushoverDevices = listOf("iphone", "mac", "ipad"),
+            ),
+        )
+
+        val view = NotificationSettingsView(preferenceService, appUserRepository)
+
+        val devices = findComponents(view, MultiSelectComboBox::class.java).single()
+        assertEquals(setOf("iphone", "mac"), devices.value)
+    }
+
     private fun authenticateAs(email: String, role: Role) {
         SecurityContextHolder.getContext().authentication =
             UsernamePasswordAuthenticationToken(
@@ -69,13 +90,17 @@ class NotificationSettingsViewTest {
             )
     }
 
-    private fun summary(): NotificationPreferenceSummary =
+    private fun summary(
+        pushoverDevices: List<String> = emptyList(),
+        availablePushoverDevices: List<String> = emptyList(),
+    ): NotificationPreferenceSummary =
         NotificationPreferenceSummary(
             pushoverConfigured = false,
             pushoverUserKeySuffix = null,
-            pushoverDevice = null,
+            pushoverDevices = pushoverDevices,
             facebookLoginRequiredEnabled = false,
             facebookProposalsSubmittedEnabled = false,
+            availablePushoverDevices = availablePushoverDevices,
         )
 
     private fun <T : Component> findComponents(root: Component, type: Class<T>): List<T> {

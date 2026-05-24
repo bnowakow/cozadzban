@@ -220,6 +220,29 @@ class MigrationSchemaIT {
     }
 
     @Test
+    fun `notification preferences use plural Pushover device column after V21 migration`() {
+        val pluralDeviceColumnCount = jdbc.queryForObject(
+            """
+            SELECT COUNT(*) FROM information_schema.columns
+             WHERE table_name = 'notification_preference'
+               AND column_name = 'pushover_devices'
+            """,
+            Int::class.java,
+        )
+        val singleDeviceColumnCount = jdbc.queryForObject(
+            """
+            SELECT COUNT(*) FROM information_schema.columns
+             WHERE table_name = 'notification_preference'
+               AND column_name = 'pushover_device'
+            """,
+            Int::class.java,
+        )
+
+        assertEquals(1, pluralDeviceColumnCount, "notification_preference should store Pushover devices")
+        assertEquals(0, singleDeviceColumnCount, "old single Pushover device column should be migrated away")
+    }
+
+    @Test
     fun `spring batch jdbc repository starts with facebook import job`() {
         assertEquals(FACEBOOK_IMPORT_JOB_NAME, facebookImportJob.name)
         val repositoryClass = AopUtils.getTargetClass(jobRepository)

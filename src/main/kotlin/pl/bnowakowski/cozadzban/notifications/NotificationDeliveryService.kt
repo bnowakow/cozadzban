@@ -59,7 +59,7 @@ class NotificationDeliveryService(
             pushoverClient.send(
                 PushoverMessage(
                     userKey = encryptor.decrypt(recipient.pushoverUserKeyEncrypted),
-                    device = recipient.pushoverDevice,
+                    devices = recipient.pushoverDevices,
                     title = title,
                     message = message,
                     url = url,

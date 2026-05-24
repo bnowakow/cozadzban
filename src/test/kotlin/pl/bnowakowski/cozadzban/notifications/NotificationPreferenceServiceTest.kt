@@ -29,17 +29,19 @@ class NotificationPreferenceServiceTest {
                 appUserId = eq(2L),
                 pushoverUserKeyEncrypted = eq("encrypted"),
                 pushoverUserKeySuffix = eq("-key"),
-                pushoverDevice = eq(null),
+                pushoverDevices = eq(emptyList()),
                 facebookLoginRequiredEnabled = eq(false),
                 facebookProposalsSubmittedEnabled = eq(true),
             ),
         ).thenReturn(preference(login = false, proposals = true))
+        whenever(pushoverClient.validateUser("user-key", emptyList()))
+            .thenReturn(PushoverUserValidation(listOf("iphone")))
 
         val summary = service.save(
             AppUser(2L, "user@example.com", Role.USER),
             NotificationPreferenceInput(
                 pushoverUserKey = "user-key",
-                pushoverDevice = null,
+                pushoverDevices = emptyList(),
                 facebookLoginRequiredEnabled = true,
                 facebookProposalsSubmittedEnabled = true,
             ),
@@ -47,7 +49,7 @@ class NotificationPreferenceServiceTest {
 
         assertFalse(summary.facebookLoginRequiredEnabled)
         assertTrue(summary.facebookProposalsSubmittedEnabled)
-        verify(pushoverClient).validateUser("user-key", null)
+        verify(pushoverClient).validateUser("user-key", emptyList())
     }
 
     @Test
@@ -56,12 +58,14 @@ class NotificationPreferenceServiceTest {
         whenever(encryptor.encrypt("admin-key")).thenReturn("encrypted")
         whenever(repository.upsert(any(), any(), any(), any(), any(), any()))
             .thenReturn(preference(login = true, proposals = true))
+        whenever(pushoverClient.validateUser("admin-key", listOf("iphone", "mac")))
+            .thenReturn(PushoverUserValidation(listOf("iphone", "mac")))
 
         val summary = service.save(
             AppUser(1L, "admin@example.com", Role.ADMIN),
             NotificationPreferenceInput(
                 pushoverUserKey = "admin-key",
-                pushoverDevice = "iphone",
+                pushoverDevices = listOf("iphone", "mac"),
                 facebookLoginRequiredEnabled = true,
                 facebookProposalsSubmittedEnabled = true,
             ),
@@ -69,7 +73,19 @@ class NotificationPreferenceServiceTest {
 
         assertTrue(summary.facebookLoginRequiredEnabled)
         assertTrue(summary.facebookProposalsSubmittedEnabled)
-        verify(pushoverClient).validateUser("admin-key", "iphone")
+        verify(pushoverClient).validateUser("admin-key", listOf("iphone", "mac"))
+    }
+
+    @Test
+    fun `available devices use supplied key or saved key`() {
+        whenever(repository.findByUserId(1L)).thenReturn(preference(login = true, proposals = true))
+        whenever(encryptor.decrypt("encrypted")).thenReturn("saved-key")
+        whenever(pushoverClient.availableDevices("saved-key")).thenReturn(listOf("iphone", "mac"))
+
+        val devices = service.availablePushoverDevices(AppUser(1L, "admin@example.com", Role.ADMIN), "")
+
+        assertTrue(devices.containsAll(listOf("iphone", "mac")))
+        verify(pushoverClient).availableDevices("saved-key")
     }
 
     private fun preference(login: Boolean, proposals: Boolean): NotificationPreference =
@@ -78,7 +94,7 @@ class NotificationPreferenceServiceTest {
             provider = NotificationProvider.PUSHOVER,
             pushoverUserKeyEncrypted = "encrypted",
             pushoverUserKeySuffix = "-key",
-            pushoverDevice = null,
+            pushoverDevices = emptyList(),
             facebookLoginRequiredEnabled = login,
             facebookProposalsSubmittedEnabled = proposals,
             createdAt = null,

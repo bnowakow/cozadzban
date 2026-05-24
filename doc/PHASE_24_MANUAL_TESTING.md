@@ -33,8 +33,10 @@ must remain set so jobs only start through the worker scheduler or admin trigger
 `spring.batch.jdbc.initialize-schema=never` keeps Batch metadata DDL owned by Flyway.
 
 Log in through the Vaadin UI as an ACTIVE USER or ADMIN. For notification checks, open
-`/notification-settings`, save a Pushover user key, enable **Article proposal review
-notifications**, and as ADMIN also enable **Facebook login required notifications**.
+`/notification-settings`, save a Pushover user key, optionally load and select one or more
+Pushover devices, enable **Article proposal review notifications**, and as ADMIN also enable
+**Facebook login required notifications**. Leaving the device selection empty sends to all
+active Pushover devices for that user key.
 
 ---
 

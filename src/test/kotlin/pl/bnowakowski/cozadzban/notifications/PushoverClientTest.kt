@@ -6,6 +6,7 @@ package pl.bnowakowski.cozadzban.notifications
 import com.sun.net.httpserver.HttpServer
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.springframework.web.client.RestClient
 import java.net.InetSocketAddress
@@ -17,14 +18,14 @@ class PushoverClientTest {
 
     @Test
     fun `validates user and sends notification`() {
-        withRecordingServer(responseBody = """{"status":1,"request":"ok"}""") { baseUrl, requests ->
+        withRecordingServer(responseBody = """{"status":1,"devices":["iphone","mac"],"request":"ok"}""") { baseUrl, requests ->
             val client = client(baseUrl)
 
-            client.validateUser("user-key", "iphone")
+            val validation = client.validateUser("user-key", listOf("iphone", "mac"))
             client.send(
                 PushoverMessage(
                     userKey = "user-key",
-                    device = "iphone",
+                    devices = listOf("iphone", "mac"),
                     title = "Title",
                     message = "Message",
                     url = "https://cozadzban.pl/article-proposals",
@@ -35,7 +36,9 @@ class PushoverClientTest {
             assertEquals(listOf("/1/users/validate.json", "/1/messages.json"), requests.map { it.path })
             assertEquals("app-token", requests[0].form["token"])
             assertEquals("user-key", requests[0].form["user"])
-            assertEquals("iphone", requests[0].form["device"])
+            assertEquals(listOf("iphone", "mac"), validation.devices)
+            assertEquals(null, requests[0].form["device"])
+            assertEquals("iphone,mac", requests[1].form["device"])
             assertEquals("Title", requests[1].form["title"])
             assertEquals("Message", requests[1].form["message"])
         }
@@ -46,9 +49,50 @@ class PushoverClientTest {
         withRecordingServer(responseBody = """{"status":0,"errors":["invalid user"]}""") { baseUrl, _ ->
             val client = client(baseUrl)
 
-            assertThrows(PushoverException::class.java) {
-                client.validateUser("bad-user", null)
+            val ex = assertThrows(PushoverException::class.java) {
+                client.validateUser("bad-user", emptyList())
             }
+
+            assertEquals("Pushover user validation failed: invalid user", ex.message)
+        }
+    }
+
+    @Test
+    fun `unknown selected device fails validation`() {
+        withRecordingServer(responseBody = """{"status":1,"devices":["iphone"]}""") { baseUrl, _ ->
+            val client = client(baseUrl)
+
+            val ex = assertThrows(PushoverException::class.java) {
+                client.validateUser("user-key", listOf("ipad"))
+            }
+
+            assertEquals("Pushover device not valid for user: ipad", ex.message)
+        }
+    }
+
+    @Test
+    fun `http error exposes Pushover validation error detail`() {
+        withRecordingServer(status = 400, responseBody = """{"status":0,"errors":["invalid user"]}""") { baseUrl, _ ->
+            val client = client(baseUrl)
+
+            val ex = assertThrows(PushoverException::class.java) {
+                client.validateUser("bad-user", emptyList())
+            }
+
+            assertEquals("Could not validate Pushover user: HTTP 400: invalid user", ex.message)
+        }
+    }
+
+    @Test
+    fun `http error exposes compact raw body when response shape is unexpected`() {
+        withRecordingServer(status = 400, responseBody = """{"error":"bad request"}""") { baseUrl, _ ->
+            val client = client(baseUrl)
+
+            val ex = assertThrows(PushoverException::class.java) {
+                client.validateUser("bad-user", emptyList())
+            }
+
+            assertTrue(ex.message?.contains("""{"error":"bad request"}""") == true)
         }
     }
 
@@ -58,7 +102,7 @@ class PushoverClientTest {
             val client = client(baseUrl)
 
             assertThrows(PushoverException::class.java) {
-                client.send(PushoverMessage("user-key", null, "Title", "Message"))
+                client.send(PushoverMessage("user-key", emptyList(), "Title", "Message"))
             }
         }
     }
@@ -69,7 +113,7 @@ class PushoverClientTest {
             val client = client(baseUrl, readTimeout = Duration.ofMillis(20))
 
             assertThrows(PushoverException::class.java) {
-                client.validateUser("user-key", null)
+                client.validateUser("user-key", emptyList())
             }
         }
     }

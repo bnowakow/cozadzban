@@ -4,6 +4,7 @@
 package pl.bnowakowski.cozadzban.notifications
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
+import com.fasterxml.jackson.databind.ObjectMapper
 import org.springframework.http.MediaType
 import org.springframework.http.client.SimpleClientHttpRequestFactory
 import org.springframework.stereotype.Component
@@ -17,6 +18,7 @@ class PushoverClient(
     private val properties: NotificationProperties,
     restClientBuilder: RestClient.Builder,
 ) {
+    private val objectMapper = ObjectMapper()
     private val restClient: RestClient = restClientBuilder
         .baseUrl(properties.pushover.baseUrl.trimEnd('/'))
         .requestFactory(
@@ -27,14 +29,25 @@ class PushoverClient(
         )
         .build()
 
-    fun validateUser(userKey: String, device: String?) {
+    fun validateUser(userKey: String, devices: Collection<String>): PushoverUserValidation {
         ensureConfigured()
-        val form = baseForm(userKey)
-        device.normalizedDevice()?.let { form.add("device", it) }
-        val response = post("/1/users/validate.json", form, "validate Pushover user")
+        val response = post("/1/users/validate.json", baseForm(userKey), "validate Pushover user")
         if (response.status != 1) {
             throw PushoverException("Pushover user validation failed: ${response.errorMessage()}")
         }
+        val availableDevices = PushoverDevices.normalize(response.devices.orEmpty())
+        val unknownDevices = PushoverDevices.normalize(devices)
+            .filterNot { it in availableDevices }
+        if (unknownDevices.isNotEmpty()) {
+            throw PushoverException(
+                "Pushover device not valid for user: ${unknownDevices.joinToString(", ")}",
+            )
+        }
+        return PushoverUserValidation(availableDevices)
+    }
+
+    fun availableDevices(userKey: String): List<String> {
+        return validateUser(userKey, emptyList()).devices
     }
 
     fun send(message: PushoverMessage) {
@@ -42,7 +55,7 @@ class PushoverClient(
         val form = baseForm(message.userKey)
         form.add("title", message.title)
         form.add("message", message.message)
-        message.device.normalizedDevice()?.let { form.add("device", it) }
+        PushoverDevices.format(message.devices)?.let { form.add("device", it) }
         message.url?.takeIf { it.isNotBlank() }?.let { form.add("url", it) }
         message.urlTitle?.takeIf { it.isNotBlank() }?.let { form.add("url_title", it) }
         val response = post("/1/messages.json", form, "send Pushover notification")
@@ -67,7 +80,11 @@ class PushoverClient(
                 .body(PushoverApiResponse::class.java)
                 ?: throw PushoverException("Pushover did not return a response")
         } catch (ex: RestClientResponseException) {
-            throw PushoverException("Could not $action: HTTP ${ex.statusCode.value()}", ex)
+            val detail = responseErrorDetail(ex)
+            throw PushoverException(
+                "Could not $action: HTTP ${ex.statusCode.value()}${detail?.let { ": $it" } ?: ""}",
+                ex,
+            )
         } catch (ex: RestClientException) {
             throw PushoverException("Could not $action: ${ex.message ?: ex.javaClass.simpleName}", ex)
         }
@@ -79,13 +96,31 @@ class PushoverClient(
         }
     }
 
-    private fun String?.normalizedDevice(): String? =
-        this?.trim()?.takeIf { it.isNotBlank() }
+    private fun responseErrorDetail(ex: RestClientResponseException): String? {
+        val body = ex.responseBodyAsString.trim().takeIf { it.isNotBlank() } ?: return null
+        return runCatching {
+            objectMapper.readValue(body, PushoverApiResponse::class.java)
+                .errorMessage()
+                .takeIf { it.isNotBlank() && !it.startsWith("status=") }
+        }.getOrNull() ?: body.compactForMessage()
+    }
+
+    private fun String.compactForMessage(): String =
+        replace(Regex("\\s+"), " ")
+            .let { if (it.length > MAX_ERROR_DETAIL_LENGTH) "${it.take(MAX_ERROR_DETAIL_LENGTH)}..." else it }
+
+    private companion object {
+        const val MAX_ERROR_DETAIL_LENGTH = 300
+    }
 }
+
+data class PushoverUserValidation(
+    val devices: List<String>,
+)
 
 data class PushoverMessage(
     val userKey: String,
-    val device: String?,
+    val devices: Collection<String>,
     val title: String,
     val message: String,
     val url: String? = null,
@@ -98,6 +133,7 @@ class PushoverException(message: String, cause: Throwable? = null) : RuntimeExce
 data class PushoverApiResponse(
     val status: Int = 0,
     val errors: List<String>? = null,
+    val devices: List<String>? = null,
     val request: String? = null,
 ) {
     fun errorMessage(): String =

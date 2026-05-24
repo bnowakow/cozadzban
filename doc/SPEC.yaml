@@ -370,7 +370,7 @@ x-database:
         lifecycle/history. Flyway owns the BATCH_JOB_*, BATCH_STEP_*, and
         BATCH_*_SEQ objects; Spring Batch schema initialization remains disabled.
     - name: notification_preference
-      migration: V20__notification_preferences_and_login_required.sql
+      migration: V20__notification_preferences_and_login_required.sql, V21__notification_preference_pushover_devices.sql
       description: Stores encrypted per-user notification settings for Pushover.
       columns:
         - name: app_user_id
@@ -387,10 +387,10 @@ x-database:
           type: VARCHAR(12)
           constraints: NOT NULL
           description: Non-secret trailing characters used only for display.
-        - name: pushover_device
-          type: VARCHAR(128)
+        - name: pushover_devices
+          type: TEXT
           constraints: nullable
-          description: Optional Pushover device name.
+          description: Optional comma-separated Pushover device names; NULL means all active devices.
         - name: facebook_login_required_enabled
           type: BOOLEAN
           constraints: "NOT NULL DEFAULT false"
@@ -892,7 +892,8 @@ x-vaadin-ui:
         Self-service notification settings for ACTIVE logged-in users.
       features:
         - Users enter and validate their own Pushover user key; saved keys are encrypted and not shown again
-        - Optional Pushover device field
+        - Optional multi-device Pushover selector; empty selection sends to all active devices
+        - Device suggestions are loaded from Pushover user validation response devices
         - ACTIVE USER and ADMIN accounts can toggle article proposal review notifications
         - ACTIVE ADMIN accounts can additionally toggle scheduled Facebook login-required notifications
         - Send test notification button
@@ -1024,6 +1025,7 @@ x-runtime-configuration:
     pushoverAppTokenEnvVar: APP_NOTIFICATIONS_PUSHOVER_APP_TOKEN
     encryptionKeyEnvVar: APP_NOTIFICATIONS_ENCRYPTION_KEY
     pushoverBaseUrlEnvVar: APP_NOTIFICATIONS_PUSHOVER_BASE_URL
+    pushoverDeviceSemantics: zero selected devices means all active devices; multiple selected devices are sent as comma-separated Pushover device targets
     deliverySemantics: best-effort; failures are logged and do not block imports
   facebookImport:
     springBatchAutoRunProperty: spring.batch.job.enabled=false

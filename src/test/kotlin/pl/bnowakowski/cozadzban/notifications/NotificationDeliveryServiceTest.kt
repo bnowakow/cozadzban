@@ -48,6 +48,7 @@ class NotificationDeliveryServiceTest {
         val captor = argumentCaptor<PushoverMessage>()
         verify(pushoverClient).send(captor.capture())
         assertEquals("user-key", captor.firstValue.userKey)
+        assertEquals(listOf("iphone", "mac"), captor.firstValue.devices)
         assertEquals("Facebook login required", captor.firstValue.title)
     }
 
@@ -112,6 +113,6 @@ class NotificationDeliveryServiceTest {
             email = "user@example.com",
             role = role,
             pushoverUserKeyEncrypted = "encrypted",
-            pushoverDevice = null,
+            pushoverDevices = listOf("iphone", "mac"),
         )
 }
