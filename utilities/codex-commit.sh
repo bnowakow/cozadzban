@@ -54,15 +54,76 @@ confirm() {
 	[[ "$answer" =~ ^[Yy]$|^[Yy][Ee][Ss]$ ]]
 }
 
+whiptail_supports_extra_button() {
+	whiptail --help 2>&1 | grep -q -- '--extra-button'
+}
+
 prompt_push_action() {
 	local text=$1
+	local status
+
+	if command -v dialog >/dev/null 2>&1 && [ -r /dev/tty ] && [ -w /dev/tty ]; then
+		dialog \
+			--title "Push" \
+			--yes-button "Push" \
+			--extra-button \
+			--extra-label "Show diff" \
+			--no-button "Cancel" \
+			--yesno "$text" 20 90 \
+			>/dev/tty 2>&1 </dev/tty
+		status=$?
+		case "$status" in
+			0) printf 'push\n' ;;
+			1) printf 'skip\n' ;;
+			3) printf 'diff\n' ;;
+			*) return 1 ;;
+		esac
+		return
+	fi
+
+	if command -v whiptail >/dev/null 2>&1 && [ -r /dev/tty ] && [ -w /dev/tty ]; then
+		if whiptail_supports_extra_button; then
+			whiptail \
+				--title "Push" \
+				--yes-button "Push" \
+				--extra-button \
+				--extra-label "Show diff" \
+				--no-button "Cancel" \
+				--yesno "$text" 20 90 \
+				>/dev/tty 2>&1 </dev/tty
+			status=$?
+			case "$status" in
+				0) printf 'push\n' ;;
+				1) printf 'skip\n' ;;
+				3) printf 'diff\n' ;;
+				*) return 1 ;;
+			esac
+			return
+		fi
+
+		whiptail \
+			--title "Push" \
+			--yes-button "Push" \
+			--no-button "Show diff" \
+			--yesno "$text
+
+Press Esc to cancel." 22 90 \
+			>/dev/tty 2>&1 </dev/tty
+		status=$?
+		case "$status" in
+			0) printf 'push\n' ;;
+			1) printf 'diff\n' ;;
+			*) return 1 ;;
+		esac
+		return
+	fi
 
 	prompt_menu \
 		"Push" \
 		"$text" \
 		push "Run git push now" \
 		diff "Show diff for HEAD~1..HEAD" \
-		skip "Skip push"
+		skip "Cancel"
 }
 
 has_worktree_changes() {

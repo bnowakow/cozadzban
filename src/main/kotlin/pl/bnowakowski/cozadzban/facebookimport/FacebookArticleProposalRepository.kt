@@ -267,6 +267,17 @@ class FacebookArticleProposalRepository(
         )
     }
 
+    fun markAlreadyExists(id: Long, decidedByUserId: Long, correctedLanguage: String, logsCompressed: ByteArray?) {
+        markDecision(
+            id = id,
+            status = FacebookArticleProposalStatus.ALREADY_EXISTS,
+            articleId = null,
+            decidedByUserId = decidedByUserId,
+            correctedLanguage = correctedLanguage,
+            logsCompressed = logsCompressed,
+        )
+    }
+
     private fun markDecision(
         id: Long,
         status: FacebookArticleProposalStatus,
@@ -302,7 +313,8 @@ class FacebookArticleProposalRepository(
             FacebookArticleProposalStatusFilter.PENDING -> "WHERE status IS NULL" to params
             FacebookArticleProposalStatusFilter.ACCEPTED,
             FacebookArticleProposalStatusFilter.REJECTED,
-            FacebookArticleProposalStatusFilter.FAILED -> {
+            FacebookArticleProposalStatusFilter.FAILED,
+            FacebookArticleProposalStatusFilter.ALREADY_EXISTS -> {
                 params.addValue("status", statusFilter.name)
                 "WHERE status = :status" to params
             }

@@ -298,6 +298,21 @@ class FacebookArticleProposalServiceTest {
         verify(proposalRepository).markFailed(eq(1L), eq(3L), eq("en"), any())
     }
 
+    @Test
+    fun acceptMarksProposalAlreadyExistsWhenArticleUrlAlreadyExists() {
+        val pending = proposal(status = null)
+        val alreadyExists = pending.copy(status = FacebookArticleProposalStatus.ALREADY_EXISTS)
+        whenever(proposalRepository.findById(1L)).thenReturn(pending, alreadyExists)
+        whenever(articleService.existsByUrl(pending.canonicalArticleUrl)).thenReturn(true)
+
+        val updated = service.accept(1L, "pl", decidedByUserId = 3L)
+
+        assertEquals(FacebookArticleProposalStatus.ALREADY_EXISTS, updated.status)
+        verify(articleService, never()).create(any(), any())
+        verify(proposalRepository).markAlreadyExists(eq(1L), eq(3L), eq("pl"), any())
+        verify(proposalRepository, never()).markFailed(any(), any(), any(), any())
+    }
+
     private fun proposal(
         status: FacebookArticleProposalStatus?,
         logsCompressed: ByteArray? = null,

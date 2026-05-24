@@ -63,6 +63,7 @@ class FacebookArticleProposalView(
                 FacebookArticleProposalStatusFilter.ACCEPTED -> "Accepted"
                 FacebookArticleProposalStatusFilter.REJECTED -> "Rejected"
                 FacebookArticleProposalStatusFilter.FAILED -> "Failed"
+                FacebookArticleProposalStatusFilter.ALREADY_EXISTS -> "Already exists"
                 FacebookArticleProposalStatusFilter.ALL -> "All"
             }
         }
@@ -212,10 +213,16 @@ class FacebookArticleProposalView(
 
         val acceptButton = Button("Accept", VaadinIcon.CHECK.create()) {
             try {
-                proposalService.accept(proposalId, language.value.trim(), currentUser.id!!)
+                val updated = proposalService.accept(proposalId, language.value.trim(), currentUser.id!!)
                 dialog.close()
                 refreshGrid()
-                showSuccess("Proposal accepted")
+                showSuccess(
+                    if (updated.status == FacebookArticleProposalStatus.ALREADY_EXISTS) {
+                        "Proposal marked as already existing"
+                    } else {
+                        "Proposal accepted"
+                    },
+                )
             } catch (ex: Exception) {
                 refreshGrid()
                 showError(ex.message ?: "Failed to accept proposal")
@@ -291,6 +298,7 @@ class FacebookArticleProposalView(
             FacebookArticleProposalStatus.ACCEPTED -> "Accepted"
             FacebookArticleProposalStatus.REJECTED -> "Rejected"
             FacebookArticleProposalStatus.FAILED -> "Failed"
+            FacebookArticleProposalStatus.ALREADY_EXISTS -> "Already exists"
         }
 
     private fun buildThemeToggleButton(): Button {

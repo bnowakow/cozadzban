@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.bnowakowski.cozadzban.article.ArticleInput
 import pl.bnowakowski.cozadzban.article.ArticleService
+import pl.bnowakowski.cozadzban.article.ArticleUrlConflictException
 import pl.bnowakowski.cozadzban.security.AllowlistAuthorizationManager
 import pl.bnowakowski.cozadzban.security.MachineToMachineProperties
 import pl.bnowakowski.cozadzban.user.AppUser
@@ -171,6 +172,10 @@ class FacebookArticleProposalService(
             "Facebook article proposal $id is already accepted"
         }
         val language = ArticleService.normalizeLanguage(correctedLanguage)
+        if (articleService.existsByUrl(proposal.canonicalArticleUrl)) {
+            LOG.info("Facebook article proposal {} already exists before accepting", id)
+            return markAlreadyExists(id, proposal, decidedByUserId, language, proposal.canonicalArticleUrl)
+        }
         val bot = importBotUser()
         return try {
             val article = articleService.create(
@@ -192,6 +197,9 @@ class FacebookArticleProposalService(
                 ),
             )
             findById(id)
+        } catch (ex: ArticleUrlConflictException) {
+            LOG.info("Facebook article proposal {} already exists while accepting", id, ex)
+            markAlreadyExists(id, proposal, decidedByUserId, language, ex.url)
         } catch (ex: Exception) {
             LOG.warn("Facebook article proposal {} accept failed", id, ex)
             proposalRepository.markFailed(
@@ -220,6 +228,25 @@ class FacebookArticleProposalService(
             logsCompressed = appendLogs(
                 proposal.logsCompressed,
                 "Rejected by userId=$decidedByUserId; language=$language",
+            ),
+        )
+        return findById(id)
+    }
+
+    private fun markAlreadyExists(
+        id: Long,
+        proposal: FacebookArticleProposal,
+        decidedByUserId: Long,
+        language: String,
+        existingUrl: String,
+    ): FacebookArticleProposal {
+        proposalRepository.markAlreadyExists(
+            id = id,
+            decidedByUserId = decidedByUserId,
+            correctedLanguage = language,
+            logsCompressed = appendLogs(
+                proposal.logsCompressed,
+                "Accept skipped for userId=$decidedByUserId; language=$language; alreadyExistsUrl=$existingUrl",
             ),
         )
         return findById(id)
