@@ -47,6 +47,8 @@ import pl.bnowakowski.cozadzban.facebookimport.FacebookCandidateApproval
 import pl.bnowakowski.cozadzban.facebookimport.FacebookCandidateApprovalDecision
 import pl.bnowakowski.cozadzban.facebookimport.FacebookCandidateApprovalHandler
 import pl.bnowakowski.cozadzban.enrichment.LanguageFlagCache
+import pl.bnowakowski.cozadzban.facebookimport.FacebookArticleProposalService
+import pl.bnowakowski.cozadzban.facebookimport.FacebookArticleProposalStatusFilter
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportJobService
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportProgressSnapshot
 import pl.bnowakowski.cozadzban.security.AllowlistAuthorizationManager
@@ -74,6 +76,7 @@ class ArticleListView(
     private val articleContentRepository: ArticleContentRepository,
     private val articleService: ArticleService,
     private val facebookImportJobService: FacebookImportJobService,
+    private val articleProposalService: FacebookArticleProposalService,
     private val appUserRepository: AppUserRepository,
     private val buildProperties: AppBuildProperties,
     private val languageFlagCache: LanguageFlagCache,
@@ -81,6 +84,7 @@ class ArticleListView(
 
     private val feed = VirtualList<Article>()
     private val facebookImportProgressPanel = Div()
+    private val articleProposalReviewPanel = Div()
     private var facebookImportProgressPollRegistration: Registration? = null
     private var stopFacebookImportButton: Button? = null
 
@@ -177,6 +181,7 @@ class ArticleListView(
         feedShell.element.style.set("box-sizing", "border-box")
         feedShell.element.style.set("margin", "calc(66px + 1.35rem) auto 0")
 
+        configureArticleProposalReviewPanel()
         configureFacebookImportProgressPanel()
         val filterBar = buildFilterBar()
 
@@ -188,9 +193,10 @@ class ArticleListView(
         feed.element.style.set("height", "100%")
 
         refreshData()
+        refreshArticleProposalReviewPanel()
         refreshFacebookImportProgressPanel()
         configureFacebookImportProgressPolling()
-        feedShell.add(facebookImportProgressPanel, filterBar, feed)
+        feedShell.add(articleProposalReviewPanel, facebookImportProgressPanel, filterBar, feed)
         feedShell.expand(feed)
 
         val versionBadge = buildVersionBadge()
@@ -484,11 +490,18 @@ class ArticleListView(
         facebookImportProgressPanel.isVisible = false
     }
 
+    private fun configureArticleProposalReviewPanel() {
+        articleProposalReviewPanel.addClassName("czj-facebook-import-progress")
+        articleProposalReviewPanel.setWidth("100%")
+        articleProposalReviewPanel.isVisible = false
+    }
+
     private fun configureFacebookImportProgressPolling() {
-        if (!canViewFacebookImportProgress()) return
+        if (!canViewFacebookImportProgress() && !canReviewArticleProposals()) return
         val currentUi = UI.getCurrent() ?: return
         currentUi.pollInterval = FACEBOOK_IMPORT_STATUS_POLL_INTERVAL_MS
         facebookImportProgressPollRegistration = currentUi.addPollListener {
+            refreshArticleProposalReviewPanel()
             refreshFacebookImportProgressPanel()
             stopFacebookImportButton?.let { updateStopFacebookImportButton(it) }
         }
@@ -519,6 +532,67 @@ class ArticleListView(
         isAuthenticated &&
             authenticatedUser?.status == AppUserStatus.ACTIVE &&
             authenticatedUser?.role == Role.ADMIN
+
+    private fun canReviewArticleProposals(): Boolean =
+        isAuthenticated &&
+            authenticatedUser?.status == AppUserStatus.ACTIVE &&
+            authenticatedUser?.role in setOf(Role.USER, Role.ADMIN)
+
+    private fun refreshArticleProposalReviewPanel() {
+        val pendingCount = if (canReviewArticleProposals()) {
+            articleProposalService.count(FacebookArticleProposalStatusFilter.PENDING)
+        } else {
+            0L
+        }
+        if (pendingCount <= 0L) {
+            articleProposalReviewPanel.isVisible = false
+            articleProposalReviewPanel.removeAll()
+            return
+        }
+
+        articleProposalReviewPanel.isVisible = true
+        articleProposalReviewPanel.removeAll()
+        articleProposalReviewPanel.add(buildArticleProposalReviewContent(pendingCount))
+    }
+
+    private fun buildArticleProposalReviewContent(pendingCount: Long): Div {
+        val content = Div()
+        content.addClassName("czj-facebook-import-progress-content")
+        content.element.style.set("cursor", "pointer")
+        content.element.setAttribute("role", "link")
+        content.element.setAttribute("tabindex", "0")
+        content.element.setAttribute("aria-label", "$pendingCount article proposals waiting for review")
+        content.addClickListener { ui.ifPresent { currentUi -> currentUi.navigate("article-proposals") } }
+        content.element.executeJs(
+            """
+                this.addEventListener("keydown", event => {
+                    if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        this.click();
+                    }
+                });
+            """.trimIndent(),
+        )
+
+        val icon = VaadinIcon.LIST.create()
+        icon.setSize("1.15rem")
+        icon.color = "var(--lumo-primary-color)"
+
+        val title = Span("Article proposals waiting for review")
+        title.addClassName("czj-facebook-import-progress-title")
+
+        val count = Span("$pendingCount ${if (pendingCount == 1L) "proposal" else "proposals"}")
+        count.addClassName("czj-facebook-import-progress-phase")
+
+        val header = HorizontalLayout(icon, title, count)
+        header.addClassName("czj-facebook-import-progress-header")
+        header.isPadding = false
+        header.isSpacing = true
+        header.defaultVerticalComponentAlignment = Alignment.CENTER
+
+        content.add(header)
+        return content
+    }
 
     private fun buildFacebookImportProgressContent(progress: FacebookImportProgressSnapshot): Div {
         val content = Div()

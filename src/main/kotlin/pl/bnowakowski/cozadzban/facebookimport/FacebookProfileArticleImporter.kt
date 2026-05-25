@@ -988,14 +988,24 @@ class FacebookProfileArticleImporter(
         val selectedFromOpenedPost = sourcePostUrls.asSequence()
             .filterNot { isConfiguredProfilePostUrl(it) }
             .mapNotNull { sourcePostUrl ->
-                extractCandidateUrlFromFacebookPost(driver, sourcePostUrl, discoveryProgress = discoveryProgress)
+                extractCandidateUrlFromFacebookPost(
+                    driver,
+                    sourcePostUrl,
+                    discoveryProgress = discoveryProgress,
+                    sourceContextText = text,
+                )
                     ?.let { PostUrlSelection(it, sourcePostUrl) }
             }
             .firstOrNull()
             ?: sourcePostUrls.asSequence()
                 .filter { isConfiguredProfilePostUrl(it) }
                 .mapNotNull { sourcePostUrl ->
-                    extractCandidateUrlFromFacebookPost(driver, sourcePostUrl, discoveryProgress = discoveryProgress)
+                extractCandidateUrlFromFacebookPost(
+                    driver,
+                    sourcePostUrl,
+                    discoveryProgress = discoveryProgress,
+                    sourceContextText = text,
+                )
                         ?.let { PostUrlSelection(it, sourcePostUrl) }
                 }
                 .firstOrNull()
@@ -1068,6 +1078,7 @@ class FacebookProfileArticleImporter(
         discoveryProgress: String?,
         allowWeakExternalArticleUrls: Boolean = true,
         allowFacebookFallbackUrl: Boolean = true,
+        sourceContextText: String? = null,
     ): String? {
         if (postUrl in visited) return null
         val originalWindow = driver.windowHandle
@@ -1112,6 +1123,7 @@ class FacebookProfileArticleImporter(
                         discoveryProgress = discoveryProgress,
                         allowWeakExternalArticleUrls = false,
                         allowFacebookFallbackUrl = false,
+                        sourceContextText = sourceContextText,
                     )
                 }
                 .firstOrNull()
@@ -1142,6 +1154,7 @@ class FacebookProfileArticleImporter(
                 null
             } else if (isFacebookPhotoUrl(postUrl)) {
                 linkArticleUrls
+                    .filter { sourceContextText == null || isUrlHostMentionedInText(it, sourceContextText) }
                     .filter { hasOpenedPhotoPostTextForExternalUrl(bodyText, it) }
                     .bestSpecificExternalArticleUrl()
             } else {

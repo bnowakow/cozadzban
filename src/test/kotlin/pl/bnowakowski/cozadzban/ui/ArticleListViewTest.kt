@@ -35,6 +35,8 @@ import pl.bnowakowski.cozadzban.article.ArticleService
 import pl.bnowakowski.cozadzban.enrichment.LanguageFlagCache
 import pl.bnowakowski.cozadzban.facebookimport.FacebookCandidateApproval
 import pl.bnowakowski.cozadzban.facebookimport.FacebookCandidateApprovalDecision
+import pl.bnowakowski.cozadzban.facebookimport.FacebookArticleProposalService
+import pl.bnowakowski.cozadzban.facebookimport.FacebookArticleProposalStatusFilter
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportJobService
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportProgressSnapshot
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportRunStatus
@@ -53,6 +55,7 @@ class ArticleListViewTest {
     private val articleContentRepository: ArticleContentRepository = mock()
     private val articleService: ArticleService = mock()
     private val facebookImportJobService: FacebookImportJobService = mock()
+    private val articleProposalService: FacebookArticleProposalService = mock()
     private val appUserRepository: AppUserRepository = mock()
     private val buildProperties = AppBuildProperties(
         version = "0.8.0",
@@ -83,6 +86,7 @@ class ArticleListViewTest {
             articleContentRepository,
             articleService,
             facebookImportJobService,
+            articleProposalService,
             appUserRepository,
             buildProperties,
             languageFlagCache,
@@ -121,6 +125,7 @@ class ArticleListViewTest {
             articleContentRepository,
             articleService,
             facebookImportJobService,
+            articleProposalService,
             appUserRepository,
             buildProperties,
             languageFlagCache,
@@ -169,13 +174,14 @@ class ArticleListViewTest {
             articleContentRepository,
             articleService,
             facebookImportJobService,
+            articleProposalService,
             appUserRepository,
             buildProperties,
             languageFlagCache,
         )
 
         val progressPanel = findComponents(view, Div::class.java)
-            .firstOrNull { it.hasClassName("czj-facebook-import-progress") }
+            .firstOrNull { it.hasClassName("czj-facebook-import-progress") && it.isVisible }
         val spans = findComponents(view, Span::class.java).map { it.text }
 
         assertTrue(progressPanel != null, "Expected Facebook import progress panel to be present")
@@ -213,6 +219,7 @@ class ArticleListViewTest {
             articleContentRepository,
             articleService,
             facebookImportJobService,
+            articleProposalService,
             appUserRepository,
             buildProperties,
             languageFlagCache,
@@ -255,6 +262,7 @@ class ArticleListViewTest {
             articleContentRepository,
             articleService,
             facebookImportJobService,
+            articleProposalService,
             appUserRepository,
             buildProperties,
             languageFlagCache,
@@ -282,6 +290,7 @@ class ArticleListViewTest {
             articleContentRepository,
             articleService,
             facebookImportJobService,
+            articleProposalService,
             appUserRepository,
             buildProperties,
             languageFlagCache,
@@ -341,6 +350,7 @@ class ArticleListViewTest {
             articleContentRepository,
             articleService,
             facebookImportJobService,
+            articleProposalService,
             appUserRepository,
             buildProperties,
             languageFlagCache,
@@ -363,6 +373,7 @@ class ArticleListViewTest {
             articleContentRepository,
             articleService,
             facebookImportJobService,
+            articleProposalService,
             appUserRepository,
             buildProperties,
             languageFlagCache,
@@ -396,6 +407,7 @@ class ArticleListViewTest {
             articleContentRepository,
             articleService,
             facebookImportJobService,
+            articleProposalService,
             appUserRepository,
             buildProperties,
             languageFlagCache,
@@ -436,6 +448,7 @@ class ArticleListViewTest {
             articleContentRepository,
             articleService,
             facebookImportJobService,
+            articleProposalService,
             appUserRepository,
             buildProperties,
             languageFlagCache,
@@ -476,6 +489,7 @@ class ArticleListViewTest {
             articleContentRepository,
             articleService,
             facebookImportJobService,
+            articleProposalService,
             appUserRepository,
             buildProperties,
             languageFlagCache,
@@ -516,6 +530,7 @@ class ArticleListViewTest {
             articleContentRepository,
             articleService,
             facebookImportJobService,
+            articleProposalService,
             appUserRepository,
             buildProperties,
             languageFlagCache,
@@ -549,6 +564,7 @@ class ArticleListViewTest {
             articleContentRepository,
             articleService,
             facebookImportJobService,
+            articleProposalService,
             appUserRepository,
             buildProperties,
             languageFlagCache,
@@ -564,6 +580,62 @@ class ArticleListViewTest {
         assertTrue(lead.text.endsWith("..."))
         assertTrue(lead.hasClassName("czj-article-lead-truncated"))
         assertFalse(lead.text.contains("word899"))
+    }
+
+
+    @Test
+    fun `logged reviewers see pending article proposal review notice above filters`() {
+        val userEmail = "user@example.com"
+        authenticateAs(userEmail)
+        UI.setCurrent(UI())
+        stubArticles()
+        whenever(appUserRepository.findByEmail(userEmail)).thenReturn(
+            AppUser(2L, userEmail, Role.USER, AppUserStatus.ACTIVE),
+        )
+        whenever(articleProposalService.count(FacebookArticleProposalStatusFilter.PENDING)).thenReturn(3L)
+
+        val view = ArticleListView(
+            articleRepository,
+            articleContentRepository,
+            articleService,
+            facebookImportJobService,
+            articleProposalService,
+            appUserRepository,
+            buildProperties,
+            languageFlagCache,
+        )
+
+        val visiblePanels = findComponents(view, Div::class.java)
+            .filter { it.hasClassName("czj-facebook-import-progress") && it.isVisible }
+        val spans = findComponents(view, Span::class.java).map { it.text }
+
+        assertEquals(1, visiblePanels.size)
+        assertTrue(spans.contains("Article proposals waiting for review"))
+        assertTrue(spans.contains("3 proposals"))
+    }
+
+
+    @Test
+    fun `anonymous users do not see pending article proposal review notice`() {
+        stubArticles()
+        whenever(articleProposalService.count(FacebookArticleProposalStatusFilter.PENDING)).thenReturn(3L)
+
+        val view = ArticleListView(
+            articleRepository,
+            articleContentRepository,
+            articleService,
+            facebookImportJobService,
+            articleProposalService,
+            appUserRepository,
+            buildProperties,
+            languageFlagCache,
+        )
+
+        val spans = findComponents(view, Span::class.java).map { it.text }
+
+        assertFalse(spans.contains("Article proposals waiting for review"))
+        assertFalse(spans.contains("3 proposals"))
+        verify(articleProposalService, never()).count(any())
     }
 
     private fun authenticateAs(email: String) {

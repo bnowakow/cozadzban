@@ -1391,7 +1391,7 @@ class FacebookProfileArticleImporterUrlTest {
     }
 
     @Test
-    fun `opened photo posts ignore external links from the opened photo page`() {
+    fun `opened photo posts ignore weak external links not mentioned in original post text`() {
         val importer = FacebookProfileArticleImporter(
             FacebookImportProperties(waitAfterPageOpen = Duration.ZERO),
             mock<AppUserRepository>(),
@@ -1411,9 +1411,9 @@ class FacebookProfileArticleImporterUrlTest {
         val body = mock<WebElement>()
         val openedArticleLink = mock<WebElement>()
         val photoUrl = "https://www.facebook.com/photo/?fbid=983286114627177&set=pcb.983297487959373"
-        val openedArticleUrl = "http://arianagrande.lnk.to/htimylm"
+        val openedArticleUrl = "https://kosmonauta.net/2024/artykul-test"
 
-        whenever(element.text).thenReturn("Co za zjeb Sławosz Uznański-Wiśniewski · Nie mogę odnieść się do treści listu.")
+        whenever(element.text).thenReturn("Co za zjeb donald.pl · Jak przekonuje miliarder, nawet gdyby płacił dwa razy większe podatki.")
         whenever(element.findElements(any())).thenReturn(listOf(photoLink))
         whenever(photoLink.getAttribute("href")).thenReturn(photoUrl)
         whenever(driver.windowHandle).thenReturn("main")
@@ -1427,8 +1427,8 @@ class FacebookProfileArticleImporterUrlTest {
         )
         whenever(openedArticleLink.getAttribute("href")).thenReturn(openedArticleUrl)
         whenever(driver.findElement(any())).thenReturn(body)
-        whenever(body.text).thenReturn("Ariana Grande\n$openedArticleUrl")
-        whenever(driver.pageSource).thenReturn("""<a href="$openedArticleUrl">arianagrande.lnk.to/htimylm</a>""")
+        whenever(body.text).thenReturn("Kosmonauta.net\nArtykuł testowy")
+        whenever(driver.pageSource).thenReturn("""<a href="$openedArticleUrl">Kosmonauta.net</a>""")
 
         assertEquals(photoUrl, method.invoke(importer, driver, element))
     }
