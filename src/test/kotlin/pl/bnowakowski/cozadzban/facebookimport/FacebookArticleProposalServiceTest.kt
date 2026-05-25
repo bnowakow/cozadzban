@@ -24,6 +24,7 @@ import pl.bnowakowski.cozadzban.security.MachineToMachineProperties
 import pl.bnowakowski.cozadzban.user.AppUser
 import pl.bnowakowski.cozadzban.user.AppUserRepository
 import pl.bnowakowski.cozadzban.user.Role
+import java.time.Duration
 import java.time.Instant
 
 class FacebookArticleProposalServiceTest {
@@ -52,6 +53,8 @@ class FacebookArticleProposalServiceTest {
         assertRequiresNew("recordProgress", String::class.java, FacebookImportProgressRequest::class.java)
         assertRequiresNew("completeRun", String::class.java, FacebookImportRunCompletionRequest::class.java)
         assertRequiresNew("recordLoginRequired", String::class.java, FacebookImportLoginRequiredRequest::class.java)
+        assertRequiresNew("terminateTimedOutRun", String::class.java, Duration::class.java, Instant::class.java)
+        assertRequiresNew("terminateTimedOutRuns", Duration::class.java, Instant::class.java)
     }
 
     @Test
@@ -239,6 +242,36 @@ class FacebookArticleProposalServiceTest {
         assertEquals(3, event.submittedCount)
         assertEquals(2, event.skippedExistingCount)
         assertEquals(1, event.failedCount)
+    }
+
+    @Test
+    fun `terminateTimedOutRun marks a single running import terminated`() {
+        val timedOutAt = Instant.parse("2026-05-24T11:00:00Z")
+        whenever(runRepository.terminateTimedOutRunningRun(any(), any(), any())).thenReturn(true)
+
+        val terminated = service.terminateTimedOutRun("run-timeout", Duration.ofHours(1), timedOutAt)
+
+        assertTrue(terminated)
+        verify(runRepository).terminateTimedOutRunningRun(
+            "run-timeout",
+            timedOutAt,
+            "Timed out after PT1H",
+        )
+    }
+
+    @Test
+    fun `terminateTimedOutRuns marks stale running imports terminated`() {
+        val timedOutAt = Instant.parse("2026-05-24T11:00:00Z")
+        whenever(runRepository.terminateTimedOutRunningRuns(any(), any(), any())).thenReturn(listOf("run-timeout"))
+
+        val terminated = service.terminateTimedOutRuns(Duration.ofHours(1), timedOutAt)
+
+        assertEquals(listOf("run-timeout"), terminated)
+        verify(runRepository).terminateTimedOutRunningRuns(
+            Instant.parse("2026-05-24T10:00:00Z"),
+            timedOutAt,
+            "Timed out after PT1H",
+        )
     }
 
     @Test

@@ -38,13 +38,34 @@ class FacebookImportRunRepository(
                    SET discovered_count = facebook_import_run.discovered_count + :discoveredCount,
                        submitted_count = facebook_import_run.submitted_count + :submittedCount,
                        skipped_existing_count = facebook_import_run.skipped_existing_count + :skippedExistingCount,
-                       current_pass_index = :passIndex,
-                       pass_count = :passCount,
-                       phase = :phase,
-                       status_detail = NULL,
-                       phase_index = :phaseIndex,
-                       phase_count = :phaseCount,
-                       last_status_at = now(),
+                       current_pass_index = CASE
+                           WHEN facebook_import_run.finished_at IS NULL THEN :passIndex
+                           ELSE facebook_import_run.current_pass_index
+                       END,
+                       pass_count = CASE
+                           WHEN facebook_import_run.finished_at IS NULL THEN :passCount
+                           ELSE facebook_import_run.pass_count
+                       END,
+                       phase = CASE
+                           WHEN facebook_import_run.finished_at IS NULL THEN :phase
+                           ELSE facebook_import_run.phase
+                       END,
+                       status_detail = CASE
+                           WHEN facebook_import_run.finished_at IS NULL THEN NULL
+                           ELSE facebook_import_run.status_detail
+                       END,
+                       phase_index = CASE
+                           WHEN facebook_import_run.finished_at IS NULL THEN :phaseIndex
+                           ELSE facebook_import_run.phase_index
+                       END,
+                       phase_count = CASE
+                           WHEN facebook_import_run.finished_at IS NULL THEN :phaseCount
+                           ELSE facebook_import_run.phase_count
+                       END,
+                       last_status_at = CASE
+                           WHEN facebook_import_run.finished_at IS NULL THEN now()
+                           ELSE facebook_import_run.last_status_at
+                       END,
                        summary_logs_compressed = COALESCE(:logsCompressed, facebook_import_run.summary_logs_compressed)
             """.trimIndent(),
             MapSqlParameterSource()
@@ -83,13 +104,34 @@ class FacebookImportRunRepository(
                        submitted_count = GREATEST(facebook_import_run.submitted_count, :submittedCount),
                        skipped_existing_count = GREATEST(facebook_import_run.skipped_existing_count, :skippedExistingCount),
                        failed_count = GREATEST(facebook_import_run.failed_count, :failedCount),
-                       current_pass_index = :passIndex,
-                       pass_count = :passCount,
-                       phase = :phase,
-                       status_detail = :statusDetail,
-                       phase_index = :phaseIndex,
-                       phase_count = :phaseCount,
-                       last_status_at = :occurredAt
+                       current_pass_index = CASE
+                           WHEN facebook_import_run.finished_at IS NULL THEN :passIndex
+                           ELSE facebook_import_run.current_pass_index
+                       END,
+                       pass_count = CASE
+                           WHEN facebook_import_run.finished_at IS NULL THEN :passCount
+                           ELSE facebook_import_run.pass_count
+                       END,
+                       phase = CASE
+                           WHEN facebook_import_run.finished_at IS NULL THEN :phase
+                           ELSE facebook_import_run.phase
+                       END,
+                       status_detail = CASE
+                           WHEN facebook_import_run.finished_at IS NULL THEN :statusDetail
+                           ELSE facebook_import_run.status_detail
+                       END,
+                       phase_index = CASE
+                           WHEN facebook_import_run.finished_at IS NULL THEN :phaseIndex
+                           ELSE facebook_import_run.phase_index
+                       END,
+                       phase_count = CASE
+                           WHEN facebook_import_run.finished_at IS NULL THEN :phaseCount
+                           ELSE facebook_import_run.phase_count
+                       END,
+                       last_status_at = CASE
+                           WHEN facebook_import_run.finished_at IS NULL THEN :occurredAt
+                           ELSE facebook_import_run.last_status_at
+                       END
             """.trimIndent(),
             MapSqlParameterSource()
                 .addValue("importRunId", importRunId)
@@ -129,17 +171,35 @@ class FacebookImportRunRepository(
                     :phaseCount, now(), :logsCompressed
                 )
                 ON CONFLICT (import_run_id) DO UPDATE
-                   SET status = :status,
-                       finished_at = now(),
+                   SET status = CASE
+                           WHEN facebook_import_run.finished_at IS NULL THEN :status
+                           ELSE facebook_import_run.status
+                       END,
+                       finished_at = COALESCE(facebook_import_run.finished_at, now()),
                        discovered_count = GREATEST(facebook_import_run.discovered_count, :discoveredCount),
                        submitted_count = GREATEST(facebook_import_run.submitted_count, :submittedCount),
                        skipped_existing_count = GREATEST(facebook_import_run.skipped_existing_count, :skippedExistingCount),
                        failed_count = GREATEST(facebook_import_run.failed_count, :failedCount),
-                       phase = :phase,
-                       status_detail = NULL,
-                       phase_index = :phaseIndex,
-                       phase_count = :phaseCount,
-                       last_status_at = now(),
+                       phase = CASE
+                           WHEN facebook_import_run.finished_at IS NULL THEN :phase
+                           ELSE facebook_import_run.phase
+                       END,
+                       status_detail = CASE
+                           WHEN facebook_import_run.finished_at IS NULL THEN NULL
+                           ELSE facebook_import_run.status_detail
+                       END,
+                       phase_index = CASE
+                           WHEN facebook_import_run.finished_at IS NULL THEN :phaseIndex
+                           ELSE facebook_import_run.phase_index
+                       END,
+                       phase_count = CASE
+                           WHEN facebook_import_run.finished_at IS NULL THEN :phaseCount
+                           ELSE facebook_import_run.phase_count
+                       END,
+                       last_status_at = CASE
+                           WHEN facebook_import_run.finished_at IS NULL THEN now()
+                           ELSE facebook_import_run.last_status_at
+                       END,
                        summary_logs_compressed = COALESCE(:logsCompressed, facebook_import_run.summary_logs_compressed)
             """.trimIndent(),
             MapSqlParameterSource()
@@ -180,11 +240,26 @@ class FacebookImportRunRepository(
                        login_required_count = facebook_import_run.login_required_count + 1,
                        login_required_trigger = :trigger,
                        login_required_profile_url = :profileUrl,
-                       phase = :phase,
-                       status_detail = NULL,
-                       phase_index = :phaseIndex,
-                       phase_count = :phaseCount,
-                       last_status_at = :detectedAt
+                       phase = CASE
+                           WHEN facebook_import_run.finished_at IS NULL THEN :phase
+                           ELSE facebook_import_run.phase
+                       END,
+                       status_detail = CASE
+                           WHEN facebook_import_run.finished_at IS NULL THEN NULL
+                           ELSE facebook_import_run.status_detail
+                       END,
+                       phase_index = CASE
+                           WHEN facebook_import_run.finished_at IS NULL THEN :phaseIndex
+                           ELSE facebook_import_run.phase_index
+                       END,
+                       phase_count = CASE
+                           WHEN facebook_import_run.finished_at IS NULL THEN :phaseCount
+                           ELSE facebook_import_run.phase_count
+                       END,
+                       last_status_at = CASE
+                           WHEN facebook_import_run.finished_at IS NULL THEN :detectedAt
+                           ELSE facebook_import_run.last_status_at
+                       END
                 RETURNING login_required_count
             """.trimIndent(),
             MapSqlParameterSource()
@@ -200,6 +275,62 @@ class FacebookImportRunRepository(
         return updated == 1
     }
 
+    fun terminateTimedOutRunningRun(
+        importRunId: String,
+        timedOutAt: Instant,
+        statusDetail: String,
+    ): Boolean =
+        jdbc.query(
+            """
+                INSERT INTO facebook_import_run(
+                    import_run_id, status, finished_at, phase, status_detail,
+                    phase_index, phase_count, last_status_at
+                )
+                VALUES (
+                    :importRunId, 'TERMINATED', :timedOutAt, :phase, :statusDetail,
+                    :phaseIndex, :phaseCount, :timedOutAt
+                )
+                ON CONFLICT (import_run_id) DO UPDATE
+                   SET status = 'TERMINATED',
+                       finished_at = :timedOutAt,
+                       phase = :phase,
+                       status_detail = :statusDetail,
+                       phase_index = :phaseIndex,
+                       phase_count = :phaseCount,
+                       last_status_at = :timedOutAt
+                 WHERE facebook_import_run.status = 'RUNNING'
+                   AND facebook_import_run.finished_at IS NULL
+                RETURNING import_run_id
+            """.trimIndent(),
+            timeoutParameters(timedOutAt, statusDetail)
+                .addValue("importRunId", importRunId)
+        ) { rs, _ -> rs.getString("import_run_id") }
+            .isNotEmpty()
+
+    fun terminateTimedOutRunningRuns(
+        startedBefore: Instant,
+        timedOutAt: Instant,
+        statusDetail: String,
+    ): List<String> =
+        jdbc.query(
+            """
+                UPDATE facebook_import_run
+                   SET status = 'TERMINATED',
+                       finished_at = :timedOutAt,
+                       phase = :phase,
+                       status_detail = :statusDetail,
+                       phase_index = :phaseIndex,
+                       phase_count = :phaseCount,
+                       last_status_at = :timedOutAt
+                 WHERE status = 'RUNNING'
+                   AND finished_at IS NULL
+                   AND started_at <= :startedBefore
+                RETURNING import_run_id
+            """.trimIndent(),
+            timeoutParameters(timedOutAt, statusDetail)
+                .addValue("startedBefore", Timestamp.from(startedBefore))
+        ) { rs, _ -> rs.getString("import_run_id") }
+
     fun findLatestRunningProgress(): FacebookImportProgressSnapshot? =
         jdbc.query(
             """
@@ -214,6 +345,14 @@ class FacebookImportRunRepository(
             emptyMap<String, Any>(),
             PROGRESS_ROW_MAPPER,
         ).firstOrNull()
+
+    private fun timeoutParameters(timedOutAt: Instant, statusDetail: String): MapSqlParameterSource =
+        MapSqlParameterSource()
+            .addValue("timedOutAt", Timestamp.from(timedOutAt))
+            .addValue("statusDetail", statusDetail)
+            .addValue("phase", terminalPhase(FacebookImportRunStatus.TERMINATED))
+            .addValue("phaseIndex", FACEBOOK_IMPORT_PROGRESS_PHASE_COUNT)
+            .addValue("phaseCount", FACEBOOK_IMPORT_PROGRESS_PHASE_COUNT)
 
     private fun terminalPhase(status: FacebookImportRunStatus): String =
         when (status) {

@@ -16,6 +16,8 @@ import pl.bnowakowski.cozadzban.security.MachineToMachineProperties
 import pl.bnowakowski.cozadzban.user.AppUser
 import pl.bnowakowski.cozadzban.user.AppUserRepository
 import pl.bnowakowski.cozadzban.user.AppUserStatus
+import java.time.Duration
+import java.time.Instant
 
 @Service
 @Transactional
@@ -120,6 +122,35 @@ class FacebookArticleProposalService(
     @Transactional(readOnly = true)
     fun latestRunningProgress(): FacebookImportProgressSnapshot? =
         runRepository.findLatestRunningProgress()
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    fun terminateTimedOutRun(importRunId: String, timeout: Duration, timedOutAt: Instant = Instant.now()): Boolean {
+        require(importRunId.isNotBlank()) { "importRunId is required" }
+        require(!timeout.isZero && !timeout.isNegative) { "timeout must be positive" }
+        val terminated = runRepository.terminateTimedOutRunningRun(
+            importRunId = importRunId,
+            timedOutAt = timedOutAt,
+            statusDetail = timeoutDetail(timeout),
+        )
+        if (terminated) {
+            LOG.warn("Facebook import run {} timed out after {}; marked terminated", importRunId, timeout)
+        }
+        return terminated
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    fun terminateTimedOutRuns(timeout: Duration, timedOutAt: Instant = Instant.now()): List<String> {
+        require(!timeout.isZero && !timeout.isNegative) { "timeout must be positive" }
+        val runIds = runRepository.terminateTimedOutRunningRuns(
+            startedBefore = timedOutAt.minus(timeout),
+            timedOutAt = timedOutAt,
+            statusDetail = timeoutDetail(timeout),
+        )
+        runIds.forEach { runId ->
+            LOG.warn("Facebook import run {} timed out after {}; marked terminated", runId, timeout)
+        }
+        return runIds
+    }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     fun completeRun(importRunId: String, request: FacebookImportRunCompletionRequest) {
@@ -320,6 +351,9 @@ class FacebookArticleProposalService(
 
     private fun failureMessage(ex: Exception): String =
         ex.message?.takeIf { it.isNotBlank() } ?: ex.javaClass.simpleName
+
+    private fun timeoutDetail(timeout: Duration): String =
+        "Timed out after $timeout"
 
     companion object {
         private val LOG = LoggerFactory.getLogger(FacebookArticleProposalService::class.java)

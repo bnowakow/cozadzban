@@ -22,6 +22,7 @@ data class FacebookImportProperties(
     val waitAfterPageOpen: Duration = Duration.ofSeconds(5),
     val waitAfterScroll: Duration = Duration.ofSeconds(2),
     val manualLoginTimeout: Duration = Duration.ofMinutes(3),
+    val runTimeout: Duration = Duration.ofHours(1),
     val targetApiBaseUrl: String = "",
     val targetApiKey: String = "",
     val targetApiKeyHeader: String = "X-CoZaDzban-M2M-Key",

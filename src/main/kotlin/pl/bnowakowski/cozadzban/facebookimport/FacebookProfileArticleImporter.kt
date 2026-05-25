@@ -120,10 +120,17 @@ class FacebookProfileArticleImporter(
     }
 
     fun terminateImport() {
-        val thread = synchronized(stateLock) {
-            activeImportThread?.takeIf { it.isAlive } ?: throw FacebookImportNotRunningException()
+        val (thread, driverToQuit) = synchronized(stateLock) {
+            val activeThread = activeImportThread?.takeIf { it.isAlive } ?: throw FacebookImportNotRunningException()
+            val activeDriver = driver
+            driver = null
+            activeThread to activeDriver
         }
         thread.interrupt()
+        if (driverToQuit != null) {
+            runCatching { driverToQuit.quit() }
+                .onFailure { ex -> logger.warn("Facebook import driver quit failed during termination", ex) }
+        }
     }
 
     fun isImportRunning(): Boolean =
@@ -149,11 +156,13 @@ class FacebookProfileArticleImporter(
         }
 
         val summary = ProposalImportSummary()
+        val startedAt = Instant.now()
         var completionStatus = FacebookImportRunStatus.FINISHED
         var completionLogs = ""
         lastProgressReportedAt = null
-        activeImportStartedAt = Instant.now()
+        activeImportStartedAt = startedAt
         latestProgressSnapshot = null
+        logger.info("Facebook import {} started trigger={}", importRunId, trigger)
         reportProgress(importRunId, trigger, FacebookImportProgressPhase.STARTING, summary, force = true)
         try {
             runImportInternal(importRunId, trigger, summary)
@@ -188,6 +197,16 @@ class FacebookProfileArticleImporter(
             logger.warn("Facebook import {} failed", importRunId, ex)
             throw ex
         } finally {
+            logger.info(
+                "Facebook import {} ended status={} durationMs={} discovered={} submitted={} skippedExisting={} failed={}",
+                importRunId,
+                completionStatus,
+                elapsedMs(startedAt),
+                summary.discovered,
+                summary.submitted,
+                summary.skippedExisting,
+                summary.failed,
+            )
             completeRunSafely(importRunId, completionStatus, summary, completionLogs)
             synchronized(stateLock) {
                 if (activeImportThread === currentThread) {
@@ -215,6 +234,7 @@ class FacebookProfileArticleImporter(
             properties.scrolls,
         )
         for ((passIndex, scrollsThisPass) in (1 until properties.scrolls step 2).withIndex()) {
+            throwIfInterrupted()
             logger.info(
                 "Facebook import discovery pass {}/{} started with {} scrolls",
                 passIndex + 1,
@@ -231,6 +251,7 @@ class FacebookProfileArticleImporter(
                 force = true,
             )
             repeat(scrollsThisPass) { index ->
+                throwIfInterrupted()
                 driver.findElement(By.tagName("body")).sendKeys(Keys.PAGE_DOWN)
                 val scrollProgress = scrollProgress(passIndex + 1, passCount, index + 1, scrollsThisPass)
                 logger.info(
@@ -298,6 +319,7 @@ class FacebookProfileArticleImporter(
             )
             val candidateDecisionLogs = mutableListOf<String>()
             val proposals = candidates.mapIndexedNotNull { index, candidate ->
+                throwIfInterrupted()
                 val candidateId = candidateApprovalId()
                 if (!isImportableCandidateUrl(candidate.url, candidate.text)) {
                     candidateDecisionLogs += workerCandidateDecisionLogs(
@@ -2465,6 +2487,9 @@ class FacebookProfileArticleImporter(
     private fun elapsedMs(startedAt: Long): Long =
         (System.nanoTime() - startedAt) / 1_000_000
 
+    private fun elapsedMs(startedAt: Instant): Long =
+        Duration.between(startedAt, Instant.now()).toMillis().coerceAtLeast(0)
+
     private fun exceptionDiagnostic(ex: Throwable): String {
         val root = rootCause(ex)
         return "${ex.javaClass.simpleName}: ${ex.message.normalizedForLog()}; " +
@@ -2714,6 +2739,12 @@ class FacebookProfileArticleImporter(
 
     private fun sleep(duration: Duration) {
         Thread.sleep(duration.toMillis())
+    }
+
+    private fun throwIfInterrupted() {
+        if (Thread.currentThread().isInterrupted) {
+            throw InterruptedException("Facebook import was interrupted")
+        }
     }
 
     private data class FacebookPostCandidate(

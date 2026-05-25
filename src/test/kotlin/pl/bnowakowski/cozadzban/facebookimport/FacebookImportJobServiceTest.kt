@@ -19,6 +19,7 @@ import org.springframework.batch.core.job.JobInstance
 import org.springframework.batch.core.job.parameters.JobParameters
 import org.springframework.batch.core.launch.JobOperator
 import org.springframework.beans.factory.ObjectProvider
+import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -151,6 +152,43 @@ class FacebookImportJobServiceTest {
         }
 
         service.terminateImport()
+        waitUntil { !service.isImportRunning() }
+    }
+
+    @Test
+    fun `startImport terminates active batch after configured timeout`() {
+        val startedLatch = CountDownLatch(1)
+        val interruptedLatch = CountDownLatch(1)
+        whenever(jobOperatorProvider.getIfAvailable()).thenReturn(jobOperator)
+        whenever(jobProvider.getIfAvailable()).thenReturn(job)
+        whenever(importer.facebookImportUnavailableReason()).thenReturn(null)
+        whenever(importer.newImportRunId(any())).thenReturn("run-timeout")
+        whenever(importer.isImportRunning()).thenReturn(false)
+        whenever(jobOperator.start(eq(job), any())).thenAnswer {
+            startedLatch.countDown()
+            try {
+                Thread.sleep(5_000)
+            } catch (ex: InterruptedException) {
+                interruptedLatch.countDown()
+                throw ex
+            }
+            JobExecution(101L, JobInstance(3L, FACEBOOK_IMPORT_JOB_NAME), it.getArgument(1))
+        }
+        val runTimeout = Duration.ofMillis(50)
+        val service = FacebookImportJobService(
+            jobOperatorProvider,
+            jobProvider,
+            importer,
+            proposalService,
+            FacebookImportProperties(runTimeout = runTimeout),
+        )
+
+        assertEquals("run-timeout", service.startImport())
+        assertTrue(startedLatch.await(1, TimeUnit.SECONDS))
+        assertTrue(interruptedLatch.await(2, TimeUnit.SECONDS))
+
+        verify(importer).terminateImport()
+        verify(proposalService).terminateTimedOutRun(eq("run-timeout"), eq(runTimeout), any())
         waitUntil { !service.isImportRunning() }
     }
 
