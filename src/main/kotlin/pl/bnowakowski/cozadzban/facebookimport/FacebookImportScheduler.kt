@@ -14,14 +14,18 @@ import java.time.Duration
 class FacebookImportScheduler(
     private val properties: FacebookImportProperties,
     private val jobService: FacebookImportJobService,
+    private val proposalService: FacebookArticleProposalService,
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
     @Volatile
     private var schedulerThread: Thread? = null
+    @Volatile
+    private var staleRunCleanupThread: Thread? = null
 
     @EventListener(ApplicationReadyEvent::class)
     fun start() {
+        startStaleRunCleanup()
         if (!properties.schedule.enabled) {
             logger.info("Scheduled Facebook import is disabled")
             return
@@ -38,6 +42,9 @@ class FacebookImportScheduler(
         }
     }
 
+    internal fun terminateTimedOutRunsOnce(): List<String> =
+        proposalService.terminateTimedOutRuns(effectiveRunTimeout())
+
     internal fun launchScheduledImportOnce(): Boolean {
         if (!properties.schedule.enabled) return false
         return try {
@@ -50,6 +57,38 @@ class FacebookImportScheduler(
         } catch (ex: Exception) {
             logger.warn("Scheduled Facebook import could not be launched: {}", ex.message ?: ex.javaClass.simpleName, ex)
             false
+        }
+    }
+
+    private fun startStaleRunCleanup() {
+        synchronized(this) {
+            if (staleRunCleanupThread?.isAlive == true) return
+            staleRunCleanupThread = Thread {
+                runStaleRunCleanupLoop()
+            }.apply {
+                name = "facebook-import-stale-run-cleanup"
+                isDaemon = true
+                start()
+            }
+        }
+    }
+
+    private fun runStaleRunCleanupLoop() {
+        try {
+            while (!Thread.currentThread().isInterrupted) {
+                val terminated = runCatching { terminateTimedOutRunsOnce() }
+                    .onFailure { ex ->
+                        logger.warn("Facebook import stale-run cleanup failed", ex)
+                    }
+                    .getOrElse { emptyList() }
+                if (terminated.isNotEmpty()) {
+                    logger.warn("Terminated {} stale Facebook import run(s)", terminated.size)
+                }
+                sleep(staleRunCleanupInterval())
+            }
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+            logger.info("Facebook import stale-run cleanup stopped")
         }
     }
 
@@ -69,6 +108,12 @@ class FacebookImportScheduler(
     private fun scheduleInterval(): Duration =
         properties.schedule.interval.takeIf { !it.isNegative && !it.isZero } ?: Duration.ofHours(8)
 
+    private fun staleRunCleanupInterval(): Duration =
+        properties.staleRunCleanupInterval.takeIf { !it.isNegative && !it.isZero } ?: Duration.ofMinutes(1)
+
+    private fun effectiveRunTimeout(): Duration =
+        properties.runTimeout.takeIf { !it.isNegative && !it.isZero } ?: Duration.ofHours(1)
+
     private fun sleep(duration: Duration) {
         if (duration.isZero || duration.isNegative) return
         Thread.sleep(duration.toMillis())
@@ -79,6 +124,8 @@ class FacebookImportScheduler(
         synchronized(this) {
             schedulerThread?.interrupt()
             schedulerThread = null
+            staleRunCleanupThread?.interrupt()
+            staleRunCleanupThread = null
         }
     }
 }

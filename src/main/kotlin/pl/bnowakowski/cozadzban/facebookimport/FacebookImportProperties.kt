@@ -33,6 +33,7 @@ data class FacebookImportProperties(
     val targetApiConnectTimeout: Duration = Duration.ofSeconds(3),
     val targetApiReadTimeout: Duration = Duration.ofMinutes(5),
     val rejectionArtifactDir: String = "logs/facebook-import-rejections",
+    val staleRunCleanupInterval: Duration = Duration.ofMinutes(1),
     val schedule: Schedule = Schedule(),
 ) {
     data class Schedule(
