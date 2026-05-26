@@ -21,6 +21,7 @@ import org.springframework.security.oauth2.jwt.JwtDecoder
 import org.springframework.test.context.TestPropertySource
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import pl.bnowakowski.cozadzban.facebookimport.FACEBOOK_IMPORT_JOB_NAME
+import pl.bnowakowski.cozadzban.facebookimport.FacebookImportTrigger
 
 /**
  * Phase 21 / Item 64 — Migration tests.
@@ -217,6 +218,24 @@ class MigrationSchemaIT {
 
         assertEquals(1, preferenceTableCount, "notification_preference table should exist after V20 migration")
         assertEquals(5, loginRequiredColumnCount, "facebook_import_run login-required audit columns should exist")
+    }
+
+    @Test
+    fun `facebook import login-required trigger accepts worker startup after V27 migration`() {
+        val importRunId = "schema-worker-startup-${System.nanoTime()}"
+
+        jdbc.update(
+            "INSERT INTO facebook_import_run(import_run_id, login_required_trigger) VALUES (?, ?)",
+            importRunId,
+            FacebookImportTrigger.WORKER_STARTUP.name,
+        )
+
+        val trigger = jdbc.queryForObject(
+            "SELECT login_required_trigger FROM facebook_import_run WHERE import_run_id = ?",
+            String::class.java,
+            importRunId,
+        )
+        assertEquals(FacebookImportTrigger.WORKER_STARTUP.name, trigger)
     }
 
     @Test

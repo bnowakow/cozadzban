@@ -7,6 +7,7 @@ import java.time.Instant
 
 enum class FacebookImportTrigger {
     MANUAL,
+    WORKER_STARTUP,
     SCHEDULED,
 }
 

@@ -452,6 +452,27 @@ class FacebookProfileArticleImporterJobTest {
     }
 
     @Test
+    fun `expandSeeOriginalLinks clicks a stable matching control only once`() {
+        val importer = FacebookProfileArticleImporter(
+            FacebookImportProperties(waitAfterScroll = Duration.ZERO),
+            appUserRepository,
+            articleService,
+        )
+        val driver = mock<WebDriver>()
+        val seeOriginalControl = mock<WebElement>()
+
+        whenever(driver.findElements(any())).thenReturn(listOf(seeOriginalControl))
+
+        FacebookProfileArticleImporter::class.java
+            .getDeclaredMethod("expandSeeOriginalLinks", WebDriver::class.java)
+            .apply { isAccessible = true }
+            .invoke(importer, driver)
+
+        verify(driver, times(1)).findElements(any())
+        verify(seeOriginalControl, times(1)).click()
+    }
+
+    @Test
     fun `article creation retries only transient facebook enrichment failures`() {
         val importer = FacebookProfileArticleImporter(
             FacebookImportProperties(),

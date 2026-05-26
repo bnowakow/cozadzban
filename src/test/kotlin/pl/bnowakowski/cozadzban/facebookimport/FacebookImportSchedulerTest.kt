@@ -14,6 +14,7 @@ import org.mockito.kotlin.whenever
 import org.mockito.kotlin.mock
 import java.time.Duration
 import java.time.Instant
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -57,8 +58,10 @@ class FacebookImportSchedulerTest {
     fun `scheduler launches immediately on startup and then at the configured interval`() {
         val attempts = AtomicInteger()
         val launchLatch = CountDownLatch(2)
-        whenever(jobService.startImport(FacebookImportTrigger.SCHEDULED)).thenAnswer {
+        val triggers = CopyOnWriteArrayList<FacebookImportTrigger>()
+        whenever(jobService.startImport(any())).thenAnswer {
             val attempt = attempts.incrementAndGet()
+            triggers.add(it.getArgument(0))
             launchLatch.countDown()
             "run-$attempt"
         }
@@ -79,13 +82,17 @@ class FacebookImportSchedulerTest {
         assertTrue(launchLatch.await(1, TimeUnit.SECONDS))
         assertTrue(attempts.get() >= 2)
         scheduler.stop()
+        assertTrue(triggers.firstOrNull() == FacebookImportTrigger.WORKER_STARTUP)
+        assertTrue(triggers.drop(1).all { it == FacebookImportTrigger.SCHEDULED })
     }
 
 
     @Test
     fun `scheduler honors configured initial delay before first launch`() {
         val launchLatch = CountDownLatch(1)
-        whenever(jobService.startImport(FacebookImportTrigger.SCHEDULED)).thenAnswer {
+        val triggers = CopyOnWriteArrayList<FacebookImportTrigger>()
+        whenever(jobService.startImport(any())).thenAnswer {
+            triggers.add(it.getArgument(0))
             launchLatch.countDown()
             "run-1"
         }
@@ -106,6 +113,7 @@ class FacebookImportSchedulerTest {
         assertFalse(launchLatch.await(30, TimeUnit.MILLISECONDS))
         assertTrue(launchLatch.await(1, TimeUnit.SECONDS))
         scheduler.stop()
+        assertTrue(triggers.firstOrNull() == FacebookImportTrigger.WORKER_STARTUP)
     }
 
 
@@ -156,7 +164,7 @@ class FacebookImportSchedulerTest {
         scheduler.start()
 
         assertTrue(cleanupLatch.await(1, TimeUnit.SECONDS))
-        verify(jobService, never()).startImport(FacebookImportTrigger.SCHEDULED)
+        verify(jobService, never()).startImport(any())
         scheduler.stop()
     }
 

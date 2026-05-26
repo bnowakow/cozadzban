@@ -36,7 +36,8 @@ info:
        tied to an allowlisted bot user.
     11. **Notifications** — ACTIVE users can configure Pushover delivery in the
        server-side UI. Proposal summaries are sent to opted-in ACTIVE users; scheduled
-       Facebook login/2FA alerts are sent only to opted-in ACTIVE ADMIN users.
+       Facebook login/2FA alerts are sent only to opted-in ACTIVE ADMIN users,
+       excluding the worker-startup import.
     ## Implementation notes
     - Language is normalized to lowercase and validated against a conservative
       BCP-47-like pattern (e.g. `pl`, `en`, `en-gb`).
@@ -1064,7 +1065,7 @@ components:
       properties:
         trigger:
           type: string
-          enum: [MANUAL, SCHEDULED]
+          enum: [MANUAL, WORKER_STARTUP, SCHEDULED]
           example: SCHEDULED
         profileUrl:
           type: string

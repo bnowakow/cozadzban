@@ -304,8 +304,9 @@ Phases 4 and 5 are independent and can be developed in parallel.
     after every import; keep the window alive until application shutdown.
 61a. **Pushover notifications** — store encrypted self-service notification preferences,
     report worker login-required events to the server over the machine API, and deliver
-    best-effort Pushover alerts for scheduled Facebook login-required events and completed
-    imports that submitted new proposals.
+    best-effort Pushover alerts for scheduled interval Facebook login-required events and completed
+    imports that submitted new proposals; suppress login-required alerts for the expected
+    worker-startup login flow.
 
 ---
 

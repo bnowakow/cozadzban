@@ -45,17 +45,22 @@ class FacebookImportScheduler(
     internal fun terminateTimedOutRunsOnce(): List<String> =
         proposalService.terminateTimedOutRuns(effectiveRunTimeout())
 
-    internal fun launchScheduledImportOnce(): Boolean {
+    internal fun launchScheduledImportOnce(trigger: FacebookImportTrigger = FacebookImportTrigger.SCHEDULED): Boolean {
         if (!properties.schedule.enabled) return false
         return try {
-            val importRunId = jobService.startImport(FacebookImportTrigger.SCHEDULED)
-            logger.info("Scheduled Facebook import accepted importRunId={}", importRunId)
+            val importRunId = jobService.startImport(trigger)
+            logger.info("Scheduled Facebook import accepted importRunId={} trigger={}", importRunId, trigger)
             true
         } catch (_: FacebookImportAlreadyRunningException) {
             logger.info("Skipping scheduled Facebook import because another import is already running")
             false
         } catch (ex: Exception) {
-            logger.warn("Scheduled Facebook import could not be launched: {}", ex.message ?: ex.javaClass.simpleName, ex)
+            logger.warn(
+                "Scheduled Facebook import could not be launched trigger={}: {}",
+                trigger,
+                ex.message ?: ex.javaClass.simpleName,
+                ex,
+            )
             false
         }
     }
@@ -95,8 +100,10 @@ class FacebookImportScheduler(
     private fun runScheduleLoop() {
         try {
             sleep(properties.schedule.initialDelay)
+            var nextTrigger = FacebookImportTrigger.WORKER_STARTUP
             while (!Thread.currentThread().isInterrupted) {
-                launchScheduledImportOnce()
+                launchScheduledImportOnce(nextTrigger)
+                nextTrigger = FacebookImportTrigger.SCHEDULED
                 sleep(scheduleInterval())
             }
         } catch (_: InterruptedException) {

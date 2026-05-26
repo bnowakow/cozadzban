@@ -68,6 +68,20 @@ class NotificationDeliveryServiceTest {
     }
 
     @Test
+    fun `worker startup facebook login required sends nothing`() {
+        service.onFacebookLoginRequired(
+            FacebookImportLoginRequiredEvent(
+                importRunId = "run-1",
+                trigger = FacebookImportTrigger.WORKER_STARTUP,
+                profileUrl = "https://www.facebook.com/profile",
+            ),
+        )
+
+        verify(repository, never()).findPushoverRecipientsForFacebookLoginRequired()
+        verify(pushoverClient, never()).send(org.mockito.kotlin.any())
+    }
+
+    @Test
     fun `scheduled facebook login timeout sends to opted-in admins`() {
         whenever(repository.findPushoverRecipientsForFacebookLoginRequired()).thenReturn(
             listOf(recipient(role = Role.ADMIN)),
@@ -98,6 +112,21 @@ class NotificationDeliveryServiceTest {
             FacebookImportLoginTimedOutEvent(
                 importRunId = "run-1",
                 trigger = FacebookImportTrigger.MANUAL,
+                profileUrl = "https://www.facebook.com/profile",
+                timeoutMessage = "Facebook login was not detected within PT1M",
+            ),
+        )
+
+        verify(repository, never()).findPushoverRecipientsForFacebookLoginRequired()
+        verify(pushoverClient, never()).send(org.mockito.kotlin.any())
+    }
+
+    @Test
+    fun `worker startup facebook login timeout sends nothing`() {
+        service.onFacebookLoginTimedOut(
+            FacebookImportLoginTimedOutEvent(
+                importRunId = "run-1",
+                trigger = FacebookImportTrigger.WORKER_STARTUP,
                 profileUrl = "https://www.facebook.com/profile",
                 timeoutMessage = "Facebook login was not detected within PT1M",
             ),

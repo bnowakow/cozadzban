@@ -158,7 +158,8 @@ x-architecture:
         with AES-GCM and are never exposed back to the browser after saving.
         ACTIVE users can opt into article proposal summary notifications. ACTIVE
         ADMIN users can additionally opt into scheduled Facebook login/2FA alerts.
-        Manual Facebook imports do not send login-required alerts.
+        Manual Facebook imports and the automatic worker-startup import do not
+        send login-required alerts.
     - name: Analytics and consent
       technology: Vaadin UI + configurable tracking IDs
       description: >
@@ -338,7 +339,7 @@ x-database:
           description: Count of login-required reports for this import run.
         - name: login_required_trigger
           type: VARCHAR(32)
-          constraints: "nullable CHECK IN (MANUAL, SCHEDULED)"
+          constraints: "nullable CHECK IN (MANUAL, WORKER_STARTUP, SCHEDULED)"
           description: Trigger type from the latest login-required report.
         - name: login_required_profile_url
           type: TEXT
@@ -800,11 +801,12 @@ x-business-rules:
       The import system emits Spring application events and delivers Pushover
       notifications to opted-in users. FacebookImportLoginRequiredEvent is reported
       to the server and notifies only ACTIVE ADMIN users who enabled login-required
-      alerts, and only for SCHEDULED imports. Manual imports do not send
-      login-required alerts. FacebookImportLoginTimedOutEvent uses the same
-      login-required notification preference and notifies the same scheduled
-      ADMIN audience when the worker times out waiting for manual login or
-      two-factor approval. FacebookImportRunCompletedEvent notifies ACTIVE
+      alerts, and only for SCHEDULED interval imports. Manual imports and the
+      WORKER_STARTUP import do not send login-required alerts.
+      FacebookImportLoginTimedOutEvent uses the same login-required notification
+      preference and notifies the same scheduled ADMIN audience when the worker
+      times out waiting for manual login or two-factor approval during a
+      SCHEDULED interval import. FacebookImportRunCompletedEvent notifies ACTIVE
       users who enabled article proposal notifications when submittedCount > 0.
       Notification delivery failures are logged and must never block or fail an
       import run.
@@ -1976,7 +1978,7 @@ components:
       properties:
         trigger:
           type: string
-          enum: [MANUAL, SCHEDULED]
+          enum: [MANUAL, WORKER_STARTUP, SCHEDULED]
           example: SCHEDULED
         profileUrl:
           type: string

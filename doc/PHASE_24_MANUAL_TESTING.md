@@ -66,22 +66,25 @@ active Pushover devices for that user key.
 
 1. Start the worker with `APP_FACEBOOK_IMPORT_SCHEDULE_ENABLED=true` and
    `APP_FACEBOOK_IMPORT_SCHEDULE_INITIAL_DELAY=0s`.
-2. Confirm the worker attempts a scheduled import after startup.
+2. Confirm the worker attempts a worker-startup import after startup.
 3. If Facebook opens a login or two-factor screen, complete the manual login in the Selenium
    browser before `APP_FACEBOOK_IMPORT_MANUAL_LOGIN_TIMEOUT`.
 4. Confirm logs contain a login-required event/message and the run continues after login.
-5. Confirm opted-in ADMIN users receive a Pushover login-required notification for the scheduled run.
-6. Let a scheduled run exceed `APP_FACEBOOK_IMPORT_MANUAL_LOGIN_TIMEOUT`.
-7. Confirm opted-in ADMIN users receive a Pushover login-timeout notification through the same
+5. Confirm opted-in ADMIN users do not receive a Pushover login-required notification for the
+   worker-startup run.
+6. Let a later scheduled interval run require login or two-factor approval.
+7. Confirm opted-in ADMIN users receive a Pushover login-required notification for that scheduled run.
+8. Let a scheduled run exceed `APP_FACEBOOK_IMPORT_MANUAL_LOGIN_TIMEOUT`.
+9. Confirm opted-in ADMIN users receive a Pushover login-timeout notification through the same
    **Facebook login required notifications** preference.
-8. Trigger a manual import and force the same Facebook login screen.
-9. Confirm manual import login-required and login-timeout events are logged but do not send Pushover notifications.
-10. Temporarily reduce `APP_FACEBOOK_IMPORT_SCHEDULE_INTERVAL` in a local test environment and
+10. Trigger a manual import and force the same Facebook login screen.
+11. Confirm manual import login-required and login-timeout events are logged but do not send Pushover notifications.
+12. Temporarily reduce `APP_FACEBOOK_IMPORT_SCHEDULE_INTERVAL` in a local test environment and
    confirm a new tick is skipped while a previous import is still active.
 
 **Expected:** scheduled imports use the same non-blocking proposal flow, login-required runs wait
-for manual authorization, only scheduled login-required and login-timeout events notify opted-in
-admins, and only one import runs at a time on the worker.
+for manual authorization, only scheduled interval login-required and login-timeout events notify
+opted-in admins, and only one import runs at a time on the worker.
 
 ---
 

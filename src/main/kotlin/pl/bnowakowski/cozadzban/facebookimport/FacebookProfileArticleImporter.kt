@@ -120,17 +120,11 @@ class FacebookProfileArticleImporter(
     }
 
     fun terminateImport() {
-        val (thread, driverToQuit) = synchronized(stateLock) {
+        val thread = synchronized(stateLock) {
             val activeThread = activeImportThread?.takeIf { it.isAlive } ?: throw FacebookImportNotRunningException()
-            val activeDriver = driver
-            driver = null
-            activeThread to activeDriver
+            activeThread
         }
         thread.interrupt()
-        if (driverToQuit != null) {
-            runCatching { driverToQuit.quit() }
-                .onFailure { ex -> logger.warn("Facebook import driver quit failed during termination", ex) }
-        }
     }
 
     fun isImportRunning(): Boolean =
@@ -890,12 +884,17 @@ class FacebookProfileArticleImporter(
                 "(normalize-space()='See original' or normalize-space()='See Original')]",
         )
 
-        var clickedCount = 0
-        while (true) {
-            val element = driver.findElements(locator)
-                .firstOrNull()
-                ?: break
+        val elements = driver.findElements(locator)
+        if (elements.size > MAX_SEE_ORIGINAL_CONTROLS_TO_CLICK) {
+            logger.info(
+                "Found {} See original controls; clicking first {} to avoid an unbounded Facebook translation loop",
+                elements.size,
+                MAX_SEE_ORIGINAL_CONTROLS_TO_CLICK,
+            )
+        }
 
+        var clickedCount = 0
+        for (element in elements.take(MAX_SEE_ORIGINAL_CONTROLS_TO_CLICK)) {
             runCatching {
                 (driver as? JavascriptExecutor)?.executeScript(
                     "arguments[0].scrollIntoView({block: 'center'});",
@@ -916,6 +915,9 @@ class FacebookProfileArticleImporter(
 
             clickedCount++
             logger.debug("Clicked See original control {}", clickedCount)
+        }
+
+        if (clickedCount > 0) {
             sleep(properties.waitAfterScroll)
         }
 
@@ -2845,6 +2847,7 @@ class FacebookProfileArticleImporter(
         private const val LOG_TEXT_PREVIEW_LIMIT = 500
         private const val REMOTE_CREATE_REQUEST_ID_HEADER = "X-CoZaDzban-Import-Request-Id"
         private const val MAX_NESTED_FACEBOOK_POSTS_TO_OPEN = 2
+        private const val MAX_SEE_ORIGINAL_CONTROLS_TO_CLICK = 40
         private val PROGRESS_REPORT_INTERVAL: Duration = Duration.ofSeconds(5)
         private val IMPORT_ARTIFACT_TIMESTAMP_FORMATTER: DateTimeFormatter =
             DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'").withZone(ZoneOffset.UTC)
