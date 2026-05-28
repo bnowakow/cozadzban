@@ -151,6 +151,11 @@ docker compose -f compose.yaml up --build
 The Vaadin UI is available through the Compose reverse proxy at
 **http://localhost:${APP_PORT:-8086}/**.
 
+Swagger UI is available for a local JVM run at
+**http://localhost:8080/swagger-ui/index.html**. The raw OpenAPI document is available at
+**http://localhost:8080/v3/api-docs**. When running through the Compose reverse proxy, use the
+same paths on `http://localhost:${APP_PORT:-8086}`.
+
 Docker runtime data and lightweight deployment assets are stored below `docker-data/`. The Spring
 Boot container mounts `./docker-data/data` as `/app/data`, which keeps generated assets such as
 downloaded favicons outside the image and available across container rebuilds.
