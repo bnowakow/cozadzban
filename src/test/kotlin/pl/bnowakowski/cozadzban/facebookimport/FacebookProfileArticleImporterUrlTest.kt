@@ -1132,7 +1132,7 @@ class FacebookProfileArticleImporterUrlTest {
         val unrelatedUrl = "http://arianagrande.lnk.to/htimylm"
 
         whenever(element.text).thenReturn(
-            "Bartek Dobrowolski-Nowakowski · Co za zjeb · Sławosz Uznański-Wiśniewski · " +
+            "Bartek Dobrowolski-Nowakowski · Co za dzban · Sławosz Uznański-Wiśniewski · " +
                 "Nie mogę odnieść się do treści listu napisanego przez Panią Prezes Polskiej Agencji Kosmicznej.",
         )
         whenever(element.findElements(any())).thenReturn(listOf(photoLink, unrelatedLink))
@@ -1413,7 +1413,7 @@ class FacebookProfileArticleImporterUrlTest {
         val photoUrl = "https://www.facebook.com/photo/?fbid=983286114627177&set=pcb.983297487959373"
         val openedArticleUrl = "https://kosmonauta.net/2024/artykul-test"
 
-        whenever(element.text).thenReturn("Co za zjeb donald.pl · Jak przekonuje miliarder, nawet gdyby płacił dwa razy większe podatki.")
+        whenever(element.text).thenReturn("Co za dzban donald.pl · Jak przekonuje miliarder, nawet gdyby płacił dwa razy większe podatki.")
         whenever(element.findElements(any())).thenReturn(listOf(photoLink))
         whenever(photoLink.getAttribute("href")).thenReturn(photoUrl)
         whenever(driver.windowHandle).thenReturn("main")
@@ -1459,7 +1459,7 @@ class FacebookProfileArticleImporterUrlTest {
             "https://www.facebook.com/Indynxt/posts/pfbid0347R7fEt3GSP6LgYk87pwvjVHj46t6SrdL333S6jFZs8TwrxeZbt6xxoHLa4gJBBZl"
 
         whenever(element.text).thenReturn(
-            "Bartek Dobrowolski-Nowakowski · Co za dzban What a fucker · Artur Kurasiński · To jest porażka obecnego rządu.",
+            "Bartek Dobrowolski-Nowakowski · Co za dzban What a pitcher · Artur Kurasiński · To jest porażka obecnego rządu.",
         )
         whenever(element.findElements(any())).thenReturn(listOf(photoLink))
         whenever(photoLink.getAttribute("href")).thenReturn(photoUrl)

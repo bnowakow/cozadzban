@@ -624,7 +624,7 @@ class FacebookProfileArticleImporterJobTest {
             val importer = FacebookProfileArticleImporter(
                 FacebookImportProperties(
                     markerPhrase = "co za dzban",
-                    translatedMarkerPhrase = "what a fucker",
+                    translatedMarkerPhrase = "what a pitcher",
                     language = "pl",
                     targetApiBaseUrl = "http://127.0.0.1:${server.address.port}",
                     targetApiKey = "test-machine-key",
@@ -644,7 +644,7 @@ class FacebookProfileArticleImporterJobTest {
             constructor.isAccessible = true
             val candidate = constructor.newInstance(
                 "https://tvn24.pl/biznes/ze-swiata/donald-trump-pytany-o-tajwan-powiedzialem-ze-nie-rozmawiam-o-tym-st9050825",
-                "Co za dzban What a fucker https://tvn24.pl/biznes/ze-swiata/donald-trump-pytany-o-tajwan-powiedzialem-ze-nie-rozmawiam-o-tym-st9050825",
+                "Co za dzban What a pitcher https://tvn24.pl/biznes/ze-swiata/donald-trump-pytany-o-tajwan-powiedzialem-ze-nie-rozmawiam-o-tym-st9050825",
                 "https://www.facebook.com/source/posts/123",
                 "pl",
             )
@@ -654,7 +654,7 @@ class FacebookProfileArticleImporterJobTest {
             method.invoke(importer, candidate, 7L)
 
             assertFalse(requestBody.contains("co za dzban", ignoreCase = true))
-            assertFalse(requestBody.contains("what a fucker", ignoreCase = true))
+            assertFalse(requestBody.contains("what a pitcher", ignoreCase = true))
         } finally {
             server.stop(0)
         }
@@ -710,7 +710,7 @@ class FacebookProfileArticleImporterJobTest {
             constructor.isAccessible = true
             val candidate = constructor.newInstance(
                 "https://example.com/slow",
-                "Co za dzban What a fucker https://example.com/slow",
+                "Co za dzban What a pitcher https://example.com/slow",
                 "https://www.facebook.com/source/posts/123",
                 "pl",
             )

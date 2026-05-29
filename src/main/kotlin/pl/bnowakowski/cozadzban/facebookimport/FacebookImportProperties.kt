@@ -11,7 +11,7 @@ data class FacebookImportProperties(
     val enabled: Boolean = false,
     val profileUrl: String = "https://www.facebook.com/bartek.dobrowolski.nowakowski",
     val markerPhrase: String = "co za dzban",
-    val translatedMarkerPhrase: String = "what a fucker",
+    val translatedMarkerPhrase: String = "what a pitcher",
     val language: String = "pl",
     val username: String = "",
     val password: String = "",

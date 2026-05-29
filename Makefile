@@ -57,14 +57,14 @@ SDKMAN_JAVA_HOME ?= $(HOME)/.sdkman/candidates/java/current
 ifneq ($(wildcard $(SDKMAN_JAVA_HOME)/bin/java),)
 JAVA_HOME ?= $(SDKMAN_JAVA_HOME)
 endif
-GRADLE_USER_HOME ?= /tmp/cozazjeb-gradle-home
+GRADLE_USER_HOME ?= /tmp/cozadzban-gradle-home
 CRON_SCHEDULE ?= 0 2 * * *
 CRON_MAKE ?= $(shell command -v make 2>/dev/null || echo make)
-PG_BACKUP_CRON_MARKER ?= cozazjeb-docker-pg-backup
-PG_BACKUP_CRON_LEGACY_MARKER ?= cozadzban-docker-pg-backup
+PG_BACKUP_CRON_MARKER ?= cozadzban-docker-pg-backup
+PG_BACKUP_CRON_LEGACY_MARKER ?= cozazjeb-docker-pg-backup
 PG_BACKUP_CRON_MARKERS := $(PG_BACKUP_CRON_MARKER) $(PG_BACKUP_CRON_LEGACY_MARKER)
 ENV_SYNC_HOST ?= ovh.bnowakowski.pl
-ENV_SYNC_DIR ?= /home/sup/docker/cozazjeb.pl
+ENV_SYNC_DIR ?= /home/sup/docker/cozadzban.pl
 export APP_BUILD_COMMIT JAVA_HOME GRADLE_USER_HOME
 
 # Start local development environment from compose.yaml
@@ -276,7 +276,7 @@ sync-env-files:
 	remote_env=$$(mktemp); \
 	trap 'rm -f "$$remote_env"' EXIT; \
 	rsync -a -v .env.server $(ENV_SYNC_HOST):$(ENV_SYNC_DIR)/; \
-	ssh $(ENV_SYNC_HOST) "cd ~/docker/cozazjeb.pl; yes | cp .env.server .env"; \
+	ssh $(ENV_SYNC_HOST) "cd $(ENV_SYNC_DIR); yes | cp .env.server .env"; \
 	cp .env.worker .env; \
 	echo ""; \
 	printf "%sVerifying environment files ...%s\n" "$$blue" "$$reset"; \

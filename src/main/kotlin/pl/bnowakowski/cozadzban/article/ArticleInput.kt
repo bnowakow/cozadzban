@@ -40,5 +40,5 @@ internal fun String.containsFacebookImportMarkerPhrase(): Boolean {
         .replace(Regex(" +"), " ")
         .trim()
 
-    return normalized.contains("co za dzban") || normalized.contains("what a fucker")
+    return normalized.contains("co za dzban") || normalized.contains("what a pitcher")
 }

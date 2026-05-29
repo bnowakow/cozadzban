@@ -25,6 +25,6 @@ class FacebookProfileArticleImporterMarkerTest {
         @Suppress("UNCHECKED_CAST")
         val markers = method.invoke(importer) as List<String>
 
-        assertEquals(listOf("co za dzban", "what a fucker"), markers)
+        assertEquals(listOf("co za dzban", "what a pitcher"), markers)
     }
 }

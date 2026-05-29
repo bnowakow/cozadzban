@@ -264,7 +264,7 @@ view_last_commit_diff() {
 resolve_pull_conflict_with_codex() {
 	local conflict_output
 
-	conflict_output=$(mktemp "${TMPDIR:-/tmp}/cozazjeb-codex-conflict.XXXXXX")
+	conflict_output=$(mktemp "${TMPDIR:-/tmp}/cozadzban-codex-conflict.XXXXXX")
 	tmp_files+=("$conflict_output")
 
 	printf '\nGit pull produced conflicts. Attempting to resolve them with Codex...\n'
@@ -375,7 +375,7 @@ if ! resolve_codex_command; then
 	exit 1
 fi
 
-codex_output=$(mktemp "${TMPDIR:-/tmp}/cozazjeb-codex-commit.XXXXXX")
+codex_output=$(mktemp "${TMPDIR:-/tmp}/cozadzban-codex-commit.XXXXXX")
 tmp_files+=("$codex_output")
 
 "${codex_command[@]}" exec \

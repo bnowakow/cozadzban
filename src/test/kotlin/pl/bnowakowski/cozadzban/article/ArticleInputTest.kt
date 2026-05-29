@@ -12,8 +12,8 @@ class ArticleInputTest {
     @Test
     fun `facebook import marker quote is removed regardless of case whitespace or translation`() {
         assertNull(" Co\u00A0za   DZBAN ".withoutFacebookImportMarkerQuote())
-        assertNull("Facebook shell Co za dzban What a fucker Hide Original".withoutFacebookImportMarkerQuote())
-        assertNull("WHAT   A   FUCKER".withoutFacebookImportMarkerQuote())
+        assertNull("Facebook shell Co za dzban What a pitcher Hide Original".withoutFacebookImportMarkerQuote())
+        assertNull("WHAT   A   PITCHER".withoutFacebookImportMarkerQuote())
     }
 
     @Test
