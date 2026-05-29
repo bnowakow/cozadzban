@@ -131,6 +131,11 @@ x-runtime-configuration:
     pushoverBaseUrlEnvVar: APP_NOTIFICATIONS_PUSHOVER_BASE_URL
     pushoverDeviceSemantics: zero selected devices means all active devices; multiple selected devices are sent as comma-separated Pushover device targets
     pushoverDeviceDiscovery: device suggestions are read from the Pushover user validation response devices array
+  facebookImport:
+    markerPhraseEnvVar: APP_FACEBOOK_IMPORT_MARKER_PHRASE
+    markerPhraseDefault: co za dzban
+    translatedMarkerPhraseEnvVar: APP_FACEBOOK_IMPORT_TRANSLATED_MARKER_PHRASE
+    translatedMarkerPhraseDefault: what a pitcher
 
 x-problem-types:
   articleUrlConflict:

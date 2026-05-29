@@ -600,8 +600,8 @@ x-business-rules:
       If omitted from POST/PUT, it defaults to null.
       In PATCH, an explicit null value clears the field; omitting quote leaves
       it unchanged (standard JSON Merge Patch semantics).
-      Facebook import marker phrases such as "co za dzban" are discovery signals
-      and MUST NOT be persisted as article quotes.
+      Facebook import marker phrases such as "co za dzban" and "what a pitcher"
+      are discovery signals and MUST NOT be persisted as article quotes.
   - id: BR-28
     name: Input field length and format constraints
     description: >
@@ -1035,6 +1035,10 @@ x-runtime-configuration:
   facebookImport:
     springBatchAutoRunProperty: spring.batch.job.enabled=false
     springBatchSchemaInitializationProperty: spring.batch.jdbc.initialize-schema=never
+    markerPhraseEnvVar: APP_FACEBOOK_IMPORT_MARKER_PHRASE
+    markerPhraseDefault: co za dzban
+    translatedMarkerPhraseEnvVar: APP_FACEBOOK_IMPORT_TRANSLATED_MARKER_PHRASE
+    translatedMarkerPhraseDefault: what a pitcher
     scheduleEnabledEnvVar: APP_FACEBOOK_IMPORT_SCHEDULE_ENABLED
     scheduleEnabledDefault: false
     scheduleIntervalEnvVar: APP_FACEBOOK_IMPORT_SCHEDULE_INTERVAL
