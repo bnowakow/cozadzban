@@ -13,6 +13,7 @@ import org.mockito.kotlin.any
 import org.mockito.kotlin.whenever
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.verify
+import org.springframework.transaction.annotation.Transactional
 import pl.bnowakowski.cozadzban.enrichment.EnrichmentResult
 import pl.bnowakowski.cozadzban.enrichment.EnrichmentService
 import pl.bnowakowski.cozadzban.user.AppUserRepository
@@ -20,6 +21,15 @@ import java.time.Instant
 import java.util.Optional
 
 class ArticleServiceTitleTest {
+
+    @Test
+    fun `create allows callers to handle article url conflicts without rolling back their transaction`() {
+        val transactional = ArticleService::class.java
+            .getDeclaredMethod("create", ArticleInput::class.java, Long::class.javaPrimitiveType)
+            .getAnnotation(Transactional::class.java)
+
+        assertTrue(transactional.noRollbackFor.contains(ArticleUrlConflictException::class))
+    }
 
     @Test
     fun `create does not persist facebook import marker as quote for linked article`() {

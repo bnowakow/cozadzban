@@ -20,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional
 import pl.bnowakowski.cozadzban.article.Article
 import pl.bnowakowski.cozadzban.article.ArticleInput
 import pl.bnowakowski.cozadzban.article.ArticleService
+import pl.bnowakowski.cozadzban.article.ArticleUrlConflictException
 import pl.bnowakowski.cozadzban.security.MachineToMachineProperties
 import pl.bnowakowski.cozadzban.user.AppUser
 import pl.bnowakowski.cozadzban.user.AppUserRepository
@@ -400,6 +401,26 @@ class FacebookArticleProposalServiceTest {
 
         assertEquals(FacebookArticleProposalStatus.ALREADY_EXISTS, updated.status)
         verify(articleService, never()).create(any(), any())
+        verify(proposalRepository).markAlreadyExists(eq(1L), eq(3L), eq("pl"), any())
+        verify(proposalRepository, never()).markFailed(any(), any(), any(), any())
+    }
+
+    @Test
+    fun acceptMarksProposalAlreadyExistsWhenArticleCreateFindsDuplicateContent() {
+        val pending = proposal(status = null)
+        val alreadyExists = pending.copy(status = FacebookArticleProposalStatus.ALREADY_EXISTS)
+        whenever(proposalRepository.findById(1L)).thenReturn(pending, alreadyExists)
+        whenever(articleService.existsByUrl(pending.canonicalArticleUrl)).thenReturn(false)
+        whenever(appUserRepository.findByEmail("facebook-import-bot@cozadzban.pl")).thenReturn(
+            AppUser(7L, "facebook-import-bot@cozadzban.pl", Role.USER),
+        )
+        whenever(articleService.create(any(), eq(7L))).thenThrow(
+            ArticleUrlConflictException("https://www.facebook.com/photo/?fbid=1034426882475669&set=a.233575262560839"),
+        )
+
+        val updated = service.accept(1L, "pl", decidedByUserId = 3L)
+
+        assertEquals(FacebookArticleProposalStatus.ALREADY_EXISTS, updated.status)
         verify(proposalRepository).markAlreadyExists(eq(1L), eq(3L), eq("pl"), any())
         verify(proposalRepository, never()).markFailed(any(), any(), any(), any())
     }

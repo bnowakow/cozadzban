@@ -80,6 +80,7 @@ class ArticleService(
         )
     }
 
+    @Transactional(noRollbackFor = [ArticleUrlConflictException::class])
     fun create(input: ArticleInput, creatorId: Long): Article {
         val sanitizedInput = input.withoutFacebookImportMarkerQuote()
         val url = canonicalizeUrl(input.url)
