@@ -8,8 +8,10 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.any
+import org.mockito.kotlin.argThat
 import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.eq
+import org.mockito.kotlin.isNull
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
 import org.mockito.kotlin.verify
@@ -89,7 +91,7 @@ class FacebookArticleProposalServiceTest {
 
         assertEquals(0, response.submitted)
         assertEquals(1, response.skippedExisting)
-        verify(proposalRepository, never()).insert(any(), any(), any(), any(), any(), any(), any())
+        verify(proposalRepository, never()).insert(any(), any(), any(), any(), any(), any(), any(), any())
         verify(runRepository).recordBatch("run-1", 1, 0, 1, null, 1, 1)
     }
 
@@ -127,6 +129,7 @@ class FacebookArticleProposalServiceTest {
             eq("run-2"),
             eq("https://www.facebook.com/source/posts/2"),
             logsCaptor.capture(),
+            isNull(),
         )
         val logs = GzipTextCodec.decompress(logsCaptor.firstValue)
         assertTrue(logs.contains("old logs"))
@@ -139,7 +142,7 @@ class FacebookArticleProposalServiceTest {
         val eventingService = proposalService(publisher)
         whenever(articleService.existsByUrl("https://example.com/new-story")).thenReturn(false)
         whenever(proposalRepository.findByCanonicalArticleUrl("https://example.com/new-story")).thenReturn(null)
-        whenever(proposalRepository.insert(any(), any(), any(), any(), any(), any(), any())).thenReturn(
+        whenever(proposalRepository.insert(any(), any(), any(), any(), any(), any(), any(), any())).thenReturn(
             proposal(status = null, logsCompressed = GzipTextCodec.compress("candidate logs")),
         )
 
@@ -376,6 +379,76 @@ class FacebookArticleProposalServiceTest {
     }
 
     @Test
+    fun `accept uses browser enrichment saved with proposal`() {
+        val pending = proposal(status = null).copy(
+            canonicalArticleUrl = "https://www.facebook.com/photo/?fbid=1&set=a.2",
+            browserEnrichedLead = "Browser captured Facebook post text",
+            browserEnrichedPlainText = "Browser captured Facebook post text",
+            browserEnrichedPublishedAt = Instant.parse("2026-06-13T07:28:57Z"),
+        )
+        val accepted = pending.copy(status = FacebookArticleProposalStatus.ACCEPTED, articleId = 99L)
+        whenever(proposalRepository.findById(1L)).thenReturn(pending, accepted)
+        whenever(appUserRepository.findByEmail("facebook-import-bot@cozadzban.pl")).thenReturn(
+            AppUser(7L, "facebook-import-bot@cozadzban.pl", Role.USER),
+        )
+        whenever(articleService.createWithEnrichment(any(), eq(7L), any())).thenReturn(
+            Article(
+                id = 99L,
+                url = pending.canonicalArticleUrl,
+                language = "pl",
+                createdByUserId = 7L,
+            ),
+        )
+
+        service.accept(1L, "PL", decidedByUserId = 3L)
+
+        verify(articleService, never()).create(any(), any())
+        verify(articleService).createWithEnrichment(any(), eq(7L), argThat {
+            lead == "Browser captured Facebook post text" &&
+                plainText == "Browser captured Facebook post text" &&
+                publishedAt == Instant.parse("2026-06-13T07:28:57Z")
+        })
+        verify(proposalRepository).markAccepted(eq(1L), eq(99L), eq(3L), eq("pl"), any())
+    }
+
+    @Test
+    fun `accept uses stored candidate text logs for old facebook proposals without enrichment columns`() {
+        val pending = proposal(
+            status = null,
+            logsCompressed = GzipTextCodec.compress(
+                """
+                    selectedUrl=https://www.facebook.com/photo/?fbid=1&set=a.2
+                    candidateText:
+                    Browser captured Facebook post text from old proposal logs
+                """.trimIndent(),
+            ),
+        ).copy(
+            canonicalArticleUrl = "https://www.facebook.com/photo/?fbid=1&set=a.2",
+        )
+        val accepted = pending.copy(status = FacebookArticleProposalStatus.ACCEPTED, articleId = 99L)
+        whenever(proposalRepository.findById(1L)).thenReturn(pending, accepted)
+        whenever(appUserRepository.findByEmail("facebook-import-bot@cozadzban.pl")).thenReturn(
+            AppUser(7L, "facebook-import-bot@cozadzban.pl", Role.USER),
+        )
+        whenever(articleService.createWithEnrichment(any(), eq(7L), any())).thenReturn(
+            Article(
+                id = 99L,
+                url = pending.canonicalArticleUrl,
+                language = "pl",
+                createdByUserId = 7L,
+            ),
+        )
+
+        service.accept(1L, "PL", decidedByUserId = 3L)
+
+        verify(articleService, never()).create(any(), any())
+        verify(articleService).createWithEnrichment(any(), eq(7L), argThat {
+            lead == "Browser captured Facebook post text from old proposal logs" &&
+                plainText == "Browser captured Facebook post text from old proposal logs"
+        })
+    }
+
+    @Test
     fun `failed accept marks proposal failed`() {
         val pending = proposal(status = null)
         whenever(proposalRepository.findById(1L)).thenReturn(pending)
@@ -445,6 +518,12 @@ class FacebookArticleProposalServiceTest {
             submittedAt = Instant.parse("2026-05-24T10:00:00Z"),
             lastSeenAt = Instant.parse("2026-05-24T10:00:00Z"),
             logsCompressed = logsCompressed,
+            browserEnrichedTitle = null,
+            browserEnrichedThumbnail = null,
+            browserEnrichedLead = null,
+            browserEnrichedFavicon = null,
+            browserEnrichedPublishedAt = null,
+            browserEnrichedPlainText = null,
         )
 
     private fun assertRequiresNew(methodName: String, vararg parameterTypes: Class<*>) {

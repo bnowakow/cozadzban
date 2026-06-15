@@ -423,20 +423,27 @@ class FacebookArticleProposalRepository(
         facebookPostUrl: String?,
         guessedLanguage: String,
         logsCompressed: ByteArray?,
+        browserEnrichment: FacebookProposalBrowserEnrichment?,
     ): FacebookArticleProposal =
         jdbc.query(
             """
                 INSERT INTO facebook_article_proposal(
                     candidate_id, import_run_id, article_url, canonical_article_url,
-                    facebook_post_url, guessed_language, logs_compressed
+                    facebook_post_url, guessed_language, logs_compressed,
+                    browser_enriched_title, browser_enriched_thumbnail, browser_enriched_lead,
+                    browser_enriched_favicon, browser_enriched_published_at, browser_enriched_plain_text
                 )
                 VALUES (
                     :candidateId, :importRunId, :articleUrl, :canonicalArticleUrl,
-                    :facebookPostUrl, :guessedLanguage, :logsCompressed
+                    :facebookPostUrl, :guessedLanguage, :logsCompressed,
+                    :browserEnrichedTitle, :browserEnrichedThumbnail, :browserEnrichedLead,
+                    :browserEnrichedFavicon, :browserEnrichedPublishedAt, :browserEnrichedPlainText
                 )
                 RETURNING id, candidate_id, import_run_id, article_url, canonical_article_url,
                           facebook_post_url, guessed_language, corrected_language, status, article_id,
-                          decided_by_user_id, decided_at, submitted_at, last_seen_at, logs_compressed
+                          decided_by_user_id, decided_at, submitted_at, last_seen_at, logs_compressed,
+                          browser_enriched_title, browser_enriched_thumbnail, browser_enriched_lead,
+                          browser_enriched_favicon, browser_enriched_published_at, browser_enriched_plain_text
             """.trimIndent(),
             MapSqlParameterSource()
                 .addValue("candidateId", candidateId)
@@ -445,25 +452,49 @@ class FacebookArticleProposalRepository(
                 .addValue("canonicalArticleUrl", canonicalArticleUrl)
                 .addValue("facebookPostUrl", facebookPostUrl)
                 .addValue("guessedLanguage", guessedLanguage)
-                .addValue("logsCompressed", logsCompressed),
+                .addValue("logsCompressed", logsCompressed)
+                .addValue("browserEnrichedTitle", browserEnrichment?.title?.trim()?.takeIf { it.isNotBlank() })
+                .addValue("browserEnrichedThumbnail", browserEnrichment?.thumbnail?.trim()?.takeIf { it.isNotBlank() })
+                .addValue("browserEnrichedLead", browserEnrichment?.lead?.trim()?.takeIf { it.isNotBlank() })
+                .addValue("browserEnrichedFavicon", browserEnrichment?.favicon?.trim()?.takeIf { it.isNotBlank() })
+                .addValue("browserEnrichedPublishedAt", browserEnrichment?.publishedAt?.let { Timestamp.from(it) })
+                .addValue("browserEnrichedPlainText", browserEnrichment?.plainText?.trim()?.takeIf { it.isNotBlank() }),
             PROPOSAL_ROW_MAPPER,
         ).single()
 
-    fun updateSeen(id: Long, importRunId: String, facebookPostUrl: String?, logsCompressed: ByteArray?) {
+    fun updateSeen(
+        id: Long,
+        importRunId: String,
+        facebookPostUrl: String?,
+        logsCompressed: ByteArray?,
+        browserEnrichment: FacebookProposalBrowserEnrichment?,
+    ) {
         jdbc.update(
             """
                 UPDATE facebook_article_proposal
                    SET last_seen_at = now(),
                        import_run_id = :importRunId,
                        facebook_post_url = COALESCE(facebook_post_url, :facebookPostUrl),
-                       logs_compressed = COALESCE(:logsCompressed, logs_compressed)
+                       logs_compressed = COALESCE(:logsCompressed, logs_compressed),
+                       browser_enriched_title = COALESCE(browser_enriched_title, :browserEnrichedTitle),
+                       browser_enriched_thumbnail = COALESCE(browser_enriched_thumbnail, :browserEnrichedThumbnail),
+                       browser_enriched_lead = COALESCE(browser_enriched_lead, :browserEnrichedLead),
+                       browser_enriched_favicon = COALESCE(browser_enriched_favicon, :browserEnrichedFavicon),
+                       browser_enriched_published_at = COALESCE(browser_enriched_published_at, :browserEnrichedPublishedAt),
+                       browser_enriched_plain_text = COALESCE(browser_enriched_plain_text, :browserEnrichedPlainText)
                  WHERE id = :id
             """.trimIndent(),
             MapSqlParameterSource()
                 .addValue("id", id)
                 .addValue("importRunId", importRunId)
                 .addValue("facebookPostUrl", facebookPostUrl)
-                .addValue("logsCompressed", logsCompressed),
+                .addValue("logsCompressed", logsCompressed)
+                .addValue("browserEnrichedTitle", browserEnrichment?.title?.trim()?.takeIf { it.isNotBlank() })
+                .addValue("browserEnrichedThumbnail", browserEnrichment?.thumbnail?.trim()?.takeIf { it.isNotBlank() })
+                .addValue("browserEnrichedLead", browserEnrichment?.lead?.trim()?.takeIf { it.isNotBlank() })
+                .addValue("browserEnrichedFavicon", browserEnrichment?.favicon?.trim()?.takeIf { it.isNotBlank() })
+                .addValue("browserEnrichedPublishedAt", browserEnrichment?.publishedAt?.let { Timestamp.from(it) })
+                .addValue("browserEnrichedPlainText", browserEnrichment?.plainText?.trim()?.takeIf { it.isNotBlank() }),
         )
     }
 
@@ -590,7 +621,9 @@ class FacebookArticleProposalRepository(
         const val SELECT_PROPOSAL_SQL = """
             SELECT id, candidate_id, import_run_id, article_url, canonical_article_url,
                    facebook_post_url, guessed_language, corrected_language, status, article_id,
-                   decided_by_user_id, decided_at, submitted_at, last_seen_at, logs_compressed
+                   decided_by_user_id, decided_at, submitted_at, last_seen_at, logs_compressed,
+                   browser_enriched_title, browser_enriched_thumbnail, browser_enriched_lead,
+                   browser_enriched_favicon, browser_enriched_published_at, browser_enriched_plain_text
               FROM facebook_article_proposal
         """
 
@@ -611,6 +644,12 @@ class FacebookArticleProposalRepository(
                 submittedAt = rs.getTimestamp("submitted_at")?.toInstant() ?: Instant.EPOCH,
                 lastSeenAt = rs.getTimestamp("last_seen_at")?.toInstant() ?: Instant.EPOCH,
                 logsCompressed = rs.getBytes("logs_compressed"),
+                browserEnrichedTitle = rs.getString("browser_enriched_title"),
+                browserEnrichedThumbnail = rs.getString("browser_enriched_thumbnail"),
+                browserEnrichedLead = rs.getString("browser_enriched_lead"),
+                browserEnrichedFavicon = rs.getString("browser_enriched_favicon"),
+                browserEnrichedPublishedAt = rs.getTimestamp("browser_enriched_published_at")?.toInstant(),
+                browserEnrichedPlainText = rs.getString("browser_enriched_plain_text"),
             )
         }
 

@@ -97,12 +97,44 @@ class ArticleService(
             throw ArticleUrlConflictException(url)
         }
         val enrichment = enrichArticleUrl("create", url)
+        return saveEnrichedArticle("create", input, sanitizedInput, url, language, creatorId, enrichment)
+    }
+
+    @Transactional(noRollbackFor = [ArticleUrlConflictException::class])
+    fun createWithEnrichment(input: ArticleInput, creatorId: Long, enrichment: EnrichmentResult): Article {
+        val sanitizedInput = input.withoutFacebookImportMarkerQuote()
+        val url = canonicalizeUrl(input.url)
+        val language = normalizeLanguage(input.language)
+        logFacebookPhotoServiceInvocation(
+            operation = "create-browser-enriched",
+            url = url,
+            detail = "inputUrl='${input.url}',creatorId=$creatorId,language='$language'," +
+                "quote=${valueDiagnostic(sanitizedInput.quote)},inputPublishedAt=${input.publishedAt}," +
+                "contentInputSupported=true,enrichment=${enrichmentDiagnostic(enrichment)}",
+        )
+        if (articleRepository.existsByUrl(url)) {
+            logFacebookPhotoDuplicateUrlConflict("create-browser-enriched", url, input.url, articleRepository.findByUrl(url))
+            throw ArticleUrlConflictException(url)
+        }
+        return saveEnrichedArticle("create-browser-enriched", input, sanitizedInput, url, language, creatorId, enrichment)
+    }
+
+    private fun saveEnrichedArticle(
+        operation: String,
+        input: ArticleInput,
+        sanitizedInput: ArticleInput,
+        url: String,
+        language: String,
+        creatorId: Long,
+        enrichment: EnrichmentResult,
+    ): Article {
         val publishedAt = input.publishedAt ?: enrichment.publishedAt
         val contentForCache = selectContentForCache(url, enrichment.plainText, enrichment.lead, enrichment.title)
         val title = titleForSave(url, enrichment.title, enrichment.lead, contentForCache)
         findFacebookDuplicate(url, publishedAt, enrichment.thumbnail, contentForCache)?.let { duplicate ->
             LOG.info(
-                "Facebook duplicate content during create; inputUrl='{}'; canonicalUrl='{}'; existingArticle={}",
+                "Facebook duplicate content during {}; inputUrl='{}'; canonicalUrl='{}'; existingArticle={}",
+                operation,
                 input.url,
                 url,
                 articleDiagnostic(duplicate),
@@ -135,8 +167,8 @@ class ArticleService(
         )
         preserveContent(article.id!!, article.url, contentForCache)
         logFacebookPhotoPersistenceState("create", article, contentForCache)
-        val persistedArticle = logFacebookPhotoReloadedPersistenceState("create", article, contentForCache)
-        logFacebookPhotoDegradedOutcome("create", input, persistedArticle, enrichment, contentForCache, title, publishedAt)
+        val persistedArticle = logFacebookPhotoReloadedPersistenceState(operation, article, contentForCache)
+        logFacebookPhotoDegradedOutcome(operation, input, persistedArticle, enrichment, contentForCache, title, publishedAt)
         return article
     }
 

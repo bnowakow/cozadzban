@@ -76,10 +76,25 @@ data class FacebookArticleProposal(
     val submittedAt: Instant,
     val lastSeenAt: Instant,
     val logsCompressed: ByteArray?,
+    val browserEnrichedTitle: String?,
+    val browserEnrichedThumbnail: String?,
+    val browserEnrichedLead: String?,
+    val browserEnrichedFavicon: String?,
+    val browserEnrichedPublishedAt: Instant?,
+    val browserEnrichedPlainText: String?,
 ) {
     val effectiveLanguage: String
         get() = correctedLanguage ?: guessedLanguage
 }
+
+data class FacebookProposalBrowserEnrichment(
+    val title: String? = null,
+    val thumbnail: String? = null,
+    val lead: String? = null,
+    val favicon: String? = null,
+    val publishedAt: Instant? = null,
+    val plainText: String? = null,
+)
 
 data class FacebookProposalSubmission(
     val candidateId: String,
@@ -87,6 +102,7 @@ data class FacebookProposalSubmission(
     val facebookPostUrl: String?,
     val language: String,
     val logs: String?,
+    val browserEnrichment: FacebookProposalBrowserEnrichment? = null,
 )
 
 data class FacebookProposalBatchRequest(

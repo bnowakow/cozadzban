@@ -386,6 +386,7 @@ class FacebookProfileArticleImporter(
                         facebookPostUrl = candidate.sourcePostUrl,
                         language = language,
                         logs = candidateProposalLogs(candidate),
+                        browserEnrichment = candidate.browserEnrichment,
                     )
                 }
             }
@@ -858,7 +859,12 @@ class FacebookProfileArticleImporter(
                 markedPost.text,
             )
                 ?: return@mapIndexedNotNull null
-            FacebookPostCandidate(postUrl.url, markedPost.text, postUrl.sourcePostUrl)
+            FacebookPostCandidate(
+                url = postUrl.url,
+                text = markedPost.text,
+                sourcePostUrl = postUrl.sourcePostUrl,
+                browserEnrichment = postUrl.browserEnrichment ?: browserEnrichmentFromText(postUrl.url, markedPost.text),
+            )
         }.distinctBy { it.url }
     }
 
@@ -978,37 +984,37 @@ class FacebookProfileArticleImporter(
 
         extractExternalArticleUrlFromText(text)?.let {
             logPostUrlDecision("visible-text-url", it, text, facebookPostUrls, links)
-            return PostUrlSelection(it, containerSourcePostUrl)
+            return PostUrlSelection(it, containerSourcePostUrl, browserEnrichmentFromText(it, text))
         }
 
         if (htmlPostUrl != null && !isFacebookPhotoUrl(htmlPostUrl)) {
             logPostUrlDecision("html-facebook-fallback", htmlPostUrl, text, facebookPostUrls, links)
-            return PostUrlSelection(htmlPostUrl, htmlPostUrl)
+            return PostUrlSelection(htmlPostUrl, htmlPostUrl, browserEnrichmentFromText(htmlPostUrl, text))
         }
 
         val sourcePostUrls = facebookSourcePostUrlsToOpen(facebookPostUrls, htmlPostUrl)
         val selectedFromOpenedPost = sourcePostUrls.asSequence()
             .filterNot { isConfiguredProfilePostUrl(it) }
             .mapNotNull { sourcePostUrl ->
-                extractCandidateUrlFromFacebookPost(
+                extractCandidateUrlSelectionFromFacebookPost(
                     driver,
                     sourcePostUrl,
                     discoveryProgress = discoveryProgress,
                     sourceContextText = text,
                 )
-                    ?.let { PostUrlSelection(it, sourcePostUrl) }
+                    ?.let { PostUrlSelection(it.url, sourcePostUrl, it.browserEnrichment) }
             }
             .firstOrNull()
             ?: sourcePostUrls.asSequence()
                 .filter { isConfiguredProfilePostUrl(it) }
                 .mapNotNull { sourcePostUrl ->
-                extractCandidateUrlFromFacebookPost(
+                    extractCandidateUrlSelectionFromFacebookPost(
                     driver,
                     sourcePostUrl,
                     discoveryProgress = discoveryProgress,
                     sourceContextText = text,
                 )
-                        ?.let { PostUrlSelection(it, sourcePostUrl) }
+                        ?.let { PostUrlSelection(it.url, sourcePostUrl, it.browserEnrichment) }
                 }
                 .firstOrNull()
         if (selectedFromOpenedPost != null) {
@@ -1018,27 +1024,27 @@ class FacebookProfileArticleImporter(
 
         extractExternalArticleUrlFromHtml(driver, element, text)?.let {
             logPostUrlDecision("html-url", it, text, facebookPostUrls, links)
-            return PostUrlSelection(it, containerSourcePostUrl)
+            return PostUrlSelection(it, containerSourcePostUrl, browserEnrichmentFromText(it, text))
         }
 
         links.firstOrNull { isExternalArticleUrl(it) && isUrlHostMentionedInText(it, text) }?.let {
             logPostUrlDecision("link-url", it, text, facebookPostUrls, links)
-            return PostUrlSelection(it, containerSourcePostUrl)
+            return PostUrlSelection(it, containerSourcePostUrl, browserEnrichmentFromText(it, text))
         }
 
         facebookPostUrls.firstOrNull { !isConfiguredProfilePostUrl(it) && isImportableFacebookArticleUrl(it) }?.let {
             logPostUrlDecision("facebook-post-fallback", it, text, facebookPostUrls, links)
-            return PostUrlSelection(it, it)
+            return PostUrlSelection(it, it, browserEnrichmentFromText(it, text))
         }
 
         facebookPostUrls.firstOrNull { isImportableSharedFacebookPhotoUrl(it, text) }?.let {
             logPostUrlDecision("facebook-photo-fallback", it, text, facebookPostUrls, links)
-            return PostUrlSelection(it, it)
+            return PostUrlSelection(it, it, browserEnrichmentFromText(it, text))
         }
 
         htmlPostUrl?.let {
             logPostUrlDecision("html-facebook-fallback", it, text, facebookPostUrls, links)
-            return PostUrlSelection(it, it)
+            return PostUrlSelection(it, it, browserEnrichmentFromText(it, text))
         }
 
         logPostUrlDecision("none", null, text, facebookPostUrls, links)
@@ -1071,7 +1077,7 @@ class FacebookProfileArticleImporter(
         postUrl: String,
         visited: Set<String> = emptySet(),
     ): String? =
-        extractCandidateUrlFromFacebookPost(driver, postUrl, visited, discoveryProgress = null)
+        extractCandidateUrlSelectionFromFacebookPost(driver, postUrl, visited, discoveryProgress = null)?.url
 
     private fun extractCandidateUrlFromFacebookPost(
         driver: WebDriver,
@@ -1081,7 +1087,26 @@ class FacebookProfileArticleImporter(
         allowWeakExternalArticleUrls: Boolean = true,
         allowFacebookFallbackUrl: Boolean = true,
         sourceContextText: String? = null,
-    ): String? {
+    ): String? =
+        extractCandidateUrlSelectionFromFacebookPost(
+            driver = driver,
+            postUrl = postUrl,
+            visited = visited,
+            discoveryProgress = discoveryProgress,
+            allowWeakExternalArticleUrls = allowWeakExternalArticleUrls,
+            allowFacebookFallbackUrl = allowFacebookFallbackUrl,
+            sourceContextText = sourceContextText,
+        )?.url
+
+    private fun extractCandidateUrlSelectionFromFacebookPost(
+        driver: WebDriver,
+        postUrl: String,
+        visited: Set<String> = emptySet(),
+        discoveryProgress: String?,
+        allowWeakExternalArticleUrls: Boolean = true,
+        allowFacebookFallbackUrl: Boolean = true,
+        sourceContextText: String? = null,
+    ): CandidateUrlExtraction? {
         if (postUrl in visited) return null
         val originalWindow = driver.windowHandle
         val originalHandles = driver.windowHandles
@@ -1118,7 +1143,7 @@ class FacebookProfileArticleImporter(
             )
             val nestedCandidate = nestedSearchCandidates.asSequence()
                 .mapNotNull { candidate ->
-                    extractCandidateUrlFromFacebookPost(
+                    extractCandidateUrlSelectionFromFacebookPost(
                         driver,
                         candidate,
                         visited = visited + postUrl,
@@ -1172,31 +1197,33 @@ class FacebookProfileArticleImporter(
                 bodyTextArticleUrl
             }
             val unsafeSelected = nestedCandidate
-                ?: visibleBodyTextArticleUrl
-                ?: preferredExternalArticleUrl
-                ?: weakExternalArticleUrl
-                ?: facebookFallbackUrl.takeIf { allowFacebookFallbackUrl && !isFacebookPhotoUrl(postUrl) }
+                ?: visibleBodyTextArticleUrl?.let { CandidateUrlExtraction(it) }
+                ?: preferredExternalArticleUrl?.let { CandidateUrlExtraction(it) }
+                ?: weakExternalArticleUrl?.let { CandidateUrlExtraction(it) }
+                ?: facebookFallbackUrl
+                    .takeIf { allowFacebookFallbackUrl && !isFacebookPhotoUrl(postUrl) }
+                    ?.let { CandidateUrlExtraction(it) }
             val selected = unsafeSelected?.takeUnless {
                 isConfiguredProfilePostUrl(postUrl) &&
-                    isExternalArticleUrl(it) &&
+                    isExternalArticleUrl(it.url) &&
                     isGenericFacebookFeedPage(bodyText)
             }
             val selectedSource = when (selected) {
                 null -> "none"
                 nestedCandidate -> "nested-facebook-post"
-                visibleBodyTextArticleUrl -> "visible-text-url"
-                preferredExternalArticleUrl -> "profile-matched-external-url"
-                linkArticleUrls.firstOrNull() -> "visible-link-url"
-                pageTextArticleUrl -> "page-source-visible-url"
-                pageHrefArticleUrls.firstOrNull() -> "page-source-href-visible-url"
-                facebookFallbackUrl -> "facebook-post-fallback"
+                visibleBodyTextArticleUrl?.let { CandidateUrlExtraction(it) } -> "visible-text-url"
+                preferredExternalArticleUrl?.let { CandidateUrlExtraction(it) } -> "profile-matched-external-url"
+                linkArticleUrls.firstOrNull()?.let { CandidateUrlExtraction(it) } -> "visible-link-url"
+                pageTextArticleUrl?.let { CandidateUrlExtraction(it) } -> "page-source-visible-url"
+                pageHrefArticleUrls.firstOrNull()?.let { CandidateUrlExtraction(it) } -> "page-source-href-visible-url"
+                facebookFallbackUrl?.let { CandidateUrlExtraction(it) } -> "facebook-post-fallback"
                 else -> "unknown"
             }
             logOpenedPostUrlDecision(
                 discoveryProgress = discoveryProgress,
                 postUrl = postUrl,
                 selectedSource = selectedSource,
-                selectedUrl = selected,
+                selectedUrl = selected?.url,
                 bodyText = bodyText,
                 facebookCandidates = facebookCandidates,
                 bodyTextArticleUrl = bodyTextArticleUrl,
@@ -1212,7 +1239,7 @@ class FacebookProfileArticleImporter(
                 visited = visited,
                 diagnostics = openedDiagnostics,
             )
-            selected
+            selected?.copy(browserEnrichment = browserEnrichmentFromText(selected.url, bodyText))
         }.getOrNull().also {
             runCatching {
                 openedWindow?.let { window ->
@@ -1720,11 +1747,31 @@ class FacebookProfileArticleImporter(
         buildString {
             appendLine("selectedUrl=${candidate.url}")
             appendLine("sourcePostUrl=${candidate.sourcePostUrl ?: "<none>"}")
+            candidate.browserEnrichment?.let { enrichment ->
+                appendLine("browserEnrichmentLeadLength=${enrichment.lead?.length ?: 0}")
+                appendLine("browserEnrichmentPlainTextLength=${enrichment.plainText?.length ?: 0}")
+            }
             appendLine("candidateTextLength=${candidate.text.length}")
             appendLine("candidateTextPreview=${candidate.text.cleanText().abbreviateForLog()}")
             appendLine("candidateText:")
             appendLine(candidate.text)
         }
+
+    private fun browserEnrichmentFromText(url: String, rawText: String?): FacebookProposalBrowserEnrichment? {
+        if (!isFacebookUrl(url)) return null
+        val text = rawText
+            ?.cleanText()
+            ?.replace(Regex("\\b(?:Hide Original|Rate this translation|See more|Zobacz więcej)\\b", RegexOption.IGNORE_CASE), " ")
+            ?.replace(Regex("\\s+"), " ")
+            ?.trim()
+            ?.takeIf { it.length >= MIN_BROWSER_ENRICHED_TEXT_CHARS }
+            ?: return null
+        val plainText = text.take(MAX_BROWSER_ENRICHED_TEXT_CHARS)
+        return FacebookProposalBrowserEnrichment(
+            lead = plainText,
+            plainText = plainText,
+        )
+    }
 
     private fun workerCandidateDecisionLogs(
         candidateId: String,
@@ -2766,11 +2813,19 @@ class FacebookProfileArticleImporter(
         val url: String,
         val text: String,
         val sourcePostUrl: String? = null,
+        val browserEnrichment: FacebookProposalBrowserEnrichment? = null,
         val language: String = "",
     ) {
-        constructor(url: String, text: String) : this(url, text, null, "")
-        constructor(url: String, text: String, sourcePostUrl: String?) : this(url, text, sourcePostUrl, "")
+        constructor(url: String, text: String) : this(url, text, null, null, "")
+        constructor(url: String, text: String, sourcePostUrl: String?) : this(url, text, sourcePostUrl, null, "")
+        constructor(url: String, text: String, sourcePostUrl: String?, language: String) :
+            this(url, text, sourcePostUrl, null, language)
     }
+
+    private data class CandidateUrlExtraction(
+        val url: String,
+        val browserEnrichment: FacebookProposalBrowserEnrichment? = null,
+    )
 
     private data class CandidateApprovalEntry(
         val candidate: FacebookPostCandidate,
@@ -2781,6 +2836,7 @@ class FacebookProfileArticleImporter(
     private data class PostUrlSelection(
         val url: String,
         val sourcePostUrl: String?,
+        val browserEnrichment: FacebookProposalBrowserEnrichment? = null,
     )
 
     private data class MarkedFacebookPost(
@@ -2848,6 +2904,8 @@ class FacebookProfileArticleImporter(
         private const val REMOTE_CREATE_REQUEST_ID_HEADER = "X-CoZaDzban-Import-Request-Id"
         private const val MAX_NESTED_FACEBOOK_POSTS_TO_OPEN = 2
         private const val MAX_SEE_ORIGINAL_CONTROLS_TO_CLICK = 40
+        private const val MIN_BROWSER_ENRICHED_TEXT_CHARS = 40
+        private const val MAX_BROWSER_ENRICHED_TEXT_CHARS = 3000
         private val PROGRESS_REPORT_INTERVAL: Duration = Duration.ofSeconds(5)
         private val IMPORT_ARTIFACT_TIMESTAMP_FORMATTER: DateTimeFormatter =
             DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'").withZone(ZoneOffset.UTC)

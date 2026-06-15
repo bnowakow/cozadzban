@@ -97,6 +97,12 @@ class FacebookArticleProposalViewTest {
             submittedAt = Instant.parse("2026-05-24T10:00:00Z"),
             lastSeenAt = Instant.parse("2026-05-24T10:00:00Z"),
             logsCompressed = null,
+            browserEnrichedTitle = null,
+            browserEnrichedThumbnail = null,
+            browserEnrichedLead = null,
+            browserEnrichedFavicon = null,
+            browserEnrichedPublishedAt = null,
+            browserEnrichedPlainText = null,
         )
 
     private fun <T : Component> findComponents(root: Component, type: Class<T>): List<T> {
