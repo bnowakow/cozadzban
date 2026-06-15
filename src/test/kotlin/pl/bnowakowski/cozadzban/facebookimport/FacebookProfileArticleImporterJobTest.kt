@@ -396,7 +396,8 @@ class FacebookProfileArticleImporterJobTest {
         val options = mock<WebDriver.Options>()
         val body = mock<WebElement>()
         val post = mock<WebElement>()
-        val selectedUrl = "https://www.facebook.com/reel/2758125771253657/"
+        val selectedUrl = "https://example.pl/artykuly/odkryty"
+        val profilePostUrl = "https://www.facebook.com/bartek.dobrowolski.nowakowski/posts/pfbid02profile"
 
         whenever(driver.manage()).thenReturn(options)
         whenever(options.getCookieNamed("c_user")).thenReturn(Cookie("c_user", "123"))
@@ -410,7 +411,7 @@ class FacebookProfileArticleImporterJobTest {
             val selector = invocation.arguments.first().toString()
             if (selector.contains("See original")) emptyList<WebElement>() else listOf(post)
         }
-        whenever(post.text).thenReturn("Co za dzban żółć $selectedUrl")
+        whenever(post.text).thenReturn("Co za dzban żółć $profilePostUrl $selectedUrl")
         whenever(post.findElements(any())).thenReturn(emptyList())
         doReturn(driver).whenever(importer).openDriver()
         whenever(proposalClient.existsByArticleUrl(selectedUrl)).thenReturn(false)
