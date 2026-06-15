@@ -1059,12 +1059,12 @@ class FacebookProfileArticleImporter(
 
         facebookPostUrls.firstOrNull { !isConfiguredProfilePostUrl(it) && isImportableFacebookArticleUrl(it) }?.let {
             logPostUrlDecision("facebook-post-fallback", it, text, facebookPostUrls, links)
-            return PostUrlSelection(it, it, browserEnrichmentFromText(it, text))
+            return PostUrlSelection(it, containerSourcePostUrl ?: it, browserEnrichmentFromText(it, text))
         }
 
         facebookPostUrls.firstOrNull { isImportableSharedFacebookPhotoUrl(it, text) }?.let {
             logPostUrlDecision("facebook-photo-fallback", it, text, facebookPostUrls, links)
-            return PostUrlSelection(it, it, browserEnrichmentFromText(it, text))
+            return PostUrlSelection(it, containerSourcePostUrl ?: it, browserEnrichmentFromText(it, text))
         }
 
         htmlPostUrl?.let {

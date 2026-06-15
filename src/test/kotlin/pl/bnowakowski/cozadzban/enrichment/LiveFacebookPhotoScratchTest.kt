@@ -25,26 +25,35 @@ class LiveFacebookPhotoScratchTest {
             "https://mbasic.facebook.com/photo.php?fbid=1386997413458759&set=a.473737708118072",
         ).forEach { url ->
             val result = service.enrich(url)
-            val html = fetchHtml.invoke(service, url, restClient) as String
-            val imageMatches = Regex("""https:\\/\\/[^"]+?\.(?:jpg|jpeg|png|webp)(?:\?[^"]*)?""")
-                .findAll(html)
-                .map { it.value.replace("\\/", "/") }
-                .filterNot { it.contains("static.xx.fbcdn.net/rsrc.php") }
-                .distinct()
-                .take(10)
-                .toList()
-            val fbidIndex = html.indexOf(url.substringAfter("fbid=").substringBefore("&"))
-            val fbidContext = if (fbidIndex >= 0) {
-                html.substring((fbidIndex - 300).coerceAtLeast(0), (fbidIndex + 700).coerceAtMost(html.length))
-            } else {
-                "<not-found>"
-            }
             println(
                 "LIVE_FB_PHOTO url=$url title=${result.title} thumbnail=${result.thumbnail} " +
                     "lead=${result.lead} publishedAt=${result.publishedAt} plainTextLength=${result.plainText?.length}",
             )
-            println("LIVE_FB_PHOTO_IMAGE_MATCHES url=$url matches=$imageMatches")
-            println("LIVE_FB_PHOTO_FBID_CONTEXT url=$url context=$fbidContext")
+            val htmlResult = runCatching { fetchHtml.invoke(service, url, restClient) as String }
+            val html = htmlResult.getOrNull()
+            if (html == null) {
+                val exception = htmlResult.exceptionOrNull()?.let { it.cause ?: it }
+                println(
+                    "LIVE_FB_PHOTO_HTML_FETCH_FAILED url=$url " +
+                        "exception=${exception?.javaClass?.simpleName} message=${exception?.message}",
+                )
+            } else {
+                val imageMatches = Regex("""https:\\/\\/[^"]+?\.(?:jpg|jpeg|png|webp)(?:\?[^"]*)?""")
+                    .findAll(html)
+                    .map { it.value.replace("\\/", "/") }
+                    .filterNot { it.contains("static.xx.fbcdn.net/rsrc.php") }
+                    .distinct()
+                    .take(10)
+                    .toList()
+                val fbidIndex = html.indexOf(url.substringAfter("fbid=").substringBefore("&"))
+                val fbidContext = if (fbidIndex >= 0) {
+                    html.substring((fbidIndex - 300).coerceAtLeast(0), (fbidIndex + 700).coerceAtMost(html.length))
+                } else {
+                    "<not-found>"
+                }
+                println("LIVE_FB_PHOTO_IMAGE_MATCHES url=$url matches=$imageMatches")
+                println("LIVE_FB_PHOTO_FBID_CONTEXT url=$url context=$fbidContext")
+            }
         }
     }
 }

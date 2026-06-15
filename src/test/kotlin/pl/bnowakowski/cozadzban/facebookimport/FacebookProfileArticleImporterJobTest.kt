@@ -396,7 +396,8 @@ class FacebookProfileArticleImporterJobTest {
         val options = mock<WebDriver.Options>()
         val body = mock<WebElement>()
         val post = mock<WebElement>()
-        val selectedUrl = "https://example.pl/artykuly/odkryty"
+        val profilePostLink = mock<WebElement>()
+        val selectedUrl = "https://www.facebook.com/reel/2758125771253657/"
         val profilePostUrl = "https://www.facebook.com/bartek.dobrowolski.nowakowski/posts/pfbid02profile"
 
         whenever(driver.manage()).thenReturn(options)
@@ -411,8 +412,9 @@ class FacebookProfileArticleImporterJobTest {
             val selector = invocation.arguments.first().toString()
             if (selector.contains("See original")) emptyList<WebElement>() else listOf(post)
         }
-        whenever(post.text).thenReturn("Co za dzban żółć $profilePostUrl $selectedUrl")
-        whenever(post.findElements(any())).thenReturn(emptyList())
+        whenever(post.text).thenReturn("Co za dzban żółć $selectedUrl")
+        whenever(post.findElements(any())).thenReturn(listOf(profilePostLink))
+        whenever(profilePostLink.getAttribute("href")).thenReturn(profilePostUrl)
         doReturn(driver).whenever(importer).openDriver()
         whenever(proposalClient.existsByArticleUrl(selectedUrl)).thenReturn(false)
         whenever(proposalClient.submitBatch(any())).thenReturn(
@@ -426,6 +428,7 @@ class FacebookProfileArticleImporterJobTest {
         verify(proposalClient).submitBatch(requestCaptor.capture())
         assertEquals(1, requestCaptor.firstValue.proposals.size)
         assertEquals(selectedUrl, requestCaptor.firstValue.proposals.single().articleUrl)
+        assertEquals(profilePostUrl, requestCaptor.firstValue.proposals.single().facebookPostUrl)
         assertEquals("pl", requestCaptor.firstValue.proposals.single().language)
         val batchLogs = requestCaptor.firstValue.logs.orEmpty()
         assertTrue(batchLogs.contains("action=proposal-submit"))

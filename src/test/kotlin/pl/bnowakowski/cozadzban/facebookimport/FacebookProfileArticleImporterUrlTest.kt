@@ -275,6 +275,47 @@ class FacebookProfileArticleImporterUrlTest {
     }
 
     @Test
+    fun `visible facebook candidate urls use configured profile post as proposal source`() {
+        val importer = FacebookProfileArticleImporter(
+            FacebookImportProperties(),
+            mock<AppUserRepository>(),
+            mock<ArticleService>(),
+        )
+
+        val method = importer.javaClass.getDeclaredMethod(
+            "findPostUrlSelection",
+            WebDriver::class.java,
+            WebElement::class.java,
+            String::class.java,
+            String::class.java,
+        )
+        method.isAccessible = true
+
+        val driver = mock<WebDriver>()
+        val element = mock<WebElement>()
+        val profilePostLink = mock<WebElement>()
+        val reelUrl = "https://www.facebook.com/reel/2758125771253657/"
+        val profilePostUrl = "https://www.facebook.com/bartek.dobrowolski.nowakowski/posts/pfbid02profile"
+
+        whenever(element.findElements(any())).thenReturn(listOf(profilePostLink))
+        whenever(profilePostLink.getAttribute("href")).thenReturn(profilePostUrl)
+        whenever(driver.windowHandle).thenReturn("main")
+        whenever(driver.windowHandles).thenReturn(setOf("main"))
+        whenever(driver.findElements(any())).thenReturn(emptyList())
+
+        val selection = method.invoke(
+            importer,
+            driver,
+            element,
+            "3/9",
+            "Co za dzban\n$reelUrl",
+        )
+
+        assertEquals(reelUrl, postUrlSelectionUrl(selection))
+        assertEquals(profilePostUrl, postUrlSelectionSourcePostUrl(selection))
+    }
+
+    @Test
     fun `stale post containers are skipped while finding post urls`() {
         val importer = FacebookProfileArticleImporter(
             FacebookImportProperties(),
