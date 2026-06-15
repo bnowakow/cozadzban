@@ -166,6 +166,45 @@ class FacebookProfileArticleImporterUrlTest {
     }
 
     @Test
+    fun `external preview urls are not used as facebook source post urls`() {
+        val importer = FacebookProfileArticleImporter(
+            FacebookImportProperties(),
+            mock<AppUserRepository>(),
+            mock<ArticleService>(),
+        )
+
+        val method = importer.javaClass.getDeclaredMethod(
+            "findPostUrlSelection",
+            WebDriver::class.java,
+            WebElement::class.java,
+            String::class.java,
+            String::class.java,
+        )
+        method.isAccessible = true
+
+        val driver = mockitoMock(
+            WebDriver::class.java,
+            withSettings().extraInterfaces(JavascriptExecutor::class.java),
+        ) as WebDriver
+        val js = driver as JavascriptExecutor
+        val element = mock<WebElement>()
+        val articleUrl = "https://zero.pl/news/ujawniamy-jak-pracowal-28-letni-lekarz-milioner-sprawa-dawida-kacprzyka"
+
+        whenever(element.text).thenReturn(
+            "Bartek Dobrowolski-Nowakowski · Co za dzban · ZERO.PL Dyżurował w szpitalu, występował w telewizji.",
+        )
+        whenever(element.findElements(any())).thenReturn(emptyList())
+        whenever(js.executeScript(any<String>(), any<Array<Any>>())).thenReturn(
+            """<a href="$articleUrl?utm_source=newsletter_zero&amp;fbclid=ignored">ZERO.PL</a>""",
+        )
+
+        val selection = method.invoke(importer, driver, element, "candidate 3/4", element.text)
+
+        assertEquals("$articleUrl?utm_source=newsletter_zero&fbclid=ignored", postUrlSelectionUrl(selection))
+        assertNull(postUrlSelectionSourcePostUrl(selection))
+    }
+
+    @Test
     fun `stale post containers are skipped while finding post urls`() {
         val importer = FacebookProfileArticleImporter(
             FacebookImportProperties(),
@@ -1521,5 +1560,17 @@ class FacebookProfileArticleImporterUrlTest {
         whenever(driver.pageSource).thenReturn("Only Facebook photo content\n$photoUrl")
 
         assertNull(method.invoke(importer, driver, element))
+    }
+
+    private fun postUrlSelectionUrl(selection: Any): String {
+        val getter = selection.javaClass.getDeclaredMethod("getUrl")
+        getter.isAccessible = true
+        return getter.invoke(selection) as String
+    }
+
+    private fun postUrlSelectionSourcePostUrl(selection: Any): String? {
+        val getter = selection.javaClass.getDeclaredMethod("getSourcePostUrl")
+        getter.isAccessible = true
+        return getter.invoke(selection) as String?
     }
 }

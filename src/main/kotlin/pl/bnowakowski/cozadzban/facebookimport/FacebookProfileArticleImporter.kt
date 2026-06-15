@@ -965,7 +965,7 @@ class FacebookProfileArticleImporter(
             ?.takeIf { !isConfiguredProfilePostUrl(it) }
             ?.takeIf { !isFacebookPhotoUrl(it) || isImportableSharedFacebookPhotoUrl(it, text) }
         val containerSourcePostUrl = facebookPostUrls.firstOrNull { !isConfiguredProfilePostUrl(it) }
-            ?: htmlPostUrl
+            ?: htmlPostUrl?.takeIf { isFacebookPostUrl(it) }
             ?: facebookPostUrls.firstOrNull()
         val decisionDiagnostics = buildList {
             addAll(urlDiagnostics("facebook-post", facebookPostUrls))
@@ -989,7 +989,11 @@ class FacebookProfileArticleImporter(
 
         if (htmlPostUrl != null && !isFacebookPhotoUrl(htmlPostUrl)) {
             logPostUrlDecision("html-facebook-fallback", htmlPostUrl, text, facebookPostUrls, links)
-            return PostUrlSelection(htmlPostUrl, htmlPostUrl, browserEnrichmentFromText(htmlPostUrl, text))
+            return PostUrlSelection(
+                htmlPostUrl,
+                htmlPostUrl.takeIf { isFacebookPostUrl(it) },
+                browserEnrichmentFromText(htmlPostUrl, text),
+            )
         }
 
         val sourcePostUrls = facebookSourcePostUrlsToOpen(facebookPostUrls, htmlPostUrl)
@@ -1044,7 +1048,7 @@ class FacebookProfileArticleImporter(
 
         htmlPostUrl?.let {
             logPostUrlDecision("html-facebook-fallback", it, text, facebookPostUrls, links)
-            return PostUrlSelection(it, it, browserEnrichmentFromText(it, text))
+            return PostUrlSelection(it, it.takeIf { url -> isFacebookPostUrl(url) }, browserEnrichmentFromText(it, text))
         }
 
         logPostUrlDecision("none", null, text, facebookPostUrls, links)
