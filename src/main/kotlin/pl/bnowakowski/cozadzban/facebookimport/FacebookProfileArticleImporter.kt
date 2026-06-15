@@ -358,6 +358,27 @@ class FacebookProfileArticleImporter(
                         candidate.sourcePostUrl ?: "<none>",
                     )
                     null
+                } else if (!isConfiguredProfileSourcePostUrl(candidate.sourcePostUrl)) {
+                    summary.skippedExisting++
+                    candidateDecisionLogs += workerCandidateDecisionLogs(
+                        candidateId = candidateId,
+                        candidateNumber = index + 1,
+                        candidateTotal = candidates.size,
+                        candidate = candidate,
+                        action = "skipped-missing-profile-source-post",
+                    )
+                    logger.info(
+                        "Facebook import discovery pass {}/{} candidate {}/{} importId={} candidateId={} url={} sourcePostUrl={} skippedMissingProfileSourcePost=true",
+                        passIndex + 1,
+                        passCount,
+                        index + 1,
+                        candidates.size,
+                        facebookImportId,
+                        candidateId,
+                        candidate.url,
+                        candidate.sourcePostUrl ?: "<none>",
+                    )
+                    null
                 } else {
                     val language = guessCandidateLanguage(candidate)
                     candidateDecisionLogs += workerCandidateDecisionLogs(
@@ -957,16 +978,16 @@ class FacebookProfileArticleImporter(
             .filterNot { isMarkupNoiseUrl(it) }
             .distinct()
 
+        val rawHtmlPostUrl = extractPostUrlFromHtml(driver, element)
         val facebookPostUrls = buildList {
             extractFacebookPostUrlFromText(text)?.let(::add)
             addAll(links.filter { isFacebookPostUrl(it) })
         }.distinct()
-        val htmlPostUrl = extractPostUrlFromHtml(driver, element)
+        val htmlPostUrl = rawHtmlPostUrl
             ?.takeIf { !isConfiguredProfilePostUrl(it) }
             ?.takeIf { !isFacebookPhotoUrl(it) || isImportableSharedFacebookPhotoUrl(it, text) }
-        val containerSourcePostUrl = facebookPostUrls.firstOrNull { !isConfiguredProfilePostUrl(it) }
-            ?: htmlPostUrl?.takeIf { isFacebookPostUrl(it) }
-            ?: facebookPostUrls.firstOrNull()
+        val containerSourcePostUrl = facebookPostUrls.firstOrNull { isConfiguredProfilePostUrl(it) }
+            ?: rawHtmlPostUrl?.takeIf { isConfiguredProfilePostUrl(it) }
         val decisionDiagnostics = buildList {
             addAll(urlDiagnostics("facebook-post", facebookPostUrls))
             addAll(urlDiagnostics("link", links))
@@ -1006,7 +1027,7 @@ class FacebookProfileArticleImporter(
                     discoveryProgress = discoveryProgress,
                     sourceContextText = text,
                 )
-                    ?.let { PostUrlSelection(it.url, sourcePostUrl, it.browserEnrichment) }
+                    ?.let { PostUrlSelection(it.url, containerSourcePostUrl ?: sourcePostUrl, it.browserEnrichment) }
             }
             .firstOrNull()
             ?: sourcePostUrls.asSequence()
@@ -2694,6 +2715,9 @@ class FacebookProfileArticleImporter(
             ?: return false
         return firstPathSegment == configuredSlug
     }
+
+    private fun isConfiguredProfileSourcePostUrl(url: String?): Boolean =
+        url?.let(::isConfiguredProfilePostUrl) == true
 
     private fun configuredProfileSlug(): String? {
         val uri = runCatching { URI(properties.profileUrl) }.getOrNull() ?: return null
