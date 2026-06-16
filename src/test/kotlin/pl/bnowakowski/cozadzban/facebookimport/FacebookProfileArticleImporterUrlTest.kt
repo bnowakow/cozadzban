@@ -220,6 +220,20 @@ class FacebookProfileArticleImporterUrlTest {
             false,
             method.invoke(
                 importer,
+                "https://www.facebook.com/bartek.dobrowolski.nowakowski",
+            ),
+        )
+        assertEquals(
+            false,
+            method.invoke(
+                importer,
+                "https://www.facebook.com/bartek.dobrowolski.nowakowski#",
+            ),
+        )
+        assertEquals(
+            false,
+            method.invoke(
+                importer,
                 "https://www.facebook.com/artur.kurasinski/posts/pfbid02example",
             ),
         )
@@ -275,6 +289,52 @@ class FacebookProfileArticleImporterUrlTest {
     }
 
     @Test
+    fun `configured profile post source is retained from html when shared post wins html fallback`() {
+        val importer = FacebookProfileArticleImporter(
+            FacebookImportProperties(),
+            mock<AppUserRepository>(),
+            mock<ArticleService>(),
+        )
+
+        val method = importer.javaClass.getDeclaredMethod(
+            "findPostUrlSelection",
+            WebDriver::class.java,
+            WebElement::class.java,
+            String::class.java,
+            String::class.java,
+        )
+        method.isAccessible = true
+
+        val driver = mockitoMock(
+            WebDriver::class.java,
+            withSettings().extraInterfaces(JavascriptExecutor::class.java),
+        ) as WebDriver
+        val js = driver as JavascriptExecutor
+        val element = mock<WebElement>()
+        val articleUrl = "https://xyz.pl/dzieje-sie/trump-zamienia-bialy-dom-w-arene-walk-4221/"
+        val profilePostUrl = "https://www.facebook.com/bartek.dobrowolski.nowakowski/posts/pfbid02profile"
+        val sharedPostUrl = "https://www.facebook.com/artur.kurasinski/posts/pfbid02original"
+        val html = """
+            <a href="$sharedPostUrl?__cft__[0]=ignored&amp;__tn__=%2CO%2CP-y-R">Original</a>
+            <a href="$profilePostUrl?__cft__[0]=ignored&amp;__tn__=%2CO%2CP-R">Profile post</a>
+        """.trimIndent()
+
+        whenever(element.findElements(any())).thenReturn(emptyList())
+        whenever(js.executeScript(any<String>(), any<Array<Any>>())).thenReturn(html)
+
+        val selection = method.invoke(
+            importer,
+            driver,
+            element,
+            "3/9",
+            "Co za dzban\nWięcej: $articleUrl",
+        )
+
+        assertEquals(articleUrl, postUrlSelectionUrl(selection))
+        assertEquals(profilePostUrl, postUrlSelectionSourcePostUrl(selection))
+    }
+
+    @Test
     fun `visible facebook candidate urls use configured profile post as proposal source`() {
         val importer = FacebookProfileArticleImporter(
             FacebookImportProperties(),
@@ -313,6 +373,49 @@ class FacebookProfileArticleImporterUrlTest {
 
         assertEquals(reelUrl, postUrlSelectionUrl(selection))
         assertEquals(profilePostUrl, postUrlSelectionSourcePostUrl(selection))
+    }
+
+    @Test
+    fun `shared facebook photo from configured profile wrapper is trusted without wrapper permalink`() {
+        val importer = FacebookProfileArticleImporter(
+            FacebookImportProperties(),
+            mock<AppUserRepository>(),
+            mock<ArticleService>(),
+        )
+
+        val method = importer.javaClass.getDeclaredMethod(
+            "findPostUrlSelection",
+            WebDriver::class.java,
+            WebElement::class.java,
+            String::class.java,
+            String::class.java,
+        )
+        method.isAccessible = true
+
+        val driver = mock<WebDriver>()
+        val element = mock<WebElement>()
+        val profileLink = mock<WebElement>()
+        val photoLink = mock<WebElement>()
+        val profileUrl = "https://www.facebook.com/bartek.dobrowolski.nowakowski"
+        val photoUrl = "https://www.facebook.com/photo/?fbid=1434502068483962&set=a.228086149125566"
+
+        whenever(element.findElements(any())).thenReturn(listOf(profileLink, photoLink))
+        whenever(profileLink.getAttribute("href")).thenReturn(profileUrl)
+        whenever(photoLink.getAttribute("href")).thenReturn(photoUrl)
+        whenever(driver.windowHandle).thenReturn("main")
+        whenever(driver.windowHandles).thenReturn(setOf("main"))
+
+        val selection = method.invoke(
+            importer,
+            driver,
+            element,
+            "1/9",
+            "Bartek Dobrowolski-Nowakowski · Co za dzban · Krzysztof Piątkowski - Poseł na Sejm RP",
+        )
+
+        assertEquals(photoUrl, postUrlSelectionUrl(selection))
+        assertNull(postUrlSelectionSourcePostUrl(selection))
+        assertEquals(true, postUrlSelectionHasConfiguredProfileSource(selection))
     }
 
     @Test
@@ -1683,5 +1786,11 @@ class FacebookProfileArticleImporterUrlTest {
         val getter = selection.javaClass.getDeclaredMethod("getSourcePostUrl")
         getter.isAccessible = true
         return getter.invoke(selection) as String?
+    }
+
+    private fun postUrlSelectionHasConfiguredProfileSource(selection: Any): Boolean {
+        val getter = selection.javaClass.getDeclaredMethod("getHasConfiguredProfileSource")
+        getter.isAccessible = true
+        return getter.invoke(selection) as Boolean
     }
 }

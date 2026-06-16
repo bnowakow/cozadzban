@@ -17,6 +17,8 @@ data class FacebookImportProperties(
     val password: String = "",
     val browser: Browser = Browser.FIREFOX,
     val headless: Boolean = false,
+    val reuseBrowserAcrossRestarts: Boolean = true,
+    val driverSessionFile: String = "logs/facebook-import-firefox-session.properties",
     val scrolls: Int = 8,
     val waitAfterLogin: Duration = Duration.ofSeconds(8),
     val waitAfterPageOpen: Duration = Duration.ofSeconds(5),

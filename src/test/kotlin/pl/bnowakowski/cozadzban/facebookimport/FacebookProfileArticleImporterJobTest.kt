@@ -38,6 +38,8 @@ import java.net.InetSocketAddress
 import java.net.URLDecoder
 import java.time.Duration
 import java.time.Instant
+import java.util.Collections
+import java.util.Properties
 import org.openqa.selenium.Cookie
 import org.openqa.selenium.NoSuchWindowException
 import org.openqa.selenium.WebDriver
@@ -229,6 +231,93 @@ class FacebookProfileArticleImporterJobTest {
 
         verify(importer).openDriver()
         verify(driver, never()).quit()
+    }
+
+    @Test
+    fun `shutdown detaches reusable firefox driver without quitting the browser`() {
+        val importer = spy(
+            FacebookProfileArticleImporter(
+                FacebookImportProperties(
+                    enabled = true,
+                    username = "admin@example.com",
+                    password = "secret",
+                    scrolls = 0,
+                    waitAfterPageOpen = Duration.ZERO,
+                    waitAfterLogin = Duration.ZERO,
+                    waitAfterScroll = Duration.ZERO,
+                    manualLoginTimeout = Duration.ofSeconds(1),
+                    browser = FacebookImportProperties.Browser.FIREFOX,
+                    headless = false,
+                    reuseBrowserAcrossRestarts = true,
+                ),
+                appUserRepository,
+                articleService,
+            ),
+        )
+        val driver = mock<WebDriver>()
+        val options = mock<WebDriver.Options>()
+
+        whenever(appUserRepository.findByEmail("admin@example.com")).thenReturn(
+            AppUser(1L, "admin@example.com", Role.ADMIN),
+        )
+        whenever(driver.manage()).thenReturn(options)
+        whenever(options.getCookieNamed("c_user")).thenReturn(Cookie("c_user", "123"))
+        whenever(options.getCookieNamed("xs")).thenReturn(Cookie("xs", "abc"))
+        whenever(driver.currentUrl).thenReturn("https://www.facebook.com/admin.example")
+        whenever(driver.windowHandles).thenReturn(setOf("main"))
+        whenever(driver.windowHandle).thenReturn("main")
+        doNothing().whenever(driver).get(any())
+        whenever(driver.findElements(any())).thenReturn(emptyList())
+        doReturn(driver).whenever(importer).openDriver()
+
+        importer.runImport("run-shutdown")
+        importer.shutdown()
+
+        verify(driver, never()).quit()
+    }
+
+    @Test
+    fun `openDriver reuses saved firefox session when its window is alive`(@TempDir tempDir: Path) {
+        val sessionId = "existing-session"
+        val requests = Collections.synchronizedList(mutableListOf<String>())
+        val server = HttpServer.create(InetSocketAddress(0), 0)
+        server.createContext("/") { exchange ->
+            requests += "${exchange.requestMethod} ${exchange.requestURI.path}"
+            when (exchange.requestURI.path) {
+                "/session/$sessionId/window/handles" -> exchange.respondJson("""{"value":["main"]}""")
+                "/session/$sessionId/window" -> exchange.respondJson("""{"value":"main"}""")
+                "/session/$sessionId/url" -> exchange.respondJson("""{"value":"https://www.facebook.com/profile"}""")
+                else -> exchange.sendResponseHeaders(404, -1)
+            }
+        }
+        server.start()
+        try {
+            val sessionFile = tempDir.resolve("firefox-session.properties")
+            Properties().apply {
+                setProperty("browser", FacebookImportProperties.Browser.FIREFOX.name)
+                setProperty("serverUrl", "http://127.0.0.1:${server.address.port}")
+                setProperty("sessionId", sessionId)
+            }.let { values ->
+                Files.newOutputStream(sessionFile).use { output -> values.store(output, "test") }
+            }
+            val importer = FacebookProfileArticleImporter(
+                FacebookImportProperties(
+                    browser = FacebookImportProperties.Browser.FIREFOX,
+                    headless = false,
+                    reuseBrowserAcrossRestarts = true,
+                    driverSessionFile = sessionFile.toString(),
+                ),
+                appUserRepository,
+                articleService,
+            )
+
+            val driver = importer.openDriver()
+
+            assertEquals("https://www.facebook.com/profile", driver.currentUrl)
+            assertTrue(requests.contains("GET /session/$sessionId/window/handles"))
+        } finally {
+            server.stop(0)
+        }
     }
 
     @Test

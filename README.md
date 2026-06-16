@@ -35,6 +35,9 @@ Then edit the matching file for the role you are setting up:
 | `APP_PORT` | Host-local port for the Dockerized reverse proxy | `8086` |
 | `SPRING_PROFILES_ACTIVE` | Spring profile (`local` or `prod`) | `local` |
 | `SPRING_DEVTOOLS_RESTART_ENABLED` | Enables Spring Boot DevTools restarts. Use `true` for the server and `false` for the worker so Selenium imports are not interrupted. | server: `true`, worker: `false` |
+| `APP_LOG_FILE` | Spring Boot log file path, relative to the app working directory unless absolute. Use separate files for server and worker. | `logs/cozadzban.log` |
+| `APP_FACEBOOK_IMPORT_REUSE_BROWSER_ACROSS_RESTARTS` | Reconnects to an existing non-headless Firefox Selenium session after a local worker restart. | `true` |
+| `APP_FACEBOOK_IMPORT_DRIVER_SESSION_FILE` | File used to remember the reusable Firefox WebDriver server URL and session ID. | `logs/facebook-import-firefox-session.properties` |
 | `SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_AUDIENCES` | Google OAuth2 client ID (used to validate JWT `aud` claim) | _(required for auth to work)_ |
 | `SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_ID` | Google OAuth2 client ID (used by UI login) | _(required for UI login)_ |
 | `SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_SECRET` | Google OAuth2 client secret (used by UI login) | _(required for UI login)_ |
