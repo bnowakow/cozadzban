@@ -369,28 +369,6 @@ class FacebookProfileArticleImporterJobTest {
     }
 
     @Test
-    fun `detached firefox launcher backgrounds the browser instead of keeping it as app child`() {
-        val importer = FacebookProfileArticleImporter(
-            FacebookImportProperties(),
-            appUserRepository,
-            articleService,
-        )
-        val method = importer.javaClass.getDeclaredMethod("detachedFirefoxLaunchCommand", List::class.java)
-        method.isAccessible = true
-
-        @Suppress("UNCHECKED_CAST")
-        val command = method.invoke(
-            importer,
-            listOf("/path/to/firefox", "-marionette", "-profile", "/tmp/profile"),
-        ) as List<String>
-
-        val shellScript = command[2]
-        assertTrue(shellScript.contains("&"))
-        assertFalse(shellScript.contains("exec"))
-        assertEquals("/path/to/firefox", command[4])
-    }
-
-    @Test
     fun `startImport rejects a second run while the first is still active`() {
         val importer = spy(
             FacebookProfileArticleImporter(
@@ -555,9 +533,7 @@ class FacebookProfileArticleImporterJobTest {
         val options = mock<WebDriver.Options>()
         val body = mock<WebElement>()
         val post = mock<WebElement>()
-        val profilePostLink = mock<WebElement>()
         val selectedUrl = "https://www.facebook.com/reel/2758125771253657/"
-        val profilePostUrl = "https://www.facebook.com/bartek.dobrowolski.nowakowski/posts/pfbid02profile"
 
         whenever(driver.manage()).thenReturn(options)
         whenever(options.getCookieNamed("c_user")).thenReturn(Cookie("c_user", "123"))
@@ -572,8 +548,7 @@ class FacebookProfileArticleImporterJobTest {
             if (selector.contains("See original")) emptyList<WebElement>() else listOf(post)
         }
         whenever(post.text).thenReturn("Co za dzban żółć $selectedUrl")
-        whenever(post.findElements(any())).thenReturn(listOf(profilePostLink))
-        whenever(profilePostLink.getAttribute("href")).thenReturn(profilePostUrl)
+        whenever(post.findElements(any())).thenReturn(emptyList())
         doReturn(driver).whenever(importer).openDriver()
         whenever(proposalClient.existsByArticleUrl(selectedUrl)).thenReturn(false)
         whenever(proposalClient.submitBatch(any())).thenReturn(
@@ -587,7 +562,6 @@ class FacebookProfileArticleImporterJobTest {
         verify(proposalClient).submitBatch(requestCaptor.capture())
         assertEquals(1, requestCaptor.firstValue.proposals.size)
         assertEquals(selectedUrl, requestCaptor.firstValue.proposals.single().articleUrl)
-        assertEquals(profilePostUrl, requestCaptor.firstValue.proposals.single().facebookPostUrl)
         assertEquals("pl", requestCaptor.firstValue.proposals.single().language)
         val batchLogs = requestCaptor.firstValue.logs.orEmpty()
         assertTrue(batchLogs.contains("action=proposal-submit"))

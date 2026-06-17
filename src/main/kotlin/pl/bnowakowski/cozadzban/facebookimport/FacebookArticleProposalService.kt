@@ -11,7 +11,6 @@ import org.springframework.transaction.annotation.Transactional
 import pl.bnowakowski.cozadzban.article.ArticleInput
 import pl.bnowakowski.cozadzban.article.ArticleService
 import pl.bnowakowski.cozadzban.article.ArticleUrlConflictException
-import pl.bnowakowski.cozadzban.enrichment.EnrichmentResult
 import pl.bnowakowski.cozadzban.security.AllowlistAuthorizationManager
 import pl.bnowakowski.cozadzban.security.MachineToMachineProperties
 import pl.bnowakowski.cozadzban.user.AppUser
@@ -65,7 +64,6 @@ class FacebookArticleProposalService(
                     importRunId = request.importRunId,
                     facebookPostUrl = proposal.facebookPostUrl,
                     logsCompressed = appendLogs(existing.logsCompressed, proposalLogs),
-                    browserEnrichment = proposal.browserEnrichment,
                 )
                 skippedExisting++
                 return@forEach
@@ -79,7 +77,6 @@ class FacebookArticleProposalService(
                 facebookPostUrl = proposal.facebookPostUrl?.trim()?.takeIf { it.isNotBlank() },
                 guessedLanguage = language,
                 logsCompressed = GzipTextCodec.compress(proposalLogs),
-                browserEnrichment = proposal.browserEnrichment,
             )
             submitted++
         }
@@ -242,17 +239,14 @@ class FacebookArticleProposalService(
         }
         val bot = importBotUser()
         return try {
-            val input = ArticleInput(
-                url = proposal.canonicalArticleUrl,
-                language = language,
-                quote = null,
+            val article = articleService.create(
+                ArticleInput(
+                    url = proposal.canonicalArticleUrl,
+                    language = language,
+                    quote = null,
+                ),
+                bot.id!!,
             )
-            val browserEnrichment = proposal.browserEnrichmentResult()
-            val article = if (browserEnrichment != null) {
-                articleService.createWithEnrichment(input, bot.id!!, browserEnrichment)
-            } else {
-                articleService.create(input, bot.id!!)
-            }
             proposalRepository.markAccepted(
                 id = id,
                 articleId = article.id!!,
@@ -260,8 +254,7 @@ class FacebookArticleProposalService(
                 correctedLanguage = language,
                 logsCompressed = appendLogs(
                     proposal.logsCompressed,
-                    "Accepted by userId=$decidedByUserId; articleId=${article.id}; botUserId=${bot.id}; " +
-                        "language=$language; browserEnrichment=${browserEnrichment != null}",
+                    "Accepted by userId=$decidedByUserId; articleId=${article.id}; botUserId=${bot.id}; language=$language",
                 ),
             )
             findById(id)
@@ -328,62 +321,11 @@ class FacebookArticleProposalService(
             appendLine("articleUrl=${proposal.articleUrl}")
             appendLine("facebookPostUrl=${proposal.facebookPostUrl ?: "<none>"}")
             appendLine("language=${proposal.language}")
-            proposal.browserEnrichment?.let { enrichment ->
-                appendLine("browserEnrichment:")
-                appendLine("title=${valueDiagnostic(enrichment.title)}")
-                appendLine("thumbnail=${valueDiagnostic(enrichment.thumbnail)}")
-                appendLine("lead=${valueDiagnostic(enrichment.lead)}")
-                appendLine("favicon=${valueDiagnostic(enrichment.favicon)}")
-                appendLine("publishedAt=${enrichment.publishedAt}")
-                appendLine("plainText=${valueDiagnostic(enrichment.plainText)}")
-            }
             proposal.logs?.takeIf { it.isNotBlank() }?.let {
                 appendLine("candidateLogs:")
                 appendLine(it)
             }
         }
-
-    private fun FacebookArticleProposal.browserEnrichmentResult(): EnrichmentResult? {
-        if (
-            !browserEnrichedTitle.isNullOrBlank() ||
-            !browserEnrichedThumbnail.isNullOrBlank() ||
-            !browserEnrichedLead.isNullOrBlank() ||
-            !browserEnrichedFavicon.isNullOrBlank() ||
-            browserEnrichedPublishedAt != null ||
-            !browserEnrichedPlainText.isNullOrBlank()
-        ) {
-            return EnrichmentResult(
-                title = browserEnrichedTitle,
-                thumbnail = browserEnrichedThumbnail,
-                lead = browserEnrichedLead,
-                favicon = browserEnrichedFavicon,
-                publishedAt = browserEnrichedPublishedAt,
-                plainText = browserEnrichedPlainText,
-            )
-        }
-        return browserEnrichmentFromStoredCandidateLogs()
-    }
-
-    private fun FacebookArticleProposal.browserEnrichmentFromStoredCandidateLogs(): EnrichmentResult? {
-        if (!canonicalArticleUrl.contains("facebook.com", ignoreCase = true)) return null
-        val candidateText = GzipTextCodec.decompress(logsCompressed)
-            .substringAfter("candidateText:\n", "")
-            .trim()
-            .takeIf { it.length >= MIN_BROWSER_ENRICHED_TEXT_CHARS }
-            ?.take(MAX_BROWSER_ENRICHED_TEXT_CHARS)
-            ?: return null
-        return EnrichmentResult(
-            title = null,
-            thumbnail = null,
-            lead = candidateText,
-            favicon = null,
-            publishedAt = null,
-            plainText = candidateText,
-        )
-    }
-
-    private fun valueDiagnostic(value: String?): String =
-        value?.takeIf { it.isNotBlank() }?.let { "present(len=${it.length})" } ?: "absent"
 
     private fun appendLogs(existingCompressed: ByteArray?, addition: String): ByteArray? {
         if (addition.isBlank()) return existingCompressed
@@ -415,7 +357,5 @@ class FacebookArticleProposalService(
 
     companion object {
         private val LOG = LoggerFactory.getLogger(FacebookArticleProposalService::class.java)
-        private const val MIN_BROWSER_ENRICHED_TEXT_CHARS = 40
-        private const val MAX_BROWSER_ENRICHED_TEXT_CHARS = 3000
     }
 }
