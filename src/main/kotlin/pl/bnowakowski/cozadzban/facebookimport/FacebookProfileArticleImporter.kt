@@ -16,9 +16,11 @@ import org.openqa.selenium.WebElement
 import org.openqa.selenium.chrome.ChromeDriver
 import org.openqa.selenium.chrome.ChromeOptions
 import org.openqa.selenium.firefox.FirefoxDriver
+import org.openqa.selenium.firefox.GeckoDriverService
 import org.openqa.selenium.firefox.FirefoxOptions
 import org.openqa.selenium.firefox.FirefoxProfile
 import org.openqa.selenium.remote.Dialect
+import org.openqa.selenium.remote.service.DriverFinder
 import org.openqa.selenium.remote.HttpCommandExecutor
 import org.openqa.selenium.remote.RemoteWebDriver
 import org.slf4j.LoggerFactory
@@ -30,6 +32,7 @@ import pl.bnowakowski.cozadzban.article.ArticleService
 import pl.bnowakowski.cozadzban.article.ArticleUrlConflictException
 import pl.bnowakowski.cozadzban.user.AppUserRepository
 import java.io.File
+import java.net.ServerSocket
 import java.net.URI
 import java.net.URL
 import java.net.URLDecoder
@@ -587,14 +590,7 @@ class FacebookProfileArticleImporter(
         reusableFirefoxDriver()?.let { return it }
 
         val driver = when (properties.browser) {
-            FacebookImportProperties.Browser.FIREFOX -> FirefoxDriver(
-                FirefoxOptions().apply {
-                    if (browserHeadless()) addArguments("--headless")
-                    addArguments("--width=1000")
-                    addArguments("--height=3440")
-                    profile = FirefoxProfile()
-                }
-            )
+            FacebookImportProperties.Browser.FIREFOX -> openFirefoxDriver()
             FacebookImportProperties.Browser.CHROME -> ChromeDriver(
                 ChromeOptions().apply {
                     if (browserHeadless()) addArguments("--headless=new")
@@ -609,6 +605,105 @@ class FacebookProfileArticleImporter(
         return driver
     }
 
+    private fun openFirefoxDriver(): WebDriver {
+        return if (shouldReuseFirefoxBrowserAcrossRestarts()) {
+            openReusableFirefoxDriver()
+        } else {
+            FirefoxDriver(firefoxOptions())
+        }
+    }
+
+    private fun firefoxOptions(useProfile: Boolean = true): FirefoxOptions =
+        FirefoxOptions().apply {
+            if (browserHeadless()) addArguments("--headless")
+            addArguments("--width=1000")
+            addArguments("--height=3440")
+            if (useProfile) {
+                profile = FirefoxProfile()
+            }
+        }
+
+    private fun openReusableFirefoxDriver(): WebDriver {
+        reusableFirefoxMarionettePort()?.let { port ->
+            if (isPortOpen(port)) {
+                logger.info("Connecting Selenium to existing reusable Firefox on Marionette port {}", port)
+                return FirefoxDriver(reusableFirefoxDriverService(port), firefoxOptions(useProfile = false))
+            }
+        }
+
+        val marionettePort = findAvailablePort()
+        rememberReusableFirefoxMarionettePort(marionettePort)
+        launchDetachedReusableFirefox(marionettePort)
+        waitForReusableFirefox(marionettePort)
+        logger.info("Started reusable Firefox on Marionette port {}", marionettePort)
+        return FirefoxDriver(reusableFirefoxDriverService(marionettePort), firefoxOptions(useProfile = false))
+    }
+
+    private fun reusableFirefoxDriverService(marionettePort: Int): GeckoDriverService =
+        GeckoDriverService.Builder()
+            .connectToExisting(marionettePort)
+            .build()
+
+    private fun launchDetachedReusableFirefox(marionettePort: Int) {
+        val options = firefoxOptions(useProfile = false)
+        val firefoxExecutable = firefoxBrowserExecutable(options)
+        val profilePath = reusableFirefoxProfilePath()
+        val logFile = reusableFirefoxDriverLogPath()
+        profilePath.let(Files::createDirectories)
+        logFile.parent?.let(Files::createDirectories)
+        Files.writeString(
+            profilePath.resolve("user.js"),
+            """
+            user_pref("marionette.port", $marionettePort);
+            user_pref("marionette.enabled", true);
+            """.trimIndent(),
+        )
+        val firefoxCommand = listOf(
+            firefoxExecutable,
+            "-marionette",
+            "-no-remote",
+            "-profile",
+            profilePath.toAbsolutePath().toString(),
+        )
+        ProcessBuilder(detachedFirefoxLaunchCommand(firefoxCommand))
+            .redirectErrorStream(true)
+            .redirectInput(ProcessBuilder.Redirect.from(File("/dev/null")))
+            .redirectOutput(ProcessBuilder.Redirect.appendTo(logFile.toFile()))
+            .start()
+    }
+
+    private fun firefoxBrowserExecutable(options: FirefoxOptions): String {
+        val macFirefox = "/Applications/Firefox.app/Contents/MacOS/firefox"
+        if (Files.isExecutable(Path.of(macFirefox))) return macFirefox
+
+        val service = GeckoDriverService.createDefaultService()
+        val finder = DriverFinder(service, options)
+        return runCatching {
+            if (finder.hasBrowserPath()) finder.browserPath else null
+        }.getOrNull() ?: "firefox"
+    }
+
+    private fun detachedFirefoxLaunchCommand(firefoxCommand: List<String>): List<String> =
+        listOf("/bin/sh", "-c", "trap '' INT HUP TERM; \"\$@\" < /dev/null &", "detached-firefox") +
+            firefoxCommand
+
+    private fun waitForReusableFirefox(marionettePort: Int) {
+        val deadline = Instant.now().plusSeconds(20)
+        while (Instant.now().isBefore(deadline)) {
+            if (isPortOpen(marionettePort)) return
+            sleep(Duration.ofMillis(100))
+        }
+        throw IllegalStateException("Reusable Firefox did not open Marionette port $marionettePort")
+    }
+
+    private fun isPortOpen(port: Int): Boolean =
+        runCatching {
+            java.net.Socket("127.0.0.1", port).use { true }
+        }.getOrDefault(false)
+
+    private fun findAvailablePort(): Int =
+        ServerSocket(0).use { socket -> socket.localPort }
+
     private fun reusableFirefoxDriver(): WebDriver? {
         if (!shouldReuseFirefoxBrowserAcrossRestarts()) return null
         val reference = readReusableFirefoxDriverReference() ?: return null
@@ -622,7 +717,6 @@ class FacebookProfileArticleImporter(
                 )
                 driver
             } else {
-                runCatching { driver.quit() }
                 clearReusableFirefoxDriverReference()
                 null
             }
@@ -705,6 +799,45 @@ class FacebookProfileArticleImporter(
 
     private fun reusableFirefoxDriverReferencePath(): Path =
         Path.of(properties.driverSessionFile)
+
+    private fun reusableFirefoxDriverLogPath(): Path =
+        reusableFirefoxDriverReferencePath().resolveSibling("facebook-import-geckodriver.log")
+
+    private fun reusableFirefoxProfilePath(): Path =
+        reusableFirefoxDriverReferencePath().resolveSibling("facebook-import-firefox-profile")
+
+    private fun reusableFirefoxMarionettePortPath(): Path =
+        reusableFirefoxDriverReferencePath().resolveSibling("facebook-import-firefox-marionette.properties")
+
+    private fun reusableFirefoxMarionettePort(): Int? {
+        val path = reusableFirefoxMarionettePortPath()
+        if (!Files.isRegularFile(path)) return null
+        return runCatching {
+            val values = Properties()
+            Files.newInputStream(path).use(values::load)
+            values.getProperty("marionettePort")?.toIntOrNull()
+        }.getOrNull()
+    }
+
+    private fun rememberReusableFirefoxMarionettePort(port: Int) {
+        val path = reusableFirefoxMarionettePortPath()
+        runCatching {
+            path.parent?.let(Files::createDirectories)
+            val values = Properties().apply {
+                setProperty("marionettePort", port.toString())
+                setProperty("savedAt", Instant.now().toString())
+            }
+            Files.newOutputStream(path).use { output ->
+                values.store(output, "Reusable Selenium Firefox Marionette port")
+            }
+        }.onFailure { ex ->
+            logger.warn(
+                "Could not save reusable Firefox Marionette port at {}; reason={}",
+                path,
+                failureMessage(ex),
+            )
+        }
+    }
 
     private fun shouldReuseFirefoxBrowserAcrossRestarts(): Boolean =
         properties.reuseBrowserAcrossRestarts &&
@@ -1084,7 +1217,8 @@ class FacebookProfileArticleImporter(
         fallbackText: String? = null,
     ): PostUrlSelection? {
         val text = fallbackText ?: elementText(element) ?: return null
-        val links = linkElements(element)
+        val urlElement = postUrlResolutionElement(driver, element)
+        val links = linkElements(urlElement)
             .mapNotNull { link ->
                 runCatching {
                     link.getAttribute("href")?.decodeHtmlEntities()?.toCleanFacebookUrl()
@@ -1094,7 +1228,7 @@ class FacebookProfileArticleImporter(
             .filterNot { isMarkupNoiseUrl(it) }
             .distinct()
 
-        val htmlPostUrlCandidates = extractPostUrlCandidatesFromHtml(driver, element)
+        val htmlPostUrlCandidates = extractPostUrlCandidatesFromHtml(driver, urlElement)
         val rawHtmlPostUrl = selectPostUrlFromHtmlCandidates(htmlPostUrlCandidates)
         val facebookPostUrls = buildList {
             extractFacebookPostUrlFromText(text)?.let(::add)
@@ -1235,6 +1369,20 @@ class FacebookProfileArticleImporter(
 
         logPostUrlDecision("none", null, text, facebookPostUrls, links)
         return null
+    }
+
+    private fun postUrlResolutionElement(driver: WebDriver, element: WebElement): WebElement {
+        val js = driver as? JavascriptExecutor ?: return element
+        return runCatching {
+            js.executeScript(
+                """
+                const start = arguments[0];
+                if (!start || !start.closest) return start;
+                return start.closest('[data-pagelet^="FeedUnit_"], [role="article"], div[aria-posinset]') || start;
+                """.trimIndent(),
+                element,
+            ) as? WebElement
+        }.getOrNull() ?: element
     }
 
     private fun facebookSourcePostUrlsToOpen(facebookPostUrls: List<String>, htmlPostUrl: String?): List<String> =
@@ -1538,7 +1686,11 @@ class FacebookProfileArticleImporter(
     private fun extractPostUrlCandidatesFromHtml(driver: WebDriver, element: WebElement): List<String> {
         val html = elementOuterHtml(driver, element) ?: return emptyList()
 
-        val normalizedHtml = html.withDecodedFacebookUrlEscapes()
+        val htmlVariants = listOf(
+            html,
+            html.withDecodedFacebookUrlEscapes(),
+            html.withDecodedFacebookUrlEscapes().withDecodedPercentEscapes(),
+        ).distinct()
         val candidates = listOf(
             FACEBOOK_POST_URL_REGEX,
             FACEBOOK_RELATIVE_POST_URL_REGEX,
@@ -1547,10 +1699,11 @@ class FacebookProfileArticleImporter(
             FACEBOOK_PHOTO_URL_REGEX,
             FACEBOOK_RELATIVE_PHOTO_URL_REGEX,
         ).flatMap { regex ->
-            regex.findAll(html).map { it.value } + regex.findAll(normalizedHtml).map { it.value }
+            htmlVariants.flatMap { variant -> regex.findAll(variant).map { it.value } }
         } +
-            HREF_VALUE_REGEX.findAll(normalizedHtml)
-                .map { it.groupValues[1].replace("&amp;", "&") }
+            htmlVariants.flatMap { variant ->
+                HREF_VALUE_REGEX.findAll(variant).map { it.groupValues[1].replace("&amp;", "&") }
+            }
 
         return candidates.asSequence()
             .mapNotNull { it.toCleanFacebookUrl() }
@@ -1567,10 +1720,17 @@ class FacebookProfileArticleImporter(
 
     private fun String.withDecodedFacebookUrlEscapes(): String =
         replace("\\/", "/")
+            .replace(Regex("""\\u002[fF]"""), "/")
+            .replace(Regex("""\\u003[aA]"""), ":")
             .replace("\\u0025", "%")
             .replace("\\u0026", "&")
             .replace("\\u003D", "=")
             .replace("\\u003F", "?")
+            .replace(Regex("""\\u002[eE]"""), ".")
+            .replace(Regex("""\\u002[dD]"""), "-")
+
+    private fun String.withDecodedPercentEscapes(): String =
+        runCatching { URLDecoder.decode(this, StandardCharsets.UTF_8) }.getOrDefault(this)
 
     private fun extractFacebookPostUrlCandidatesFromLinks(driver: WebDriver): Sequence<String> =
         driver.findElements(By.cssSelector("a[href]"))
@@ -3175,10 +3335,16 @@ class FacebookProfileArticleImporter(
             return existing
         }
 
-        runCatching { existing?.quit() }
+        releaseInactiveDriver(existing)
         val created = openDriver()
         driver = created
         created
+    }
+
+    private fun releaseInactiveDriver(driver: WebDriver?) {
+        if (driver == null) return
+        if (shouldReuseFirefoxBrowserAcrossRestarts()) return
+        runCatching { driver.quit() }
     }
 
     private fun isDriverAlive(driver: WebDriver): Boolean =

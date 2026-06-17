@@ -102,7 +102,7 @@ class FacebookProfileArticleImporterJobTest {
     }
 
     @Test
-    fun `startImport replaces a cached driver when the current window is gone`() {
+    fun `startImport replaces a cached reusable firefox driver without quitting it when the current window is gone`() {
         val importer = spy(
             FacebookProfileArticleImporter(
                 FacebookImportProperties(
@@ -113,6 +113,54 @@ class FacebookProfileArticleImporterJobTest {
                     waitAfterPageOpen = Duration.ZERO,
                     waitAfterScroll = Duration.ZERO,
                     manualLoginTimeout = Duration.ofSeconds(1),
+                ),
+                appUserRepository,
+                articleService,
+            ),
+        )
+        val firstDriver = mock<WebDriver>()
+        val firstOptions = mock<WebDriver.Options>()
+        val secondDriver = mock<WebDriver>()
+        val secondOptions = mock<WebDriver.Options>()
+
+        whenever(appUserRepository.findByEmail("admin@example.com")).thenReturn(
+            AppUser(1L, "admin@example.com", Role.ADMIN),
+        )
+        whenever(firstDriver.manage()).thenReturn(firstOptions)
+        whenever(firstOptions.getCookieNamed("c_user")).thenReturn(Cookie("c_user", "123"))
+        whenever(firstOptions.getCookieNamed("xs")).thenReturn(Cookie("xs", "abc"))
+        whenever(firstDriver.currentUrl).thenReturn("https://www.facebook.com/admin.example")
+        whenever(firstDriver.windowHandles).thenReturn(emptySet())
+        doNothing().whenever(firstDriver).get(any())
+        whenever(secondDriver.manage()).thenReturn(secondOptions)
+        whenever(secondOptions.getCookieNamed("c_user")).thenReturn(Cookie("c_user", "123"))
+        whenever(secondOptions.getCookieNamed("xs")).thenReturn(Cookie("xs", "abc"))
+        whenever(secondDriver.currentUrl).thenReturn("https://www.facebook.com/admin.example")
+        doNothing().whenever(secondDriver).get(any())
+        doReturn(firstDriver, secondDriver).whenever(importer).openDriver()
+
+        importer.startImport()
+        waitUntil("first facebook import to finish") { !importer.isImportRunning() }
+        importer.startImport()
+        waitUntil("second facebook import to finish") { !importer.isImportRunning() }
+
+        verify(importer, times(2)).openDriver()
+        verify(firstDriver, never()).quit()
+    }
+
+    @Test
+    fun `startImport quits a cached driver when browser reuse is disabled and the current window is gone`() {
+        val importer = spy(
+            FacebookProfileArticleImporter(
+                FacebookImportProperties(
+                    enabled = true,
+                    username = "admin@example.com",
+                    password = "secret",
+                    scrolls = 0,
+                    waitAfterPageOpen = Duration.ZERO,
+                    waitAfterScroll = Duration.ZERO,
+                    manualLoginTimeout = Duration.ofSeconds(1),
+                    reuseBrowserAcrossRestarts = false,
                 ),
                 appUserRepository,
                 articleService,
@@ -318,6 +366,28 @@ class FacebookProfileArticleImporterJobTest {
         } finally {
             server.stop(0)
         }
+    }
+
+    @Test
+    fun `detached firefox launcher backgrounds the browser instead of keeping it as app child`() {
+        val importer = FacebookProfileArticleImporter(
+            FacebookImportProperties(),
+            appUserRepository,
+            articleService,
+        )
+        val method = importer.javaClass.getDeclaredMethod("detachedFirefoxLaunchCommand", List::class.java)
+        method.isAccessible = true
+
+        @Suppress("UNCHECKED_CAST")
+        val command = method.invoke(
+            importer,
+            listOf("/path/to/firefox", "-marionette", "-profile", "/tmp/profile"),
+        ) as List<String>
+
+        val shellScript = command[2]
+        assertTrue(shellScript.contains("&"))
+        assertFalse(shellScript.contains("exec"))
+        assertEquals("/path/to/firefox", command[4])
     }
 
     @Test

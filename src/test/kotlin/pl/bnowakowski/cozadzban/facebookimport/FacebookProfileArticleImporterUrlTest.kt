@@ -419,6 +419,114 @@ class FacebookProfileArticleImporterUrlTest {
     }
 
     @Test
+    fun `external html article leaves proposal source empty for bare configured profile url without wrapper permalink`() {
+        val importer = FacebookProfileArticleImporter(
+            FacebookImportProperties(),
+            mock<AppUserRepository>(),
+            mock<ArticleService>(),
+        )
+
+        val method = importer.javaClass.getDeclaredMethod(
+            "findPostUrlSelection",
+            WebDriver::class.java,
+            WebElement::class.java,
+            String::class.java,
+            String::class.java,
+        )
+        method.isAccessible = true
+
+        val driver = mockitoMock(
+            WebDriver::class.java,
+            withSettings().extraInterfaces(JavascriptExecutor::class.java),
+        ) as WebDriver
+        val js = driver as JavascriptExecutor
+        val element = mock<WebElement>()
+        val profileLink = mock<WebElement>()
+        val articleLink = mock<WebElement>()
+        val profileUrl = "https://www.facebook.com/bartek.dobrowolski.nowakowski"
+        val articleUrl = "https://zero.pl/news/ujawniamy-jak-pracowal-28-letni-lekarz-milioner-sprawa-dawida-kacprzyka"
+
+        whenever(element.findElements(any())).thenReturn(listOf(profileLink, articleLink))
+        whenever(profileLink.getAttribute("href")).thenReturn(profileUrl)
+        whenever(articleLink.getAttribute("href")).thenReturn(articleUrl)
+        whenever(js.executeScript(any<String>(), any<Array<Any>>())).thenReturn(
+            """<a href="$articleUrl?utm_source=newsletter_zero&amp;fbclid=ignored">ZERO.PL</a>""",
+        )
+
+        val selection = method.invoke(
+            importer,
+            driver,
+            element,
+            "9/9",
+            "Co za dzban",
+        )
+
+        assertEquals("$articleUrl?utm_source=newsletter_zero&fbclid=ignored", postUrlSelectionUrl(selection))
+        assertNull(postUrlSelectionSourcePostUrl(selection))
+        assertEquals(true, postUrlSelectionHasConfiguredProfileSource(selection))
+    }
+
+    @Test
+    fun `shared facebook photo uses wrapper source permalink from escaped parent article html`() {
+        val importer = FacebookProfileArticleImporter(
+            FacebookImportProperties(waitAfterPageOpen = Duration.ZERO),
+            mock<AppUserRepository>(),
+            mock<ArticleService>(),
+        )
+
+        val method = importer.javaClass.getDeclaredMethod(
+            "findPostUrlSelection",
+            WebDriver::class.java,
+            WebElement::class.java,
+            String::class.java,
+            String::class.java,
+        )
+        method.isAccessible = true
+
+        val driver = mockitoMock(
+            WebDriver::class.java,
+            withSettings().extraInterfaces(JavascriptExecutor::class.java),
+        ) as WebDriver
+        val js = driver as JavascriptExecutor
+        val markerElement = mock<WebElement>()
+        val articleElement = mock<WebElement>()
+        val photoLink = mock<WebElement>()
+        val photoUrl = "https://www.facebook.com/photo/?fbid=1434502068483962&set=a.228086149125566"
+        val sourcePostUrl =
+            "https://www.facebook.com/bartek.dobrowolski.nowakowski/posts/pfbid0No8QSdnDc2aYxnHiBwLV5Veqi1G8yAEhczXJdMX5TGMJPK5v3ApFWFhLAxGHrFfgl"
+        val trackedSourcePostUrl = "$sourcePostUrl?__cft__[0]=ignored&__tn__=%2CO%2CP-R"
+        val escapedSourcePostUrl = trackedSourcePostUrl
+            .replace(":", "\\u003A")
+            .replace("/", "\\u002F")
+            .replace(".", "\\u002E")
+        val articleHtml = """
+            <div>
+              <a href="$photoUrl">shared photo</a>
+              <script>{"permalink":"$escapedSourcePostUrl"}</script>
+            </div>
+        """.trimIndent()
+
+        whenever(markerElement.findElements(any())).thenReturn(emptyList())
+        whenever(articleElement.findElements(any())).thenReturn(listOf(photoLink))
+        whenever(photoLink.getAttribute("href")).thenReturn(photoUrl)
+        whenever(driver.windowHandle).thenReturn("main")
+        whenever(driver.windowHandles).thenReturn(setOf("main"))
+        whenever(js.executeScript(any<String>(), any<Array<Any>>())).thenReturn(articleElement, articleHtml, null)
+
+        val selection = method.invoke(
+            importer,
+            driver,
+            markerElement,
+            "1/9",
+            "Co za dzban",
+        )
+
+        assertEquals(photoUrl, postUrlSelectionUrl(selection))
+        assertEquals(sourcePostUrl, postUrlSelectionSourcePostUrl(selection))
+        assertEquals(true, postUrlSelectionHasConfiguredProfileSource(selection))
+    }
+
+    @Test
     fun `stale post containers are skipped while finding post urls`() {
         val importer = FacebookProfileArticleImporter(
             FacebookImportProperties(),
