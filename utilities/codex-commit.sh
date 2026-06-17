@@ -254,10 +254,12 @@ has_unmerged_paths() {
 }
 
 view_last_commit_diff() {
+	local diff_base=${1:-HEAD~1}
+
 	if [ -r /dev/tty ] && [ -w /dev/tty ]; then
-		git diff HEAD~1 HEAD -- >/dev/tty </dev/tty
+		git diff "$diff_base" HEAD -- >/dev/tty </dev/tty
 	else
-		git diff HEAD~1 HEAD --
+		git diff "$diff_base" HEAD --
 	fi
 }
 
@@ -334,8 +336,107 @@ extract_commit_message() {
 	printf '%s\n' "$message"
 }
 
+sync_upstream_before_push() {
+	upstream=
+	ahead=0
+	behind=0
+
+	if upstream=$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null); then
+		echo "Fetching $upstream before push check..."
+		git fetch --quiet
+		read -r ahead behind < <(git rev-list --left-right --count HEAD..."$upstream")
+
+		if [ "$behind" -gt 0 ]; then
+			if confirm "Pull before push" "Upstream $upstream has $behind commit(s) not in this branch. Run git pull --rebase before push?"; then
+				if ! git pull --rebase; then
+					if has_unmerged_paths; then
+						resolve_pull_conflict_with_codex || {
+							echo "Aborting codex-commit because the git conflict was not resolved."
+							exit 1
+						}
+					else
+						echo "git pull --rebase failed without unmerged paths. Aborting."
+						exit 1
+					fi
+				fi
+
+				read -r ahead behind < <(git rev-list --left-right --count HEAD..."$upstream")
+			else
+				echo "Skipping push because upstream has new commits."
+				exit 0
+			fi
+		fi
+	else
+		echo "No upstream branch is configured; git push will use Git's default behavior."
+	fi
+}
+
+prompt_for_push() {
+	local diff_base="HEAD~1"
+	local diff_label="HEAD~1..HEAD"
+	local changed_files
+	local push_summary
+	local push_choice
+
+	if [ -n "${upstream:-}" ] && [ "${ahead:-0}" -eq 0 ]; then
+		echo "No unpushed commits found."
+		return 0
+	fi
+
+	if [ -n "${upstream:-}" ]; then
+		diff_base="$upstream"
+		diff_label="$upstream..HEAD"
+	fi
+
+	push_summary=$(
+		printf '1. unpushed commit(s)\n'
+		if [ -n "${upstream:-}" ]; then
+			git log --oneline "$upstream"..HEAD
+		else
+			git log -1 --oneline
+		fi
+		printf '\n2. files changed in %s\n' "$diff_label"
+		changed_files=$(git diff --name-status "$diff_base" HEAD --)
+		if [ -n "$changed_files" ]; then
+			printf '%s\n' "$changed_files"
+		else
+			printf 'No files changed in %s.\n' "$diff_label"
+		fi
+		printf '\nChoose the next action.'
+	)
+
+	while true; do
+		push_choice=$(
+			prompt_push_action "$push_summary"
+		) || {
+			echo "Push skipped."
+			return 0
+		}
+
+		case "$push_choice" in
+			push)
+				git push
+				break
+				;;
+			diff)
+				view_last_commit_diff "$diff_base"
+				;;
+			skip)
+				echo "Push skipped."
+				break
+				;;
+			*)
+				echo "Unexpected choice: $push_choice" >&2
+				exit 1
+				;;
+		esac
+	done
+}
+
 if ! has_worktree_changes; then
 	echo "No git changes to commit."
+	sync_upstream_before_push
+	prompt_for_push
 	exit 0
 fi
 
@@ -399,70 +500,5 @@ printf '%s\n' "$commit_message"
 printf '\nCurrent git status:\n'
 git status --short --branch
 
-upstream=
-if upstream=$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null); then
-	echo "Fetching $upstream before push check..."
-	git fetch --quiet
-	read -r ahead behind < <(git rev-list --left-right --count HEAD..."$upstream")
-
-	if [ "$behind" -gt 0 ]; then
-		if confirm "Pull before push" "Upstream $upstream has $behind commit(s) not in this branch. Run git pull --rebase before push?"; then
-			if ! git pull --rebase; then
-				if has_unmerged_paths; then
-					resolve_pull_conflict_with_codex || {
-						echo "Aborting codex-commit because the git conflict was not resolved."
-						exit 1
-					}
-				else
-					echo "git pull --rebase failed without unmerged paths. Aborting."
-					exit 1
-				fi
-			fi
-		else
-			echo "Skipping push because upstream has new commits."
-			exit 0
-		fi
-	fi
-else
-	echo "No upstream branch is configured; git push will use Git's default behavior."
-fi
-
-push_summary=$(
-	printf '1. git log message\n'
-	git log -1 --format=%B
-	printf '\n2. files changed in HEAD~1..HEAD\n'
-	changed_files=$(git diff --name-status HEAD~1 HEAD --)
-	if [ -n "$changed_files" ]; then
-		printf '%s\n' "$changed_files"
-	else
-		printf 'No files changed in HEAD~1..HEAD.\n'
-	fi
-	printf '\nChoose the next action.'
-)
-
-while true; do
-	push_choice=$(
-		prompt_push_action "$push_summary"
-	) || {
-		echo "Push skipped."
-		exit 0
-	}
-
-	case "$push_choice" in
-		push)
-			git push
-			break
-			;;
-		diff)
-			view_last_commit_diff
-			;;
-		skip)
-			echo "Push skipped."
-			break
-			;;
-		*)
-			echo "Unexpected choice: $push_choice" >&2
-			exit 1
-			;;
-	esac
-done
+sync_upstream_before_push
+prompt_for_push
