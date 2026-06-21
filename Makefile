@@ -80,6 +80,8 @@ docker-up: docker-data-permissions
 # Prepare docker-data so containers can persist app data and host cron backups can write backup files.
 docker-data-permissions:
 	@mkdir -p ./docker-data
+	@mkdir -p ./logs
+	@chmod -R a+rwX ./logs
 	@docker run --rm -v "$(PWD)/docker-data:/work" alpine:3.20 \
 		sh -c "mkdir -p /work/postgres /work/data/favicons /work/backup/postgres /work/nginx && if [ ! -f /work/nginx/upstream.conf ]; then printf 'server springboot:8080 max_fails=3 fail_timeout=10s;\n' > /work/nginx/upstream.conf; fi && chown -R $(LOCAL_UID):$(LOCAL_GID) /work/backup /work/nginx && chmod 755 /work /work/postgres /work/nginx && chmod -R a+rwX /work/data && chmod -R u+rwX,go-rwx /work/backup && chmod 644 /work/nginx/upstream.conf"
 
