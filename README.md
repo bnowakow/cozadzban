@@ -36,8 +36,8 @@ Then edit the matching file for the role you are setting up:
 | `SPRING_PROFILES_ACTIVE` | Spring profile (`local` or `prod`) | `local` |
 | `SPRING_DEVTOOLS_RESTART_ENABLED` | Enables Spring Boot DevTools restarts. Use `true` for the server and `false` for the worker so Selenium imports are not interrupted. | server: `true`, worker: `false` |
 | `APP_LOG_FILE` | Spring Boot log file path, relative to the app working directory unless absolute. Use separate files for server and worker. | `logs/cozadzban.log` |
-| `APP_FACEBOOK_IMPORT_REUSE_BROWSER_ACROSS_RESTARTS` | Reconnects to an existing non-headless Firefox Selenium session after a local worker restart. | `true` |
-| `APP_FACEBOOK_IMPORT_DRIVER_SESSION_FILE` | File used to remember the reusable Firefox WebDriver server URL and session ID. | `logs/facebook-import-firefox-session.properties` |
+| `APP_FACEBOOK_IMPORT_SELENIUM_REUSE_BROWSER_ACROSS_RESTARTS` | Reconnects to an existing non-headless Firefox Selenium session after a local worker restart. | `true` |
+| `APP_FACEBOOK_IMPORT_SELENIUM_DRIVER_SESSION_FILE` | File used to remember the reusable Firefox WebDriver server URL and session ID. | `logs/facebook-import-firefox-session.properties` |
 | `SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_AUDIENCES` | Google OAuth2 client ID (used to validate JWT `aud` claim) | _(required for auth to work)_ |
 | `SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_ID` | Google OAuth2 client ID (used by UI login) | _(required for UI login)_ |
 | `SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_SECRET` | Google OAuth2 client secret (used by UI login) | _(required for UI login)_ |
@@ -58,20 +58,20 @@ The app can run a Selenium import for posts on
 Minimum configuration:
 
 ```sh
-APP_FACEBOOK_IMPORT_ENABLED=true
-APP_FACEBOOK_IMPORT_USERNAME=you@example.com
-APP_FACEBOOK_IMPORT_SCROLLS=8
+APP_FACEBOOK_IMPORT_SELENIUM_ENABLED=true
+APP_FACEBOOK_IMPORT_SELENIUM_USERNAME=you@example.com
+APP_FACEBOOK_IMPORT_SELENIUM_SCROLLS=8
 ```
 
 Optional automatic login:
 
 ```sh
-APP_FACEBOOK_IMPORT_USERNAME=facebook-login@example.com
-APP_FACEBOOK_IMPORT_PASSWORD=...
+APP_FACEBOOK_IMPORT_SELENIUM_USERNAME=facebook-login@example.com
+APP_FACEBOOK_IMPORT_SELENIUM_PASSWORD=...
 ```
 
-Prefer putting the login values in `.env.worker` using `APP_FACEBOOK_IMPORT_USERNAME`,
-`APP_FACEBOOK_IMPORT_PASSWORD`, and `APP_FACEBOOK_IMPORT_HEADLESS`. The same username is also used
+Prefer putting the login values in `.env.worker` using `APP_FACEBOOK_IMPORT_SELENIUM_USERNAME`,
+`APP_FACEBOOK_IMPORT_SELENIUM_PASSWORD`, and `APP_FACEBOOK_IMPORT_SELENIUM_HEADLESS`. The same username is also used
 to resolve the local app user that owns imported articles. If those keys are absent, the app falls
 back to `src/main/resources/facebook.properties`.
 

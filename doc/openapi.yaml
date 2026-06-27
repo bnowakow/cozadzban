@@ -102,6 +102,7 @@ x-security-policy:
     allowedForEndpoints:
       - POST /api/articles
       - PATCH /api/articles/{id}
+      - /api/facebook-import/**
   bootstrap:
     adminEmailEnvVar: COZADZBAN_BOOTSTRAP_ADMIN_EMAIL
     enforcedOnlyWhenNoAdminsExist: true
@@ -517,6 +518,29 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
 
+  /api/admin/facebook-import/progress:
+
+    get:
+      tags: [Facebook Import]
+      summary: Get the current Facebook import progress
+      operationId: getFacebookImportProgress
+      x-required-role: ADMIN
+      security:
+        - googleOidc: []
+      responses:
+        '200':
+          description: Active or latest persisted import progress
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FacebookImportProgressSnapshot'
+        '204':
+          description: No import progress is available
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
   /api/facebook-import/proposals/exists:
 
     get:
@@ -597,6 +621,36 @@ paths:
       responses:
         '204':
           description: Import run completion recorded
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/facebook-import/runs/{importRunId}/progress:
+
+    post:
+      tags: [Facebook Import]
+      summary: Record Facebook import run progress
+      operationId: recordFacebookImportProgress
+      security:
+        - machineApiKey: []
+      parameters:
+        - name: importRunId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FacebookImportProgressRequest'
+      responses:
+        '204':
+          description: Import run progress recorded
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -1173,6 +1227,103 @@ components:
           type: string
           nullable: true
           description: Optional worker timeout detail for diagnostics.
+
+    FacebookImportProgressRequest:
+      type: object
+      required: [phase, phaseIndex, phaseCount]
+      properties:
+        importType:
+          type: string
+          enum: [API, SELENIUM]
+          default: SELENIUM
+        trigger:
+          type: string
+          enum: [MANUAL, WORKER_STARTUP, SCHEDULED]
+          default: MANUAL
+        phase:
+          type: string
+          example: Checking existing proposals
+        detail:
+          type: string
+          nullable: true
+        phaseIndex:
+          type: integer
+          minimum: 0
+        phaseCount:
+          type: integer
+          minimum: 0
+        passIndex:
+          type: integer
+          default: 0
+        passCount:
+          type: integer
+          default: 0
+        matchedPostCount:
+          type: integer
+          default: 0
+        submittedCount:
+          type: integer
+          default: 0
+        skippedExistingCount:
+          type: integer
+          default: 0
+        failedCount:
+          type: integer
+          default: 0
+        occurredAt:
+          type: string
+          format: date-time
+          description: UTC timestamp when the worker observed this progress state; defaults server-side if omitted.
+
+    FacebookImportProgressSnapshot:
+      type: object
+      required:
+        - importRunId
+        - status
+        - startedAt
+        - lastUpdatedAt
+        - phaseIndex
+        - phaseCount
+        - passIndex
+        - passCount
+        - matchedPostCount
+        - submittedCount
+        - skippedExistingCount
+        - failedCount
+      properties:
+        importRunId:
+          type: string
+        status:
+          type: string
+          enum: [RUNNING, FINISHED, FAILED, TERMINATED]
+        startedAt:
+          type: string
+          format: date-time
+        lastUpdatedAt:
+          type: string
+          format: date-time
+        phase:
+          type: string
+          nullable: true
+        detail:
+          type: string
+          nullable: true
+        phaseIndex:
+          type: integer
+        phaseCount:
+          type: integer
+        passIndex:
+          type: integer
+        passCount:
+          type: integer
+        matchedPostCount:
+          type: integer
+        submittedCount:
+          type: integer
+        skippedExistingCount:
+          type: integer
+        failedCount:
+          type: integer
 
     ArticlePatch:
       type: object
