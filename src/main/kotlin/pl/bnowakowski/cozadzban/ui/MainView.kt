@@ -51,6 +51,7 @@ import pl.bnowakowski.cozadzban.facebookimport.FacebookArticleProposalService
 import pl.bnowakowski.cozadzban.facebookimport.FacebookArticleProposalStatusFilter
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportJobService
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportProgressSnapshot
+import pl.bnowakowski.cozadzban.facebookimport.FacebookImportRunStatus
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportType
 import pl.bnowakowski.cozadzban.security.AllowlistAuthorizationManager
 import pl.bnowakowski.cozadzban.user.AppUser
@@ -88,6 +89,7 @@ class ArticleListView(
     private val articleProposalReviewPanel = Div()
     private var facebookImportProgressPollRegistration: Registration? = null
     private var stopFacebookImportButton: Button? = null
+    private val shownFacebookImportFailureRunIds = mutableSetOf<String>()
 
     // Filter state — captured by dataProvider lambdas via `this`
     private var languageFilter: String? = null
@@ -302,7 +304,7 @@ class ArticleListView(
                 if (availableImportTypes.isNotEmpty()) {
                     availableImportTypes.forEach { importType ->
                         val label = when (importType) {
-                            FacebookImportType.API -> "Import Facebook API"
+                            FacebookImportType.API -> "Import Facebook external source"
                             FacebookImportType.SELENIUM -> "Import Facebook Selenium"
                         }
                         val importFacebookButton = Button(label, VaadinIcon.DOWNLOAD.create())
@@ -537,6 +539,7 @@ class ArticleListView(
         facebookImportProgressPanel.isVisible = true
         facebookImportProgressPanel.removeAll()
         facebookImportProgressPanel.add(buildFacebookImportProgressContent(progress))
+        maybeShowFacebookImportFailure(progress)
     }
 
     private fun canViewFacebookImportProgress(): Boolean =
@@ -609,11 +612,26 @@ class ArticleListView(
         val content = Div()
         content.addClassName("czj-facebook-import-progress-content")
 
-        val icon = VaadinIcon.DOWNLOAD.create()
+        val icon = if (progress.status == FacebookImportRunStatus.FAILED) {
+            VaadinIcon.WARNING.create()
+        } else {
+            VaadinIcon.DOWNLOAD.create()
+        }
         icon.setSize("1.15rem")
-        icon.color = "var(--lumo-primary-color)"
+        icon.color = if (progress.status == FacebookImportRunStatus.FAILED) {
+            "var(--lumo-error-color)"
+        } else {
+            "var(--lumo-primary-color)"
+        }
 
-        val title = Span("Facebook import is running")
+        val title = Span(
+            when (progress.status) {
+                FacebookImportRunStatus.FAILED -> "Facebook import failed"
+                FacebookImportRunStatus.TERMINATED -> "Facebook import stopped"
+                FacebookImportRunStatus.FINISHED -> "Facebook import finished"
+                FacebookImportRunStatus.RUNNING -> "Facebook import is running"
+            },
+        )
         title.addClassName("czj-facebook-import-progress-title")
 
         val phase = Span(progress.phase?.takeIf { it.isNotBlank() } ?: "Running")
@@ -648,6 +666,26 @@ class ArticleListView(
         detail?.let { content.add(it) }
         content.add(metrics)
         return content
+    }
+
+    private fun maybeShowFacebookImportFailure(progress: FacebookImportProgressSnapshot) {
+        if (progress.status != FacebookImportRunStatus.FAILED) return
+        if (!shownFacebookImportFailureRunIds.add(progress.importRunId)) return
+        val dialog = Dialog()
+        dialog.headerTitle = "Facebook import failed"
+        dialog.width = "min(42rem, 92vw)"
+
+        val message = Span(progress.detail?.takeIf { it.isNotBlank() } ?: "The import failed. Check worker logs for details.")
+        message.addClassName("czj-dialog-help-text")
+
+        val closeButton = Button("Close") { dialog.close() }
+        closeButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY)
+
+        val content = VerticalLayout(message, closeButton)
+        content.addClassName("czj-dialog-content")
+        content.defaultHorizontalComponentAlignment = Alignment.START
+        dialog.add(content)
+        dialog.open()
     }
 
     private fun facebookImportMetric(labelText: String, valueText: String): Div {

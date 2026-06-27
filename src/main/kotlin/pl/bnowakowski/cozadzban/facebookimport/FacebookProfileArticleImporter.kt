@@ -166,6 +166,7 @@ class FacebookProfileArticleImporter(
         val startedAt = Instant.now()
         var completionStatus = FacebookImportRunStatus.FINISHED
         var completionLogs = ""
+        var completionDetail: String? = null
         lastProgressReportedAt = null
         activeImportStartedAt = startedAt
         latestProgressSnapshot = null
@@ -183,14 +184,17 @@ class FacebookProfileArticleImporter(
         } catch (ex: InterruptedException) {
             Thread.currentThread().interrupt()
             completionStatus = FacebookImportRunStatus.TERMINATED
+            completionDetail = "Facebook import was terminated."
             completionLogs = summary.logsWith("Facebook import was terminated.")
             logger.info("Facebook import {} was interrupted", importRunId)
             throw ex
         } catch (ex: NoSuchWindowException) {
             discardDriver()
             completionStatus = if (Thread.currentThread().isInterrupted) {
+                completionDetail = "Facebook import was terminated."
                 FacebookImportRunStatus.TERMINATED
             } else {
+                completionDetail = "Facebook import stopped because the browser window was closed: ${failureMessage(ex)}"
                 FacebookImportRunStatus.FAILED
             }
             completionLogs = summary.logsWith(
@@ -200,6 +204,7 @@ class FacebookProfileArticleImporter(
             throw ex
         } catch (ex: Exception) {
             completionStatus = FacebookImportRunStatus.FAILED
+            completionDetail = "Facebook import failed: ${failureMessage(ex)}"
             completionLogs = summary.logsWith("Facebook import failed: ${failureMessage(ex)}")
             logger.warn("Facebook import {} failed", importRunId, ex)
             throw ex
@@ -214,7 +219,7 @@ class FacebookProfileArticleImporter(
                 summary.skippedExisting,
                 summary.failed,
             )
-            completeRunSafely(importRunId, completionStatus, summary, completionLogs)
+            completeRunSafely(importRunId, completionStatus, summary, completionLogs, completionDetail)
             synchronized(stateLock) {
                 if (activeImportThread === currentThread) {
                     activeImportThread = null
@@ -546,6 +551,7 @@ class FacebookProfileArticleImporter(
         status: FacebookImportRunStatus,
         summary: ProposalImportSummary,
         logs: String,
+        detail: String?,
     ) {
         try {
             proposalClient?.completeRun(
@@ -557,6 +563,7 @@ class FacebookProfileArticleImporter(
                     submittedCount = summary.submitted,
                     skippedExistingCount = summary.skippedExisting,
                     failedCount = summary.failed,
+                    statusDetail = detail,
                     logs = logs,
                 ),
             )

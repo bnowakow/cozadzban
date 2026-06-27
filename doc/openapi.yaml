@@ -24,11 +24,9 @@ info:
        (add/soft-delete/restore/update users) and at `/admin/article-content-cache`
        to inspect, refresh, edit, and purge preserved article content cache entries,
        using server-side service calls.
-    8. **Facebook import job** — Spring Batch can run a browserless Facebook Graph API
-       importer and/or the Selenium profile importer. When both are enabled, scheduled
-       runs execute Graph API first because it provides more precise structured data
-       and requires less HTML guesswork, then Selenium appends browser-derived context
-       for overlapping proposal URLs and discovers anything the API missed.
+    8. **Facebook import job** — Spring Batch can run the Selenium profile importer.
+       Import runs submit proposal candidates for later review instead of creating
+       articles directly.
     9. **Article proposal inbox** — ACTIVE logged-in users review Facebook import
        proposals at `/article-proposals`, correct language, and accept/reject.
     10. **Machine-to-machine writes** — the Facebook importer submits proposals,
@@ -138,6 +136,7 @@ x-runtime-configuration:
     translatedMarkerPhraseDefault: what a pitcher
     sharedEnvVars:
       - APP_FACEBOOK_IMPORT_SCHEDULE_ENABLED
+      - APP_FACEBOOK_IMPORT_SCHEDULE_RUN_ON_STARTUP
       - APP_FACEBOOK_IMPORT_SCHEDULE_INTERVAL
       - APP_FACEBOOK_IMPORT_SCHEDULE_INITIAL_DELAY
       - APP_FACEBOOK_IMPORT_RUN_TIMEOUT
@@ -164,17 +163,7 @@ x-runtime-configuration:
       - APP_FACEBOOK_IMPORT_SELENIUM_WAIT_AFTER_PAGE_OPEN
       - APP_FACEBOOK_IMPORT_SELENIUM_WAIT_AFTER_SCROLL
       - APP_FACEBOOK_IMPORT_SELENIUM_MANUAL_LOGIN_TIMEOUT
-    apiEnvVars:
-      - APP_FACEBOOK_IMPORT_API_ENABLED
-      - APP_FACEBOOK_IMPORT_API_USER_ACCESS_TOKEN
-      - APP_FACEBOOK_IMPORT_API_BASE_URL
-      - APP_FACEBOOK_IMPORT_API_VERSION
-      - APP_FACEBOOK_IMPORT_API_PROFILE_ID
-      - APP_FACEBOOK_IMPORT_API_PAGE_LIMIT
-      - APP_FACEBOOK_IMPORT_API_MAX_PAGES
-      - APP_FACEBOOK_IMPORT_API_CONNECT_TIMEOUT
-      - APP_FACEBOOK_IMPORT_API_READ_TIMEOUT
-    schedulingSemantics: enabled import types run sequentially; API always runs before Selenium
+    schedulingSemantics: enabled import types run sequentially
 
 x-problem-types:
   articleUrlConflict:
@@ -459,30 +448,6 @@ paths:
       responses:
         '202':
           description: Selenium Facebook import accepted for execution
-        '409':
-          $ref: '#/components/responses/Conflict'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-
-  /api/admin/facebook-import/run/api:
-
-    post:
-      tags: [Facebook Import]
-      summary: Trigger the Facebook Graph API import job
-      operationId: runFacebookApiImport
-      x-required-role: ADMIN
-      security:
-        - googleOidc: []
-      description: >
-        Starts the browserless Graph API import if no import is currently running.
-        The user access token is configured server-side and is never exposed to
-        frontend JavaScript. Marker-matching API posts submit proposals to the
-        shared proposal inbox.
-      responses:
-        '202':
-          description: Facebook Graph API import accepted for execution
         '409':
           $ref: '#/components/responses/Conflict'
         '401':

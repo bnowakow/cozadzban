@@ -117,6 +117,7 @@ data class FacebookImportRunCompletionRequest(
     val submittedCount: Int = 0,
     val skippedExistingCount: Int = 0,
     val failedCount: Int = 0,
+    val statusDetail: String? = null,
     val logs: String? = null,
 )
 

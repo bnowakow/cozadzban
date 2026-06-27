@@ -27,12 +27,6 @@ class FacebookImportController(
         return ResponseEntity.accepted().build()
     }
 
-    @PostMapping("/run/api")
-    fun runApiImport(): ResponseEntity<Void> {
-        facebookImportJobService.startImport(FacebookImportType.API)
-        return ResponseEntity.accepted().build()
-    }
-
     @GetMapping("/progress")
     fun progress(): ResponseEntity<FacebookImportProgressSnapshot> {
         val progress = facebookImportJobService.currentProgress()

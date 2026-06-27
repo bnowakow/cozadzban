@@ -180,6 +180,9 @@ class FacebookImportJobService @Autowired constructor(
         proposalService.terminateTimedOutRuns(runTimeout, now)
         proposalService.latestRunningProgress()?.let { return it }
         if (activeTimedOut) return null
+        proposalService.latestProgress()
+            ?.takeIf { it.status == FacebookImportRunStatus.FAILED || it.status == FacebookImportRunStatus.TERMINATED }
+            ?.let { return it }
         val fallback = synchronized(stateLock) {
             if (activeLaunchThread?.isAlive != true && runnersByType.values.none { it.isImportRunning() }) {
                 null
@@ -215,19 +218,22 @@ class FacebookImportJobService @Autowired constructor(
     }
 
     fun facebookImportUnavailableReason(importType: FacebookImportType = FacebookImportType.SELENIUM): String? =
-        (runnersByType[importType] ?: runnersByType.values.singleOrNull())
-            ?.unavailableReason()
-            ?: if (runnersByType[importType] != null || runnersByType.values.size == 1) {
+        runnersByType[importType]?.unavailableReason()
+            ?: if (runnersByType.containsKey(importType)) {
                 null
             } else {
                 "Facebook import runner $importType is unavailable"
             }
 
     fun availableImportTypes(): List<FacebookImportType> =
-        FacebookImportType.entries.filter { facebookImportUnavailableReason(it) == null }
+        FacebookImportType.entries.filter { importType ->
+            runnersByType.containsKey(importType) && facebookImportUnavailableReason(importType) == null
+        }
 
     fun scheduledImportTypes(): List<FacebookImportType> =
-        listOf(FacebookImportType.API, FacebookImportType.SELENIUM).filter { facebookImportUnavailableReason(it) == null }
+        listOf(FacebookImportType.API, FacebookImportType.SELENIUM).filter { importType ->
+            runnersByType.containsKey(importType) && facebookImportUnavailableReason(importType) == null
+        }
 
     private fun timeoutThread(
         importRunId: String,

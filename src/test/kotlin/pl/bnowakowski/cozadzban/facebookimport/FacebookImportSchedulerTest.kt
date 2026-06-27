@@ -55,7 +55,37 @@ class FacebookImportSchedulerTest {
 
 
     @Test
-    fun `scheduler launches immediately on startup and then at the configured interval`() {
+    fun `scheduler waits one interval before first scheduled launch by default`() {
+        val launchLatch = CountDownLatch(1)
+        val triggers = CopyOnWriteArrayList<FacebookImportTrigger>()
+        whenever(jobService.startScheduledImports(any())).thenAnswer {
+            triggers.add(it.getArgument(0))
+            launchLatch.countDown()
+            listOf("run-1")
+        }
+        val scheduler = FacebookImportScheduler(
+            FacebookImportProperties(
+                schedule = FacebookImportProperties.Schedule(
+                    enabled = true,
+                    interval = Duration.ofMillis(100),
+                    initialDelay = Duration.ZERO,
+                ),
+            ),
+            jobService,
+            proposalService,
+        )
+
+        scheduler.start()
+
+        assertFalse(launchLatch.await(30, TimeUnit.MILLISECONDS))
+        assertTrue(launchLatch.await(1, TimeUnit.SECONDS))
+        scheduler.stop()
+        assertTrue(triggers.firstOrNull() == FacebookImportTrigger.SCHEDULED)
+    }
+
+
+    @Test
+    fun `scheduler launches on startup when startup launch is enabled and then at the configured interval`() {
         val attempts = AtomicInteger()
         val launchLatch = CountDownLatch(2)
         val triggers = CopyOnWriteArrayList<FacebookImportTrigger>()
@@ -69,6 +99,7 @@ class FacebookImportSchedulerTest {
             FacebookImportProperties(
                 schedule = FacebookImportProperties.Schedule(
                     enabled = true,
+                    runOnStartup = true,
                     interval = Duration.ofMillis(20),
                     initialDelay = Duration.ZERO,
                 ),
@@ -100,6 +131,7 @@ class FacebookImportSchedulerTest {
             FacebookImportProperties(
                 schedule = FacebookImportProperties.Schedule(
                     enabled = true,
+                    runOnStartup = true,
                     interval = Duration.ofSeconds(1),
                     initialDelay = Duration.ofMillis(100),
                 ),

@@ -161,6 +161,7 @@ class FacebookImportRunRepository(
         submittedCount: Int,
         skippedExistingCount: Int,
         failedCount: Int,
+        statusDetail: String?,
         logsCompressed: ByteArray?,
         importType: FacebookImportType = FacebookImportType.SELENIUM,
     ) {
@@ -173,7 +174,7 @@ class FacebookImportRunRepository(
                 )
                 VALUES (
                     :importRunId, :importType, :status, now(), :discoveredCount, :submittedCount,
-                    :skippedExistingCount, :failedCount, :phase, NULL, :phaseIndex,
+                    :skippedExistingCount, :failedCount, :phase, :statusDetail, :phaseIndex,
                     :phaseCount, now(), :logsCompressed
                 )
                 ON CONFLICT (import_run_id) DO UPDATE
@@ -192,7 +193,7 @@ class FacebookImportRunRepository(
                            ELSE facebook_import_run.phase
                        END,
                        status_detail = CASE
-                           WHEN facebook_import_run.finished_at IS NULL THEN NULL
+                           WHEN facebook_import_run.finished_at IS NULL THEN :statusDetail
                            ELSE facebook_import_run.status_detail
                        END,
                        phase_index = CASE
@@ -217,6 +218,7 @@ class FacebookImportRunRepository(
                 .addValue("submittedCount", submittedCount.coerceAtLeast(0))
                 .addValue("skippedExistingCount", skippedExistingCount.coerceAtLeast(0))
                 .addValue("failedCount", failedCount.coerceAtLeast(0))
+                .addValue("statusDetail", statusDetail?.trim()?.takeIf { it.isNotEmpty() })
                 .addValue("phase", terminalPhase(status))
                 .addValue("phaseIndex", FACEBOOK_IMPORT_PROGRESS_PHASE_COUNT)
                 .addValue("phaseCount", FACEBOOK_IMPORT_PROGRESS_PHASE_COUNT)
@@ -347,6 +349,20 @@ class FacebookImportRunRepository(
                        submitted_count, skipped_existing_count, failed_count
                   FROM facebook_import_run
                  WHERE status = 'RUNNING'
+                 ORDER BY last_status_at DESC, started_at DESC
+                 LIMIT 1
+            """.trimIndent(),
+            emptyMap<String, Any>(),
+            PROGRESS_ROW_MAPPER,
+        ).firstOrNull()
+
+    fun findLatestProgress(): FacebookImportProgressSnapshot? =
+        jdbc.query(
+            """
+                SELECT import_run_id, status, started_at, last_status_at, phase, status_detail, phase_index,
+                       phase_count, current_pass_index, pass_count, discovered_count,
+                       submitted_count, skipped_existing_count, failed_count
+                  FROM facebook_import_run
                  ORDER BY last_status_at DESC, started_at DESC
                  LIMIT 1
             """.trimIndent(),

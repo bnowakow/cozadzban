@@ -110,7 +110,12 @@ class FacebookImportScheduler(
     private fun runScheduleLoop() {
         try {
             sleep(properties.schedule.initialDelay)
-            var nextTrigger = FacebookImportTrigger.WORKER_STARTUP
+            var nextTrigger = if (properties.schedule.runOnStartup) {
+                FacebookImportTrigger.WORKER_STARTUP
+            } else {
+                sleep(scheduleInterval())
+                FacebookImportTrigger.SCHEDULED
+            }
             while (!Thread.currentThread().isInterrupted) {
                 launchScheduledImportOnce(nextTrigger)
                 nextTrigger = FacebookImportTrigger.SCHEDULED

@@ -18,7 +18,7 @@ Project documentation, specs, and developer aids.
   [11](PHASE_11_MANUAL_TESTING.md), [13](PHASE_13_MANUAL_TESTING.md),
   [16](PHASE_16_MANUAL_TESTING.md), [17](PHASE_17_MANUAL_TESTING.md),
   [24](PHASE_24_MANUAL_TESTING.md). Phase 24 covers the Facebook proposal inbox,
-  browserless Graph API import, Selenium import, and scheduled Spring Batch worker/server modes.
+  Selenium import, and scheduled Spring Batch worker/server modes.
 
 ## Developer aids
 

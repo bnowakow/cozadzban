@@ -126,6 +126,10 @@ class FacebookArticleProposalService(
     fun latestRunningProgress(): FacebookImportProgressSnapshot? =
         runRepository.findLatestRunningProgress()
 
+    @Transactional(readOnly = true)
+    fun latestProgress(): FacebookImportProgressSnapshot? =
+        runRepository.findLatestProgress()
+
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     fun terminateTimedOutRun(importRunId: String, timeout: Duration, timedOutAt: Instant = Instant.now()): Boolean {
         require(importRunId.isNotBlank()) { "importRunId is required" }
@@ -166,6 +170,7 @@ class FacebookArticleProposalService(
             submittedCount = request.submittedCount,
             skippedExistingCount = request.skippedExistingCount,
             failedCount = request.failedCount,
+            statusDetail = request.statusDetail,
             logsCompressed = GzipTextCodec.compress(request.logs),
         )
         eventPublisher?.publishEvent(

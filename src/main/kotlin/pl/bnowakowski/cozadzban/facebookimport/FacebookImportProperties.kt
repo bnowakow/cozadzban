@@ -38,13 +38,13 @@ data class FacebookImportProperties(
     val staleRunCleanupInterval: Duration = Duration.ofMinutes(1),
     val schedule: Schedule = Schedule(),
     val selenium: Selenium = Selenium(),
-    val api: Api = Api(),
 ) {
     fun isSeleniumEnabled(): Boolean =
         selenium.enabled || enabled
 
     data class Schedule(
         val enabled: Boolean = false,
+        val runOnStartup: Boolean = false,
         val interval: Duration = Duration.ofHours(8),
         val initialDelay: Duration = Duration.ZERO,
     )
@@ -63,18 +63,6 @@ data class FacebookImportProperties(
         val waitAfterPageOpen: Duration = Duration.ofSeconds(5),
         val waitAfterScroll: Duration = Duration.ofSeconds(2),
         val manualLoginTimeout: Duration = Duration.ofMinutes(3),
-    )
-
-    data class Api(
-        val enabled: Boolean = false,
-        val userAccessToken: String = "",
-        val baseUrl: String = "https://graph.facebook.com",
-        val version: String = "v23.0",
-        val profileId: String = "me",
-        val pageLimit: Int = 25,
-        val maxPages: Int = 4,
-        val connectTimeout: Duration = Duration.ofSeconds(3),
-        val readTimeout: Duration = Duration.ofMinutes(1),
     )
 
     enum class Browser {
