@@ -578,26 +578,32 @@ class ArticleListView(
 
     private fun buildFacebookImportRunHistoryContent(importType: FacebookImportType): Div {
         val content = Div()
-        content.addClassName("czj-facebook-import-history-content")
+        content.addClassName("czj-facebook-import-progress-content")
 
         val title = Span("${facebookImportTypeLabel(importType)} last runs")
-        title.addClassName("czj-facebook-import-history-title")
+        title.addClassName("czj-facebook-import-progress-title")
 
-        val manualTimestamp = articleProposalService.latestRunTimestamp(importType, FacebookImportTrigger.MANUAL)
-            ?.let(::formatStatusInstant)
-            ?: "never"
-        val automaticTimestamp = articleProposalService.latestAutomaticRunTimestamp(importType)
-            ?.let(::formatStatusInstant)
-            ?: "never"
+        val icon = VaadinIcon.CLOCK.create()
+        icon.setSize("1.15rem")
+        icon.color = "var(--lumo-primary-color)"
+
+        val header = HorizontalLayout(icon, title)
+        header.addClassName("czj-facebook-import-progress-header")
+        header.isPadding = false
+        header.isSpacing = true
+        header.defaultVerticalComponentAlignment = Alignment.CENTER
 
         val metrics = Div()
-        metrics.addClassName("czj-facebook-import-history-metrics")
+        metrics.addClassName("czj-facebook-import-history-row")
         metrics.add(
-            facebookImportMetric("Manual", manualTimestamp),
-            facebookImportMetric("Automatic", automaticTimestamp),
+            facebookImportHistoryMetric(
+                "Manual",
+                articleProposalService.latestRunTimestamp(importType, FacebookImportTrigger.MANUAL),
+            ),
+            facebookImportHistoryMetric("Automatic", articleProposalService.latestAutomaticRunTimestamp(importType)),
         )
 
-        content.add(title)
+        content.add(header)
         content.add(metrics)
         return content
     }
@@ -757,6 +763,45 @@ class ArticleListView(
         val metric = Div(label, value)
         metric.addClassName("czj-facebook-import-progress-metric")
         return metric
+    }
+
+    private fun facebookImportHistoryMetric(labelText: String, timestamp: Instant?): Div {
+        val metric = facebookImportMetric(labelText, timestamp?.let(::formatRelativeInstant) ?: "never")
+        timestamp?.let {
+            val exactTimestamp = formatStatusInstant(it)
+            metric.element.setProperty("title", exactTimestamp)
+            metric.element.setAttribute("aria-label", "$labelText last run $exactTimestamp")
+        }
+        return metric
+    }
+
+    private fun formatRelativeInstant(instant: Instant): String {
+        val duration = Duration.between(instant, Instant.now())
+        val seconds = duration.seconds
+        if (seconds < 0) return "just now"
+
+        val minutes = seconds / 60
+        val hours = minutes / 60
+        val days = hours / 24
+        val weeks = days / 7
+        val months = days / 30
+        val years = days / 365
+
+        return when {
+            seconds < 45 -> "just now"
+            seconds < 90 -> "1 minute ago"
+            minutes < 45 -> "$minutes minutes ago"
+            minutes < 90 -> "1 hour ago"
+            hours < 22 -> "$hours hours ago"
+            hours < 36 -> "yesterday"
+            days < 7 -> "$days days ago"
+            days < 14 -> "1 week ago"
+            days < 30 -> "$weeks weeks ago"
+            days < 60 -> "1 month ago"
+            days < 365 -> "$months months ago"
+            days < 730 -> "1 year ago"
+            else -> "$years years ago"
+        }
     }
 
     private fun formatPass(progress: FacebookImportProgressSnapshot): String =

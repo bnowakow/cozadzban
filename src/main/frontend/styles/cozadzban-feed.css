@@ -471,6 +471,22 @@ html[theme~="dark"] .czj-version-badge {
   overflow: hidden;
 }
 
+.czj-facebook-import-history {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 1.35rem;
+}
+
+.czj-facebook-import-history-content {
+  background: var(--czj-card-bg);
+  border: 1px solid var(--czj-border);
+  border-radius: 8px;
+  box-shadow: var(--czj-card-shadow);
+  box-sizing: border-box;
+  color: var(--czj-text);
+  overflow: hidden;
+}
+
 .czj-facebook-import-progress-content {
   box-sizing: border-box;
   display: flex;
@@ -519,6 +535,13 @@ html[theme~="dark"] .czj-version-badge {
   width: 100%;
 }
 
+.czj-facebook-import-history-row {
+  display: grid;
+  gap: 0.9rem;
+  grid-template-columns: repeat(2, minmax(8rem, 1fr));
+  width: 100%;
+}
+
 .czj-facebook-import-progress-metric {
   background: var(--czj-field-bg);
   border: 1px solid var(--czj-border);
@@ -544,6 +567,12 @@ html[theme~="dark"] .czj-version-badge {
   font-weight: 800;
   line-height: 1.25;
   overflow-wrap: anywhere;
+}
+
+@media (max-width: 420px) {
+  .czj-facebook-import-history-row {
+    grid-template-columns: 1fr;
+  }
 }
 
 vaadin-button.czj-filter-chip {
