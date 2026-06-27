@@ -35,13 +35,13 @@ class FacebookImportSchedulerTest {
 
         assertFalse(scheduler.launchScheduledImportOnce())
 
-        verify(jobService, never()).startImport(FacebookImportTrigger.SCHEDULED)
+        verify(jobService, never()).startScheduledImports(FacebookImportTrigger.SCHEDULED)
     }
 
 
     @Test
     fun `scheduled launch starts facebook import with scheduled trigger`() {
-        whenever(jobService.startImport(FacebookImportTrigger.SCHEDULED)).thenReturn("run-1")
+        whenever(jobService.startScheduledImports(FacebookImportTrigger.SCHEDULED)).thenReturn(listOf("run-1"))
         val scheduler = FacebookImportScheduler(
             FacebookImportProperties(schedule = FacebookImportProperties.Schedule(enabled = true)),
             jobService,
@@ -50,7 +50,7 @@ class FacebookImportSchedulerTest {
 
         assertTrue(scheduler.launchScheduledImportOnce())
 
-        verify(jobService).startImport(FacebookImportTrigger.SCHEDULED)
+        verify(jobService).startScheduledImports(FacebookImportTrigger.SCHEDULED)
     }
 
 
@@ -59,11 +59,11 @@ class FacebookImportSchedulerTest {
         val attempts = AtomicInteger()
         val launchLatch = CountDownLatch(2)
         val triggers = CopyOnWriteArrayList<FacebookImportTrigger>()
-        whenever(jobService.startImport(any())).thenAnswer {
+        whenever(jobService.startScheduledImports(any())).thenAnswer {
             val attempt = attempts.incrementAndGet()
             triggers.add(it.getArgument(0))
             launchLatch.countDown()
-            "run-$attempt"
+            listOf("run-$attempt")
         }
         val scheduler = FacebookImportScheduler(
             FacebookImportProperties(
@@ -91,10 +91,10 @@ class FacebookImportSchedulerTest {
     fun `scheduler honors configured initial delay before first launch`() {
         val launchLatch = CountDownLatch(1)
         val triggers = CopyOnWriteArrayList<FacebookImportTrigger>()
-        whenever(jobService.startImport(any())).thenAnswer {
+        whenever(jobService.startScheduledImports(any())).thenAnswer {
             triggers.add(it.getArgument(0))
             launchLatch.countDown()
-            "run-1"
+            listOf("run-1")
         }
         val scheduler = FacebookImportScheduler(
             FacebookImportProperties(
@@ -119,7 +119,7 @@ class FacebookImportSchedulerTest {
 
     @Test
     fun `scheduled launch skips busy worker without failing`() {
-        whenever(jobService.startImport(FacebookImportTrigger.SCHEDULED))
+        whenever(jobService.startScheduledImports(FacebookImportTrigger.SCHEDULED))
             .thenThrow(FacebookImportAlreadyRunningException())
         val scheduler = FacebookImportScheduler(
             FacebookImportProperties(schedule = FacebookImportProperties.Schedule(enabled = true)),
@@ -164,7 +164,7 @@ class FacebookImportSchedulerTest {
         scheduler.start()
 
         assertTrue(cleanupLatch.await(1, TimeUnit.SECONDS))
-        verify(jobService, never()).startImport(any())
+        verify(jobService, never()).startScheduledImports(any())
         scheduler.stop()
     }
 

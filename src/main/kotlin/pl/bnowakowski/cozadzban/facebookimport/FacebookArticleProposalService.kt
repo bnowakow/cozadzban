@@ -62,6 +62,7 @@ class FacebookArticleProposalService(
                 proposalRepository.updateSeen(
                     id = existing.id,
                     importRunId = request.importRunId,
+                    importType = request.importType,
                     facebookPostUrl = proposal.facebookPostUrl,
                     logsCompressed = appendLogs(existing.logsCompressed, proposalLogs),
                 )
@@ -72,6 +73,7 @@ class FacebookArticleProposalService(
             proposalRepository.insert(
                 candidateId = candidateId,
                 importRunId = request.importRunId,
+                importType = request.importType,
                 articleUrl = articleUrl,
                 canonicalArticleUrl = canonicalUrl,
                 facebookPostUrl = proposal.facebookPostUrl?.trim()?.takeIf { it.isNotBlank() },
@@ -83,6 +85,7 @@ class FacebookArticleProposalService(
 
         runRepository.recordBatch(
             importRunId = request.importRunId,
+            importType = request.importType,
             discoveredCount = request.proposals.size,
             submittedCount = submitted,
             skippedExistingCount = skippedExisting,
@@ -157,6 +160,7 @@ class FacebookArticleProposalService(
         require(importRunId.isNotBlank()) { "importRunId is required" }
         runRepository.complete(
             importRunId = importRunId,
+            importType = request.importType,
             status = request.status,
             discoveredCount = request.discoveredCount,
             submittedCount = request.submittedCount,
@@ -256,6 +260,12 @@ class FacebookArticleProposalService(
                     proposal.logsCompressed,
                     "Accepted by userId=$decidedByUserId; articleId=${article.id}; botUserId=${bot.id}; language=$language",
                 ),
+            )
+            articleService.recordImportSource(
+                articleId = article.id!!,
+                sourceImportType = proposal.importType,
+                sourceImportRunId = proposal.importRunId,
+                sourceFacebookProposalId = proposal.id,
             )
             findById(id)
         } catch (ex: ArticleUrlConflictException) {

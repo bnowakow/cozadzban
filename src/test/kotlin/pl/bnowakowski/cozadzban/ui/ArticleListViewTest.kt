@@ -40,6 +40,7 @@ import pl.bnowakowski.cozadzban.facebookimport.FacebookArticleProposalStatusFilt
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportJobService
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportProgressSnapshot
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportRunStatus
+import pl.bnowakowski.cozadzban.facebookimport.FacebookImportType
 import pl.bnowakowski.cozadzban.user.AppUser
 import pl.bnowakowski.cozadzban.user.AppUserRepository
 import pl.bnowakowski.cozadzban.user.AppUserStatus
@@ -78,8 +79,8 @@ class ArticleListViewTest {
         whenever(appUserRepository.findByEmail(adminEmail)).thenReturn(
             AppUser(1L, adminEmail, Role.ADMIN, AppUserStatus.ACTIVE),
         )
-        whenever(facebookImportJobService.facebookImportUnavailableReason()).thenReturn(null)
-        whenever(facebookImportJobService.startImport()).thenReturn("run-1")
+        whenever(facebookImportJobService.availableImportTypes()).thenReturn(listOf(FacebookImportType.SELENIUM))
+        whenever(facebookImportJobService.startImport(FacebookImportType.SELENIUM)).thenReturn("run-1")
 
         val view = ArticleListView(
             articleRepository,
@@ -92,7 +93,7 @@ class ArticleListViewTest {
             languageFlagCache,
         )
         val buttons = findComponents(view, Button::class.java)
-        val importButton = buttons.firstOrNull { it.text == "Import Facebook Posts" }
+        val importButton = buttons.firstOrNull { it.text == "Import Facebook Selenium" }
         val stopButton = findFacebookStopButton(view)
 
         assertTrue(buttons.any { it.text == "Add Article" })
@@ -105,7 +106,7 @@ class ArticleListViewTest {
         UI.setCurrent(UI())
         importButton.click()
 
-        verify(facebookImportJobService).startImport()
+        verify(facebookImportJobService).startImport(FacebookImportType.SELENIUM)
     }
 
     @Test
@@ -117,7 +118,7 @@ class ArticleListViewTest {
         whenever(appUserRepository.findByEmail(adminEmail)).thenReturn(
             AppUser(1L, adminEmail, Role.ADMIN, AppUserStatus.ACTIVE),
         )
-        whenever(facebookImportJobService.facebookImportUnavailableReason()).thenReturn(null)
+        whenever(facebookImportJobService.availableImportTypes()).thenReturn(listOf(FacebookImportType.SELENIUM))
         whenever(facebookImportJobService.isImportRunning()).thenReturn(true)
 
         val view = ArticleListView(
@@ -210,9 +211,7 @@ class ArticleListViewTest {
         whenever(appUserRepository.findByEmail(adminEmail)).thenReturn(
             AppUser(1L, adminEmail, Role.ADMIN, AppUserStatus.ACTIVE),
         )
-        whenever(facebookImportJobService.facebookImportUnavailableReason()).thenReturn(
-            "app.facebook-import.username must point to an existing app user",
-        )
+        whenever(facebookImportJobService.availableImportTypes()).thenReturn(emptyList())
 
         val view = ArticleListView(
             articleRepository,
@@ -225,26 +224,27 @@ class ArticleListViewTest {
             languageFlagCache,
         )
         val buttons = findComponents(view, Button::class.java)
-        val importButton = buttons.firstOrNull { it.text == "Import Facebook Posts" }
+        val importButton = buttons.firstOrNull { it.text == "Import Facebook" }
         val stopButton = findFacebookStopButton(view)
 
         assertTrue(importButton != null, "Expected admin import button to be present")
         assertFalse(importButton!!.isEnabled, "Expected misconfigured import button to be disabled")
         assertEquals(
-            "app.facebook-import.username must point to an existing app user",
+            "No Facebook import type is available",
             Tooltip.forComponent(importButton.parent.get()).text,
         )
         assertTrue(stopButton != null, "Expected admin stop import button to be present")
         assertFalse(stopButton!!.isEnabled, "Expected misconfigured stop button to be disabled")
         assertEquals(
-            "app.facebook-import.username must point to an existing app user",
+            "No Facebook import type is available",
             Tooltip.forComponent(stopButton.parent.get()).text,
         )
 
         importButton.click()
         stopButton.click()
 
-        verify(facebookImportJobService, never()).startImport()
+        verify(facebookImportJobService, never()).startImport(FacebookImportType.API)
+        verify(facebookImportJobService, never()).startImport(FacebookImportType.SELENIUM)
         verify(facebookImportJobService, never()).terminateImport()
     }
 
@@ -272,7 +272,7 @@ class ArticleListViewTest {
 
         assertTrue(buttons.any { it.text == "Add Article" })
         assertTrue(buttons.any { it.text == "Article Proposals" })
-        assertFalse(buttons.any { it.text == "Import Facebook Posts" })
+        assertFalse(buttons.any { it.text == "Import Facebook Selenium" })
         assertTrue(findFacebookStopButton(view) == null)
     }
 

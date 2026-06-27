@@ -22,20 +22,22 @@ class FacebookImportRunRepository(
         logsCompressed: ByteArray?,
         passIndex: Int = 0,
         passCount: Int = 0,
+        importType: FacebookImportType = FacebookImportType.SELENIUM,
     ) {
         jdbc.update(
             """
                 INSERT INTO facebook_import_run(
-                    import_run_id, status, discovered_count, submitted_count,
+                    import_run_id, import_type, status, discovered_count, submitted_count,
                     skipped_existing_count, current_pass_index, pass_count,
                     phase, status_detail, phase_index, phase_count, last_status_at, summary_logs_compressed
                 )
                 VALUES (
-                    :importRunId, 'RUNNING', :discoveredCount, :submittedCount,
+                    :importRunId, :importType, 'RUNNING', :discoveredCount, :submittedCount,
                     :skippedExistingCount, :passIndex, :passCount, :phase, NULL, :phaseIndex, :phaseCount, now(), :logsCompressed
                 )
                 ON CONFLICT (import_run_id) DO UPDATE
-                   SET discovered_count = facebook_import_run.discovered_count + :discoveredCount,
+                   SET import_type = :importType,
+                       discovered_count = facebook_import_run.discovered_count + :discoveredCount,
                        submitted_count = facebook_import_run.submitted_count + :submittedCount,
                        skipped_existing_count = facebook_import_run.skipped_existing_count + :skippedExistingCount,
                        current_pass_index = CASE
@@ -70,6 +72,7 @@ class FacebookImportRunRepository(
             """.trimIndent(),
             MapSqlParameterSource()
                 .addValue("importRunId", importRunId)
+                .addValue("importType", importType.name)
                 .addValue("discoveredCount", discoveredCount.coerceAtLeast(0))
                 .addValue("submittedCount", submittedCount.coerceAtLeast(0))
                 .addValue("skippedExistingCount", skippedExistingCount.coerceAtLeast(0))
@@ -86,17 +89,18 @@ class FacebookImportRunRepository(
         jdbc.update(
             """
                 INSERT INTO facebook_import_run(
-                    import_run_id, status, discovered_count, submitted_count,
+                    import_run_id, import_type, status, discovered_count, submitted_count,
                     skipped_existing_count, failed_count, current_pass_index, pass_count,
                     phase, status_detail, phase_index, phase_count, last_status_at
                 )
                 VALUES (
-                    :importRunId, 'RUNNING', :matchedPostCount, :submittedCount,
+                    :importRunId, :importType, 'RUNNING', :matchedPostCount, :submittedCount,
                     :skippedExistingCount, :failedCount, :passIndex, :passCount,
                     :phase, :statusDetail, :phaseIndex, :phaseCount, :occurredAt
                 )
                 ON CONFLICT (import_run_id) DO UPDATE
-                   SET status = CASE
+                   SET import_type = :importType,
+                       status = CASE
                            WHEN facebook_import_run.finished_at IS NULL THEN 'RUNNING'
                            ELSE facebook_import_run.status
                        END,
@@ -135,6 +139,7 @@ class FacebookImportRunRepository(
             """.trimIndent(),
             MapSqlParameterSource()
                 .addValue("importRunId", importRunId)
+                .addValue("importType", request.importType.name)
                 .addValue("matchedPostCount", request.matchedPostCount.coerceAtLeast(0))
                 .addValue("submittedCount", request.submittedCount.coerceAtLeast(0))
                 .addValue("skippedExistingCount", request.skippedExistingCount.coerceAtLeast(0))
@@ -157,21 +162,23 @@ class FacebookImportRunRepository(
         skippedExistingCount: Int,
         failedCount: Int,
         logsCompressed: ByteArray?,
+        importType: FacebookImportType = FacebookImportType.SELENIUM,
     ) {
         jdbc.update(
             """
                 INSERT INTO facebook_import_run(
-                    import_run_id, status, finished_at, discovered_count, submitted_count,
+                    import_run_id, import_type, status, finished_at, discovered_count, submitted_count,
                     skipped_existing_count, failed_count, phase, status_detail, phase_index,
                     phase_count, last_status_at, summary_logs_compressed
                 )
                 VALUES (
-                    :importRunId, :status, now(), :discoveredCount, :submittedCount,
+                    :importRunId, :importType, :status, now(), :discoveredCount, :submittedCount,
                     :skippedExistingCount, :failedCount, :phase, NULL, :phaseIndex,
                     :phaseCount, now(), :logsCompressed
                 )
                 ON CONFLICT (import_run_id) DO UPDATE
-                   SET status = CASE
+                   SET import_type = :importType,
+                       status = CASE
                            WHEN facebook_import_run.finished_at IS NULL THEN :status
                            ELSE facebook_import_run.status
                        END,
@@ -204,6 +211,7 @@ class FacebookImportRunRepository(
             """.trimIndent(),
             MapSqlParameterSource()
                 .addValue("importRunId", importRunId)
+                .addValue("importType", importType.name)
                 .addValue("status", status.name)
                 .addValue("discoveredCount", discoveredCount.coerceAtLeast(0))
                 .addValue("submittedCount", submittedCount.coerceAtLeast(0))
@@ -423,24 +431,26 @@ class FacebookArticleProposalRepository(
         facebookPostUrl: String?,
         guessedLanguage: String,
         logsCompressed: ByteArray?,
+        importType: FacebookImportType = FacebookImportType.SELENIUM,
     ): FacebookArticleProposal =
         jdbc.query(
             """
                 INSERT INTO facebook_article_proposal(
-                    candidate_id, import_run_id, article_url, canonical_article_url,
+                    candidate_id, import_run_id, import_type, article_url, canonical_article_url,
                     facebook_post_url, guessed_language, logs_compressed
                 )
                 VALUES (
-                    :candidateId, :importRunId, :articleUrl, :canonicalArticleUrl,
+                    :candidateId, :importRunId, :importType, :articleUrl, :canonicalArticleUrl,
                     :facebookPostUrl, :guessedLanguage, :logsCompressed
                 )
-                RETURNING id, candidate_id, import_run_id, article_url, canonical_article_url,
+                RETURNING id, candidate_id, import_run_id, import_type, article_url, canonical_article_url,
                           facebook_post_url, guessed_language, corrected_language, status, article_id,
                           decided_by_user_id, decided_at, submitted_at, last_seen_at, logs_compressed
             """.trimIndent(),
             MapSqlParameterSource()
                 .addValue("candidateId", candidateId)
                 .addValue("importRunId", importRunId)
+                .addValue("importType", importType.name)
                 .addValue("articleUrl", articleUrl)
                 .addValue("canonicalArticleUrl", canonicalArticleUrl)
                 .addValue("facebookPostUrl", facebookPostUrl)
@@ -449,12 +459,19 @@ class FacebookArticleProposalRepository(
             PROPOSAL_ROW_MAPPER,
         ).single()
 
-    fun updateSeen(id: Long, importRunId: String, facebookPostUrl: String?, logsCompressed: ByteArray?) {
+    fun updateSeen(
+        id: Long,
+        importRunId: String,
+        facebookPostUrl: String?,
+        logsCompressed: ByteArray?,
+        importType: FacebookImportType = FacebookImportType.SELENIUM,
+    ) {
         jdbc.update(
             """
                 UPDATE facebook_article_proposal
                    SET last_seen_at = now(),
                        import_run_id = :importRunId,
+                       import_type = :importType,
                        facebook_post_url = COALESCE(facebook_post_url, :facebookPostUrl),
                        logs_compressed = COALESCE(:logsCompressed, logs_compressed)
                  WHERE id = :id
@@ -462,6 +479,7 @@ class FacebookArticleProposalRepository(
             MapSqlParameterSource()
                 .addValue("id", id)
                 .addValue("importRunId", importRunId)
+                .addValue("importType", importType.name)
                 .addValue("facebookPostUrl", facebookPostUrl)
                 .addValue("logsCompressed", logsCompressed),
         )
@@ -588,7 +606,7 @@ class FacebookArticleProposalRepository(
 
     private companion object {
         const val SELECT_PROPOSAL_SQL = """
-            SELECT id, candidate_id, import_run_id, article_url, canonical_article_url,
+            SELECT id, candidate_id, import_run_id, import_type, article_url, canonical_article_url,
                    facebook_post_url, guessed_language, corrected_language, status, article_id,
                    decided_by_user_id, decided_at, submitted_at, last_seen_at, logs_compressed
               FROM facebook_article_proposal
@@ -599,6 +617,7 @@ class FacebookArticleProposalRepository(
                 id = rs.getLong("id"),
                 candidateId = rs.getString("candidate_id"),
                 importRunId = rs.getString("import_run_id"),
+                importType = rs.getString("import_type")?.let(FacebookImportType::valueOf) ?: FacebookImportType.SELENIUM,
                 articleUrl = rs.getString("article_url"),
                 canonicalArticleUrl = rs.getString("canonical_article_url"),
                 facebookPostUrl = rs.getString("facebook_post_url"),

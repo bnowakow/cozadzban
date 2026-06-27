@@ -21,6 +21,9 @@ data class Article(
     val quote: String? = null,
     val aiSummary: String? = null,
     @JsonIgnore val createdByUserId: Long,
+    val sourceImportType: String? = null,
+    val sourceImportRunId: String? = null,
+    val sourceFacebookProposalId: Long? = null,
     val publishedAt: Instant? = null,
     @ReadOnlyProperty val createdAt: Instant? = null,
 )

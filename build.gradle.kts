@@ -13,7 +13,7 @@ plugins {
 }
 
 group = "pl.bnowakowski"
-version = "0.55.8-SNAPSHOT"
+version = "0.56.0-SNAPSHOT"
 
 java {
 	toolchain {
@@ -90,9 +90,10 @@ kotlin {
 
 tasks.withType<Test> {
 	useJUnitPlatform()
-	systemProperty("app.facebook-import.enabled", "false")
+	systemProperty("app.facebook-import.selenium.enabled", "false")
+	systemProperty("app.facebook-import.api.enabled", "false")
 	systemProperty("app.facebook-import.schedule.enabled", "false")
-	systemProperty("app.facebook-import.headless", "true")
+	systemProperty("app.facebook-import.selenium.headless", "true")
 	systemProperty("vaadin.launch-browser", "false")
 	if (!isDockerAvailable()) {
 		logger.lifecycle("Docker is not available; excluding Docker-backed integration tests.")

@@ -285,12 +285,12 @@ Phases 4 and 5 are independent and can be developed in parallel.
     disable automatic Batch startup/schema initialization, and launch the job immediately on
     worker startup then at `APP_FACEBOOK_IMPORT_SCHEDULE_INTERVAL` when scheduling is enabled. Use Spring Batch
     metadata plus an in-process guard for v1 single-worker exclusivity.
-59. **`FacebookImportController`** — expose admin-only `POST /api/admin/facebook-import/run`
-    and `POST /api/admin/facebook-import/terminate` endpoints for manual job control; return
-    `202` on accepted start/terminate and `409` for busy/not-running. Manual and scheduled
-    triggers both launch the same Spring Batch job asynchronously.
-60. **`ArticleListView` admin action** — add an admin-only "Import Facebook Posts" button
-    next to "Add Article" that calls the import trigger endpoint/service from the UI.
+59. **`FacebookImportController`** — expose admin-only explicit import endpoints
+    `POST /api/admin/facebook-import/run/api` and `/run/selenium`, keep `/run` as a
+    Selenium compatibility alias, and expose `POST /api/admin/facebook-import/terminate`;
+    return `202` on accepted start/terminate and `409` for busy/not-running.
+60. **`ArticleListView` admin action** — add admin-only **Import Facebook API** and/or
+    **Import Facebook Selenium** buttons next to "Add Article" for the enabled import types.
 60a. **Facebook proposal inbox** — add `facebook_import_run` and
     `facebook_article_proposal` tables plus machine-only proposal submission,
     proposal existence precheck, and run completion endpoints. Proposal logs are
@@ -307,6 +307,12 @@ Phases 4 and 5 are independent and can be developed in parallel.
     best-effort Pushover alerts for scheduled interval Facebook login-required events and completed
     imports that submitted new proposals; suppress login-required alerts for the expected
     worker-startup login flow.
+61b. **Explicit Facebook import types** — split import configuration into shared,
+    Selenium-only, and Graph API-only env vars. Spring Batch receives an explicit
+    importType parameter, ADMIN UI exposes separate **Import Facebook API** and
+    **Import Facebook Selenium** actions for available types, and scheduled runs
+    execute enabled import types sequentially with API first because Graph API data is
+    more precise and requires less HTML guesswork.
 
 ---
 

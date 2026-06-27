@@ -62,7 +62,7 @@ class FacebookProfileArticleImporter(
     private val articleService: ArticleService,
     private val proposalClient: FacebookImportProposalClient? = null,
     private val eventPublisher: ApplicationEventPublisher? = null,
-) {
+) : FacebookImportRunner {
 
     private val logger = LoggerFactory.getLogger(javaClass)
     private val facebookProperties = FacebookLoginPropertiesReader()
@@ -118,9 +118,13 @@ class FacebookProfileArticleImporter(
         }
     }
 
-    fun facebookImportUnavailableReason(): String? {
-        if (!properties.enabled) {
-            return "app.facebook-import.enabled must be true"
+    override val importType: FacebookImportType = FacebookImportType.SELENIUM
+
+    fun facebookImportUnavailableReason(): String? = unavailableReason()
+
+    override fun unavailableReason(): String? {
+        if (!properties.isSeleniumEnabled()) {
+            return "app.facebook-import.selenium.enabled must be true"
         }
         if (properties.targetApiBaseUrl.isNotBlank() != properties.targetApiKey.isNotBlank()) {
             return "Remote Facebook import is misconfigured: set both APP_FACEBOOK_IMPORT_TARGET_API_BASE_URL and APP_FACEBOOK_IMPORT_TARGET_API_KEY"
@@ -128,7 +132,7 @@ class FacebookProfileArticleImporter(
         return null
     }
 
-    fun terminateImport() {
+    override fun terminateImport() {
         val thread = synchronized(stateLock) {
             val activeThread = activeImportThread?.takeIf { it.isAlive } ?: throw FacebookImportNotRunningException()
             activeThread
@@ -136,18 +140,18 @@ class FacebookProfileArticleImporter(
         thread.interrupt()
     }
 
-    fun isImportRunning(): Boolean =
+    override fun isImportRunning(): Boolean =
         synchronized(stateLock) {
             activeImportThread?.isAlive == true
         }
 
-    fun currentProgressSnapshot(): FacebookImportProgressSnapshot? =
+    override fun currentProgressSnapshot(): FacebookImportProgressSnapshot? =
         latestProgressSnapshot
 
-    fun newImportRunId(generatedAt: Instant = Instant.now()): String =
+    override fun newImportRunId(generatedAt: Instant): String =
         facebookImportId(generatedAt)
 
-    fun runImport(importRunId: String, trigger: FacebookImportTrigger = FacebookImportTrigger.MANUAL) {
+    override fun runImport(importRunId: String, trigger: FacebookImportTrigger) {
         facebookImportUnavailableReason()?.let { throw IllegalArgumentException(it) }
         val currentThread = Thread.currentThread()
         synchronized(stateLock) {
@@ -347,16 +351,17 @@ class FacebookProfileArticleImporter(
                 }
                 val exists = proposalExists(candidate.url, candidateId)
                 if (exists) {
-                    summary.skippedExisting++
+                    val language = guessCandidateLanguage(candidate)
                     candidateDecisionLogs += workerCandidateDecisionLogs(
                         candidateId = candidateId,
                         candidateNumber = index + 1,
                         candidateTotal = candidates.size,
                         candidate = candidate,
-                        action = "skipped-existing",
+                        action = "proposal-refresh-existing",
+                        language = language,
                     )
                     logger.info(
-                        "Facebook import discovery pass {}/{} candidate {}/{} importId={} candidateId={} url={} sourcePostUrl={} skippedExisting=true",
+                        "Facebook import discovery pass {}/{} candidate {}/{} importId={} candidateId={} url={} sourcePostUrl={} skippedExisting=true action=proposal-refresh-existing",
                         passIndex + 1,
                         passCount,
                         index + 1,
@@ -366,7 +371,13 @@ class FacebookProfileArticleImporter(
                         candidate.url,
                         candidate.sourcePostUrl ?: "<none>",
                     )
-                    null
+                    FacebookProposalSubmission(
+                        candidateId = candidateId,
+                        articleUrl = candidate.url,
+                        facebookPostUrl = candidate.sourcePostUrl,
+                        language = language,
+                        logs = candidateProposalLogs(candidate),
+                    )
                 } else {
                     val language = guessCandidateLanguage(candidate)
                     candidateDecisionLogs += workerCandidateDecisionLogs(
@@ -420,6 +431,7 @@ class FacebookProfileArticleImporter(
                     val response = proposalClient?.submitBatch(
                         FacebookProposalBatchRequest(
                             importRunId = facebookImportId,
+                            importType = importType,
                             passIndex = passIndex + 1,
                             passCount = passCount,
                             proposals = proposals,
@@ -486,6 +498,7 @@ class FacebookProfileArticleImporter(
         }
         lastProgressReportedAt = now
         val request = FacebookImportProgressRequest(
+            importType = importType,
             phase = phase.label,
             detail = detail,
             phaseIndex = phase.phaseIndex,
@@ -539,6 +552,7 @@ class FacebookProfileArticleImporter(
                 importRunId,
                 FacebookImportRunCompletionRequest(
                     status = status,
+                    importType = importType,
                     discoveredCount = summary.discovered,
                     submittedCount = summary.submitted,
                     skippedExistingCount = summary.skippedExisting,
@@ -954,14 +968,14 @@ class FacebookProfileArticleImporter(
 
     private fun facebookCredential(key: String): String =
         when (key) {
-            "username" -> resolveCredential("APP_FACEBOOK_IMPORT_USERNAME", properties.username, "username")
-            "password" -> resolveCredential("APP_FACEBOOK_IMPORT_PASSWORD", properties.password, "password")
-            "browser.headless" -> resolveBoolean("APP_FACEBOOK_IMPORT_HEADLESS", properties.headless, "browser.headless").toString()
+            "username" -> resolveCredential("APP_FACEBOOK_IMPORT_SELENIUM_USERNAME", properties.username, "username")
+            "password" -> resolveCredential("APP_FACEBOOK_IMPORT_SELENIUM_PASSWORD", properties.password, "password")
+            "browser.headless" -> resolveBoolean("APP_FACEBOOK_IMPORT_SELENIUM_HEADLESS", properties.headless, "browser.headless").toString()
             else -> facebookProperties.getProperty(key).orEmpty()
         }
 
     private fun browserHeadless(): Boolean =
-        resolveBoolean("APP_FACEBOOK_IMPORT_HEADLESS", properties.headless, "browser.headless")
+        resolveBoolean("APP_FACEBOOK_IMPORT_SELENIUM_HEADLESS", properties.headless, "browser.headless")
 
     private fun resolveCredential(dotEnvKey: String, configValue: String, propertiesKey: String): String {
         dotEnvValues[dotEnvKey]?.let { if (it.isNotBlank()) return it }
@@ -3074,7 +3088,7 @@ class FacebookProfileArticleImporter(
 
     companion object {
         private const val FACEBOOK_IMPORT_USER_CONFIGURATION_ERROR =
-            "app.facebook-import.username must point to an existing app user"
+            "app.facebook-import.selenium.username must point to an existing app user"
         private val FACEBOOK_POST_URL_REGEX =
             Regex("""https?://(?:www\.)?facebook\.com/[^"'<> ]+/posts/[^"'<> ]+""", RegexOption.IGNORE_CASE)
         private val FACEBOOK_RELATIVE_POST_URL_REGEX =

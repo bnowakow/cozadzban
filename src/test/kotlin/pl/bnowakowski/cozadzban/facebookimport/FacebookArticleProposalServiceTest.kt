@@ -89,8 +89,8 @@ class FacebookArticleProposalServiceTest {
 
         assertEquals(0, response.submitted)
         assertEquals(1, response.skippedExisting)
-        verify(proposalRepository, never()).insert(any(), any(), any(), any(), any(), any(), any())
-        verify(runRepository).recordBatch("run-1", 1, 0, 1, null, 1, 1)
+        verify(proposalRepository, never()).insert(any(), any(), any(), any(), any(), any(), any(), any())
+        verify(runRepository).recordBatch("run-1", 1, 0, 1, null, 1, 1, FacebookImportType.SELENIUM)
     }
 
     @Test
@@ -127,6 +127,7 @@ class FacebookArticleProposalServiceTest {
             eq("run-2"),
             eq("https://www.facebook.com/source/posts/2"),
             logsCaptor.capture(),
+            eq(FacebookImportType.SELENIUM),
         )
         val logs = GzipTextCodec.decompress(logsCaptor.firstValue)
         assertTrue(logs.contains("old logs"))
@@ -139,7 +140,7 @@ class FacebookArticleProposalServiceTest {
         val eventingService = proposalService(publisher)
         whenever(articleService.existsByUrl("https://example.com/new-story")).thenReturn(false)
         whenever(proposalRepository.findByCanonicalArticleUrl("https://example.com/new-story")).thenReturn(null)
-        whenever(proposalRepository.insert(any(), any(), any(), any(), any(), any(), any())).thenReturn(
+        whenever(proposalRepository.insert(any(), any(), any(), any(), any(), any(), any(), any())).thenReturn(
             proposal(status = null, logsCompressed = GzipTextCodec.compress("candidate logs")),
         )
 

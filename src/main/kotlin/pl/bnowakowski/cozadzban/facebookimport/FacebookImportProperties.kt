@@ -37,11 +37,44 @@ data class FacebookImportProperties(
     val rejectionArtifactDir: String = "logs/facebook-import-rejections",
     val staleRunCleanupInterval: Duration = Duration.ofMinutes(1),
     val schedule: Schedule = Schedule(),
+    val selenium: Selenium = Selenium(),
+    val api: Api = Api(),
 ) {
+    fun isSeleniumEnabled(): Boolean =
+        selenium.enabled || enabled
+
     data class Schedule(
         val enabled: Boolean = false,
         val interval: Duration = Duration.ofHours(8),
         val initialDelay: Duration = Duration.ZERO,
+    )
+
+    data class Selenium(
+        val enabled: Boolean = false,
+        val profileUrl: String = "https://www.facebook.com/bartek.dobrowolski.nowakowski",
+        val username: String = "",
+        val password: String = "",
+        val browser: Browser = Browser.FIREFOX,
+        val headless: Boolean = false,
+        val reuseBrowserAcrossRestarts: Boolean = true,
+        val driverSessionFile: String = "logs/facebook-import-firefox-session.properties",
+        val scrolls: Int = 8,
+        val waitAfterLogin: Duration = Duration.ofSeconds(8),
+        val waitAfterPageOpen: Duration = Duration.ofSeconds(5),
+        val waitAfterScroll: Duration = Duration.ofSeconds(2),
+        val manualLoginTimeout: Duration = Duration.ofMinutes(3),
+    )
+
+    data class Api(
+        val enabled: Boolean = false,
+        val userAccessToken: String = "",
+        val baseUrl: String = "https://graph.facebook.com",
+        val version: String = "v23.0",
+        val profileId: String = "me",
+        val pageLimit: Int = 25,
+        val maxPages: Int = 4,
+        val connectTimeout: Duration = Duration.ofSeconds(3),
+        val readTimeout: Duration = Duration.ofMinutes(1),
     )
 
     enum class Browser {

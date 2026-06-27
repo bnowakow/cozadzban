@@ -6,6 +6,7 @@ package pl.bnowakowski.cozadzban.facebookimport
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.argumentCaptor
@@ -28,17 +29,22 @@ class FacebookImportJobServiceTest {
 
     private val jobOperator: JobOperator = mock()
     private val job: Job = mock()
-    private val importer: FacebookProfileArticleImporter = mock()
+    private val importer: FacebookImportRunner = mock()
     private val proposalService: FacebookArticleProposalService = mock()
     private val jobOperatorProvider: ObjectProvider<JobOperator> = mock()
     private val jobProvider: ObjectProvider<Job> = mock()
+
+    @BeforeEach
+    fun setup() {
+        whenever(importer.importType).thenReturn(FacebookImportType.SELENIUM)
+    }
 
     @Test
     fun `startImport launches batch job with facebook import parameters`() {
         val latch = CountDownLatch(1)
         whenever(jobOperatorProvider.getIfAvailable()).thenReturn(jobOperator)
         whenever(jobProvider.getIfAvailable()).thenReturn(job)
-        whenever(importer.facebookImportUnavailableReason()).thenReturn(null)
+        whenever(importer.unavailableReason()).thenReturn(null)
         whenever(importer.newImportRunId(any())).thenReturn("run-1")
         whenever(importer.isImportRunning()).thenReturn(false)
         whenever(jobOperator.start(eq(job), any())).thenAnswer { invocation ->
@@ -49,7 +55,7 @@ class FacebookImportJobServiceTest {
                 invocation.getArgument(1),
             )
         }
-        val service = FacebookImportJobService(jobOperatorProvider, jobProvider, importer, proposalService)
+        val service = FacebookImportJobService(jobOperatorProvider, jobProvider, listOf(importer), proposalService)
 
         assertEquals("run-1", service.startImport())
         assertTrue(latch.await(1, TimeUnit.SECONDS))
@@ -65,7 +71,7 @@ class FacebookImportJobServiceTest {
         val latch = CountDownLatch(1)
         whenever(jobOperatorProvider.getIfAvailable()).thenReturn(jobOperator)
         whenever(jobProvider.getIfAvailable()).thenReturn(job)
-        whenever(importer.facebookImportUnavailableReason()).thenReturn(null)
+        whenever(importer.unavailableReason()).thenReturn(null)
         whenever(importer.newImportRunId(any())).thenReturn("run-scheduled")
         whenever(importer.isImportRunning()).thenReturn(false)
         whenever(jobOperator.start(eq(job), any())).thenAnswer { invocation ->
@@ -76,7 +82,7 @@ class FacebookImportJobServiceTest {
                 invocation.getArgument(1),
             )
         }
-        val service = FacebookImportJobService(jobOperatorProvider, jobProvider, importer, proposalService)
+        val service = FacebookImportJobService(jobOperatorProvider, jobProvider, listOf(importer), proposalService)
 
         assertEquals("run-scheduled", service.startImport(FacebookImportTrigger.SCHEDULED))
         assertTrue(latch.await(1, TimeUnit.SECONDS))
@@ -108,7 +114,7 @@ class FacebookImportJobServiceTest {
         )
         whenever(jobOperatorProvider.getIfAvailable()).thenReturn(jobOperator)
         whenever(jobProvider.getIfAvailable()).thenReturn(job)
-        whenever(importer.facebookImportUnavailableReason()).thenReturn(null)
+        whenever(importer.unavailableReason()).thenReturn(null)
         whenever(importer.newImportRunId(any())).thenReturn("run-1")
         whenever(importer.isImportRunning()).thenReturn(false)
         whenever(importer.currentProgressSnapshot()).thenReturn(snapshot)
@@ -118,7 +124,7 @@ class FacebookImportJobServiceTest {
             Thread.sleep(5_000)
             JobExecution(99L, JobInstance(1L, FACEBOOK_IMPORT_JOB_NAME), it.getArgument(1))
         }
-        val service = FacebookImportJobService(jobOperatorProvider, jobProvider, importer, proposalService)
+        val service = FacebookImportJobService(jobOperatorProvider, jobProvider, listOf(importer), proposalService)
 
         service.startImport()
         assertTrue(latch.await(1, TimeUnit.SECONDS))
@@ -134,7 +140,7 @@ class FacebookImportJobServiceTest {
         val latch = CountDownLatch(1)
         whenever(jobOperatorProvider.getIfAvailable()).thenReturn(jobOperator)
         whenever(jobProvider.getIfAvailable()).thenReturn(job)
-        whenever(importer.facebookImportUnavailableReason()).thenReturn(null)
+        whenever(importer.unavailableReason()).thenReturn(null)
         whenever(importer.newImportRunId(any())).thenReturn("run-1", "run-2")
         whenever(importer.isImportRunning()).thenReturn(false)
         whenever(jobOperator.start(eq(job), any())).thenAnswer {
@@ -142,7 +148,7 @@ class FacebookImportJobServiceTest {
             Thread.sleep(5_000)
             JobExecution(99L, JobInstance(1L, FACEBOOK_IMPORT_JOB_NAME), it.getArgument(1))
         }
-        val service = FacebookImportJobService(jobOperatorProvider, jobProvider, importer, proposalService)
+        val service = FacebookImportJobService(jobOperatorProvider, jobProvider, listOf(importer), proposalService)
 
         service.startImport()
         assertTrue(latch.await(1, TimeUnit.SECONDS))
@@ -161,7 +167,7 @@ class FacebookImportJobServiceTest {
         val interruptedLatch = CountDownLatch(1)
         whenever(jobOperatorProvider.getIfAvailable()).thenReturn(jobOperator)
         whenever(jobProvider.getIfAvailable()).thenReturn(job)
-        whenever(importer.facebookImportUnavailableReason()).thenReturn(null)
+        whenever(importer.unavailableReason()).thenReturn(null)
         whenever(importer.newImportRunId(any())).thenReturn("run-timeout")
         whenever(importer.isImportRunning()).thenReturn(false)
         whenever(jobOperator.start(eq(job), any())).thenAnswer {
@@ -178,7 +184,7 @@ class FacebookImportJobServiceTest {
         val service = FacebookImportJobService(
             jobOperatorProvider,
             jobProvider,
-            importer,
+            listOf(importer),
             proposalService,
             FacebookImportProperties(runTimeout = runTimeout),
         )

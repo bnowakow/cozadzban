@@ -11,17 +11,23 @@ import org.springframework.stereotype.Component
 
 @Component
 class FacebookImportTasklet(
-    private val importer: FacebookProfileArticleImporter,
+    runners: List<FacebookImportRunner>,
 ) : Tasklet {
+    private val runnersByType = runners.associateBy { it.importType }
 
     override fun execute(contribution: StepContribution, chunkContext: ChunkContext): RepeatStatus {
         val parameters = contribution.stepExecution.jobParameters
         val importRunId = parameters.getString("facebookImportId")
             ?: throw IllegalArgumentException("facebookImportId job parameter is required")
+        val importType = parameters.getString("importType")
+            ?.let(FacebookImportType::valueOf)
+            ?: throw IllegalArgumentException("importType job parameter is required")
         val trigger = parameters.getString("trigger")
             ?.let(FacebookImportTrigger::valueOf)
             ?: FacebookImportTrigger.MANUAL
 
+        val importer = runnersByType[importType]
+            ?: throw IllegalArgumentException("Facebook import runner $importType is unavailable")
         importer.runImport(importRunId, trigger)
         return RepeatStatus.FINISHED
     }

@@ -61,6 +61,14 @@ interface ArticleRepositoryCustom {
     /** Updates only the favicon field for a single article. */
     fun updateFavicon(id: Long, favicon: String): Boolean
 
+    /** Records import/source attribution for an article created from a Facebook proposal. */
+    fun updateImportSource(
+        id: Long,
+        sourceImportType: String,
+        sourceImportRunId: String,
+        sourceFacebookProposalId: Long,
+    ): Boolean
+
     /** Returns Facebook articles published at the same instant with optional cached content for duplicate checks. */
     fun findFacebookDuplicateCandidatesByPublishedAt(publishedAt: Instant): List<ArticleDuplicateCandidate>
 
@@ -119,7 +127,7 @@ class ArticleRepositoryCustomImpl(
         // column and direction are from a closed allowlist — safe to interpolate
         val sql = """
             SELECT id, url, language, title, thumbnail, favicon, lead, quote, ai_summary,
-                   created_by_user_id, created_at, published_at
+                   created_by_user_id, source_import_type, source_import_run_id, source_facebook_proposal_id, created_at, published_at
               FROM article
              $whereClause
              ORDER BY $column $direction$tieBreaker
@@ -145,7 +153,7 @@ class ArticleRepositoryCustomImpl(
         val sql = if (hasLanguageFilter) {
             """
                 SELECT id, url, language, title, thumbnail, favicon, lead, quote, ai_summary,
-                       created_by_user_id, created_at, published_at
+                       created_by_user_id, source_import_type, source_import_run_id, source_facebook_proposal_id, created_at, published_at
                   FROM article
                  WHERE language = :language
                  ORDER BY created_at DESC
@@ -153,7 +161,7 @@ class ArticleRepositoryCustomImpl(
         } else {
             """
                 SELECT id, url, language, title, thumbnail, favicon, lead, quote, ai_summary,
-                       created_by_user_id, created_at, published_at
+                       created_by_user_id, source_import_type, source_import_run_id, source_facebook_proposal_id, created_at, published_at
                   FROM article
                  ORDER BY created_at DESC
             """.trimIndent()
@@ -191,7 +199,7 @@ class ArticleRepositoryCustomImpl(
         jdbc.query(
             """
                 SELECT id, url, language, title, thumbnail, favicon, lead, quote, ai_summary,
-                       created_by_user_id, created_at, published_at
+                       created_by_user_id, source_import_type, source_import_run_id, source_facebook_proposal_id, created_at, published_at
                   FROM article
                  WHERE favicon IS NULL
                     OR TRIM(favicon) = ''
@@ -215,11 +223,35 @@ class ArticleRepositoryCustomImpl(
         return updated > 0
     }
 
+    override fun updateImportSource(
+        id: Long,
+        sourceImportType: String,
+        sourceImportRunId: String,
+        sourceFacebookProposalId: Long,
+    ): Boolean {
+        val updated = jdbc.update(
+            """
+                UPDATE article
+                   SET source_import_type = :sourceImportType,
+                       source_import_run_id = :sourceImportRunId,
+                       source_facebook_proposal_id = :sourceFacebookProposalId
+                 WHERE id = :id
+            """.trimIndent(),
+            mapOf(
+                "id" to id,
+                "sourceImportType" to sourceImportType,
+                "sourceImportRunId" to sourceImportRunId,
+                "sourceFacebookProposalId" to sourceFacebookProposalId,
+            ),
+        )
+        return updated > 0
+    }
+
     override fun findFacebookDuplicateCandidatesByPublishedAt(publishedAt: Instant): List<ArticleDuplicateCandidate> =
         jdbc.query(
             """
                 SELECT a.id, a.url, a.language, a.title, a.thumbnail, a.favicon, a.lead, a.quote, a.ai_summary,
-                       a.created_by_user_id, a.created_at, a.published_at, c.content
+                       a.created_by_user_id, a.source_import_type, a.source_import_run_id, a.source_facebook_proposal_id, a.created_at, a.published_at, c.content
                   FROM article a
                   LEFT JOIN article_content c ON c.article_id = a.id
                  WHERE a.published_at = :publishedAt
@@ -287,9 +319,17 @@ class ArticleRepositoryCustomImpl(
                 quote           = rs.getString("quote"),
                 aiSummary       = rs.getString("ai_summary"),
                 createdByUserId = rs.getLong("created_by_user_id"),
+                sourceImportType = rs.getString("source_import_type"),
+                sourceImportRunId = rs.getString("source_import_run_id"),
+                sourceFacebookProposalId = rs.getLongOrNull("source_facebook_proposal_id"),
                 publishedAt     = rs.getTimestamp("published_at")?.toInstant(),
                 createdAt       = rs.getTimestamp("created_at")?.toInstant() ?: Instant.EPOCH,
             )
+        }
+
+        fun java.sql.ResultSet.getLongOrNull(column: String): Long? {
+            val value = getLong(column)
+            return if (wasNull()) null else value
         }
 
         val ARTICLE_DUPLICATE_CANDIDATE_ROW_MAPPER = RowMapper<ArticleDuplicateCandidate> { rs, rowNum ->

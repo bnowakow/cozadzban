@@ -48,9 +48,19 @@ class FacebookImportScheduler(
     internal fun launchScheduledImportOnce(trigger: FacebookImportTrigger = FacebookImportTrigger.SCHEDULED): Boolean {
         if (!properties.schedule.enabled) return false
         return try {
-            val importRunId = jobService.startImport(trigger)
-            logger.info("Scheduled Facebook import accepted importRunId={} trigger={}", importRunId, trigger)
-            true
+            val importRunIds = jobService.startScheduledImports(trigger)
+            if (importRunIds.isEmpty()) {
+                logger.info("Skipping scheduled Facebook import because no import type is available")
+                false
+            } else {
+                logger.info(
+                    "Scheduled Facebook import accepted importRunIds={} trigger={} order={}",
+                    importRunIds,
+                    trigger,
+                    jobService.scheduledImportTypes(),
+                )
+                true
+            }
         } catch (_: FacebookImportAlreadyRunningException) {
             logger.info("Skipping scheduled Facebook import because another import is already running")
             false

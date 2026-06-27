@@ -11,6 +11,27 @@ enum class FacebookImportTrigger {
     SCHEDULED,
 }
 
+enum class FacebookImportType {
+    API,
+    SELENIUM,
+}
+
+interface FacebookImportRunner {
+    val importType: FacebookImportType
+
+    fun newImportRunId(generatedAt: Instant = Instant.now()): String
+
+    fun runImport(importRunId: String, trigger: FacebookImportTrigger = FacebookImportTrigger.MANUAL)
+
+    fun terminateImport()
+
+    fun isImportRunning(): Boolean
+
+    fun currentProgressSnapshot(): FacebookImportProgressSnapshot?
+
+    fun unavailableReason(): String?
+}
+
 data class FacebookImportLoginRequiredEvent(
     val importRunId: String,
     val trigger: FacebookImportTrigger,

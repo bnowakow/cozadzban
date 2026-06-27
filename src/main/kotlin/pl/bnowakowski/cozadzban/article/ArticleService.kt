@@ -11,6 +11,7 @@ import org.springframework.web.context.request.RequestContextHolder
 import org.springframework.web.context.request.ServletRequestAttributes
 import pl.bnowakowski.cozadzban.enrichment.EnrichmentResult
 import pl.bnowakowski.cozadzban.enrichment.EnrichmentService
+import pl.bnowakowski.cozadzban.facebookimport.FacebookImportType
 import pl.bnowakowski.cozadzban.user.AppUserRepository
 import java.net.URI
 import java.time.Instant
@@ -142,6 +143,20 @@ class ArticleService(
 
     fun existsByUrl(rawUrl: String): Boolean =
         articleRepository.existsByUrl(canonicalizeUrl(rawUrl))
+
+    fun recordImportSource(
+        articleId: Long,
+        sourceImportType: FacebookImportType,
+        sourceImportRunId: String,
+        sourceFacebookProposalId: Long,
+    ) {
+        articleRepository.updateImportSource(
+            id = articleId,
+            sourceImportType = sourceImportType.name,
+            sourceImportRunId = sourceImportRunId,
+            sourceFacebookProposalId = sourceFacebookProposalId,
+        )
+    }
 
     fun replace(id: Long, input: ArticleInput): Article {
         val sanitizedInput = input.withoutFacebookImportMarkerQuote()

@@ -8,35 +8,50 @@ import org.springframework.batch.core.job.Job
 import org.springframework.batch.core.job.parameters.JobParametersBuilder
 import org.springframework.batch.core.launch.JobOperator
 import org.springframework.beans.factory.ObjectProvider
+import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Service
 import java.time.Duration
 import java.time.Instant
 
 @Service
-class FacebookImportJobService(
+class FacebookImportJobService @Autowired constructor(
     private val jobOperatorProvider: ObjectProvider<JobOperator>,
     @Qualifier(FACEBOOK_IMPORT_JOB_NAME) private val facebookImportJobProvider: ObjectProvider<Job>,
-    private val importer: FacebookProfileArticleImporter,
+    runners: List<FacebookImportRunner>,
     private val proposalService: FacebookArticleProposalService,
     private val properties: FacebookImportProperties = FacebookImportProperties(),
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
+    private val runnersByType: Map<FacebookImportType, FacebookImportRunner> = buildMap {
+        runners.forEach { runner ->
+            val importType: FacebookImportType? = runCatching { runner.importType }.getOrNull()
+            put(importType ?: FacebookImportType.SELENIUM, runner)
+        }
+    }
     private val stateLock = Any()
 
-    @Volatile
-    private var activeLaunchThread: Thread? = null
-    @Volatile
-    private var activeTimeoutThread: Thread? = null
-    @Volatile
-    private var activeImportRunId: String? = null
-    @Volatile
-    private var activeImportStartedAt: Instant? = null
-    @Volatile
-    private var activeImportTrigger: FacebookImportTrigger? = null
+    @Volatile private var activeLaunchThread: Thread? = null
+    @Volatile private var activeTimeoutThread: Thread? = null
+    @Volatile private var activeImportRunId: String? = null
+    @Volatile private var activeImportStartedAt: Instant? = null
+    @Volatile private var activeImportTrigger: FacebookImportTrigger? = null
+    @Volatile private var activeImportType: FacebookImportType? = null
 
-    fun startImport(trigger: FacebookImportTrigger = FacebookImportTrigger.MANUAL): String {
-        facebookImportUnavailableReason()?.let { throw IllegalArgumentException(it) }
+    constructor(
+        jobOperatorProvider: ObjectProvider<JobOperator>,
+        facebookImportJobProvider: ObjectProvider<Job>,
+        importer: FacebookProfileArticleImporter,
+        proposalService: FacebookArticleProposalService,
+        properties: FacebookImportProperties = FacebookImportProperties(),
+    ) : this(jobOperatorProvider, facebookImportJobProvider, listOf(importer), proposalService, properties)
+
+    fun startImport(
+        importType: FacebookImportType = FacebookImportType.SELENIUM,
+        trigger: FacebookImportTrigger = FacebookImportTrigger.MANUAL,
+    ): String {
+        val importer = runner(importType)
+        facebookImportUnavailableReason(importType)?.let { throw IllegalArgumentException(it) }
         val jobOperator = jobOperatorProvider.getIfAvailable()
             ?: throw IllegalArgumentException("Spring Batch job infrastructure is unavailable")
         val facebookImportJob = facebookImportJobProvider.getIfAvailable()
@@ -48,14 +63,15 @@ class FacebookImportJobService(
         proposalService.terminateTimedOutRuns(runTimeout, requestedAt)
         terminateActiveImportIfTimedOut(requestedAt, runTimeout)
         synchronized(stateLock) {
-            if (activeLaunchThread?.isAlive == true || importer.isImportRunning()) {
+            if (activeLaunchThread?.isAlive == true || runnersByType.values.any { it.isImportRunning() }) {
                 throw FacebookImportAlreadyRunningException()
             }
 
             val launchThread = Thread {
                 logger.info(
-                    "Facebook import batch job started importRunId={} trigger={} timeout={}",
+                    "Facebook import batch job started importRunId={} importType={} trigger={} timeout={}",
                     importRunId,
+                    importType,
                     trigger,
                     runTimeout,
                 )
@@ -64,13 +80,15 @@ class FacebookImportJobService(
                         facebookImportJob,
                         JobParametersBuilder()
                             .addString("facebookImportId", importRunId)
+                            .addString("importType", importType.name)
                             .addString("trigger", trigger.name)
                             .addString("requestedAt", Instant.now().toString())
                             .toJobParameters(),
                     )
                     logger.info(
-                        "Facebook import batch job completed importRunId={} trigger={} jobExecutionId={} status={} durationMs={}",
+                        "Facebook import batch job completed importRunId={} importType={} trigger={} jobExecutionId={} status={} durationMs={}",
                         importRunId,
+                        importType,
                         trigger,
                         execution.id,
                         execution.status,
@@ -79,23 +97,26 @@ class FacebookImportJobService(
                 } catch (ex: InterruptedException) {
                     Thread.currentThread().interrupt()
                     logger.info(
-                        "Facebook import batch launch interrupted importRunId={} trigger={} durationMs={}",
+                        "Facebook import batch launch interrupted importRunId={} importType={} trigger={} durationMs={}",
                         importRunId,
+                        importType,
                         trigger,
                         elapsedMs(requestedAt),
                     )
                 } catch (ex: Exception) {
                     if (Thread.currentThread().isInterrupted) {
                         logger.info(
-                            "Facebook import batch launch interrupted importRunId={} trigger={} durationMs={}",
+                            "Facebook import batch launch interrupted importRunId={} importType={} trigger={} durationMs={}",
                             importRunId,
+                            importType,
                             trigger,
                             elapsedMs(requestedAt),
                         )
                     } else {
                         logger.warn(
-                            "Facebook import batch launch failed importRunId={} trigger={} durationMs={}",
+                            "Facebook import batch launch failed importRunId={} importType={} trigger={} durationMs={}",
                             importRunId,
+                            importType,
                             trigger,
                             elapsedMs(requestedAt),
                             ex,
@@ -114,21 +135,35 @@ class FacebookImportJobService(
             activeImportRunId = importRunId
             activeImportStartedAt = requestedAt
             activeImportTrigger = trigger
+            activeImportType = importType
             launchThread.start()
             timeoutThread.start()
         }
         return importRunId
     }
 
+    fun startImport(trigger: FacebookImportTrigger): String =
+        startImport(FacebookImportType.SELENIUM, trigger)
+
+    fun startScheduledImports(trigger: FacebookImportTrigger = FacebookImportTrigger.SCHEDULED): List<String> {
+        val launched = mutableListOf<String>()
+        scheduledImportTypes().forEach { importType ->
+            launched += startImport(importType, trigger)
+            waitUntilIdle()
+        }
+        return launched
+    }
+
     fun terminateImport() {
         val thread = synchronized(stateLock) {
             activeLaunchThread?.takeIf { it.isAlive }
         }
-        if (thread == null && !importer.isImportRunning()) {
+        val activeImporter = activeImportType?.let { runnersByType[it] }
+        if (thread == null && activeImporter?.isImportRunning() != true) {
             throw FacebookImportNotRunningException()
         }
 
-        val importerTermination = runCatching { importer.terminateImport() }.exceptionOrNull()
+        val importerTermination = runCatching { activeImporter?.terminateImport() }.exceptionOrNull()
         if (importerTermination != null && importerTermination !is FacebookImportNotRunningException) {
             throw importerTermination
         }
@@ -136,7 +171,7 @@ class FacebookImportJobService(
     }
 
     fun isImportRunning(): Boolean =
-        activeLaunchThread?.isAlive == true || importer.isImportRunning()
+        activeLaunchThread?.isAlive == true || runnersByType.values.any { it.isImportRunning() }
 
     fun currentProgress(): FacebookImportProgressSnapshot? {
         val now = Instant.now()
@@ -146,7 +181,7 @@ class FacebookImportJobService(
         proposalService.latestRunningProgress()?.let { return it }
         if (activeTimedOut) return null
         val fallback = synchronized(stateLock) {
-            if (activeLaunchThread?.isAlive != true && !importer.isImportRunning()) {
+            if (activeLaunchThread?.isAlive != true && runnersByType.values.none { it.isImportRunning() }) {
                 null
             } else {
                 activeImportRunId?.let { importRunId ->
@@ -155,7 +190,9 @@ class FacebookImportJobService(
             }
         } ?: return null
 
-        importer.currentProgressSnapshot()
+        activeImportType
+            ?.let { runnersByType[it] }
+            ?.currentProgressSnapshot()
             ?.takeIf { it.importRunId == fallback.first }
             ?.let { return it }
 
@@ -177,8 +214,20 @@ class FacebookImportJobService(
         )
     }
 
-    fun facebookImportUnavailableReason(): String? =
-        importer.facebookImportUnavailableReason()
+    fun facebookImportUnavailableReason(importType: FacebookImportType = FacebookImportType.SELENIUM): String? =
+        (runnersByType[importType] ?: runnersByType.values.singleOrNull())
+            ?.unavailableReason()
+            ?: if (runnersByType[importType] != null || runnersByType.values.size == 1) {
+                null
+            } else {
+                "Facebook import runner $importType is unavailable"
+            }
+
+    fun availableImportTypes(): List<FacebookImportType> =
+        FacebookImportType.entries.filter { facebookImportUnavailableReason(it) == null }
+
+    fun scheduledImportTypes(): List<FacebookImportType> =
+        listOf(FacebookImportType.API, FacebookImportType.SELENIUM).filter { facebookImportUnavailableReason(it) == null }
 
     private fun timeoutThread(
         importRunId: String,
@@ -204,7 +253,7 @@ class FacebookImportJobService(
             val importRunId = activeImportRunId ?: return false
             val startedAt = activeImportStartedAt ?: return false
             val trigger = activeImportTrigger ?: FacebookImportTrigger.MANUAL
-            val running = activeLaunchThread?.isAlive == true || importer.isImportRunning()
+            val running = activeLaunchThread?.isAlive == true || runnersByType.values.any { it.isImportRunning() }
             if (!running || Duration.between(startedAt, now) < timeout) return false
             ActiveImport(importRunId, trigger, startedAt)
         }
@@ -220,7 +269,7 @@ class FacebookImportJobService(
     ) {
         val launchThread = synchronized(stateLock) {
             if (activeImportRunId != importRunId) return
-            val running = activeLaunchThread?.isAlive == true || importer.isImportRunning()
+            val running = activeLaunchThread?.isAlive == true || runnersByType.values.any { it.isImportRunning() }
             if (!running) return
             activeLaunchThread
         }
@@ -232,7 +281,8 @@ class FacebookImportJobService(
             timeout,
             elapsedMs(requestedAt, timedOutAt),
         )
-        val importerTermination = runCatching { importer.terminateImport() }.exceptionOrNull()
+        val importerTermination = runCatching { activeImportType?.let { runnersByType[it] }?.terminateImport() }
+            .exceptionOrNull()
         if (importerTermination != null && importerTermination !is FacebookImportNotRunningException) {
             logger.warn("Facebook import {} timeout termination failed", importRunId, importerTermination)
         }
@@ -253,7 +303,19 @@ class FacebookImportJobService(
                 activeImportRunId = null
                 activeImportStartedAt = null
                 activeImportTrigger = null
+                activeImportType = null
             }
+        }
+    }
+
+    private fun runner(importType: FacebookImportType): FacebookImportRunner =
+        runnersByType[importType]
+            ?: runnersByType.values.singleOrNull()
+            ?: throw IllegalArgumentException("Facebook import runner $importType is unavailable")
+
+    private fun waitUntilIdle() {
+        while (isImportRunning()) {
+            Thread.sleep(100)
         }
     }
 

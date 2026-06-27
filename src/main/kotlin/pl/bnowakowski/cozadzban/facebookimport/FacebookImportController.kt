@@ -17,7 +17,19 @@ class FacebookImportController(
 
     @PostMapping("/run")
     fun runImport(): ResponseEntity<Void> {
-        facebookImportJobService.startImport()
+        facebookImportJobService.startImport(FacebookImportType.SELENIUM)
+        return ResponseEntity.accepted().build()
+    }
+
+    @PostMapping("/run/selenium")
+    fun runSeleniumImport(): ResponseEntity<Void> {
+        facebookImportJobService.startImport(FacebookImportType.SELENIUM)
+        return ResponseEntity.accepted().build()
+    }
+
+    @PostMapping("/run/api")
+    fun runApiImport(): ResponseEntity<Void> {
+        facebookImportJobService.startImport(FacebookImportType.API)
         return ResponseEntity.accepted().build()
     }
 

@@ -43,6 +43,7 @@ enum class FacebookImportProgressPhase(val phaseIndex: Int, val label: String) {
 
 data class FacebookImportRun(
     val importRunId: String,
+    val importType: FacebookImportType = FacebookImportType.SELENIUM,
     val status: FacebookImportRunStatus,
     val startedAt: Instant,
     val finishedAt: Instant?,
@@ -64,6 +65,7 @@ data class FacebookArticleProposal(
     val id: Long,
     val candidateId: String,
     val importRunId: String,
+    val importType: FacebookImportType = FacebookImportType.SELENIUM,
     val articleUrl: String,
     val canonicalArticleUrl: String,
     val facebookPostUrl: String?,
@@ -91,6 +93,7 @@ data class FacebookProposalSubmission(
 
 data class FacebookProposalBatchRequest(
     val importRunId: String,
+    val importType: FacebookImportType = FacebookImportType.SELENIUM,
     val passIndex: Int,
     val passCount: Int,
     val proposals: List<FacebookProposalSubmission>,
@@ -109,6 +112,7 @@ data class FacebookProposalExistsResponse(
 
 data class FacebookImportRunCompletionRequest(
     val status: FacebookImportRunStatus,
+    val importType: FacebookImportType = FacebookImportType.SELENIUM,
     val discoveredCount: Int = 0,
     val submittedCount: Int = 0,
     val skippedExistingCount: Int = 0,
@@ -125,6 +129,7 @@ data class FacebookImportLoginRequiredRequest(
 )
 
 data class FacebookImportProgressRequest(
+    val importType: FacebookImportType = FacebookImportType.SELENIUM,
     val phase: String,
     val detail: String? = null,
     val phaseIndex: Int,

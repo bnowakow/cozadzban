@@ -136,20 +136,18 @@ x-architecture:
         View invokes application services server-side from Vaadin event handlers;
         no browser-side token forwarding is used.
     - name: Facebook import orchestration
-      technology: Spring Batch tasklet + scheduled/admin launch + Spring-managed Selenium WebDriver + proposal inbox
+      technology: Spring Batch tasklet + scheduled/admin launch + Facebook Graph API import + Spring-managed Selenium WebDriver + proposal inbox
       description: >
-        A long-lived Selenium browser session is owned by the worker app and reused
-        across import runs. Spring Batch owns run lifecycle/history for the
-        facebookImportJob, while the scraper remains a single synchronous tasklet.
-        The worker launches once on startup and then at the configured interval
-        when scheduling is enabled; ADMIN REST/UI triggers launch the same Batch job
-        manually. Each run generates its importRunId before login, opens the browser
-        on demand if needed, verifies the Facebook login state, emits a login-required
-        event when manual two-factor login is needed, reports that event to the
-        server over the machine API when running remotely, and processes at most one
-        import at a time per worker. The worker submits discovered article proposals
-        to machine-only server endpoints instead of creating Articles directly.
-        Logged-in users review proposals later in a Vaadin inbox.
+        Spring Batch owns run lifecycle/history for the facebookImportJob. The job
+        receives an explicit importType parameter: API for the browserless Facebook
+        Graph API importer or SELENIUM for the browser-backed profile importer.
+        Scheduled runs derive their sequence from available import types. If both are
+        enabled, API always runs first because Graph API data is more precise and
+        needs less HTML guesswork; Selenium then adds browser-derived context to
+        overlapping proposals and discovers posts the API missed. ADMIN REST/UI
+        triggers can launch either type manually. The worker/server submits discovered
+        article proposals to machine-only server endpoints instead of creating Articles
+        directly. Logged-in users review proposals later in a Vaadin inbox.
     - name: Notifications
       technology: Pushover REST API + encrypted per-user preferences
       description: >
@@ -312,6 +310,11 @@ x-database:
         - name: import_run_id
           type: TEXT
           constraints: PRIMARY KEY
+        - name: import_type
+          type: VARCHAR(32)
+          migration: V29__facebook_import_type_attribution.sql
+          constraints: "NOT NULL DEFAULT SELENIUM CHECK IN (API, SELENIUM)"
+          description: Import implementation used for this run.
         - name: status
           type: VARCHAR(32)
           constraints: "NOT NULL CHECK IN (RUNNING, FINISHED, FAILED, TERMINATED)"
@@ -356,6 +359,11 @@ x-database:
           type: TEXT
           constraints: "NOT NULL UNIQUE"
           description: Canonical article URL; identity for duplicate prevention.
+        - name: import_type
+          type: VARCHAR(32)
+          migration: V29__facebook_import_type_attribution.sql
+          constraints: "NOT NULL DEFAULT SELENIUM CHECK IN (API, SELENIUM)"
+          description: Import implementation that most recently submitted or refreshed this proposal.
         - name: status
           type: VARCHAR(32)
           constraints: "nullable CHECK IN (ACCEPTED, REJECTED, FAILED)"
@@ -756,18 +764,14 @@ x-business-rules:
   - id: BR-46
     name: Facebook import job orchestration
     description: >
-      Facebook import runs through the Spring Batch facebookImportJob, with a
-      single synchronous tasklet wrapping the Selenium scraper. The worker may
-      launch the job manually through ADMIN REST/UI controls or automatically
-      once on startup and then every configured interval when scheduling is
-      enabled. A single long-lived Selenium browser session is reused across
-      runs. The worker must generate the importRunId before login, verify whether
-      Facebook is already logged in before each import, emit a login-required
-      event and wait for manual/two-factor login when needed, and record FINISHED,
-      FAILED, or TERMINATED for every terminal path. Only one import may run at a
-      time per worker, and the browser window remains open until application
-      shutdown. Discovery submits proposal batches and must not block on a human
-      approval modal or create Articles directly.
+      Facebook import runs through the Spring Batch facebookImportJob with an
+      explicit importType parameter. API runs use the configured Facebook Graph API
+      user access token and no browser. SELENIUM runs reuse a long-lived browser,
+      verify Facebook login before each import, emit a login-required event and wait
+      for manual/two-factor login when needed. Scheduled runs launch enabled import
+      types sequentially, API before SELENIUM when both are available. Only one
+      import may run at a time per runtime. Discovery submits proposal batches and
+      must not block on a human approval modal or create Articles directly.
   - id: BR-47
     name: Facebook import admin access
     description: >
@@ -793,8 +797,9 @@ x-business-rules:
       Proposal status is null for pending or one of accepted, rejected, failed.
       All ACTIVE logged-in users may review proposals at /article-proposals, open
       article/Facebook links in a new tab, correct language, and accept or reject.
-      Accept creates a normal Article owned by the configured import bot; if creation
-      fails the proposal is marked failed and may be retried.
+      Accept creates a normal Article owned by the configured import bot and records
+      source_import_type, source_import_run_id, and source_facebook_proposal_id on the
+      Article; if creation fails the proposal is marked failed and may be retried.
   - id: BR-50
     name: Facebook import notifications
     description: >
@@ -846,7 +851,7 @@ x-vaadin-ui:
         - "Login button click -> navigates to GET /auth/login (OAuth flow)"
         - "If authenticated: Add Article button in toolbar"
         - "If authenticated: Article Proposals button links to /article-proposals"
-        - "If authenticated and ADMIN: Import Facebook Posts button next to Add Article triggers the Facebook import job"
+        - "If authenticated and ADMIN: Import Facebook API and/or Import Facebook Selenium buttons appear for the enabled import types"
         - "Facebook import is non-blocking and submits proposals to /article-proposals; no approval modal is shown during discovery"
         - "Click Add Article -> modal with form (url, language, quote, optional publishedAt date/time)"
         - "Form validation: url required (^https?://.+), language required and normalized lowercase, quote optional, publishedAt optional"
@@ -930,11 +935,10 @@ info:
        (add/soft-delete/restore/update users) and at `/admin/article-content-cache`
        to inspect, refresh, edit, and purge preserved article content cache entries,
        using server-side service calls.
-    8. **Facebook import job** — Spring Batch runs a single Selenium tasklet, either
-       from ADMIN REST/UI triggers or the worker schedule (`run now`, then every
-       configured interval). The worker reuses one browser session, emits a login
-       required event when manual Facebook 2FA is needed, and submits discovered
-       candidates as stored article proposals instead of creating Articles directly.
+    8. **Facebook import job** — Spring Batch runs browserless API and/or Selenium
+       import tasklets. Scheduled runs execute enabled import types sequentially,
+       API before Selenium when both are enabled, and manual ADMIN UI controls can
+       trigger either import type explicitly.
     9. **Article proposal inbox** — ACTIVE logged-in users review Facebook import
        proposals at `/article-proposals`, correct language, and accept/reject.
     10. **Machine-to-machine writes** — the Facebook importer submits proposals and
@@ -1045,9 +1049,45 @@ x-runtime-configuration:
     scheduleIntervalDefault: 8h
     scheduleInitialDelayEnvVar: APP_FACEBOOK_IMPORT_SCHEDULE_INITIAL_DELAY
     scheduleInitialDelayDefault: 0s
-    manualLoginTimeoutEnvVar: APP_FACEBOOK_IMPORT_MANUAL_LOGIN_TIMEOUT
-    manualLoginTimeoutDefault: 3m
-    schedulingSemantics: run on worker startup, then wait interval after each launch attempt; skip ticks while another import is active
+    sharedEnvVars:
+      - APP_FACEBOOK_IMPORT_SCHEDULE_ENABLED
+      - APP_FACEBOOK_IMPORT_SCHEDULE_INTERVAL
+      - APP_FACEBOOK_IMPORT_SCHEDULE_INITIAL_DELAY
+      - APP_FACEBOOK_IMPORT_RUN_TIMEOUT
+      - APP_FACEBOOK_IMPORT_TARGET_API_BASE_URL
+      - APP_FACEBOOK_IMPORT_TARGET_API_KEY
+      - APP_FACEBOOK_IMPORT_TARGET_API_KEY_HEADER
+      - APP_FACEBOOK_IMPORT_TARGET_PROPOSAL_PATH
+      - APP_FACEBOOK_IMPORT_TARGET_PROPOSAL_EXISTS_PATH
+      - APP_FACEBOOK_IMPORT_TARGET_RUN_PATH
+      - APP_FACEBOOK_IMPORT_TARGET_API_CONNECT_TIMEOUT
+      - APP_FACEBOOK_IMPORT_TARGET_API_READ_TIMEOUT
+      - APP_FACEBOOK_IMPORT_REJECTION_ARTIFACT_DIR
+    seleniumEnvVars:
+      - APP_FACEBOOK_IMPORT_SELENIUM_ENABLED
+      - APP_FACEBOOK_IMPORT_SELENIUM_PROFILE_URL
+      - APP_FACEBOOK_IMPORT_SELENIUM_USERNAME
+      - APP_FACEBOOK_IMPORT_SELENIUM_PASSWORD
+      - APP_FACEBOOK_IMPORT_SELENIUM_BROWSER
+      - APP_FACEBOOK_IMPORT_SELENIUM_HEADLESS
+      - APP_FACEBOOK_IMPORT_SELENIUM_REUSE_BROWSER_ACROSS_RESTARTS
+      - APP_FACEBOOK_IMPORT_SELENIUM_DRIVER_SESSION_FILE
+      - APP_FACEBOOK_IMPORT_SELENIUM_SCROLLS
+      - APP_FACEBOOK_IMPORT_SELENIUM_WAIT_AFTER_LOGIN
+      - APP_FACEBOOK_IMPORT_SELENIUM_WAIT_AFTER_PAGE_OPEN
+      - APP_FACEBOOK_IMPORT_SELENIUM_WAIT_AFTER_SCROLL
+      - APP_FACEBOOK_IMPORT_SELENIUM_MANUAL_LOGIN_TIMEOUT
+    apiEnvVars:
+      - APP_FACEBOOK_IMPORT_API_ENABLED
+      - APP_FACEBOOK_IMPORT_API_USER_ACCESS_TOKEN
+      - APP_FACEBOOK_IMPORT_API_BASE_URL
+      - APP_FACEBOOK_IMPORT_API_VERSION
+      - APP_FACEBOOK_IMPORT_API_PROFILE_ID
+      - APP_FACEBOOK_IMPORT_API_PAGE_LIMIT
+      - APP_FACEBOOK_IMPORT_API_MAX_PAGES
+      - APP_FACEBOOK_IMPORT_API_CONNECT_TIMEOUT
+      - APP_FACEBOOK_IMPORT_API_READ_TIMEOUT
+    schedulingSemantics: enabled import types run sequentially; API always runs before Selenium because Graph API data is more precise and requires less HTML guesswork
 
 x-problem-types:
   articleUrlConflict:
@@ -1298,23 +1338,64 @@ paths:
 
     post:
       tags: [Facebook Import]
-      summary: Trigger the Facebook import job
+      summary: Trigger the Selenium Facebook import job compatibility endpoint
       operationId: runFacebookImport
       x-required-role: ADMIN
       security:
         - googleOidc: []
       description: >
-        Starts the Facebook import job if no other import is currently running.
-        The request launches the same Spring Batch facebookImportJob used by the
-        worker scheduler. The job reuses a long-lived Selenium browser session,
-        opens the browser on demand, verifies Facebook login before scanning posts,
-        and emits a login-required event if manual/two-factor login is needed.
-        Returns 202 Accepted when the job is accepted. Discovery is non-blocking
-        and submits non-duplicate candidates to the article proposal inbox; no
-        same-session approval modal is shown.
+        Backward-compatible alias for POST /api/admin/facebook-import/run/selenium.
+        Starts the Selenium import only if Selenium import is available.
       responses:
         '202':
           description: Facebook import job accepted for execution
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/admin/facebook-import/run/selenium:
+
+    post:
+      tags: [Facebook Import]
+      summary: Trigger the Selenium Facebook import job
+      operationId: runFacebookSeleniumImport
+      x-required-role: ADMIN
+      security:
+        - googleOidc: []
+      description: >
+        Starts the Selenium import if no import is currently running. The job reuses
+        a long-lived browser session, verifies Facebook login, and submits proposal
+        candidates and browser diagnostics to the shared proposal inbox.
+      responses:
+        '202':
+          description: Selenium Facebook import accepted for execution
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/admin/facebook-import/run/api:
+
+    post:
+      tags: [Facebook Import]
+      summary: Trigger the Facebook Graph API import job
+      operationId: runFacebookApiImport
+      x-required-role: ADMIN
+      security:
+        - googleOidc: []
+      description: >
+        Starts the browserless Graph API import if no import is currently running.
+        The user access token is configured server-side and is never exposed to
+        frontend JavaScript. Marker-matching API posts submit proposals to the
+        shared proposal inbox.
+      responses:
+        '202':
+          description: Facebook Graph API import accepted for execution
         '409':
           $ref: '#/components/responses/Conflict'
         '401':

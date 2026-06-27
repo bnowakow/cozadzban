@@ -14,19 +14,60 @@ APP_NOTIFICATIONS_PUSHOVER_APP_TOKEN=<pushover-application-token>
 APP_NOTIFICATIONS_ENCRYPTION_KEY=<base64-or-hex-aes-key>
 ```
 
-Configure the worker with the matching key and proposal endpoints:
+Shared Facebook import configuration for any runtime that submits to this server:
 
 ```bash
-APP_FACEBOOK_IMPORT_ENABLED=true
 APP_FACEBOOK_IMPORT_SCHEDULE_ENABLED=true
 APP_FACEBOOK_IMPORT_SCHEDULE_INTERVAL=8h
 APP_FACEBOOK_IMPORT_SCHEDULE_INITIAL_DELAY=0s
 APP_FACEBOOK_IMPORT_TARGET_API_BASE_URL=http://localhost:8080
 APP_FACEBOOK_IMPORT_TARGET_API_KEY=<shared-secret>
+APP_FACEBOOK_IMPORT_RUN_TIMEOUT=1h
 APP_FACEBOOK_IMPORT_TARGET_PROPOSAL_PATH=/api/facebook-import/proposals
 APP_FACEBOOK_IMPORT_TARGET_PROPOSAL_EXISTS_PATH=/api/facebook-import/proposals/exists
 APP_FACEBOOK_IMPORT_TARGET_RUN_PATH=/api/facebook-import/runs
 ```
+
+Configure a worker with both import types enabled. Scheduled runs must run API first because
+Graph API data is more precise and requires less HTML guesswork; Selenium then provides a
+browser-backed fallback/context pass for overlapping proposals and posts the API missed:
+
+```bash
+APP_FACEBOOK_IMPORT_API_ENABLED=true
+APP_FACEBOOK_IMPORT_API_USER_ACCESS_TOKEN=<facebook-user-access-token>
+APP_FACEBOOK_IMPORT_API_BASE_URL=https://graph.facebook.com
+APP_FACEBOOK_IMPORT_API_VERSION=v23.0
+APP_FACEBOOK_IMPORT_API_PROFILE_ID=me
+APP_FACEBOOK_IMPORT_API_PAGE_LIMIT=25
+APP_FACEBOOK_IMPORT_API_MAX_PAGES=4
+APP_FACEBOOK_IMPORT_API_CONNECT_TIMEOUT=3s
+APP_FACEBOOK_IMPORT_API_READ_TIMEOUT=1m
+
+APP_FACEBOOK_IMPORT_SELENIUM_ENABLED=true
+APP_FACEBOOK_IMPORT_SELENIUM_PROFILE_URL=https://www.facebook.com/bartek.dobrowolski.nowakowski
+APP_FACEBOOK_IMPORT_SELENIUM_USERNAME=<facebook-login-email>
+APP_FACEBOOK_IMPORT_SELENIUM_PASSWORD=<facebook-password-if-used>
+APP_FACEBOOK_IMPORT_SELENIUM_BROWSER=FIREFOX
+APP_FACEBOOK_IMPORT_SELENIUM_HEADLESS=false
+APP_FACEBOOK_IMPORT_SELENIUM_REUSE_BROWSER_ACROSS_RESTARTS=true
+APP_FACEBOOK_IMPORT_SELENIUM_DRIVER_SESSION_FILE=logs/facebook-import-firefox-session.properties
+APP_FACEBOOK_IMPORT_SELENIUM_SCROLLS=8
+APP_FACEBOOK_IMPORT_SELENIUM_WAIT_AFTER_LOGIN=8s
+APP_FACEBOOK_IMPORT_SELENIUM_WAIT_AFTER_PAGE_OPEN=5s
+APP_FACEBOOK_IMPORT_SELENIUM_WAIT_AFTER_SCROLL=2s
+APP_FACEBOOK_IMPORT_SELENIUM_MANUAL_LOGIN_TIMEOUT=3m
+```
+
+Configure a server-only API runtime without Selenium/browser settings:
+
+```bash
+APP_FACEBOOK_IMPORT_API_ENABLED=true
+APP_FACEBOOK_IMPORT_API_USER_ACCESS_TOKEN=<facebook-user-access-token>
+APP_FACEBOOK_IMPORT_SELENIUM_ENABLED=false
+```
+
+The Facebook API user access token must stay server-side and must never be exposed to
+frontend JavaScript, localStorage, or sessionStorage.
 
 The worker uses Spring Batch for import lifecycle/history. `spring.batch.job.enabled=false`
 must remain set so jobs only start through the worker scheduler or admin trigger, and
@@ -53,12 +94,15 @@ active Pushover devices for that user key.
 
 ## Step 2: Non-blocking import
 
-1. As ADMIN, click **Import Facebook Posts**.
-2. Confirm no approval modal appears.
-3. The UI should immediately show a success toast and remain usable.
-4. Open `/article-proposals`.
+1. As ADMIN on a runtime with API enabled, click **Import Facebook API**.
+2. As ADMIN on a runtime with Selenium enabled, click **Import Facebook Selenium**.
+3. Confirm no approval modal appears.
+4. The UI should immediately show a success toast and remain usable.
+5. Open `/article-proposals`.
 
 **Expected:** discovered candidates appear as pending proposals after worker submission.
+Server-only API runtimes show only **Import Facebook API**. Worker runtimes with both import
+types enabled show both buttons.
 
 ---
 
@@ -67,24 +111,26 @@ active Pushover devices for that user key.
 1. Start the worker with `APP_FACEBOOK_IMPORT_SCHEDULE_ENABLED=true` and
    `APP_FACEBOOK_IMPORT_SCHEDULE_INITIAL_DELAY=0s`.
 2. Confirm the worker attempts a worker-startup import after startup.
-3. If Facebook opens a login or two-factor screen, complete the manual login in the Selenium
-   browser before `APP_FACEBOOK_IMPORT_MANUAL_LOGIN_TIMEOUT`.
-4. Confirm logs contain a login-required event/message and the run continues after login.
-5. Confirm opted-in ADMIN users do not receive a Pushover login-required notification for the
+3. Confirm logs show the API import launched before Selenium when both import types are enabled.
+4. If Facebook opens a login or two-factor screen, complete the manual login in the Selenium
+   browser before `APP_FACEBOOK_IMPORT_SELENIUM_MANUAL_LOGIN_TIMEOUT`.
+5. Confirm logs contain a login-required event/message and the run continues after login.
+6. Confirm opted-in ADMIN users do not receive a Pushover login-required notification for the
    worker-startup run.
-6. Let a later scheduled interval run require login or two-factor approval.
-7. Confirm opted-in ADMIN users receive a Pushover login-required notification for that scheduled run.
-8. Let a scheduled run exceed `APP_FACEBOOK_IMPORT_MANUAL_LOGIN_TIMEOUT`.
-9. Confirm opted-in ADMIN users receive a Pushover login-timeout notification through the same
+7. Let a later scheduled interval run require login or two-factor approval.
+8. Confirm opted-in ADMIN users receive a Pushover login-required notification for that scheduled run.
+9. Let a scheduled run exceed `APP_FACEBOOK_IMPORT_SELENIUM_MANUAL_LOGIN_TIMEOUT`.
+10. Confirm opted-in ADMIN users receive a Pushover login-timeout notification through the same
    **Facebook login required notifications** preference.
-10. Trigger a manual import and force the same Facebook login screen.
-11. Confirm manual import login-required and login-timeout events are logged but do not send Pushover notifications.
-12. Temporarily reduce `APP_FACEBOOK_IMPORT_SCHEDULE_INTERVAL` in a local test environment and
+11. Trigger a manual Selenium import and force the same Facebook login screen.
+12. Confirm manual import login-required and login-timeout events are logged but do not send Pushover notifications.
+13. Temporarily reduce `APP_FACEBOOK_IMPORT_SCHEDULE_INTERVAL` in a local test environment and
    confirm a new tick is skipped while a previous import is still active.
 
-**Expected:** scheduled imports use the same non-blocking proposal flow, login-required runs wait
-for manual authorization, only scheduled interval login-required and login-timeout events notify
-opted-in admins, and only one import runs at a time on the worker.
+**Expected:** scheduled imports use the same non-blocking proposal flow, API runs before
+Selenium when both are enabled, login-required Selenium runs wait for manual authorization,
+only scheduled interval login-required and login-timeout events notify opted-in admins, and
+only one import runs at a time on the runtime.
 
 ---
 
