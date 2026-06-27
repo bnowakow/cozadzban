@@ -6,6 +6,7 @@ package pl.bnowakowski.cozadzban.ui
 import com.vaadin.flow.component.Component
 import com.vaadin.flow.component.UI
 import com.vaadin.flow.component.html.Anchor
+import com.vaadin.flow.component.html.Span
 import com.vaadin.flow.component.select.Select
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -20,6 +21,7 @@ import org.springframework.security.core.context.SecurityContextHolder
 import pl.bnowakowski.cozadzban.facebookimport.FacebookArticleProposal
 import pl.bnowakowski.cozadzban.facebookimport.FacebookArticleProposalService
 import pl.bnowakowski.cozadzban.facebookimport.FacebookArticleProposalStatusFilter
+import pl.bnowakowski.cozadzban.facebookimport.FacebookImportType
 import pl.bnowakowski.cozadzban.user.AppUser
 import pl.bnowakowski.cozadzban.user.AppUserRepository
 import pl.bnowakowski.cozadzban.user.Role
@@ -69,6 +71,24 @@ class FacebookArticleProposalViewTest {
         assertEquals("https://example.com/story", anchor.href)
         assertEquals("_blank", anchor.target.orElse(null))
         assertTrue(anchor.element.getAttribute("rel").contains("noopener"))
+    }
+
+    @Test
+    fun `proposal rows show import source attribution`() {
+        authenticateAs("user@example.com")
+        UI.setCurrent(UI())
+        whenever(appUserRepository.findByEmail("user@example.com")).thenReturn(
+            AppUser(1L, "user@example.com", Role.USER),
+        )
+        whenever(proposalService.findPage(FacebookArticleProposalStatusFilter.PENDING, 0, 100))
+            .thenReturn(listOf(proposal().copy(importType = FacebookImportType.APIFY)))
+        whenever(proposalService.count(FacebookArticleProposalStatusFilter.PENDING)).thenReturn(1L)
+
+        val view = FacebookArticleProposalView(proposalService, appUserRepository)
+
+        val badges = findComponents(view, Span::class.java)
+            .filter { it.hasClassName("czj-import-source-badge") }
+        assertTrue(badges.any { it.text == "Apify import" })
     }
 
     private fun authenticateAs(email: String) {

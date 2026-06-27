@@ -147,7 +147,7 @@ class FacebookImportJobService @Autowired constructor(
 
     fun startScheduledImports(trigger: FacebookImportTrigger = FacebookImportTrigger.SCHEDULED): List<String> {
         val launched = mutableListOf<String>()
-        scheduledImportTypes().forEach { importType ->
+        scheduledImportTypes(trigger).forEach { importType ->
             launched += startImport(importType, trigger)
             waitUntilIdle()
         }
@@ -226,12 +226,15 @@ class FacebookImportJobService @Autowired constructor(
             }
 
     fun availableImportTypes(): List<FacebookImportType> =
-        FacebookImportType.entries.filter { importType ->
+        IMPORT_TYPE_ORDER.filter { importType ->
             runnersByType.containsKey(importType) && facebookImportUnavailableReason(importType) == null
         }
 
     fun scheduledImportTypes(): List<FacebookImportType> =
-        listOf(FacebookImportType.API, FacebookImportType.SELENIUM).filter { importType ->
+        scheduledImportTypes(FacebookImportTrigger.SCHEDULED)
+
+    fun scheduledImportTypes(trigger: FacebookImportTrigger): List<FacebookImportType> =
+        importTypeOrderFor(trigger).filter { importType ->
             runnersByType.containsKey(importType) && facebookImportUnavailableReason(importType) == null
         }
 
@@ -331,6 +334,13 @@ class FacebookImportJobService @Autowired constructor(
     private fun elapsedMs(startedAt: Instant, finishedAt: Instant = Instant.now()): Long =
         Duration.between(startedAt, finishedAt).toMillis().coerceAtLeast(0)
 
+    private fun importTypeOrderFor(trigger: FacebookImportTrigger): List<FacebookImportType> =
+        when (trigger) {
+            FacebookImportTrigger.WORKER_STARTUP -> STARTUP_IMPORT_TYPE_ORDER
+            FacebookImportTrigger.MANUAL,
+            FacebookImportTrigger.SCHEDULED -> SELENIUM_SCHEDULE_IMPORT_TYPE_ORDER
+        }
+
     private data class ActiveImport(
         val importRunId: String,
         val trigger: FacebookImportTrigger,
@@ -339,5 +349,8 @@ class FacebookImportJobService @Autowired constructor(
 
     private companion object {
         val DEFAULT_RUN_TIMEOUT: Duration = Duration.ofHours(1)
+        val IMPORT_TYPE_ORDER = listOf(FacebookImportType.APIFY, FacebookImportType.SELENIUM)
+        val STARTUP_IMPORT_TYPE_ORDER = IMPORT_TYPE_ORDER
+        val SELENIUM_SCHEDULE_IMPORT_TYPE_ORDER = listOf(FacebookImportType.SELENIUM)
     }
 }

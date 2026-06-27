@@ -32,6 +32,7 @@ import pl.bnowakowski.cozadzban.facebookimport.FacebookArticleProposal
 import pl.bnowakowski.cozadzban.facebookimport.FacebookArticleProposalService
 import pl.bnowakowski.cozadzban.facebookimport.FacebookArticleProposalStatus
 import pl.bnowakowski.cozadzban.facebookimport.FacebookArticleProposalStatusFilter
+import pl.bnowakowski.cozadzban.facebookimport.FacebookImportType
 import pl.bnowakowski.cozadzban.security.AllowlistAuthorizationManager
 import pl.bnowakowski.cozadzban.user.AppUser
 import pl.bnowakowski.cozadzban.user.AppUserRepository
@@ -152,6 +153,7 @@ class FacebookArticleProposalView(
                 gridCell("Language"),
                 gridCell("Article URL"),
                 gridCell("Facebook post"),
+                gridCell("Import type"),
                 gridCell("Candidate ID"),
                 gridCell("Import run"),
             )
@@ -169,6 +171,7 @@ class FacebookArticleProposalView(
                 gridCell(proposal.effectiveLanguage),
                 gridCell(externalLink(proposal.articleUrl)),
                 gridCell(proposal.facebookPostUrl?.let(::externalLink) ?: Span("-")),
+                gridCell(importSourceBadge(facebookImportTypeLabel(proposal.importType))),
                 gridCell(copyablePrefixedId(proposal.candidateId, "facebook-import-candidate-")),
                 gridCell(copyablePrefixedId(proposal.importRunId, "facebook-import-")),
             )
@@ -179,9 +182,9 @@ class FacebookArticleProposalView(
             element.style.set("display", "grid")
             element.style.set(
                 "grid-template-columns",
-                "minmax(6rem, 7rem) minmax(9rem, 10rem) minmax(5rem, 7rem) minmax(4rem, 5rem) minmax(18rem, 1.4fr) minmax(14rem, 1fr) minmax(7rem, 8rem) minmax(7rem, 8rem)",
+                "minmax(6rem, 7rem) minmax(9rem, 10rem) minmax(5rem, 7rem) minmax(4rem, 5rem) minmax(18rem, 1.4fr) minmax(14rem, 1fr) minmax(7rem, 8rem) minmax(7rem, 8rem) minmax(7rem, 8rem)",
             )
-            element.style.set("min-width", "76rem")
+            element.style.set("min-width", "83rem")
             element.style.set("width", "100%")
         }
 
@@ -198,6 +201,18 @@ class FacebookArticleProposalView(
             element.style.set("overflow", "hidden")
             element.style.set("padding", "0.6rem 0.75rem")
             element.style.set("text-overflow", "ellipsis")
+        }
+
+    private fun facebookImportTypeLabel(importType: FacebookImportType): String =
+        when (importType) {
+            FacebookImportType.APIFY -> "Apify import"
+            FacebookImportType.SELENIUM -> "Selenium import"
+        }
+
+    private fun importSourceBadge(label: String): Span =
+        Span(label).apply {
+            addClassName("czj-import-source-badge")
+            element.setAttribute("title", label)
         }
 
     private fun copyablePrefixedId(value: String, prefix: String): Component {

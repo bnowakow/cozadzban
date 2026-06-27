@@ -606,6 +606,18 @@ html[theme~="dark"] .czj-article-card {
   min-height: 1.5rem;
 }
 
+.czj-import-source-badge {
+  border: 1px solid var(--lumo-contrast-20pct);
+  border-radius: 999px;
+  color: var(--lumo-secondary-text-color);
+  display: inline-flex;
+  font-size: var(--lumo-font-size-xxs);
+  font-weight: 700;
+  line-height: 1;
+  padding: 0.18rem 0.45rem;
+  white-space: nowrap;
+}
+
 .czj-article-title {
   letter-spacing: 0;
 }

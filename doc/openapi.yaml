@@ -24,7 +24,11 @@ info:
        (add/soft-delete/restore/update users) and at `/admin/article-content-cache`
        to inspect, refresh, edit, and purge preserved article content cache entries,
        using server-side service calls.
-    8. **Facebook import job** — Spring Batch can run the Selenium profile importer.
+    8. **Facebook import job** — Spring Batch can run the Selenium profile importer
+       and the paid Apify external retrieval importer. Startup sequencing runs Apify
+       before Selenium when both are enabled. Apify uses the synchronous actor run
+       endpoint, has scheduling separate from Selenium scheduling, and checks persisted
+       APIFY run timestamps so paid runs can be limited to a daily cadence across restarts.
        Import runs submit proposal candidates for later review instead of creating
        articles directly.
     9. **Article proposal inbox** — ACTIVE logged-in users review Facebook import
@@ -163,6 +167,20 @@ x-runtime-configuration:
       - APP_FACEBOOK_IMPORT_SELENIUM_WAIT_AFTER_PAGE_OPEN
       - APP_FACEBOOK_IMPORT_SELENIUM_WAIT_AFTER_SCROLL
       - APP_FACEBOOK_IMPORT_SELENIUM_MANUAL_LOGIN_TIMEOUT
+    apifyEnvVars:
+      - APP_FACEBOOK_IMPORT_APIFY_ENABLED
+      - APP_FACEBOOK_IMPORT_APIFY_API_TOKEN
+      - APP_FACEBOOK_IMPORT_APIFY_BASE_URL
+      - APP_FACEBOOK_IMPORT_APIFY_ACTOR_ID
+      - APP_FACEBOOK_IMPORT_APIFY_PROFILE_URL
+      - APP_FACEBOOK_IMPORT_APIFY_ONLY_POSTS_NEWER_THAN
+      - APP_FACEBOOK_IMPORT_APIFY_RESULTS_LIMIT
+      - APP_FACEBOOK_IMPORT_APIFY_CAPTION_TEXT
+      - APP_FACEBOOK_IMPORT_APIFY_MAX_COST_USD
+      - APP_FACEBOOK_IMPORT_APIFY_SCHEDULE_ENABLED
+      - APP_FACEBOOK_IMPORT_APIFY_SCHEDULE_INTERVAL
+      - APP_FACEBOOK_IMPORT_APIFY_CONNECT_TIMEOUT
+      - APP_FACEBOOK_IMPORT_APIFY_READ_TIMEOUT
     schedulingSemantics: enabled import types run sequentially
 
 x-problem-types:
@@ -448,6 +466,27 @@ paths:
       responses:
         '202':
           description: Selenium Facebook import accepted for execution
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/admin/facebook-import/run/apify:
+    post:
+      tags: [Facebook Import]
+      summary: Trigger the Apify Facebook import job
+      operationId: runFacebookApifyImport
+      x-required-role: ADMIN
+      security:
+        - googleOidc: []
+      description: >
+        Starts the paid Apify Facebook import if no import is currently running.
+        Scheduled Apify imports use their own interval and cost/post guards.
+      responses:
+        '202':
+          description: Apify Facebook import accepted for execution
         '409':
           $ref: '#/components/responses/Conflict'
         '401':

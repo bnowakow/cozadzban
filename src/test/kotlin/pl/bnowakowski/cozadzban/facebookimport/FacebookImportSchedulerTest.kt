@@ -4,6 +4,7 @@
 package pl.bnowakowski.cozadzban.facebookimport
 
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.never
@@ -198,6 +199,74 @@ class FacebookImportSchedulerTest {
         assertTrue(cleanupLatch.await(1, TimeUnit.SECONDS))
         verify(jobService, never()).startScheduledImports(any())
         scheduler.stop()
+    }
+
+    @Test
+    fun `apify scheduled launch uses apify import type independently from selenium schedule`() {
+        val now = Instant.parse("2026-06-27T12:00:00Z")
+        whenever(jobService.startImport(FacebookImportType.APIFY, FacebookImportTrigger.SCHEDULED)).thenReturn("run-apify")
+        whenever(proposalService.latestRunTimestamp(FacebookImportType.APIFY)).thenReturn(now.minus(Duration.ofDays(2)))
+        val scheduler = FacebookImportScheduler(
+            FacebookImportProperties(
+                schedule = FacebookImportProperties.Schedule(enabled = false),
+                apify = FacebookImportProperties.Apify(scheduleEnabled = true),
+            ),
+            jobService,
+            proposalService,
+            { now },
+        )
+
+        assertTrue(scheduler.launchScheduledApifyImportOnce())
+
+        verify(jobService).startImport(FacebookImportType.APIFY, FacebookImportTrigger.SCHEDULED)
+        verify(jobService, never()).startScheduledImports(any())
+    }
+
+    @Test
+    fun `apify scheduled launch is skipped when persisted last run is newer than interval`() {
+        val now = Instant.parse("2026-06-27T12:00:00Z")
+        whenever(proposalService.latestRunTimestamp(FacebookImportType.APIFY))
+            .thenReturn(now.minus(Duration.ofHours(12)))
+        val scheduler = FacebookImportScheduler(
+            FacebookImportProperties(
+                apify = FacebookImportProperties.Apify(
+                    scheduleEnabled = true,
+                    scheduleInterval = Duration.ofDays(1),
+                ),
+            ),
+            jobService,
+            proposalService,
+            { now },
+        )
+
+        assertEquals(Duration.ofHours(12), scheduler.apifyDelayUntilNextEligibleRun(now))
+        assertFalse(scheduler.launchScheduledApifyImportOnce())
+
+        verify(jobService, never()).startImport(FacebookImportType.APIFY, FacebookImportTrigger.SCHEDULED)
+    }
+
+    @Test
+    fun `apify scheduled launch is allowed when persisted last run is older than interval`() {
+        val now = Instant.parse("2026-06-27T12:00:00Z")
+        whenever(proposalService.latestRunTimestamp(FacebookImportType.APIFY))
+            .thenReturn(now.minus(Duration.ofHours(25)))
+        whenever(jobService.startImport(FacebookImportType.APIFY, FacebookImportTrigger.SCHEDULED)).thenReturn("run-apify")
+        val scheduler = FacebookImportScheduler(
+            FacebookImportProperties(
+                apify = FacebookImportProperties.Apify(
+                    scheduleEnabled = true,
+                    scheduleInterval = Duration.ofDays(1),
+                ),
+            ),
+            jobService,
+            proposalService,
+            { now },
+        )
+
+        assertEquals(Duration.ZERO, scheduler.apifyDelayUntilNextEligibleRun(now))
+        assertTrue(scheduler.launchScheduledApifyImportOnce())
+
+        verify(jobService).startImport(FacebookImportType.APIFY, FacebookImportTrigger.SCHEDULED)
     }
 
 }

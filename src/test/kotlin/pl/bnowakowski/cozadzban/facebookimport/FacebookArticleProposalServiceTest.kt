@@ -3,6 +3,8 @@
 
 package pl.bnowakowski.cozadzban.facebookimport
 
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -216,6 +218,22 @@ class FacebookArticleProposalServiceTest {
         service.recordProgress("run-progress", request)
 
         verify(runRepository).recordProgress("run-progress", request)
+    }
+
+    @Test
+    fun `apify progress requests serialize to remote-compatible api import type`() {
+        val objectMapper = ObjectMapper().registerModule(JavaTimeModule())
+        val json = objectMapper.writeValueAsString(
+            FacebookImportProgressRequest(
+                importType = FacebookImportType.APIFY,
+                phase = "Collecting posts",
+                phaseIndex = 6,
+                phaseCount = 8,
+            ),
+        )
+
+        assertTrue(json.contains("\"importType\":\"API\""))
+        assertEquals("API", objectMapper.readTree(json).get("importType").asText())
     }
 
     @Test

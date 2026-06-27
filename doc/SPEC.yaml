@@ -140,9 +140,12 @@ x-architecture:
       description: >
         Spring Batch owns run lifecycle/history for the facebookImportJob. The job
         receives an explicit importType parameter. The Selenium importer is the
-        browser-backed profile importer. Scheduled runs derive their sequence from
-        available import types. ADMIN REST/UI triggers can launch enabled importers
-        manually. The worker/server submits discovered
+        browser-backed profile importer. The Apify importer uses the synchronous
+        Apify actor run endpoint so each import completes sequentially inside one
+        Spring Batch execution. Worker-startup runs launch available importers in
+        APIFY then SELENIUM order. Selenium scheduled runs and Apify paid scheduled
+        runs use separate intervals. ADMIN REST/UI triggers can launch enabled
+        importers manually. The worker/server submits discovered
         article proposals to machine-only server endpoints instead of creating Articles
         directly. Logged-in users review proposals later in a Vaadin inbox.
     - name: Notifications
@@ -310,7 +313,7 @@ x-database:
         - name: import_type
           type: VARCHAR(32)
           migration: V29__facebook_import_type_attribution.sql
-          constraints: "NOT NULL DEFAULT SELENIUM CHECK IN (API, SELENIUM)"
+          constraints: "NOT NULL DEFAULT SELENIUM CHECK IN (API, APIFY, SELENIUM)"
           description: Import implementation used for this run.
         - name: status
           type: VARCHAR(32)
@@ -359,7 +362,7 @@ x-database:
         - name: import_type
           type: VARCHAR(32)
           migration: V29__facebook_import_type_attribution.sql
-          constraints: "NOT NULL DEFAULT SELENIUM CHECK IN (API, SELENIUM)"
+          constraints: "NOT NULL DEFAULT SELENIUM CHECK IN (API, APIFY, SELENIUM)"
           description: Import implementation that most recently submitted or refreshed this proposal.
         - name: status
           type: VARCHAR(32)
@@ -764,8 +767,13 @@ x-business-rules:
       Facebook import runs through the Spring Batch facebookImportJob with an
       explicit importType parameter. SELENIUM runs reuse a long-lived browser,
       verify Facebook login before each import, emit a login-required event
-      and wait for manual/two-factor login when needed. Scheduled runs launch enabled
-      import types sequentially. Only one import may run at a time per runtime.
+      and wait for manual/two-factor login when needed. APIFY runs use the paid
+      Apify actor configured by environment variables and must be cost-guarded by
+      result limits plus max-cost configuration. Scheduled Apify runs use their own
+      interval, separate from the Selenium schedule, and check persisted APIFY run
+      timestamps before launch so restarts cannot bypass the interval. Worker-startup runs
+      launch enabled import types sequentially with APIFY before SELENIUM. Regular Selenium
+      scheduled ticks do not run Apify. Only one import may run at a time per runtime.
       Discovery submits proposal batches
       and must not block on a human approval modal or create Articles directly.
   - id: BR-47
@@ -848,6 +856,7 @@ x-vaadin-ui:
         - "If authenticated: Add Article button in toolbar"
         - "If authenticated: Article Proposals button links to /article-proposals"
         - "If authenticated and ADMIN: Import Facebook Selenium button appears when the Selenium importer is enabled"
+        - "If authenticated and ADMIN: Import Facebook Apify button appears when the Apify importer is enabled"
         - "Facebook import is non-blocking and submits proposals to /article-proposals; no approval modal is shown during discovery"
         - "Click Add Article -> modal with form (url, language, quote, optional publishedAt date/time)"
         - "Form validation: url required (^https?://.+), language required and normalized lowercase, quote optional, publishedAt optional"
@@ -1075,6 +1084,20 @@ x-runtime-configuration:
       - APP_FACEBOOK_IMPORT_SELENIUM_WAIT_AFTER_PAGE_OPEN
       - APP_FACEBOOK_IMPORT_SELENIUM_WAIT_AFTER_SCROLL
       - APP_FACEBOOK_IMPORT_SELENIUM_MANUAL_LOGIN_TIMEOUT
+    apifyEnvVars:
+      - APP_FACEBOOK_IMPORT_APIFY_ENABLED
+      - APP_FACEBOOK_IMPORT_APIFY_API_TOKEN
+      - APP_FACEBOOK_IMPORT_APIFY_BASE_URL
+      - APP_FACEBOOK_IMPORT_APIFY_ACTOR_ID
+      - APP_FACEBOOK_IMPORT_APIFY_PROFILE_URL
+      - APP_FACEBOOK_IMPORT_APIFY_ONLY_POSTS_NEWER_THAN
+      - APP_FACEBOOK_IMPORT_APIFY_RESULTS_LIMIT
+      - APP_FACEBOOK_IMPORT_APIFY_CAPTION_TEXT
+      - APP_FACEBOOK_IMPORT_APIFY_MAX_COST_USD
+      - APP_FACEBOOK_IMPORT_APIFY_SCHEDULE_ENABLED
+      - APP_FACEBOOK_IMPORT_APIFY_SCHEDULE_INTERVAL
+      - APP_FACEBOOK_IMPORT_APIFY_CONNECT_TIMEOUT
+      - APP_FACEBOOK_IMPORT_APIFY_READ_TIMEOUT
     schedulingSemantics: enabled import types run sequentially
 
 x-problem-types:
@@ -1360,6 +1383,29 @@ paths:
       responses:
         '202':
           description: Selenium Facebook import accepted for execution
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/admin/facebook-import/run/apify:
+
+    post:
+      tags: [Facebook Import]
+      summary: Trigger the Apify Facebook import job
+      operationId: runFacebookApifyImport
+      x-required-role: ADMIN
+      security:
+        - googleOidc: []
+      description: >
+        Starts the paid Apify import if no import is currently running. The job uses
+        configured post age, result-limit, and max-cost guards before submitting
+        proposal candidates to the shared proposal inbox.
+      responses:
+        '202':
+          description: Apify Facebook import accepted for execution
         '409':
           $ref: '#/components/responses/Conflict'
         '401':

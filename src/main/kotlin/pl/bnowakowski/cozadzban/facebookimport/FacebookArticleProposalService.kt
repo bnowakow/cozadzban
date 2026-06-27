@@ -86,6 +86,7 @@ class FacebookArticleProposalService(
         runRepository.recordBatch(
             importRunId = request.importRunId,
             importType = request.importType,
+            trigger = request.trigger,
             discoveredCount = request.proposals.size,
             submittedCount = submitted,
             skippedExistingCount = skippedExisting,
@@ -130,6 +131,18 @@ class FacebookArticleProposalService(
     fun latestProgress(): FacebookImportProgressSnapshot? =
         runRepository.findLatestProgress()
 
+    @Transactional(readOnly = true)
+    fun latestRunTimestamp(importType: FacebookImportType): Instant? =
+        runRepository.findLatestRunTimestamp(importType)
+
+    @Transactional(readOnly = true)
+    fun latestRunTimestamp(importType: FacebookImportType, trigger: FacebookImportTrigger): Instant? =
+        runRepository.findLatestRunTimestamp(importType, trigger)
+
+    @Transactional(readOnly = true)
+    fun latestAutomaticRunTimestamp(importType: FacebookImportType): Instant? =
+        runRepository.findLatestRunTimestamp(importType, setOf(FacebookImportTrigger.WORKER_STARTUP, FacebookImportTrigger.SCHEDULED))
+
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     fun terminateTimedOutRun(importRunId: String, timeout: Duration, timedOutAt: Instant = Instant.now()): Boolean {
         require(importRunId.isNotBlank()) { "importRunId is required" }
@@ -165,6 +178,7 @@ class FacebookArticleProposalService(
         runRepository.complete(
             importRunId = importRunId,
             importType = request.importType,
+            trigger = request.trigger,
             status = request.status,
             discoveredCount = request.discoveredCount,
             submittedCount = request.submittedCount,

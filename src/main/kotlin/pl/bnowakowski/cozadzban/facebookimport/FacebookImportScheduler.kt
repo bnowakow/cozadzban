@@ -9,23 +9,29 @@ import org.springframework.boot.context.event.ApplicationReadyEvent
 import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Component
 import java.time.Duration
+import java.time.Instant
+import java.util.function.Supplier
 
 @Component
 class FacebookImportScheduler(
     private val properties: FacebookImportProperties,
     private val jobService: FacebookImportJobService,
     private val proposalService: FacebookArticleProposalService,
+    private val clock: Supplier<Instant> = Supplier { Instant.now() },
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
     @Volatile
     private var schedulerThread: Thread? = null
     @Volatile
+    private var apifySchedulerThread: Thread? = null
+    @Volatile
     private var staleRunCleanupThread: Thread? = null
 
     @EventListener(ApplicationReadyEvent::class)
     fun start() {
         startStaleRunCleanup()
+        startApifySchedule()
         if (!properties.schedule.enabled) {
             logger.info("Scheduled Facebook import is disabled")
             return
@@ -42,13 +48,31 @@ class FacebookImportScheduler(
         }
     }
 
+    internal fun launchScheduledApifyImportOnce(trigger: FacebookImportTrigger = FacebookImportTrigger.SCHEDULED): Boolean =
+        if (isApifyImportAllowedNow(clock.get())) {
+            launchScheduledImportOnce(FacebookImportType.APIFY, trigger)
+        } else {
+            false
+        }
+
     internal fun terminateTimedOutRunsOnce(): List<String> =
         proposalService.terminateTimedOutRuns(effectiveRunTimeout())
 
     internal fun launchScheduledImportOnce(trigger: FacebookImportTrigger = FacebookImportTrigger.SCHEDULED): Boolean {
         if (!properties.schedule.enabled) return false
+        return launchScheduledImportOnce(null, trigger)
+    }
+
+    private fun launchScheduledImportOnce(
+        singleImportType: FacebookImportType?,
+        trigger: FacebookImportTrigger = FacebookImportTrigger.SCHEDULED,
+    ): Boolean {
         return try {
-            val importRunIds = jobService.startScheduledImports(trigger)
+            val importRunIds = if (singleImportType == null) {
+                jobService.startScheduledImports(trigger)
+            } else {
+                listOf(jobService.startImport(singleImportType, trigger))
+            }
             if (importRunIds.isEmpty()) {
                 logger.info("Skipping scheduled Facebook import because no import type is available")
                 false
@@ -57,7 +81,7 @@ class FacebookImportScheduler(
                     "Scheduled Facebook import accepted importRunIds={} trigger={} order={}",
                     importRunIds,
                     trigger,
-                    jobService.scheduledImportTypes(),
+                    jobService.scheduledImportTypes(trigger),
                 )
                 true
             }
@@ -72,6 +96,23 @@ class FacebookImportScheduler(
                 ex,
             )
             false
+        }
+    }
+
+    private fun startApifySchedule() {
+        if (!properties.apify.scheduleEnabled) {
+            logger.info("Scheduled Facebook Apify import is disabled")
+            return
+        }
+        synchronized(this) {
+            if (apifySchedulerThread?.isAlive == true) return
+            apifySchedulerThread = Thread {
+                runApifyScheduleLoop()
+            }.apply {
+                name = "facebook-apify-import-scheduler"
+                isDaemon = true
+                start()
+            }
         }
     }
 
@@ -127,8 +168,42 @@ class FacebookImportScheduler(
         }
     }
 
+    private fun runApifyScheduleLoop() {
+        try {
+            while (!Thread.currentThread().isInterrupted) {
+                val sleepDuration = apifyDelayUntilNextEligibleRun(clock.get())
+                sleep(sleepDuration)
+                if (!Thread.currentThread().isInterrupted) {
+                    launchScheduledApifyImportOnce()
+                }
+            }
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+            logger.info("Facebook Apify import scheduler stopped")
+        }
+    }
+
     private fun scheduleInterval(): Duration =
         properties.schedule.interval.takeIf { !it.isNegative && !it.isZero } ?: Duration.ofHours(8)
+
+    private fun apifyScheduleInterval(): Duration =
+        properties.apify.scheduleInterval.takeIf { !it.isNegative && !it.isZero } ?: Duration.ofDays(1)
+
+    internal fun apifyDelayUntilNextEligibleRun(now: Instant = Instant.now()): Duration {
+        val interval = apifyScheduleInterval()
+        val latestRunAt = runCatching { proposalService.latestRunTimestamp(FacebookImportType.APIFY) }
+            .onFailure { ex -> logger.warn("Facebook Apify latest-run lookup failed; delaying one interval", ex) }
+            .getOrNull() ?: return interval
+        val elapsed = Duration.between(latestRunAt, now)
+        return if (elapsed >= interval) Duration.ZERO else interval.minus(elapsed)
+    }
+
+    private fun isApifyImportAllowedNow(now: Instant): Boolean {
+        val delay = apifyDelayUntilNextEligibleRun(now)
+        if (delay.isZero || delay.isNegative) return true
+        logger.info("Skipping scheduled Facebook Apify import; next eligible run in {}", delay)
+        return false
+    }
 
     private fun staleRunCleanupInterval(): Duration =
         properties.staleRunCleanupInterval.takeIf { !it.isNegative && !it.isZero } ?: Duration.ofMinutes(1)
@@ -146,6 +221,8 @@ class FacebookImportScheduler(
         synchronized(this) {
             schedulerThread?.interrupt()
             schedulerThread = null
+            apifySchedulerThread?.interrupt()
+            apifySchedulerThread = null
             staleRunCleanupThread?.interrupt()
             staleRunCleanupThread = null
         }

@@ -94,6 +94,35 @@ class FacebookImportJobServiceTest {
     }
 
     @Test
+    fun `startup import order runs apify before selenium but scheduled ticks remain selenium only`() {
+        val apifyImporter: FacebookImportRunner = mock()
+        val seleniumImporter: FacebookImportRunner = mock()
+        whenever(apifyImporter.importType).thenReturn(FacebookImportType.APIFY)
+        whenever(seleniumImporter.importType).thenReturn(FacebookImportType.SELENIUM)
+        whenever(apifyImporter.unavailableReason()).thenReturn(null)
+        whenever(seleniumImporter.unavailableReason()).thenReturn(null)
+        val service = FacebookImportJobService(
+            jobOperatorProvider,
+            jobProvider,
+            listOf(seleniumImporter, apifyImporter),
+            proposalService,
+        )
+
+        assertEquals(
+            listOf(FacebookImportType.APIFY, FacebookImportType.SELENIUM),
+            service.scheduledImportTypes(FacebookImportTrigger.WORKER_STARTUP),
+        )
+        assertEquals(
+            listOf(FacebookImportType.SELENIUM),
+            service.scheduledImportTypes(FacebookImportTrigger.SCHEDULED),
+        )
+        assertEquals(
+            listOf(FacebookImportType.APIFY, FacebookImportType.SELENIUM),
+            service.availableImportTypes(),
+        )
+    }
+
+    @Test
     fun `currentProgress uses importer snapshot while batch launch is active`() {
         val latch = CountDownLatch(1)
         val snapshot = FacebookImportProgressSnapshot(

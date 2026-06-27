@@ -51,7 +51,9 @@ import pl.bnowakowski.cozadzban.facebookimport.FacebookArticleProposalService
 import pl.bnowakowski.cozadzban.facebookimport.FacebookArticleProposalStatusFilter
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportJobService
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportProgressSnapshot
+import pl.bnowakowski.cozadzban.facebookimport.FacebookImportProperties
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportRunStatus
+import pl.bnowakowski.cozadzban.facebookimport.FacebookImportTrigger
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportType
 import pl.bnowakowski.cozadzban.security.AllowlistAuthorizationManager
 import pl.bnowakowski.cozadzban.user.AppUser
@@ -82,9 +84,11 @@ class ArticleListView(
     private val appUserRepository: AppUserRepository,
     private val buildProperties: AppBuildProperties,
     private val languageFlagCache: LanguageFlagCache,
+    private val facebookImportProperties: FacebookImportProperties = FacebookImportProperties(),
 ) : VerticalLayout() {
 
     private val feed = VirtualList<Article>()
+    private val facebookImportHistoryPanel = Div()
     private val facebookImportProgressPanel = Div()
     private val articleProposalReviewPanel = Div()
     private var facebookImportProgressPollRegistration: Registration? = null
@@ -185,6 +189,7 @@ class ArticleListView(
         feedShell.element.style.set("margin", "calc(66px + 1.35rem) auto 0")
 
         configureArticleProposalReviewPanel()
+        configureFacebookImportHistoryPanel()
         configureFacebookImportProgressPanel()
         val filterBar = buildFilterBar()
 
@@ -197,9 +202,10 @@ class ArticleListView(
 
         refreshData()
         refreshArticleProposalReviewPanel()
+        refreshFacebookImportHistoryPanel()
         refreshFacebookImportProgressPanel()
         configureFacebookImportProgressPolling()
-        feedShell.add(articleProposalReviewPanel, facebookImportProgressPanel, filterBar, feed)
+        feedShell.add(articleProposalReviewPanel, facebookImportHistoryPanel, facebookImportProgressPanel, filterBar, feed)
         feedShell.expand(feed)
 
         val versionBadge = buildVersionBadge()
@@ -300,11 +306,11 @@ class ArticleListView(
                     ButtonVariant.LUMO_ERROR,
                     ButtonVariant.LUMO_ICON,
                 )
-                val availableImportTypes = facebookImportJobService.availableImportTypes()
+                val availableImportTypes = buildVisibleImportTypes()
                 if (availableImportTypes.isNotEmpty()) {
                     availableImportTypes.forEach { importType ->
                         val label = when (importType) {
-                            FacebookImportType.API -> "Import Facebook external source"
+                            FacebookImportType.APIFY -> "Import Facebook Apify"
                             FacebookImportType.SELENIUM -> "Import Facebook Selenium"
                         }
                         val importFacebookButton = Button(label, VaadinIcon.DOWNLOAD.create())
@@ -497,6 +503,12 @@ class ArticleListView(
         return filterBar
     }
 
+    private fun configureFacebookImportHistoryPanel() {
+        facebookImportHistoryPanel.addClassName("czj-facebook-import-history")
+        facebookImportHistoryPanel.setWidth("100%")
+        facebookImportHistoryPanel.isVisible = false
+    }
+
     private fun configureFacebookImportProgressPanel() {
         facebookImportProgressPanel.addClassName("czj-facebook-import-progress")
         facebookImportProgressPanel.setWidth("100%")
@@ -515,6 +527,7 @@ class ArticleListView(
         currentUi.pollInterval = FACEBOOK_IMPORT_STATUS_POLL_INTERVAL_MS
         facebookImportProgressPollRegistration = currentUi.addPollListener {
             refreshArticleProposalReviewPanel()
+            refreshFacebookImportHistoryPanel()
             refreshFacebookImportProgressPanel()
             stopFacebookImportButton?.let { updateStopFacebookImportButton(it) }
         }
@@ -540,6 +553,53 @@ class ArticleListView(
         facebookImportProgressPanel.removeAll()
         facebookImportProgressPanel.add(buildFacebookImportProgressContent(progress))
         maybeShowFacebookImportFailure(progress)
+    }
+
+    private fun refreshFacebookImportHistoryPanel() {
+        if (!canViewFacebookImportProgress()) {
+            facebookImportHistoryPanel.isVisible = false
+            facebookImportHistoryPanel.removeAll()
+            return
+        }
+
+        val importTypes = buildVisibleImportTypes()
+        if (importTypes.isEmpty()) {
+            facebookImportHistoryPanel.isVisible = false
+            facebookImportHistoryPanel.removeAll()
+            return
+        }
+
+        facebookImportHistoryPanel.isVisible = true
+        facebookImportHistoryPanel.removeAll()
+        importTypes.forEach { importType ->
+            facebookImportHistoryPanel.add(buildFacebookImportRunHistoryContent(importType))
+        }
+    }
+
+    private fun buildFacebookImportRunHistoryContent(importType: FacebookImportType): Div {
+        val content = Div()
+        content.addClassName("czj-facebook-import-history-content")
+
+        val title = Span("${facebookImportTypeLabel(importType)} last runs")
+        title.addClassName("czj-facebook-import-history-title")
+
+        val manualTimestamp = articleProposalService.latestRunTimestamp(importType, FacebookImportTrigger.MANUAL)
+            ?.let(::formatStatusInstant)
+            ?: "never"
+        val automaticTimestamp = articleProposalService.latestAutomaticRunTimestamp(importType)
+            ?.let(::formatStatusInstant)
+            ?: "never"
+
+        val metrics = Div()
+        metrics.addClassName("czj-facebook-import-history-metrics")
+        metrics.add(
+            facebookImportMetric("Manual", manualTimestamp),
+            facebookImportMetric("Automatic", automaticTimestamp),
+        )
+
+        content.add(title)
+        content.add(metrics)
+        return content
     }
 
     private fun canViewFacebookImportProgress(): Boolean =
@@ -853,6 +913,13 @@ class ArticleListView(
         date.element.style.set("color", "var(--lumo-secondary-text-color)")
 
         row.add(source, dot, date)
+        article.sourceImportType
+            ?.let(::facebookImportTypeLabel)
+            ?.let { label ->
+                val importDot = Span("•")
+                importDot.element.style.set("color", "var(--lumo-secondary-text-color)")
+                row.add(importDot, importSourceBadge(label))
+            }
         row.isPadding = false
         row.isSpacing = true
         row.defaultVerticalComponentAlignment = Alignment.CENTER
@@ -1155,6 +1222,14 @@ class ArticleListView(
         dialog.open()
     }
 
+    private fun buildVisibleImportTypes(): List<FacebookImportType> {
+        val visibleImportTypes = facebookImportJobService.availableImportTypes().toMutableList()
+        if (facebookImportProperties.apify.enabled && FacebookImportType.APIFY !in visibleImportTypes) {
+            visibleImportTypes.add(FacebookImportType.APIFY)
+        }
+        return visibleImportTypes
+    }
+
     private fun triggerFacebookImport(importType: FacebookImportType) {
         try {
             facebookImportJobService.startImport(importType)
@@ -1164,6 +1239,23 @@ class ArticleListView(
             showError(ex.message ?: "Failed to start Facebook import")
         }
     }
+
+    private fun facebookImportTypeLabel(importType: FacebookImportType): String =
+        when (importType) {
+            FacebookImportType.APIFY -> "Apify import"
+            FacebookImportType.SELENIUM -> "Selenium import"
+        }
+
+    private fun facebookImportTypeLabel(importType: String): String? =
+        runCatching { FacebookImportType.valueOf(importType) }
+            .getOrNull()
+            ?.let(::facebookImportTypeLabel)
+
+    private fun importSourceBadge(label: String): Span =
+        Span(label).apply {
+            addClassName("czj-import-source-badge")
+            element.setAttribute("title", label)
+        }
 
     private fun triggerFacebookImportTermination() {
         try {

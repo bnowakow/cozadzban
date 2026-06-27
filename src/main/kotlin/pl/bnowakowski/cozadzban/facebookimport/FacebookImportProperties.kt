@@ -38,6 +38,7 @@ data class FacebookImportProperties(
     val staleRunCleanupInterval: Duration = Duration.ofMinutes(1),
     val schedule: Schedule = Schedule(),
     val selenium: Selenium = Selenium(),
+    val apify: Apify = Apify(),
 ) {
     fun isSeleniumEnabled(): Boolean =
         selenium.enabled || enabled
@@ -63,6 +64,22 @@ data class FacebookImportProperties(
         val waitAfterPageOpen: Duration = Duration.ofSeconds(5),
         val waitAfterScroll: Duration = Duration.ofSeconds(2),
         val manualLoginTimeout: Duration = Duration.ofMinutes(3),
+    )
+
+    data class Apify(
+        val enabled: Boolean = false,
+        val apiToken: String = "",
+        val baseUrl: String = "https://api.apify.com",
+        val actorId: String = "apify/facebook-posts-scraper",
+        val profileUrl: String = "https://www.facebook.com/bartek.dobrowolski.nowakowski/",
+        val onlyPostsNewerThan: String = "2 days",
+        val resultsLimit: Int = 20,
+        val captionText: Boolean = false,
+        val maxCostUsd: Double = 0.10,
+        val scheduleEnabled: Boolean = false,
+        val scheduleInterval: Duration = Duration.ofDays(1),
+        val connectTimeout: Duration = Duration.ofSeconds(10),
+        val readTimeout: Duration = Duration.ofMinutes(15),
     )
 
     enum class Browser {

@@ -94,6 +94,7 @@ data class FacebookProposalSubmission(
 data class FacebookProposalBatchRequest(
     val importRunId: String,
     val importType: FacebookImportType = FacebookImportType.SELENIUM,
+    val trigger: FacebookImportTrigger = FacebookImportTrigger.MANUAL,
     val passIndex: Int,
     val passCount: Int,
     val proposals: List<FacebookProposalSubmission>,
@@ -113,6 +114,7 @@ data class FacebookProposalExistsResponse(
 data class FacebookImportRunCompletionRequest(
     val status: FacebookImportRunStatus,
     val importType: FacebookImportType = FacebookImportType.SELENIUM,
+    val trigger: FacebookImportTrigger = FacebookImportTrigger.MANUAL,
     val discoveredCount: Int = 0,
     val submittedCount: Int = 0,
     val skippedExistingCount: Int = 0,
@@ -131,6 +133,7 @@ data class FacebookImportLoginRequiredRequest(
 
 data class FacebookImportProgressRequest(
     val importType: FacebookImportType = FacebookImportType.SELENIUM,
+    val trigger: FacebookImportTrigger = FacebookImportTrigger.MANUAL,
     val phase: String,
     val detail: String? = null,
     val phaseIndex: Int,

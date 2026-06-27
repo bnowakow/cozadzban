@@ -39,6 +39,7 @@ import pl.bnowakowski.cozadzban.facebookimport.FacebookArticleProposalService
 import pl.bnowakowski.cozadzban.facebookimport.FacebookArticleProposalStatusFilter
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportJobService
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportProgressSnapshot
+import pl.bnowakowski.cozadzban.facebookimport.FacebookImportProperties
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportRunStatus
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportType
 import pl.bnowakowski.cozadzban.user.AppUser
@@ -107,6 +108,76 @@ class ArticleListViewTest {
         importButton.click()
 
         verify(facebookImportJobService).startImport(FacebookImportType.SELENIUM)
+    }
+
+    @Test
+    fun `admin users see apify import button and can trigger it`() {
+        val adminEmail = "admin@example.com"
+        authenticateAs(adminEmail)
+        UI.setCurrent(UI())
+        stubArticles()
+        whenever(appUserRepository.findByEmail(adminEmail)).thenReturn(
+            AppUser(1L, adminEmail, Role.ADMIN, AppUserStatus.ACTIVE),
+        )
+        whenever(facebookImportJobService.availableImportTypes()).thenReturn(
+            listOf(FacebookImportType.APIFY, FacebookImportType.SELENIUM),
+        )
+        whenever(facebookImportJobService.startImport(FacebookImportType.APIFY)).thenReturn("run-apify")
+
+        val view = ArticleListView(
+            articleRepository,
+            articleContentRepository,
+            articleService,
+            facebookImportJobService,
+            articleProposalService,
+            appUserRepository,
+            buildProperties,
+            languageFlagCache,
+        )
+        val buttons = findComponents(view, Button::class.java)
+        val apifyButton = buttons.firstOrNull { it.text == "Import Facebook Apify" }
+
+        assertTrue(apifyButton != null, "Expected admin Apify import button to be present")
+        assertTrue(buttons.any { it.text == "Import Facebook Selenium" })
+
+        UI.setCurrent(UI())
+        apifyButton!!.click()
+
+        verify(facebookImportJobService).startImport(FacebookImportType.APIFY)
+    }
+
+    @Test
+    fun `admin users see apify import button when feature flag is enabled even if service does not report it as available`() {
+        val adminEmail = "admin@example.com"
+        authenticateAs(adminEmail)
+        UI.setCurrent(UI())
+        stubArticles()
+        whenever(appUserRepository.findByEmail(adminEmail)).thenReturn(
+            AppUser(1L, adminEmail, Role.ADMIN, AppUserStatus.ACTIVE),
+        )
+        whenever(facebookImportJobService.availableImportTypes()).thenReturn(listOf(FacebookImportType.SELENIUM))
+        whenever(facebookImportJobService.startImport(FacebookImportType.APIFY)).thenReturn("run-apify")
+
+        val view = ArticleListView(
+            articleRepository,
+            articleContentRepository,
+            articleService,
+            facebookImportJobService,
+            articleProposalService,
+            appUserRepository,
+            buildProperties,
+            languageFlagCache,
+            FacebookImportProperties(apify = FacebookImportProperties.Apify(enabled = true)),
+        )
+        val buttons = findComponents(view, Button::class.java)
+        val apifyButton = buttons.firstOrNull { it.text == "Import Facebook Apify" }
+
+        assertTrue(apifyButton != null, "Expected admin Apify import button to be present when feature flag is enabled")
+
+        UI.setCurrent(UI())
+        apifyButton!!.click()
+
+        verify(facebookImportJobService).startImport(FacebookImportType.APIFY)
     }
 
     @Test
@@ -243,7 +314,7 @@ class ArticleListViewTest {
         importButton.click()
         stopButton.click()
 
-        verify(facebookImportJobService, never()).startImport(FacebookImportType.API)
+        verify(facebookImportJobService, never()).startImport(FacebookImportType.APIFY)
         verify(facebookImportJobService, never()).startImport(FacebookImportType.SELENIUM)
         verify(facebookImportJobService, never()).terminateImport()
     }
@@ -420,6 +491,38 @@ class ArticleListViewTest {
             .single { it.src == article.thumbnail }
 
         assertEquals(article.thumbnail, image.src)
+    }
+
+    @Test
+    fun `article card shows facebook import source attribution`() {
+        stubArticles()
+        val article = Article(
+            id = 41L,
+            url = "https://example.com/from-facebook",
+            language = "pl",
+            title = "Imported article",
+            createdByUserId = 1L,
+            sourceImportType = FacebookImportType.APIFY.name,
+        )
+
+        val view = ArticleListView(
+            articleRepository,
+            articleContentRepository,
+            articleService,
+            facebookImportJobService,
+            articleProposalService,
+            appUserRepository,
+            buildProperties,
+            languageFlagCache,
+        )
+        val method = view.javaClass.getDeclaredMethod("buildArticleCard", Article::class.java)
+        method.isAccessible = true
+        val card = method.invoke(view, article) as Component
+
+        val importBadges = findComponents(card, Span::class.java)
+            .filter { it.hasClassName("czj-import-source-badge") }
+
+        assertTrue(importBadges.any { it.text == "Apify import" })
     }
 
     @Test

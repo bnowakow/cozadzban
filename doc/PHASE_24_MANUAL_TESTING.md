@@ -47,6 +47,24 @@ APP_FACEBOOK_IMPORT_SELENIUM_WAIT_AFTER_SCROLL=2s
 APP_FACEBOOK_IMPORT_SELENIUM_MANUAL_LOGIN_TIMEOUT=3m
 ```
 
+Configure Apify import on a worker when paid external retrieval is desired:
+
+```bash
+APP_FACEBOOK_IMPORT_APIFY_ENABLED=true
+APP_FACEBOOK_IMPORT_APIFY_API_TOKEN=<apify-api-token>
+APP_FACEBOOK_IMPORT_APIFY_ACTOR_ID=apify/facebook-posts-scraper
+APP_FACEBOOK_IMPORT_APIFY_PROFILE_URL=https://www.facebook.com/bartek.dobrowolski.nowakowski/
+APP_FACEBOOK_IMPORT_APIFY_ONLY_POSTS_NEWER_THAN=2 days
+APP_FACEBOOK_IMPORT_APIFY_RESULTS_LIMIT=20
+APP_FACEBOOK_IMPORT_APIFY_MAX_COST_USD=0.10
+APP_FACEBOOK_IMPORT_APIFY_SCHEDULE_ENABLED=true
+APP_FACEBOOK_IMPORT_APIFY_SCHEDULE_INTERVAL=24h
+```
+
+The Apify scheduler checks persisted `APIFY` import runs before launching, so worker
+restarts or recompiles do not cause paid imports to run more often than
+`APP_FACEBOOK_IMPORT_APIFY_SCHEDULE_INTERVAL`.
+
 Configure a server-only runtime without a local Selenium/browser importer:
 
 ```bash
@@ -79,9 +97,10 @@ active Pushover devices for that user key.
 ## Step 2: Non-blocking import
 
 1. As ADMIN on a runtime with Selenium enabled, click **Import Facebook Selenium**.
-2. Confirm no approval modal appears.
-3. The UI should immediately show a success toast and remain usable.
-4. Open `/article-proposals`.
+2. As ADMIN on a runtime with Apify enabled, click **Import Facebook Apify**.
+3. Confirm no approval modal appears.
+4. The UI should immediately show a success toast and remain usable.
+5. Open `/article-proposals`.
 
 **Expected:** discovered candidates appear as pending proposals after worker submission.
 Server-only runtimes without an enabled importer show no manual import button.
@@ -93,20 +112,25 @@ Server-only runtimes without an enabled importer show no manual import button.
 1. Start the worker with `APP_FACEBOOK_IMPORT_SCHEDULE_ENABLED=true` and
    `APP_FACEBOOK_IMPORT_SCHEDULE_INITIAL_DELAY=0s`.
 2. Confirm the worker waits until the configured interval unless `APP_FACEBOOK_IMPORT_SCHEDULE_RUN_ON_STARTUP=true`.
-3. If Facebook opens a login or two-factor screen, complete the manual login in the Selenium
+3. With both Apify and Selenium enabled and `APP_FACEBOOK_IMPORT_SCHEDULE_RUN_ON_STARTUP=true`,
+   confirm startup launches Apify first and Selenium second.
+4. If Facebook opens a login or two-factor screen, complete the manual login in the Selenium
    browser before `APP_FACEBOOK_IMPORT_SELENIUM_MANUAL_LOGIN_TIMEOUT`.
-4. Confirm logs contain a login-required event/message and the run continues after login.
-5. Confirm opted-in ADMIN users do not receive a Pushover login-required notification for the
+5. Confirm logs contain a login-required event/message and the run continues after login.
+6. Confirm opted-in ADMIN users do not receive a Pushover login-required notification for the
    worker-startup run.
-6. Let a later scheduled interval run require login or two-factor approval.
-7. Confirm opted-in ADMIN users receive a Pushover login-required notification for that scheduled run.
-8. Let a scheduled run exceed `APP_FACEBOOK_IMPORT_SELENIUM_MANUAL_LOGIN_TIMEOUT`.
-9. Confirm opted-in ADMIN users receive a Pushover login-timeout notification through the same
+7. Let a later scheduled interval run require login or two-factor approval.
+8. Confirm opted-in ADMIN users receive a Pushover login-required notification for that scheduled run.
+9. Let a scheduled run exceed `APP_FACEBOOK_IMPORT_SELENIUM_MANUAL_LOGIN_TIMEOUT`.
+10. Confirm opted-in ADMIN users receive a Pushover login-timeout notification through the same
    **Facebook login required notifications** preference.
-10. Trigger a manual Selenium import and force the same Facebook login screen.
-11. Confirm manual import login-required and login-timeout events are logged but do not send Pushover notifications.
-12. Temporarily reduce `APP_FACEBOOK_IMPORT_SCHEDULE_INTERVAL` in a local test environment and
+11. Trigger a manual Selenium import and force the same Facebook login screen.
+12. Confirm manual import login-required and login-timeout events are logged but do not send Pushover notifications.
+13. Temporarily reduce `APP_FACEBOOK_IMPORT_SCHEDULE_INTERVAL` in a local test environment and
    confirm a new tick is skipped while a previous import is still active.
+14. With `APP_FACEBOOK_IMPORT_APIFY_SCHEDULE_ENABLED=true`, confirm Apify imports run on
+   `APP_FACEBOOK_IMPORT_APIFY_SCHEDULE_INTERVAL` independently from the Selenium interval.
+15. Confirm article proposals and accepted articles show whether they came from Apify import or Selenium import.
 
 **Expected:** scheduled imports use the same non-blocking proposal flow, Selenium login-required runs wait for manual authorization,
 only scheduled interval login-required and login-timeout events notify opted-in admins, and

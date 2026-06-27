@@ -23,20 +23,22 @@ class FacebookImportRunRepository(
         passIndex: Int = 0,
         passCount: Int = 0,
         importType: FacebookImportType = FacebookImportType.SELENIUM,
+        trigger: FacebookImportTrigger = FacebookImportTrigger.MANUAL,
     ) {
         jdbc.update(
             """
                 INSERT INTO facebook_import_run(
-                    import_run_id, import_type, status, discovered_count, submitted_count,
+                    import_run_id, import_type, import_trigger, status, discovered_count, submitted_count,
                     skipped_existing_count, current_pass_index, pass_count,
                     phase, status_detail, phase_index, phase_count, last_status_at, summary_logs_compressed
                 )
                 VALUES (
-                    :importRunId, :importType, 'RUNNING', :discoveredCount, :submittedCount,
+                    :importRunId, :importType, :trigger, 'RUNNING', :discoveredCount, :submittedCount,
                     :skippedExistingCount, :passIndex, :passCount, :phase, NULL, :phaseIndex, :phaseCount, now(), :logsCompressed
                 )
                 ON CONFLICT (import_run_id) DO UPDATE
                    SET import_type = :importType,
+                       import_trigger = COALESCE(facebook_import_run.import_trigger, :trigger),
                        discovered_count = facebook_import_run.discovered_count + :discoveredCount,
                        submitted_count = facebook_import_run.submitted_count + :submittedCount,
                        skipped_existing_count = facebook_import_run.skipped_existing_count + :skippedExistingCount,
@@ -73,6 +75,7 @@ class FacebookImportRunRepository(
             MapSqlParameterSource()
                 .addValue("importRunId", importRunId)
                 .addValue("importType", importType.name)
+                .addValue("trigger", trigger.name)
                 .addValue("discoveredCount", discoveredCount.coerceAtLeast(0))
                 .addValue("submittedCount", submittedCount.coerceAtLeast(0))
                 .addValue("skippedExistingCount", skippedExistingCount.coerceAtLeast(0))
@@ -89,17 +92,18 @@ class FacebookImportRunRepository(
         jdbc.update(
             """
                 INSERT INTO facebook_import_run(
-                    import_run_id, import_type, status, discovered_count, submitted_count,
+                    import_run_id, import_type, import_trigger, status, discovered_count, submitted_count,
                     skipped_existing_count, failed_count, current_pass_index, pass_count,
                     phase, status_detail, phase_index, phase_count, last_status_at
                 )
                 VALUES (
-                    :importRunId, :importType, 'RUNNING', :matchedPostCount, :submittedCount,
+                    :importRunId, :importType, :trigger, 'RUNNING', :matchedPostCount, :submittedCount,
                     :skippedExistingCount, :failedCount, :passIndex, :passCount,
                     :phase, :statusDetail, :phaseIndex, :phaseCount, :occurredAt
                 )
                 ON CONFLICT (import_run_id) DO UPDATE
                    SET import_type = :importType,
+                       import_trigger = COALESCE(facebook_import_run.import_trigger, :trigger),
                        status = CASE
                            WHEN facebook_import_run.finished_at IS NULL THEN 'RUNNING'
                            ELSE facebook_import_run.status
@@ -140,6 +144,7 @@ class FacebookImportRunRepository(
             MapSqlParameterSource()
                 .addValue("importRunId", importRunId)
                 .addValue("importType", request.importType.name)
+                .addValue("trigger", request.trigger.name)
                 .addValue("matchedPostCount", request.matchedPostCount.coerceAtLeast(0))
                 .addValue("submittedCount", request.submittedCount.coerceAtLeast(0))
                 .addValue("skippedExistingCount", request.skippedExistingCount.coerceAtLeast(0))
@@ -164,21 +169,23 @@ class FacebookImportRunRepository(
         statusDetail: String?,
         logsCompressed: ByteArray?,
         importType: FacebookImportType = FacebookImportType.SELENIUM,
+        trigger: FacebookImportTrigger = FacebookImportTrigger.MANUAL,
     ) {
         jdbc.update(
             """
                 INSERT INTO facebook_import_run(
-                    import_run_id, import_type, status, finished_at, discovered_count, submitted_count,
+                    import_run_id, import_type, import_trigger, status, finished_at, discovered_count, submitted_count,
                     skipped_existing_count, failed_count, phase, status_detail, phase_index,
                     phase_count, last_status_at, summary_logs_compressed
                 )
                 VALUES (
-                    :importRunId, :importType, :status, now(), :discoveredCount, :submittedCount,
+                    :importRunId, :importType, :trigger, :status, now(), :discoveredCount, :submittedCount,
                     :skippedExistingCount, :failedCount, :phase, :statusDetail, :phaseIndex,
                     :phaseCount, now(), :logsCompressed
                 )
                 ON CONFLICT (import_run_id) DO UPDATE
                    SET import_type = :importType,
+                       import_trigger = COALESCE(facebook_import_run.import_trigger, :trigger),
                        status = CASE
                            WHEN facebook_import_run.finished_at IS NULL THEN :status
                            ELSE facebook_import_run.status
@@ -213,6 +220,7 @@ class FacebookImportRunRepository(
             MapSqlParameterSource()
                 .addValue("importRunId", importRunId)
                 .addValue("importType", importType.name)
+                .addValue("trigger", trigger.name)
                 .addValue("status", status.name)
                 .addValue("discoveredCount", discoveredCount.coerceAtLeast(0))
                 .addValue("submittedCount", submittedCount.coerceAtLeast(0))
@@ -369,6 +377,39 @@ class FacebookImportRunRepository(
             emptyMap<String, Any>(),
             PROGRESS_ROW_MAPPER,
         ).firstOrNull()
+
+    fun findLatestRunTimestamp(importType: FacebookImportType): Instant? =
+        jdbc.query(
+            """
+                SELECT COALESCE(finished_at, last_status_at, started_at) AS last_run_at
+                  FROM facebook_import_run
+                 WHERE import_type = :importType
+                 ORDER BY COALESCE(finished_at, last_status_at, started_at) DESC
+                 LIMIT 1
+            """.trimIndent(),
+            mapOf("importType" to importType.name),
+        ) { rs, _ -> rs.getTimestamp("last_run_at")?.toInstant() }.firstOrNull()
+
+    fun findLatestRunTimestamp(importType: FacebookImportType, trigger: FacebookImportTrigger): Instant? =
+        findLatestRunTimestamp(importType, setOf(trigger))
+
+    fun findLatestRunTimestamp(importType: FacebookImportType, triggers: Set<FacebookImportTrigger>): Instant? {
+        if (triggers.isEmpty()) return null
+        return jdbc.query(
+            """
+                SELECT COALESCE(finished_at, last_status_at, started_at) AS last_run_at
+                  FROM facebook_import_run
+                 WHERE import_type = :importType
+                   AND import_trigger IN (:importTriggers)
+                 ORDER BY COALESCE(finished_at, last_status_at, started_at) DESC
+                 LIMIT 1
+            """.trimIndent(),
+            mapOf(
+                "importType" to importType.name,
+                "importTriggers" to triggers.map { it.name },
+            ),
+        ) { rs, _ -> rs.getTimestamp("last_run_at")?.toInstant() }.firstOrNull()
+    }
 
     private fun timeoutParameters(timedOutAt: Instant, statusDetail: String): MapSqlParameterSource =
         MapSqlParameterSource()
@@ -633,7 +674,7 @@ class FacebookArticleProposalRepository(
                 id = rs.getLong("id"),
                 candidateId = rs.getString("candidate_id"),
                 importRunId = rs.getString("import_run_id"),
-                importType = rs.getString("import_type")?.let(FacebookImportType::valueOf) ?: FacebookImportType.SELENIUM,
+                importType = parseImportType(rs.getString("import_type")),
                 articleUrl = rs.getString("article_url"),
                 canonicalArticleUrl = rs.getString("canonical_article_url"),
                 facebookPostUrl = rs.getString("facebook_post_url"),
@@ -653,6 +694,9 @@ class FacebookArticleProposalRepository(
             val value = getLong(column)
             return if (wasNull()) null else value
         }
+
+        fun parseImportType(value: String?): FacebookImportType =
+            value?.let { runCatching { FacebookImportType.valueOf(it) }.getOrNull() } ?: FacebookImportType.SELENIUM
 
         @Suppress("unused")
         fun timestamp(value: Instant?): Timestamp? = value?.let(Timestamp::from)

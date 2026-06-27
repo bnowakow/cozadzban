@@ -3,6 +3,8 @@
 
 package pl.bnowakowski.cozadzban.facebookimport
 
+import com.fasterxml.jackson.annotation.JsonCreator
+import com.fasterxml.jackson.annotation.JsonValue
 import java.time.Instant
 
 enum class FacebookImportTrigger {
@@ -12,8 +14,27 @@ enum class FacebookImportTrigger {
 }
 
 enum class FacebookImportType {
-    API,
+    APIFY,
     SELENIUM,
+    ;
+
+    @JsonValue
+    fun toJson(): String =
+        when (this) {
+            APIFY -> "API"
+            SELENIUM -> "SELENIUM"
+        }
+
+    companion object {
+        @JvmStatic
+        @JsonCreator
+        fun fromJson(value: String?): FacebookImportType =
+            when (value?.trim()?.uppercase()) {
+                "API", "APIFY" -> APIFY
+                "SELENIUM" -> SELENIUM
+                else -> throw IllegalArgumentException("Unsupported Facebook import type: $value")
+            }
+    }
 }
 
 interface FacebookImportRunner {

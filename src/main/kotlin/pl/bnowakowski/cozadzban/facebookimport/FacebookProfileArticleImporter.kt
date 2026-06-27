@@ -219,7 +219,7 @@ class FacebookProfileArticleImporter(
                 summary.skippedExisting,
                 summary.failed,
             )
-            completeRunSafely(importRunId, completionStatus, summary, completionLogs, completionDetail)
+            completeRunSafely(importRunId, trigger, completionStatus, summary, completionLogs, completionDetail)
             synchronized(stateLock) {
                 if (activeImportThread === currentThread) {
                     activeImportThread = null
@@ -437,6 +437,7 @@ class FacebookProfileArticleImporter(
                         FacebookProposalBatchRequest(
                             importRunId = facebookImportId,
                             importType = importType,
+                            trigger = trigger,
                             passIndex = passIndex + 1,
                             passCount = passCount,
                             proposals = proposals,
@@ -504,6 +505,7 @@ class FacebookProfileArticleImporter(
         lastProgressReportedAt = now
         val request = FacebookImportProgressRequest(
             importType = importType,
+            trigger = trigger,
             phase = phase.label,
             detail = detail,
             phaseIndex = phase.phaseIndex,
@@ -548,6 +550,7 @@ class FacebookProfileArticleImporter(
 
     private fun completeRunSafely(
         importRunId: String,
+        trigger: FacebookImportTrigger,
         status: FacebookImportRunStatus,
         summary: ProposalImportSummary,
         logs: String,
@@ -559,6 +562,7 @@ class FacebookProfileArticleImporter(
                 FacebookImportRunCompletionRequest(
                     status = status,
                     importType = importType,
+                    trigger = trigger,
                     discoveredCount = summary.discovered,
                     submittedCount = summary.submitted,
                     skippedExistingCount = summary.skippedExisting,
