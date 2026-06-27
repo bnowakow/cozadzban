@@ -190,10 +190,7 @@ class FacebookApifyArticleImporter(
         val allText = textualValues(item).joinToString("\n")
         if (!containsMarker(allText)) return emptyList()
         val facebookPostUrl = firstString(item, "url", "postUrl", "facebookUrl", "link")?.takeIf { isFacebookUrl(it) }
-        return URL_REGEX.findAll(allText)
-            .map { it.value.trimEnd('.', ',', ')', ']', '"', '\'') }
-            .filter { isImportableUrl(it) }
-            .distinctBy { ArticleService.canonicalizeUrl(it) }
+        return proposalUrlsFromItem(item)
             .map { url ->
                 FacebookProposalSubmission(
                     candidateId = "$importRunId-apify-${candidateSequence.incrementAndGet()}",
@@ -203,6 +200,19 @@ class FacebookApifyArticleImporter(
                     logs = "source=apify\nactorId=${properties.apify.actorId}\nfacebookPostUrl=${facebookPostUrl ?: "<none>"}",
                 )
             }.toList()
+    }
+
+    internal fun proposalUrlsFromItem(item: JsonNode): List<String> {
+        val allText = textualValues(item).joinToString("\n")
+        val anchorHrefUrls = ANCHOR_HREF_REGEX.findAll(allText)
+            .map { it.groupValues[1].trimEnd('.', ',', ')', ']', '"', '\'') }
+        val visibleText = HTML_TAG_REGEX.replace(allText, " ")
+        val textUrls = URL_REGEX.findAll(visibleText)
+            .map { it.value.trimEnd('.', ',', ')', ']', '"', '\'') }
+        return (anchorHrefUrls + textUrls)
+            .filter { isImportableUrl(it) }
+            .distinctBy { ArticleService.canonicalizeUrl(it) }
+            .toList()
     }
 
     private fun reportProgress(
@@ -309,11 +319,23 @@ class FacebookApifyArticleImporter(
     private fun isImportableUrl(url: String): Boolean =
         runCatching {
             val uri = URI(url)
-            uri.scheme in setOf("http", "https") && !isFacebookUrl(url)
+            uri.scheme in setOf("http", "https") && !isFacebookUrl(url) && !isMediaOrThumbnailUrl(url)
         }.getOrDefault(false)
 
     private fun isFacebookUrl(url: String): Boolean =
         runCatching { URI(url).host.orEmpty().contains("facebook.com", ignoreCase = true) }.getOrDefault(false)
+
+    private fun isMediaOrThumbnailUrl(url: String): Boolean {
+        val uri = runCatching { URI(url) }.getOrNull() ?: return false
+        val host = uri.host?.lowercase().orEmpty()
+        return isFacebookMediaCdnHost(host)
+    }
+
+    private fun isFacebookMediaCdnHost(host: String): Boolean =
+        host == "fbcdn.net" ||
+            host.endsWith(".fbcdn.net") ||
+            host == "cdninstagram.com" ||
+            host.endsWith(".cdninstagram.com")
 
     private fun normalizedLanguage(): String =
         runCatching { ArticleService.normalizeLanguage(properties.language) }.getOrDefault("pl")
@@ -346,6 +368,8 @@ class FacebookApifyArticleImporter(
     private companion object {
         const val PRICE_PER_RESULT_USD = 0.002
         val RUN_ID_FORMATTER: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'")
-        val URL_REGEX: Regex = Regex("""https?://[^\s<>"']+""")
+        val ANCHOR_HREF_REGEX: Regex = Regex("""<a\b[^>]*\bhref\s*=\s*[\"']([^\"']+)[\"']""", RegexOption.IGNORE_CASE)
+        val HTML_TAG_REGEX: Regex = Regex("""<[^>]+>""")
+        val URL_REGEX: Regex = Regex("""https?://[^\s<>'\")]+""")
     }
 }

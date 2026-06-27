@@ -57,6 +57,7 @@ class FacebookImportProposalClient(
                 .body(request)
                 .retrieve()
                 .toBodilessEntity()
+            proposalService.completeRun(importRunId, request)
         } else {
             proposalService.completeRun(importRunId, request)
         }
@@ -72,6 +73,7 @@ class FacebookImportProposalClient(
                 .body(request)
                 .retrieve()
                 .toBodilessEntity()
+            proposalService.recordProgress(importRunId, request)
         } else {
             proposalService.recordProgress(importRunId, request)
         }
@@ -87,6 +89,7 @@ class FacebookImportProposalClient(
                 .body(request)
                 .retrieve()
                 .toBodilessEntity()
+            proposalService.recordLoginRequired(importRunId, request)
         } else {
             proposalService.recordLoginRequired(importRunId, request)
         }
