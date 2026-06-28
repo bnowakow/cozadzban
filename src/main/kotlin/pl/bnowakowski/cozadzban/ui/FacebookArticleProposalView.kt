@@ -50,6 +50,7 @@ import java.util.concurrent.CompletableFuture
 @CssImport(value = "./styles/cozadzban-dialog-overlay.css", themeFor = "vaadin-dialog-overlay")
 @CssImport(value = "./styles/cozadzban-context-menu-overlay.css", themeFor = "vaadin-context-menu-overlay")
 @CssImport(value = "./styles/cozadzban-context-menu-overlay.css", themeFor = "vaadin-menu-bar-overlay")
+@CssImport(value = "./styles/cozadzban-menu-bar.css", themeFor = "vaadin-menu-bar")
 @CssImport(value = "./styles/cozadzban-menu-bar-button.css", themeFor = "vaadin-menu-bar-button")
 class FacebookArticleProposalView(
     private val proposalService: FacebookArticleProposalService,

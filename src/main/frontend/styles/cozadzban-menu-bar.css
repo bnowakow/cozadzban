@@ -1,0 +1,10 @@
+:host([theme~='czj-top-menu']) {
+  --czj-menu-trigger-size: 34px;
+}
+
+:host([theme~='czj-top-menu']) ::slotted(vaadin-menu-bar-button:not([slot='overflow'])) {
+  box-sizing: border-box;
+  height: var(--czj-menu-trigger-size) !important;
+  min-width: var(--czj-menu-trigger-size) !important;
+  width: var(--czj-menu-trigger-size) !important;
+}

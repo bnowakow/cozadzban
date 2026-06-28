@@ -31,6 +31,8 @@ enum class CozadzbanTopBarPage {
     ARTICLE_CONTENT_CACHE,
 }
 
+private const val TOP_BAR_MENU_BUTTON_SIZE = "34px"
+
 fun Component.buildCozadzbanTopBar(
     currentPage: CozadzbanTopBarPage,
     canAccessUserPages: Boolean = true,
@@ -180,12 +182,27 @@ private fun Component.buildSharedMenu(
 ): MenuBar {
     val menu = MenuBar()
     menu.addThemeVariants(MenuBarVariant.LUMO_TERTIARY_INLINE)
+    menu.element.setAttribute("theme", "tertiary-inline czj-top-menu")
     val menuIcon = VaadinIcon.MENU.create()
     menuIcon.addClassName("czj-menu-trigger-icon")
     menuIcon.element.setAttribute("aria-hidden", "true")
-    val root = menu.addItem(Span(menuIcon).apply { addClassName("czj-menu-trigger") })
+    val menuTrigger = Span(menuIcon).apply {
+        addClassName("czj-menu-trigger")
+        element.style.set("align-items", "center")
+        element.style.set("box-sizing", "border-box")
+        element.style.set("display", "inline-flex")
+        element.style.set("height", TOP_BAR_MENU_BUTTON_SIZE)
+        element.style.set("justify-content", "center")
+        element.style.set("line-height", "1")
+        element.style.set("width", TOP_BAR_MENU_BUTTON_SIZE)
+    }
+    val root = menu.addItem(menuTrigger)
     root.element.setAttribute("aria-label", "Menu")
     root.element.setAttribute("title", "Menu")
+    root.element.style.set("box-sizing", "border-box")
+    root.element.style.set("height", TOP_BAR_MENU_BUTTON_SIZE)
+    root.element.style.set("min-width", TOP_BAR_MENU_BUTTON_SIZE)
+    root.element.style.set("width", TOP_BAR_MENU_BUTTON_SIZE)
     val subMenu = root.subMenu
 
     if (canAccessUserPages) {

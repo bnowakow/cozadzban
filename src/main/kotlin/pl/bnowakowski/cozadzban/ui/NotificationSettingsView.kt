@@ -40,6 +40,7 @@ import pl.bnowakowski.cozadzban.user.Role
 @CssImport("./styles/cozadzban-feed.css")
 @CssImport(value = "./styles/cozadzban-context-menu-overlay.css", themeFor = "vaadin-context-menu-overlay")
 @CssImport(value = "./styles/cozadzban-context-menu-overlay.css", themeFor = "vaadin-menu-bar-overlay")
+@CssImport(value = "./styles/cozadzban-menu-bar.css", themeFor = "vaadin-menu-bar")
 @CssImport(value = "./styles/cozadzban-menu-bar-button.css", themeFor = "vaadin-menu-bar-button")
 class NotificationSettingsView(
     private val preferenceService: NotificationPreferenceService,

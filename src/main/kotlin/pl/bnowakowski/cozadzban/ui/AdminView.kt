@@ -43,6 +43,7 @@ import pl.bnowakowski.cozadzban.user.Role
 @CssImport(value = "./styles/cozadzban-select-overlay.css", themeFor = "vaadin-select-overlay")
 @CssImport(value = "./styles/cozadzban-context-menu-overlay.css", themeFor = "vaadin-context-menu-overlay")
 @CssImport(value = "./styles/cozadzban-context-menu-overlay.css", themeFor = "vaadin-menu-bar-overlay")
+@CssImport(value = "./styles/cozadzban-menu-bar.css", themeFor = "vaadin-menu-bar")
 @CssImport(value = "./styles/cozadzban-menu-bar-button.css", themeFor = "vaadin-menu-bar-button")
 class AdminView(
     private val appUserService: AppUserService,

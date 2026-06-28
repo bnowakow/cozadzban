@@ -78,6 +78,7 @@ import java.util.concurrent.ExecutionException
 @CssImport(value = "./styles/cozadzban-confirm-dialog-overlay.css", themeFor = "vaadin-confirm-dialog-overlay")
 @CssImport(value = "./styles/cozadzban-context-menu-overlay.css", themeFor = "vaadin-context-menu-overlay")
 @CssImport(value = "./styles/cozadzban-context-menu-overlay.css", themeFor = "vaadin-menu-bar-overlay")
+@CssImport(value = "./styles/cozadzban-menu-bar.css", themeFor = "vaadin-menu-bar")
 @CssImport(value = "./styles/cozadzban-menu-bar-button.css", themeFor = "vaadin-menu-bar-button")
 class ArticleListView(
     private val articleRepository: ArticleRepository,

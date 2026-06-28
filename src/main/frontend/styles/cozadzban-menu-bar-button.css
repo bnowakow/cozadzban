@@ -2,19 +2,19 @@
   box-sizing: border-box;
   justify-content: center;
   margin-inline: calc(var(--lumo-space-xs) / 2) !important;
-  min-width: var(--lumo-size-m);
+  min-width: 34px;
   padding-inline: 0 !important;
-  width: var(--lumo-size-m);
+  width: 34px;
 }
 
 :host(:not([slot='overflow'])[aria-haspopup]) {
   box-sizing: border-box;
-  height: var(--lumo-button-size);
+  height: 34px;
   justify-content: center;
   margin-inline: calc(var(--lumo-space-xs) / 2) !important;
-  min-width: calc(var(--lumo-button-size) + 0.35rem);
+  min-width: 34px;
   padding-inline: 0 !important;
-  width: calc(var(--lumo-button-size) + 0.35rem);
+  width: 34px;
 }
 
 .vaadin-button-container,
