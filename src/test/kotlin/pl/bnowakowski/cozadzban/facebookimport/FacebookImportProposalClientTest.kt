@@ -11,8 +11,9 @@ import org.mockito.kotlin.any
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.verify
+import org.mockito.kotlin.whenever
 import java.net.InetSocketAddress
-import java.nio.charset.StandardCharsets
+import java.time.Instant
 
 class FacebookImportProposalClientTest {
     private val proposalService: FacebookArticleProposalService = mock()
@@ -94,5 +95,54 @@ class FacebookImportProposalClientTest {
         } finally {
             server.stop(0)
         }
+    }
+
+    @Test
+    fun `terminateAbandonedRunsOnStartup sends remote request and persists local cleanup`() {
+        val requests = mutableListOf<HttpExchange>()
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/api/facebook-import/runs/abandoned-startup-cleanup") { exchange ->
+            requests += exchange
+            assertEquals("POST", exchange.requestMethod)
+            assertEquals("test-machine-key", exchange.requestHeaders["X-CoZaDzban-M2M-Key"]?.firstOrNull())
+            val response = """{"terminatedRunIds":["server-run"]}""".toByteArray()
+            exchange.responseHeaders.add("Content-Type", "application/json")
+            exchange.sendResponseHeaders(200, response.size.toLong())
+            exchange.responseBody.use { it.write(response) }
+        }
+        server.start()
+
+        try {
+            val client = FacebookImportProposalClient(
+                properties = FacebookImportProperties(
+                    targetApiBaseUrl = "http://127.0.0.1:${server.address.port}",
+                    targetApiKey = "test-machine-key",
+                ),
+                proposalService = proposalService,
+            )
+            val startedAt = Instant.parse("2026-06-27T12:00:00Z")
+
+            assertEquals(listOf("server-run"), client.terminateAbandonedRunsOnStartup(startedAt))
+
+            assertEquals(1, requests.size)
+            assertEquals("/api/facebook-import/runs/abandoned-startup-cleanup", requests.first().requestURI.path)
+            verify(proposalService).terminateAbandonedRunsOnStartup(startedAt)
+        } finally {
+            server.stop(0)
+        }
+    }
+
+    @Test
+    fun `terminateAbandonedRunsOnStartup uses local service when remote is not configured`() {
+        val startedAt = Instant.parse("2026-06-27T12:00:00Z")
+        whenever(proposalService.terminateAbandonedRunsOnStartup(startedAt)).thenReturn(listOf("local-run"))
+        val client = FacebookImportProposalClient(
+            properties = FacebookImportProperties(),
+            proposalService = proposalService,
+        )
+
+        assertEquals(listOf("local-run"), client.terminateAbandonedRunsOnStartup(startedAt))
+
+        verify(proposalService).terminateAbandonedRunsOnStartup(startedAt)
     }
 }

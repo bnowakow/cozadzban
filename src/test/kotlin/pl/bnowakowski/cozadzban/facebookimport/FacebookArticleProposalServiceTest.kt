@@ -58,6 +58,7 @@ class FacebookArticleProposalServiceTest {
         assertRequiresNew("recordLoginRequired", String::class.java, FacebookImportLoginRequiredRequest::class.java)
         assertRequiresNew("terminateTimedOutRun", String::class.java, Duration::class.java, Instant::class.java)
         assertRequiresNew("terminateTimedOutRuns", Duration::class.java, Instant::class.java)
+        assertRequiresNew("terminateAbandonedRunsOnStartup", Instant::class.java)
     }
 
     @Test
@@ -291,6 +292,20 @@ class FacebookArticleProposalServiceTest {
             Instant.parse("2026-05-24T10:00:00Z"),
             timedOutAt,
             "Timed out after PT1H",
+        )
+    }
+
+    @Test
+    fun `terminateAbandonedRunsOnStartup marks orphaned running imports terminated`() {
+        val startedAt = Instant.parse("2026-05-24T11:00:00Z")
+        whenever(runRepository.terminateAbandonedRunningRuns(any(), any())).thenReturn(listOf("run-abandoned"))
+
+        val terminated = service.terminateAbandonedRunsOnStartup(startedAt)
+
+        assertEquals(listOf("run-abandoned"), terminated)
+        verify(runRepository).terminateAbandonedRunningRuns(
+            startedAt,
+            "Interrupted by application restart before startup cleanup",
         )
     }
 

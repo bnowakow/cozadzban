@@ -8,6 +8,7 @@ import org.springframework.http.client.JdkClientHttpRequestFactory
 import org.springframework.stereotype.Component
 import org.springframework.web.client.RestClient
 import java.net.http.HttpClient
+import java.time.Instant
 
 @Component
 class FacebookImportProposalClient(
@@ -95,7 +96,26 @@ class FacebookImportProposalClient(
         }
     }
 
-    private fun isRemoteConfigured(): Boolean =
+    fun terminateAbandonedRunsOnStartup(startedAt: Instant = Instant.now()): List<String> {
+        val request = FacebookImportStartupCleanupRequest(startedAt)
+        return if (isRemoteConfigured()) {
+            val response = remoteClient()
+                .post()
+                .uri("${properties.targetRunPath}/abandoned-startup-cleanup")
+                .contentType(MediaType.APPLICATION_JSON)
+                .header(properties.targetApiKeyHeader, properties.targetApiKey)
+                .body(request)
+                .retrieve()
+                .body(FacebookImportStartupCleanupResponse::class.java)
+                ?: FacebookImportStartupCleanupResponse(emptyList())
+            proposalService.terminateAbandonedRunsOnStartup(startedAt)
+            response.terminatedRunIds
+        } else {
+            proposalService.terminateAbandonedRunsOnStartup(startedAt)
+        }
+    }
+
+    fun isRemoteConfigured(): Boolean =
         properties.targetApiBaseUrl.isNotBlank() && properties.targetApiKey.isNotBlank()
 
     private fun remoteClient(): RestClient {

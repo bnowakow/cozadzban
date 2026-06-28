@@ -51,4 +51,10 @@ class FacebookArticleProposalController(
         proposalService.recordLoginRequired(importRunId, request)
         return ResponseEntity.noContent().build()
     }
+
+    @PostMapping("/runs/abandoned-startup-cleanup")
+    fun cleanupAbandonedRunsOnStartup(
+        @RequestBody request: FacebookImportStartupCleanupRequest,
+    ): FacebookImportStartupCleanupResponse =
+        FacebookImportStartupCleanupResponse(proposalService.terminateAbandonedRunsOnStartup(request.startedAt))
 }

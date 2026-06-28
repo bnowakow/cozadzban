@@ -177,6 +177,43 @@ class FacebookImportSchedulerTest {
         verify(proposalService).terminateTimedOutRuns(eq(Duration.ofMinutes(30)), any<Instant>())
     }
 
+    @Test
+    fun `startup cleanup informs remote server when worker is remotely configured`() {
+        val now = Instant.parse("2026-06-27T12:00:00Z")
+        val proposalClient: FacebookImportProposalClient = mock()
+        whenever(jobService.isImportRunning()).thenReturn(false)
+        whenever(proposalClient.terminateAbandonedRunsOnStartup(now)).thenReturn(listOf("run-abandoned"))
+        val scheduler = FacebookImportScheduler(
+            FacebookImportProperties(selenium = FacebookImportProperties.Selenium(enabled = true)),
+            jobService,
+            proposalService,
+            { now },
+            proposalClient,
+        )
+
+        assertEquals(listOf("run-abandoned"), scheduler.cleanupAbandonedImportStateOnStartup())
+
+        verify(proposalClient).terminateAbandonedRunsOnStartup(now)
+    }
+
+    @Test
+    fun `startup cleanup skips passive server without local or remote worker capability`() {
+        val now = Instant.parse("2026-06-27T12:00:00Z")
+        val proposalClient: FacebookImportProposalClient = mock()
+        whenever(jobService.isImportRunning()).thenReturn(false)
+        val scheduler = FacebookImportScheduler(
+            FacebookImportProperties(),
+            jobService,
+            proposalService,
+            { now },
+            proposalClient,
+        )
+
+        assertEquals(emptyList<String>(), scheduler.cleanupAbandonedImportStateOnStartup())
+
+        verify(proposalClient, never()).terminateAbandonedRunsOnStartup(any())
+    }
+
 
     @Test
     fun `stale run cleanup starts even when scheduled imports are disabled`() {

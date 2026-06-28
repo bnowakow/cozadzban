@@ -131,6 +131,14 @@ data class FacebookImportLoginRequiredRequest(
     val timeoutMessage: String? = null,
 )
 
+data class FacebookImportStartupCleanupRequest(
+    val startedAt: Instant = Instant.now(),
+)
+
+data class FacebookImportStartupCleanupResponse(
+    val terminatedRunIds: List<String>,
+)
+
 data class FacebookImportProgressRequest(
     val importType: FacebookImportType = FacebookImportType.SELENIUM,
     val trigger: FacebookImportTrigger = FacebookImportTrigger.MANUAL,

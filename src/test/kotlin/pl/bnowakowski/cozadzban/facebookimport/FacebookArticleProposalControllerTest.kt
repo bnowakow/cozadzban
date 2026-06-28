@@ -41,6 +41,11 @@ import pl.bnowakowski.cozadzban.user.Role
         "app.machine-auth.header-name=X-CoZaDzban-M2M-Key",
         "app.machine-auth.api-key=secret",
         "app.machine-auth.principal-email=facebook-import-bot@cozadzban.pl",
+        "app.facebook-import.enabled=false",
+        "app.facebook-import.selenium.enabled=false",
+        "app.facebook-import.apify.enabled=false",
+        "app.facebook-import.target-api-base-url=",
+        "app.facebook-import.target-api-key=",
         NO_DATABASE_AUTOCONFIGURATION,
     ],
 )
@@ -170,6 +175,26 @@ class FacebookArticleProposalControllerTest {
         }
 
         verify(proposalService).recordProgress(eq("run-1"), any())
+    }
+
+    @Test
+    fun `startup cleanup endpoint accepts machine credential`() {
+        whenever(proposalService.terminateAbandonedRunsOnStartup(any())).thenReturn(listOf("run-abandoned"))
+
+        mockMvc.post("/api/facebook-import/runs/abandoned-startup-cleanup") {
+            header("X-CoZaDzban-M2M-Key", "secret")
+            contentType = MediaType.APPLICATION_JSON
+            content = """
+                {
+                  "startedAt": "2026-05-24T10:00:00Z"
+                }
+            """.trimIndent()
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.terminatedRunIds[0]") { value("run-abandoned") }
+        }
+
+        verify(proposalService).terminateAbandonedRunsOnStartup(any())
     }
 
     @Test

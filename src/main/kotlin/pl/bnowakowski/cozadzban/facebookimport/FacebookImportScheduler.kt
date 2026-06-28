@@ -18,6 +18,7 @@ class FacebookImportScheduler(
     private val jobService: FacebookImportJobService,
     private val proposalService: FacebookArticleProposalService,
     private val clock: Supplier<Instant> = Supplier { Instant.now() },
+    private val proposalClient: FacebookImportProposalClient = FacebookImportProposalClient(properties, proposalService),
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -30,6 +31,7 @@ class FacebookImportScheduler(
 
     @EventListener(ApplicationReadyEvent::class)
     fun start() {
+        cleanupAbandonedImportStateOnStartup()
         startStaleRunCleanup()
         startApifySchedule()
         if (!properties.schedule.enabled) {
@@ -57,6 +59,21 @@ class FacebookImportScheduler(
 
     internal fun terminateTimedOutRunsOnce(): List<String> =
         proposalService.terminateTimedOutRuns(effectiveRunTimeout())
+
+    internal fun cleanupAbandonedImportStateOnStartup(): List<String> =
+        if (jobService.isImportRunning() || !shouldCleanupAbandonedImportStateOnStartup()) {
+            emptyList()
+        } else {
+            runCatching {
+                proposalClient.terminateAbandonedRunsOnStartup(clock.get())
+            }.onFailure { ex ->
+                logger.warn("Facebook import startup abandoned-run cleanup failed", ex)
+            }.getOrElse { emptyList() }
+        }.also { terminated ->
+            if (terminated.isNotEmpty()) {
+                logger.warn("Terminated {} abandoned Facebook import run(s) on startup", terminated.size)
+            }
+        }
 
     internal fun launchScheduledImportOnce(trigger: FacebookImportTrigger = FacebookImportTrigger.SCHEDULED): Boolean {
         if (!properties.schedule.enabled) return false
@@ -210,6 +227,9 @@ class FacebookImportScheduler(
 
     private fun effectiveRunTimeout(): Duration =
         properties.runTimeout.takeIf { !it.isNegative && !it.isZero } ?: Duration.ofHours(1)
+
+    private fun shouldCleanupAbandonedImportStateOnStartup(): Boolean =
+        properties.isSeleniumEnabled() || properties.apify.enabled
 
     private fun sleep(duration: Duration) {
         if (duration.isZero || duration.isNegative) return

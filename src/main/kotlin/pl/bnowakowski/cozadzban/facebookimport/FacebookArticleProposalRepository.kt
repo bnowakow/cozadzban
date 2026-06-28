@@ -349,6 +349,27 @@ class FacebookImportRunRepository(
                 .addValue("startedBefore", Timestamp.from(startedBefore))
         ) { rs, _ -> rs.getString("import_run_id") }
 
+    fun terminateAbandonedRunningRuns(
+        abandonedAt: Instant,
+        statusDetail: String,
+    ): List<String> =
+        jdbc.query(
+            """
+                UPDATE facebook_import_run
+                   SET status = 'TERMINATED',
+                       finished_at = :abandonedAt,
+                       phase = :phase,
+                       status_detail = :statusDetail,
+                       phase_index = :phaseIndex,
+                       phase_count = :phaseCount,
+                       last_status_at = :abandonedAt
+                 WHERE status = 'RUNNING'
+                   AND finished_at IS NULL
+                RETURNING import_run_id
+            """.trimIndent(),
+            terminalParameters(abandonedAt, statusDetail)
+        ) { rs, _ -> rs.getString("import_run_id") }
+
     fun findLatestRunningProgress(): FacebookImportProgressSnapshot? =
         jdbc.query(
             """
@@ -412,8 +433,12 @@ class FacebookImportRunRepository(
     }
 
     private fun timeoutParameters(timedOutAt: Instant, statusDetail: String): MapSqlParameterSource =
+        terminalParameters(timedOutAt, statusDetail)
+
+    private fun terminalParameters(finishedAt: Instant, statusDetail: String): MapSqlParameterSource =
         MapSqlParameterSource()
-            .addValue("timedOutAt", Timestamp.from(timedOutAt))
+            .addValue("timedOutAt", Timestamp.from(finishedAt))
+            .addValue("abandonedAt", Timestamp.from(finishedAt))
             .addValue("statusDetail", statusDetail)
             .addValue("phase", terminalPhase(FacebookImportRunStatus.TERMINATED))
             .addValue("phaseIndex", FACEBOOK_IMPORT_PROGRESS_PHASE_COUNT)

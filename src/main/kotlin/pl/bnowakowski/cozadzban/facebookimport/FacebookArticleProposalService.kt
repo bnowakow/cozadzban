@@ -173,6 +173,18 @@ class FacebookArticleProposalService(
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
+    fun terminateAbandonedRunsOnStartup(startedAt: Instant = Instant.now()): List<String> {
+        val runIds = runRepository.terminateAbandonedRunningRuns(
+            abandonedAt = startedAt,
+            statusDetail = "Interrupted by application restart before startup cleanup",
+        )
+        runIds.forEach { runId ->
+            LOG.warn("Facebook import run {} was still marked running on startup; marked terminated", runId)
+        }
+        return runIds
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     fun completeRun(importRunId: String, request: FacebookImportRunCompletionRequest) {
         require(importRunId.isNotBlank()) { "importRunId is required" }
         runRepository.complete(
