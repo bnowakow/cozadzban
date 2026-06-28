@@ -4,6 +4,8 @@
 package pl.bnowakowski.cozadzban.ui
 
 import com.vaadin.flow.component.Component
+import com.vaadin.flow.component.ClickEvent
+import com.vaadin.flow.component.ComponentUtil
 import com.vaadin.flow.component.button.Button
 import com.vaadin.flow.component.UI
 import com.vaadin.flow.component.dialog.Dialog
@@ -11,9 +13,13 @@ import com.vaadin.flow.component.html.Anchor
 import com.vaadin.flow.component.html.Div
 import com.vaadin.flow.component.html.Image
 import com.vaadin.flow.component.html.Span
+import com.vaadin.flow.component.contextmenu.MenuItem
+import com.vaadin.flow.component.menubar.MenuBar
 import com.vaadin.flow.component.radiobutton.RadioButtonGroup
-import com.vaadin.flow.component.shared.Tooltip
 import com.vaadin.flow.component.textfield.TextField
+import com.vaadin.flow.router.AfterNavigationEvent
+import com.vaadin.flow.router.Location
+import com.vaadin.flow.router.QueryParameters
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -93,19 +99,19 @@ class ArticleListViewTest {
             buildProperties,
             languageFlagCache,
         )
-        val buttons = findComponents(view, Button::class.java)
-        val importButton = buttons.firstOrNull { it.text == "Import Facebook Selenium" }
-        val stopButton = findFacebookStopButton(view)
+        val importItem = findMenuItem(view, "Import Facebook with Selenium")
+        val stopItem = findMenuItem(view, "Stop Facebook import")
 
-        assertTrue(buttons.any { it.text == "Add Article" })
-        assertTrue(buttons.any { it.text == "Article Proposals" })
-        assertTrue(importButton != null, "Expected admin import button to be present")
-        assertTrue(importButton!!.isEnabled, "Expected configured import button to be enabled")
-        assertTrue(stopButton != null, "Expected admin stop import button to be present")
-        assertFalse(stopButton!!.isEnabled, "Expected stop button to be disabled when no import is running")
+        assertTrue(findMenuItem(view, "Menu") != null)
+        assertTrue(findMenuItem(view, "Article proposals") != null)
+        assertTrue(findMenuItem(view, "Add article") != null)
+        assertTrue(importItem != null, "Expected admin import menu item to be present")
+        assertTrue(importItem!!.isEnabled, "Expected configured import menu item to be enabled")
+        assertTrue(stopItem != null, "Expected admin stop import menu item to be present")
+        assertFalse(stopItem!!.isEnabled, "Expected stop item to be disabled when no import is running")
 
         UI.setCurrent(UI())
-        importButton.click()
+        clickMenuItem(importItem)
 
         verify(facebookImportJobService).startImport(FacebookImportType.SELENIUM)
     }
@@ -134,16 +140,35 @@ class ArticleListViewTest {
             buildProperties,
             languageFlagCache,
         )
-        val buttons = findComponents(view, Button::class.java)
-        val apifyButton = buttons.firstOrNull { it.text == "Import Facebook Apify" }
+        val apifyItem = findMenuItem(view, "Import Facebook with Apify")
 
-        assertTrue(apifyButton != null, "Expected admin Apify import button to be present")
-        assertTrue(buttons.any { it.text == "Import Facebook Selenium" })
+        assertTrue(apifyItem != null, "Expected admin Apify import menu item to be present")
+        assertTrue(findMenuItem(view, "Import Facebook with Selenium") != null)
 
         UI.setCurrent(UI())
-        apifyButton!!.click()
+        clickMenuItem(apifyItem!!)
 
         verify(facebookImportJobService).startImport(FacebookImportType.APIFY)
+    }
+
+    @Test
+    fun `facebook import started message names import type`() {
+        stubArticles()
+        val view = ArticleListView(
+            articleRepository,
+            articleContentRepository,
+            articleService,
+            facebookImportJobService,
+            articleProposalService,
+            appUserRepository,
+            buildProperties,
+            languageFlagCache,
+        )
+        val method = view.javaClass.getDeclaredMethod("facebookImportStartedMessage", FacebookImportType::class.java)
+        method.isAccessible = true
+
+        assertEquals("Selenium import started", method.invoke(view, FacebookImportType.SELENIUM))
+        assertEquals("Apify import started", method.invoke(view, FacebookImportType.APIFY))
     }
 
     @Test
@@ -169,13 +194,12 @@ class ArticleListViewTest {
             languageFlagCache,
             FacebookImportProperties(apify = FacebookImportProperties.Apify(enabled = true)),
         )
-        val buttons = findComponents(view, Button::class.java)
-        val apifyButton = buttons.firstOrNull { it.text == "Import Facebook Apify" }
+        val apifyItem = findMenuItem(view, "Import Facebook with Apify")
 
-        assertTrue(apifyButton != null, "Expected admin Apify import button to be present when feature flag is enabled")
+        assertTrue(apifyItem != null, "Expected admin Apify import menu item to be present when feature flag is enabled")
 
         UI.setCurrent(UI())
-        apifyButton!!.click()
+        clickMenuItem(apifyItem!!)
 
         verify(facebookImportJobService).startImport(FacebookImportType.APIFY)
     }
@@ -202,13 +226,13 @@ class ArticleListViewTest {
             buildProperties,
             languageFlagCache,
         )
-        val stopButton = findFacebookStopButton(view)
+        val stopItem = findMenuItem(view, "Stop Facebook import")
 
-        assertTrue(stopButton != null, "Expected admin stop import button to be present")
-        assertTrue(stopButton!!.isEnabled, "Expected stop button to be enabled while import is running")
+        assertTrue(stopItem != null, "Expected admin stop import menu item to be present")
+        assertTrue(stopItem!!.isEnabled, "Expected stop item to be enabled while import is running")
 
         UI.setCurrent(UI())
-        stopButton.click()
+        clickMenuItem(stopItem)
 
         verify(facebookImportJobService).terminateImport()
     }
@@ -294,25 +318,13 @@ class ArticleListViewTest {
             buildProperties,
             languageFlagCache,
         )
-        val buttons = findComponents(view, Button::class.java)
-        val importButton = buttons.firstOrNull { it.text == "Import Facebook" }
-        val stopButton = findFacebookStopButton(view)
+        val importItem = findMenuItem(view, "Import Facebook unavailable")
+        val stopItem = findMenuItem(view, "Stop Facebook import")
 
-        assertTrue(importButton != null, "Expected admin import button to be present")
-        assertFalse(importButton!!.isEnabled, "Expected misconfigured import button to be disabled")
-        assertEquals(
-            "No Facebook import type is available",
-            Tooltip.forComponent(importButton.parent.get()).text,
-        )
-        assertTrue(stopButton != null, "Expected admin stop import button to be present")
-        assertFalse(stopButton!!.isEnabled, "Expected misconfigured stop button to be disabled")
-        assertEquals(
-            "No Facebook import type is available",
-            Tooltip.forComponent(stopButton.parent.get()).text,
-        )
-
-        importButton.click()
-        stopButton.click()
+        assertTrue(importItem != null, "Expected admin import unavailable menu item to be present")
+        assertFalse(importItem!!.isEnabled, "Expected misconfigured import item to be disabled")
+        assertTrue(stopItem != null, "Expected admin stop import menu item to be present")
+        assertFalse(stopItem!!.isEnabled, "Expected misconfigured stop item to be disabled")
 
         verify(facebookImportJobService, never()).startImport(FacebookImportType.APIFY)
         verify(facebookImportJobService, never()).startImport(FacebookImportType.SELENIUM)
@@ -339,12 +351,62 @@ class ArticleListViewTest {
             languageFlagCache,
         )
 
-        val buttons = findComponents(view, Button::class.java)
+        assertTrue(findMenuItem(view, "Menu") != null)
+        assertTrue(findMenuItem(view, "Article proposals") != null)
+        assertTrue(findMenuItem(view, "Add article") != null)
+        assertFalse(findMenuItem(view, "Import Facebook with Selenium") != null)
+        assertTrue(findMenuItem(view, "Stop Facebook import") == null)
+    }
 
-        assertTrue(buttons.any { it.text == "Add Article" })
-        assertTrue(buttons.any { it.text == "Article Proposals" })
-        assertFalse(buttons.any { it.text == "Import Facebook Selenium" })
-        assertTrue(findFacebookStopButton(view) == null)
+    @Test
+    fun `add article navigation request opens add article dialog`() {
+        val userEmail = "user@example.com"
+        authenticateAs(userEmail)
+        val ui = UI()
+        UI.setCurrent(ui)
+        stubArticles()
+        whenever(appUserRepository.findByEmail(userEmail)).thenReturn(
+            AppUser(2L, userEmail, Role.USER, AppUserStatus.ACTIVE),
+        )
+        val view = ArticleListView(
+            articleRepository,
+            articleContentRepository,
+            articleService,
+            facebookImportJobService,
+            articleProposalService,
+            appUserRepository,
+            buildProperties,
+            languageFlagCache,
+        )
+        val event: AfterNavigationEvent = mock()
+        whenever(event.location).thenReturn(Location("", QueryParameters.of("addArticle", "1")))
+
+        view.afterNavigation(event)
+
+        val field = view.javaClass.getDeclaredField("activeAddArticleDialog")
+        field.isAccessible = true
+        val dialog = field.get(view) as? Dialog
+        assertTrue(dialog?.headerTitle == "Add Article" && dialog.isOpened)
+    }
+
+    @Test
+    fun `anonymous users do not see protected article proposal menu item`() {
+        stubArticles()
+
+        val view = ArticleListView(
+            articleRepository,
+            articleContentRepository,
+            articleService,
+            facebookImportJobService,
+            articleProposalService,
+            appUserRepository,
+            buildProperties,
+            languageFlagCache,
+        )
+
+        assertTrue(findMenuItem(view, "Menu") != null)
+        assertTrue(findMenuItem(view, "Article proposals") == null)
+        assertTrue(findMenuItem(view, "Add article") == null)
     }
 
     @Test
@@ -786,4 +848,16 @@ class ArticleListViewTest {
     private fun findFacebookStopButton(root: Component): Button? =
         findComponents(root, Button::class.java)
             .firstOrNull { it.element.getAttribute("aria-label")?.startsWith("Stop Facebook import") == true }
+
+    private fun findMenuItem(root: Component, text: String): MenuItem? =
+        findComponents(root, MenuBar::class.java)
+            .flatMap { menuBar -> menuBar.items.flatMap(::flattenMenuItem) }
+            .firstOrNull { it.text == text || it.element.getAttribute("aria-label") == text }
+
+    private fun flattenMenuItem(item: MenuItem): List<MenuItem> =
+        listOf(item) + item.subMenu.items.flatMap(::flattenMenuItem)
+
+    private fun clickMenuItem(item: MenuItem) {
+        ComponentUtil.fireEvent(item, ClickEvent(item))
+    }
 }

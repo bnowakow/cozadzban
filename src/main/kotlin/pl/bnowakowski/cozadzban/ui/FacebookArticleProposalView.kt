@@ -11,8 +11,6 @@ import com.vaadin.flow.component.dependency.CssImport
 import com.vaadin.flow.component.dialog.Dialog
 import com.vaadin.flow.component.html.Anchor
 import com.vaadin.flow.component.html.Div
-import com.vaadin.flow.component.html.H2
-import com.vaadin.flow.component.html.Image
 import com.vaadin.flow.component.html.Span
 import com.vaadin.flow.component.icon.VaadinIcon
 import com.vaadin.flow.component.notification.Notification
@@ -32,11 +30,14 @@ import pl.bnowakowski.cozadzban.facebookimport.FacebookArticleProposal
 import pl.bnowakowski.cozadzban.facebookimport.FacebookArticleProposalService
 import pl.bnowakowski.cozadzban.facebookimport.FacebookArticleProposalStatus
 import pl.bnowakowski.cozadzban.facebookimport.FacebookArticleProposalStatusFilter
+import pl.bnowakowski.cozadzban.facebookimport.FacebookImportJobService
+import pl.bnowakowski.cozadzban.facebookimport.FacebookImportProperties
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportType
 import pl.bnowakowski.cozadzban.security.AllowlistAuthorizationManager
 import pl.bnowakowski.cozadzban.user.AppUser
 import pl.bnowakowski.cozadzban.user.AppUserRepository
 import pl.bnowakowski.cozadzban.user.AppUserStatus
+import pl.bnowakowski.cozadzban.user.Role
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
@@ -47,9 +48,14 @@ import java.util.concurrent.CompletableFuture
 @RolesAllowed("USER", "ADMIN")
 @CssImport("./styles/cozadzban-feed.css")
 @CssImport(value = "./styles/cozadzban-dialog-overlay.css", themeFor = "vaadin-dialog-overlay")
+@CssImport(value = "./styles/cozadzban-context-menu-overlay.css", themeFor = "vaadin-context-menu-overlay")
+@CssImport(value = "./styles/cozadzban-context-menu-overlay.css", themeFor = "vaadin-menu-bar-overlay")
+@CssImport(value = "./styles/cozadzban-menu-bar-button.css", themeFor = "vaadin-menu-bar-button")
 class FacebookArticleProposalView(
     private val proposalService: FacebookArticleProposalService,
     private val appUserRepository: AppUserRepository,
+    private val facebookImportJobService: FacebookImportJobService? = null,
+    private val facebookImportProperties: FacebookImportProperties = FacebookImportProperties(),
 ) : VerticalLayout() {
     private val submittedAtFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
         .withZone(ZoneOffset.UTC)
@@ -62,6 +68,8 @@ class FacebookArticleProposalView(
         installCozadzbanThemeBootstrap()
         setSizeFull()
         addClassName("czj-admin-view")
+        element.style.set("padding", "0")
+        element.style.set("gap", "0")
 
         statusFilter.setItems(*FacebookArticleProposalStatusFilter.entries.toTypedArray())
         statusFilter.value = FacebookArticleProposalStatusFilter.PENDING
@@ -82,37 +90,38 @@ class FacebookArticleProposalView(
 
         configureGrid()
 
-        val topBar = HorizontalLayout(
-            buildTitleGroup(),
-            statusFilter,
-            countLabel,
-            Button("Feed").apply {
-                addThemeVariants(ButtonVariant.LUMO_TERTIARY)
-                addClickListener { ui.ifPresent { currentUi -> currentUi.navigate("") } }
-            },
-            buildThemeToggleButton(),
-        )
-        topBar.addClassName("czj-admin-top-bar")
-        topBar.width = "100%"
-        topBar.defaultVerticalComponentAlignment = Alignment.CENTER
-        topBar.expand(topBar.getComponentAt(0))
+        val content = VerticalLayout(buildProposalToolbar(), proposalsGrid)
+        content.addClassName("czj-admin-panel")
+        content.isPadding = false
+        content.isSpacing = true
+        content.setWidthFull()
+        content.element.style.set("box-sizing", "border-box")
+        content.element.style.set("margin", "calc(66px + 1.25rem) 1.25rem 1.25rem")
+        content.element.style.set("width", "calc(100% - 2.5rem)")
+        content.expand(proposalsGrid)
 
-        add(topBar, proposalsGrid)
-        expand(proposalsGrid)
+        add(
+            buildCozadzbanTopBar(
+                currentPage = CozadzbanTopBarPage.ARTICLE_PROPOSALS,
+                isAdmin = currentActiveUser().role == Role.ADMIN,
+                facebookImportJobService = facebookImportJobService,
+                facebookImportProperties = facebookImportProperties,
+            ),
+            content,
+        )
+        expand(content)
         refreshGrid()
     }
 
-    private fun buildTitleGroup(): HorizontalLayout {
-        val logo = Image("/cozadzban-logo.png", "Co za dzban")
-        logo.addClassName("czj-admin-logo")
-        val brand = Span("Co za dzban")
-        brand.addClassName("czj-admin-brand")
-        val title = H2("Article proposals")
+    private fun buildProposalToolbar(): HorizontalLayout {
+        val title = Span("Article proposals")
         title.addClassName("czj-admin-title")
-        val titleGroup = HorizontalLayout(logo, brand, title)
-        titleGroup.addClassName("czj-admin-title-group")
-        titleGroup.defaultVerticalComponentAlignment = Alignment.CENTER
-        return titleGroup
+        val toolbar = HorizontalLayout(title, statusFilter, countLabel)
+        toolbar.defaultVerticalComponentAlignment = Alignment.CENTER
+        toolbar.setWidthFull()
+        toolbar.expand(title)
+        toolbar.element.style.set("padding", "1rem 1rem 0")
+        return toolbar
     }
 
     private fun configureGrid() {
@@ -371,36 +380,6 @@ class FacebookArticleProposalView(
             FacebookArticleProposalStatus.FAILED -> "Failed"
             FacebookArticleProposalStatus.ALREADY_EXISTS -> "Already exists"
         }
-
-    private fun buildThemeToggleButton(): Button {
-        val button = Button(VaadinIcon.ADJUST.create())
-        button.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY, ButtonVariant.LUMO_ICON)
-        button.element.setAttribute("aria-label", "Toggle dark mode")
-        button.element.setAttribute("title", "Toggle dark mode")
-        button.addClickListener {
-            ui.ifPresent { currentUi ->
-                currentUi.page.executeJs(
-                    """
-                        (function() {
-                            const root = document.documentElement;
-                            const body = document.body;
-                            const current = root.getAttribute('theme') || '';
-                            const nextMode = current.includes('dark') ? 'light' : 'dark';
-                            if (nextMode === 'dark') {
-                                root.setAttribute('theme', 'dark');
-                                body.setAttribute('theme', 'dark');
-                            } else {
-                                root.removeAttribute('theme');
-                                body.removeAttribute('theme');
-                            }
-                            localStorage.setItem('cozadzban-theme', nextMode);
-                        })();
-                    """.trimIndent(),
-                )
-            }
-        }
-        return button
-    }
 
     private fun showSuccess(message: String) {
         showNotification(message, 3000)

@@ -1,0 +1,40 @@
+:host([theme~='icon']) {
+  box-sizing: border-box;
+  justify-content: center;
+  margin-inline: calc(var(--lumo-space-xs) / 2) !important;
+  min-width: var(--lumo-size-m);
+  padding-inline: 0 !important;
+  width: var(--lumo-size-m);
+}
+
+:host(:not([slot='overflow'])[aria-haspopup]) {
+  box-sizing: border-box;
+  justify-content: center;
+  margin-inline: calc(var(--lumo-space-xs) / 2) !important;
+  min-width: 4.6rem;
+  padding-inline: 0 !important;
+  width: 4.6rem;
+}
+
+.vaadin-button-container,
+[part='label'] {
+  justify-content: center;
+  width: 100%;
+}
+
+[part='label'] ::slotted(vaadin-menu-bar-item) {
+  align-items: center;
+  display: inline-flex;
+  justify-content: center;
+  margin: 0 !important;
+  padding: 0 !important;
+  width: 100%;
+}
+
+[part='suffix'] {
+  display: none !important;
+}
+
+[part='suffix']::after {
+  content: none !important;
+}

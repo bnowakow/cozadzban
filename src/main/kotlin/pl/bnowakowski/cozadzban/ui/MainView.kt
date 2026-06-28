@@ -24,11 +24,12 @@ import com.vaadin.flow.component.orderedlayout.HorizontalLayout
 import com.vaadin.flow.component.orderedlayout.VerticalLayout
 import com.vaadin.flow.component.radiobutton.RadioButtonGroup
 import com.vaadin.flow.component.select.Select
-import com.vaadin.flow.component.shared.Tooltip
 import com.vaadin.flow.component.textfield.TextArea
 import com.vaadin.flow.component.textfield.TextField
 import com.vaadin.flow.data.provider.DataProvider
 import com.vaadin.flow.data.renderer.ComponentRenderer
+import com.vaadin.flow.router.AfterNavigationEvent
+import com.vaadin.flow.router.AfterNavigationObserver
 import com.vaadin.flow.router.Route
 import com.vaadin.flow.server.VaadinServletRequest
 import com.vaadin.flow.component.virtuallist.VirtualList
@@ -75,6 +76,9 @@ import java.util.concurrent.ExecutionException
 @CssImport("./styles/cozadzban-feed.css")
 @CssImport(value = "./styles/cozadzban-dialog-overlay.css", themeFor = "vaadin-dialog-overlay")
 @CssImport(value = "./styles/cozadzban-confirm-dialog-overlay.css", themeFor = "vaadin-confirm-dialog-overlay")
+@CssImport(value = "./styles/cozadzban-context-menu-overlay.css", themeFor = "vaadin-context-menu-overlay")
+@CssImport(value = "./styles/cozadzban-context-menu-overlay.css", themeFor = "vaadin-menu-bar-overlay")
+@CssImport(value = "./styles/cozadzban-menu-bar-button.css", themeFor = "vaadin-menu-bar-button")
 class ArticleListView(
     private val articleRepository: ArticleRepository,
     private val articleContentRepository: ArticleContentRepository,
@@ -85,7 +89,7 @@ class ArticleListView(
     private val buildProperties: AppBuildProperties,
     private val languageFlagCache: LanguageFlagCache,
     private val facebookImportProperties: FacebookImportProperties = FacebookImportProperties(),
-) : VerticalLayout() {
+) : VerticalLayout(), AfterNavigationObserver {
 
     private val feed = VirtualList<Article>()
     private val facebookImportHistoryPanel = Div()
@@ -94,6 +98,8 @@ class ArticleListView(
     private var facebookImportProgressPollRegistration: Registration? = null
     private var stopFacebookImportButton: Button? = null
     private val shownFacebookImportFailureRunIds = mutableSetOf<String>()
+    private var handledAddArticleNavigationRequest = false
+    private var activeAddArticleDialog: Dialog? = null
 
     // Filter state — captured by dataProvider lambdas via `this`
     private var languageFilter: String? = null
@@ -213,177 +219,35 @@ class ArticleListView(
         expand(feedShell)
     }
 
+    override fun afterNavigation(event: AfterNavigationEvent) {
+        val shouldOpenAddArticle = event.location.queryParameters
+            .getSingleParameter("addArticle")
+            .filter { it == "1" || it.equals("true", ignoreCase = true) }
+            .isPresent
+        if (!shouldOpenAddArticle || handledAddArticleNavigationRequest) {
+            return
+        }
+
+        handledAddArticleNavigationRequest = true
+        openAddArticleDialog()
+        ui.ifPresent { currentUi ->
+            currentUi.page.executeJs("window.history.replaceState({}, '', '/');")
+        }
+    }
+
     private fun buildTopBar(): HorizontalLayout {
-        val logo = Image("/cozadzban-logo.png", "Co za dzban")
-        logo.setWidth("46px")
-        logo.setHeight("46px")
-        logo.element.style.set("border-radius", "50%")
-        logo.element.style.set("object-fit", "cover")
-        logo.element.style.set("box-shadow", "0 1px 4px rgba(0,0,0,.26)")
-
-        val brand = Span("Co za dzban")
-        brand.element.style.set("font-size", "var(--lumo-font-size-xl)")
-        brand.element.style.set("font-weight", "800")
-        brand.element.style.set("white-space", "nowrap")
-
-        val titleGroup = HorizontalLayout(logo, brand)
-        titleGroup.isPadding = false
-        titleGroup.isSpacing = true
-        titleGroup.defaultVerticalComponentAlignment = Alignment.CENTER
-
-        val rssButton = Button("RSS", VaadinIcon.RSS.create())
-        rssButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY)
-        val rssAnchor = Anchor("/rss")
-        rssAnchor.setTarget("_blank")
-        rssAnchor.element.setAttribute("rel", "noopener noreferrer")
-        rssAnchor.add(rssButton)
-
-        val themeButton = Button(VaadinIcon.ADJUST.create())
-        themeButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY, ButtonVariant.LUMO_ICON)
-        themeButton.element.setAttribute("aria-label", "Toggle dark mode")
-        themeButton.element.setAttribute("title", "Toggle dark mode")
-        themeButton.addClickListener {
-            ui.ifPresent { currentUi ->
-                currentUi.page.executeJs(
-                    """
-                        function applyTheme(mode) {
-                            const dark = mode === 'dark';
-                            const root = document.documentElement;
-                            const body = document.body;
-                            if (dark) {
-                                root.setAttribute('theme', 'dark');
-                                body.setAttribute('theme', 'dark');
-                            } else {
-                                root.removeAttribute('theme');
-                                body.removeAttribute('theme');
-                            }
-                        }
-                        const current = document.documentElement.getAttribute('theme') || '';
-                        const nextMode = current.split(/\s+/).includes('dark') ? 'light' : 'dark';
-                        localStorage.setItem('cozadzban-theme', nextMode);
-                        applyTheme(nextMode);
-                    """.trimIndent(),
-                )
-            }
-        }
-
-        val actions = HorizontalLayout(rssAnchor, themeButton)
-        actions.isPadding = false
-        actions.isSpacing = true
-        actions.defaultVerticalComponentAlignment = Alignment.CENTER
-        actions.element.style.set("flex-shrink", "0")
-        actions.element.style.set("padding-right", "0.25rem")
-
-        if (isAuthenticated && authenticatedUser?.status == AppUserStatus.ACTIVE) {
-            val notificationSettingsButton = Button(VaadinIcon.BELL.create())
-            notificationSettingsButton.addThemeVariants(
-                ButtonVariant.LUMO_SMALL,
-                ButtonVariant.LUMO_TERTIARY,
-                ButtonVariant.LUMO_ICON,
-            )
-            notificationSettingsButton.element.setAttribute("aria-label", "Notification settings")
-            notificationSettingsButton.element.setAttribute("title", "Notification settings")
-            val notificationSettingsLink = Anchor("/notification-settings")
-            notificationSettingsLink.add(notificationSettingsButton)
-            actions.add(notificationSettingsLink)
-
-            val proposalsButton = Button("Article Proposals", VaadinIcon.LIST.create())
-            proposalsButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY)
-            proposalsButton.addClickListener { ui.ifPresent { it.navigate("article-proposals") } }
-            actions.add(proposalsButton)
-
-            val addArticleButton = Button("Add Article", VaadinIcon.PLUS.create())
-            addArticleButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_PRIMARY)
-            addArticleButton.addClickListener { openAddArticleDialog() }
-            actions.add(addArticleButton)
-
-            if (authenticatedUser?.role == Role.ADMIN) {
-                val stopFacebookImportButton = Button(VaadinIcon.STOP.create())
-                this.stopFacebookImportButton = stopFacebookImportButton
-                stopFacebookImportButton.addThemeVariants(
-                    ButtonVariant.LUMO_SMALL,
-                    ButtonVariant.LUMO_TERTIARY,
-                    ButtonVariant.LUMO_ERROR,
-                    ButtonVariant.LUMO_ICON,
-                )
-                val availableImportTypes = buildVisibleImportTypes()
-                if (availableImportTypes.isNotEmpty()) {
-                    availableImportTypes.forEach { importType ->
-                        val label = when (importType) {
-                            FacebookImportType.APIFY -> "Import Facebook Apify"
-                            FacebookImportType.SELENIUM -> "Import Facebook Selenium"
-                        }
-                        val importFacebookButton = Button(label, VaadinIcon.DOWNLOAD.create())
-                        importFacebookButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY)
-                        importFacebookButton.element.setAttribute("aria-label", label)
-                        importFacebookButton.element.setAttribute("title", label)
-                        importFacebookButton.addClickListener {
-                            triggerFacebookImport(importType)
-                            updateStopFacebookImportButton(stopFacebookImportButton)
-                        }
-                        actions.add(importFacebookButton)
-                    }
-                    updateStopFacebookImportButton(stopFacebookImportButton)
-                    stopFacebookImportButton.addClickListener {
-                        triggerFacebookImportTermination()
-                        updateStopFacebookImportButton(stopFacebookImportButton)
-                    }
-                    actions.add(stopFacebookImportButton)
-                } else {
-                    val facebookImportUnavailableReason = "No Facebook import type is available"
-                    val importFacebookButton = Button("Import Facebook", VaadinIcon.DOWNLOAD.create())
-                    importFacebookButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY)
-                    importFacebookButton.isEnabled = false
-                    importFacebookButton.element.setAttribute(
-                        "aria-label",
-                        "Import Facebook unavailable: $facebookImportUnavailableReason",
-                    )
-                    stopFacebookImportButton.isEnabled = false
-                    stopFacebookImportButton.element.setAttribute(
-                        "aria-label",
-                        "Stop Facebook import unavailable: $facebookImportUnavailableReason",
-                    )
-                    // Wrap in Divs so the Vaadin tooltip overlay still triggers on hover
-                    // — disabled buttons swallow pointer events.
-                    val importWrapper = Div(importFacebookButton).apply {
-                        element.style.set("display", "inline-flex")
-                    }
-                    val stopWrapper = Div(stopFacebookImportButton).apply {
-                        element.style.set("display", "inline-flex")
-                    }
-                    Tooltip.forComponent(importWrapper).text = facebookImportUnavailableReason
-                    Tooltip.forComponent(stopWrapper).text = facebookImportUnavailableReason
-                    actions.add(importWrapper, stopWrapper)
-                }
-
-                val manageUsersButton = Button(VaadinIcon.USERS.create())
-                manageUsersButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY, ButtonVariant.LUMO_ICON)
-                manageUsersButton.element.setAttribute("aria-label", "Manage users")
-                manageUsersButton.element.setAttribute("title", "Manage users")
-                val manageUsersLink = Anchor("/admin")
-                manageUsersLink.add(manageUsersButton)
-                actions.add(manageUsersLink)
-            }
-        }
-        actions.add(buildAuthButton())
-
-        val topBar = HorizontalLayout(titleGroup, actions)
-        topBar.addClassName("czj-top-bar")
-        topBar.width = "100%"
-        topBar.defaultVerticalComponentAlignment = Alignment.CENTER
-        topBar.expand(titleGroup)
-        topBar.element.style.set("box-sizing", "border-box")
-        topBar.element.style.set("height", "66px")
-        topBar.element.style.set("padding", "0 1.5rem")
-        topBar.element.style.set("background", "var(--czj-card-bg)")
-        topBar.element.style.set("border-bottom", "1px solid var(--lumo-contrast-10pct)")
-        topBar.element.style.set("position", "fixed")
-        topBar.element.style.set("top", "0")
-        topBar.element.style.set("left", "0")
-        topBar.element.style.set("right", "0")
-        topBar.element.style.set("z-index", "1000")
-        topBar.element.style.set("box-shadow", "0 2px 10px rgba(15, 23, 42, 0.08)")
-        return topBar
+        val activeUser = isAuthenticated && authenticatedUser?.status == AppUserStatus.ACTIVE
+        return buildCozadzbanTopBar(
+            currentPage = CozadzbanTopBarPage.FEED,
+            canAccessUserPages = activeUser,
+            isAdmin = activeUser && authenticatedUser?.role == Role.ADMIN,
+            authButton = buildAuthButton(),
+            onAddArticle = { openAddArticleDialog() },
+            facebookImportJobService = facebookImportJobService,
+            facebookImportProperties = facebookImportProperties,
+            onStartFacebookImport = { importType -> triggerFacebookImport(importType) },
+            onStopFacebookImport = { triggerFacebookImportTermination() },
+        )
     }
 
     private fun buildFilterBar(): Div {
@@ -1145,7 +1009,7 @@ class ArticleListView(
     private fun buildAuthButton(): Button {
         return if (isAuthenticated) {
             val button = Button("Logout")
-            button.addThemeVariants(ButtonVariant.LUMO_TERTIARY)
+            button.addThemeVariants(ButtonVariant.LUMO_PRIMARY)
             button.addClickListener { logoutAndRedirect() }
             button
         } else {
@@ -1205,7 +1069,13 @@ class ArticleListView(
         cancelButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY)
 
         val dialog = Dialog()
+        activeAddArticleDialog = dialog
         dialog.headerTitle = "Add Article"
+        dialog.addClosedListener {
+            if (activeAddArticleDialog === dialog) {
+                activeAddArticleDialog = null
+            }
+        }
         dialog.addOpenedChangeListener { event ->
             if (event.isOpened) {
                 urlField.focus()
@@ -1279,7 +1149,7 @@ class ArticleListView(
         try {
             facebookImportJobService.startImport(importType)
             refreshFacebookImportProgressPanel()
-            showSuccess("Facebook import started")
+            showSuccess(facebookImportStartedMessage(importType))
         } catch (ex: Exception) {
             showError(ex.message ?: "Failed to start Facebook import")
         }
@@ -1290,6 +1160,9 @@ class ArticleListView(
             FacebookImportType.APIFY -> "Apify import"
             FacebookImportType.SELENIUM -> "Selenium import"
         }
+
+    private fun facebookImportStartedMessage(importType: FacebookImportType): String =
+        "${facebookImportTypeLabel(importType)} started"
 
     private fun facebookImportTypeLabel(importType: String): String? =
         runCatching { FacebookImportType.valueOf(importType) }

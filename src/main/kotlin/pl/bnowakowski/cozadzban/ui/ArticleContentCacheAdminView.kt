@@ -33,6 +33,8 @@ import pl.bnowakowski.cozadzban.article.ArticleContent
 import pl.bnowakowski.cozadzban.article.ArticleContentRepository
 import pl.bnowakowski.cozadzban.article.ArticleRepository
 import pl.bnowakowski.cozadzban.article.ArticleService
+import pl.bnowakowski.cozadzban.facebookimport.FacebookImportJobService
+import pl.bnowakowski.cozadzban.facebookimport.FacebookImportProperties
 import java.time.Instant
 import java.time.ZoneOffset
 
@@ -42,10 +44,15 @@ import java.time.ZoneOffset
 @CssImport("./styles/cozadzban-feed.css")
 @CssImport(value = "./styles/cozadzban-dialog-overlay.css", themeFor = "vaadin-dialog-overlay")
 @CssImport(value = "./styles/cozadzban-confirm-dialog-overlay.css", themeFor = "vaadin-confirm-dialog-overlay")
+@CssImport(value = "./styles/cozadzban-context-menu-overlay.css", themeFor = "vaadin-context-menu-overlay")
+@CssImport(value = "./styles/cozadzban-context-menu-overlay.css", themeFor = "vaadin-menu-bar-overlay")
+@CssImport(value = "./styles/cozadzban-menu-bar-button.css", themeFor = "vaadin-menu-bar-button")
 class ArticleContentCacheAdminView(
     private val articleService: ArticleService,
     private val articleRepository: ArticleRepository,
     private val articleContentRepository: ArticleContentRepository,
+    private val facebookImportJobService: FacebookImportJobService? = null,
+    private val facebookImportProperties: FacebookImportProperties = FacebookImportProperties(),
 ) : VerticalLayout() {
 
     private val contentGrid = Grid(ArticleContent::class.java, false)
@@ -95,36 +102,30 @@ class ArticleContentCacheAdminView(
         installCozadzbanThemeBootstrap()
         setSizeFull()
         addClassName("czj-admin-view")
-
-        val titleGroup = buildAdminTitleGroup("Article content cache")
-        val usersButton = Button("Manage users")
-        usersButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY)
-        usersButton.addClickListener { ui.ifPresent { it.navigate("admin") } }
-        val feedButton = Button("Feed")
-        feedButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY)
-        feedButton.addClickListener { ui.ifPresent { it.navigate("") } }
-        val themeButton = buildThemeToggleButton()
-        val logoutButton = Button("Logout")
-        logoutButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY)
-        logoutButton.addClickListener { logoutAndRedirect() }
-
-        val topBar = HorizontalLayout(titleGroup, usersButton, feedButton, themeButton, logoutButton)
-        topBar.addClassName("czj-admin-top-bar")
-        topBar.width = "100%"
-        topBar.defaultVerticalComponentAlignment = Alignment.CENTER
-        topBar.expand(titleGroup)
+        sharedContentOffset()
 
         configureContentGrid()
+        val pageTitle = Span("Article content cache").apply { addClassName("czj-admin-title") }
+        pageTitle.element.style.set("padding", "1rem 1rem 0")
         val contentFilters = buildContentFilters()
         val contentPanel = VerticalLayout(contentFilters, contentGrid)
-        contentPanel.addClassName("czj-admin-panel")
         contentPanel.isPadding = false
         contentPanel.isSpacing = true
         contentPanel.setSizeFull()
         contentPanel.expand(contentGrid)
 
-        add(topBar, contentPanel)
-        expand(contentPanel)
+        val content = sharedPageContent(pageTitle, contentPanel)
+        content.expand(contentPanel)
+        add(
+            buildCozadzbanTopBar(
+                currentPage = CozadzbanTopBarPage.ARTICLE_CONTENT_CACHE,
+                isAdmin = true,
+                facebookImportJobService = facebookImportJobService,
+                facebookImportProperties = facebookImportProperties,
+            ),
+            content,
+        )
+        expand(content)
     }
 
     private fun buildAdminTitleGroup(pageTitle: String): HorizontalLayout {

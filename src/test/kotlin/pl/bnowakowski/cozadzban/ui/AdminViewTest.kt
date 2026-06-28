@@ -5,6 +5,8 @@ package pl.bnowakowski.cozadzban.ui
 
 import com.vaadin.flow.component.Component
 import com.vaadin.flow.component.button.Button
+import com.vaadin.flow.component.contextmenu.MenuItem
+import com.vaadin.flow.component.menubar.MenuBar
 import com.vaadin.flow.router.Route
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -78,7 +80,8 @@ class AdminViewTest {
 
         assertTrue(buttons.any { it.text == "Logout" })
         assertTrue(buttons.any { it.text == "Add user" })
-        assertTrue(buttons.any { it.text == "Article content cache" })
+        assertTrue(findMenuItem(view, "Article content cache") != null)
+        assertTrue(findMenuItem(view, "Feed") != null)
     }
 
     @Test
@@ -96,9 +99,9 @@ class AdminViewTest {
         val view = ArticleContentCacheAdminView(articleService, articleRepository, articleContentRepository)
 
         val buttons = findComponents(view, Button::class.java)
-        assertTrue(buttons.any { it.text == "Manage users" })
-        assertTrue(buttons.any { it.text == "Feed" })
         assertTrue(buttons.any { it.text == "Logout" })
+        assertTrue(findMenuItem(view, "Manage users") != null)
+        assertTrue(findMenuItem(view, "Feed") != null)
     }
 
     private fun <T : Component> findComponents(root: Component, type: Class<T>): List<T> {
@@ -114,4 +117,12 @@ class AdminViewTest {
         walk(root)
         return found
     }
+
+    private fun findMenuItem(root: Component, text: String): MenuItem? =
+        findComponents(root, MenuBar::class.java)
+            .flatMap { menuBar -> menuBar.items.flatMap(::flattenMenuItem) }
+            .firstOrNull { it.text == text || it.element.getAttribute("aria-label") == text }
+
+    private fun flattenMenuItem(item: MenuItem): List<MenuItem> =
+        listOf(item) + item.subMenu.items.flatMap(::flattenMenuItem)
 }

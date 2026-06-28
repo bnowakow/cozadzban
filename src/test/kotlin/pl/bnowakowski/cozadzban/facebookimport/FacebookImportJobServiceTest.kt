@@ -182,9 +182,10 @@ class FacebookImportJobServiceTest {
         service.startImport()
         assertTrue(latch.await(1, TimeUnit.SECONDS))
 
-        assertThrows(FacebookImportAlreadyRunningException::class.java) {
+        val ex = assertThrows(FacebookImportAlreadyRunningException::class.java) {
             service.startImport(FacebookImportTrigger.SCHEDULED)
         }
+        assertEquals("Facebook import is already running (type: SELENIUM)", ex.message)
 
         service.terminateImport()
         waitUntil { !service.isImportRunning() }

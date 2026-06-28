@@ -26,6 +26,8 @@ import org.springframework.security.oauth2.core.OAuth2AuthenticatedPrincipal
 import pl.bnowakowski.cozadzban.notifications.NotificationPreferenceInput
 import pl.bnowakowski.cozadzban.notifications.NotificationPreferenceService
 import pl.bnowakowski.cozadzban.notifications.PushoverDevices
+import pl.bnowakowski.cozadzban.facebookimport.FacebookImportJobService
+import pl.bnowakowski.cozadzban.facebookimport.FacebookImportProperties
 import pl.bnowakowski.cozadzban.security.AllowlistAuthorizationManager
 import pl.bnowakowski.cozadzban.user.AppUser
 import pl.bnowakowski.cozadzban.user.AppUserRepository
@@ -36,9 +38,14 @@ import pl.bnowakowski.cozadzban.user.Role
 @PageTitle("Notification settings")
 @RolesAllowed("USER", "ADMIN")
 @CssImport("./styles/cozadzban-feed.css")
+@CssImport(value = "./styles/cozadzban-context-menu-overlay.css", themeFor = "vaadin-context-menu-overlay")
+@CssImport(value = "./styles/cozadzban-context-menu-overlay.css", themeFor = "vaadin-menu-bar-overlay")
+@CssImport(value = "./styles/cozadzban-menu-bar-button.css", themeFor = "vaadin-menu-bar-button")
 class NotificationSettingsView(
     private val preferenceService: NotificationPreferenceService,
     private val appUserRepository: AppUserRepository,
+    private val facebookImportJobService: FacebookImportJobService? = null,
+    private val facebookImportProperties: FacebookImportProperties = FacebookImportProperties(),
 ) : VerticalLayout() {
 
     private val currentUser = currentActiveUser()
@@ -52,6 +59,7 @@ class NotificationSettingsView(
         installCozadzbanThemeBootstrap()
         setSizeFull()
         addClassName("czj-admin-view")
+        sharedContentOffset()
 
         val summary = preferenceService.summaryFor(currentUser)
         pushoverUserKey.setWidthFull()
@@ -100,7 +108,18 @@ class NotificationSettingsView(
         form.setWidthFull()
         form.maxWidth = "42rem"
 
-        add(topBar(), form)
+        val pageTitle = Span("Notification settings").apply { addClassName("czj-admin-title") }
+        pageTitle.element.style.set("padding", "1rem 1rem 0")
+        val content = sharedPageContent(pageTitle, form)
+        add(
+            buildCozadzbanTopBar(
+                currentPage = CozadzbanTopBarPage.NOTIFICATION_SETTINGS,
+                isAdmin = currentUser.role == Role.ADMIN,
+                facebookImportJobService = facebookImportJobService,
+                facebookImportProperties = facebookImportProperties,
+            ),
+            content,
+        )
     }
 
     private fun topBar(): HorizontalLayout {

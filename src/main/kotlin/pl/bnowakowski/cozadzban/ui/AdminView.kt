@@ -25,6 +25,8 @@ import com.vaadin.flow.router.Route
 import com.vaadin.flow.server.VaadinServletRequest
 import jakarta.annotation.security.RolesAllowed
 import org.springframework.security.core.context.SecurityContextHolder
+import pl.bnowakowski.cozadzban.facebookimport.FacebookImportJobService
+import pl.bnowakowski.cozadzban.facebookimport.FacebookImportProperties
 import pl.bnowakowski.cozadzban.user.AppUser
 import pl.bnowakowski.cozadzban.user.AppUserInput
 import pl.bnowakowski.cozadzban.user.AppUserRolePatch
@@ -39,8 +41,13 @@ import pl.bnowakowski.cozadzban.user.Role
 @CssImport(value = "./styles/cozadzban-dialog-overlay.css", themeFor = "vaadin-dialog-overlay")
 @CssImport(value = "./styles/cozadzban-confirm-dialog-overlay.css", themeFor = "vaadin-confirm-dialog-overlay")
 @CssImport(value = "./styles/cozadzban-select-overlay.css", themeFor = "vaadin-select-overlay")
+@CssImport(value = "./styles/cozadzban-context-menu-overlay.css", themeFor = "vaadin-context-menu-overlay")
+@CssImport(value = "./styles/cozadzban-context-menu-overlay.css", themeFor = "vaadin-menu-bar-overlay")
+@CssImport(value = "./styles/cozadzban-menu-bar-button.css", themeFor = "vaadin-menu-bar-button")
 class AdminView(
     private val appUserService: AppUserService,
+    private val facebookImportJobService: FacebookImportJobService? = null,
+    private val facebookImportProperties: FacebookImportProperties = FacebookImportProperties(),
 ) : VerticalLayout() {
 
     private val usersGrid = Grid(AppUser::class.java, false)
@@ -49,31 +56,30 @@ class AdminView(
         installCozadzbanThemeBootstrap()
         setSizeFull()
         addClassName("czj-admin-view")
+        sharedContentOffset()
 
-        val titleGroup = buildAdminTitleGroup("Manage users")
         val addUserButton = buildAddUserButton()
-        val contentCacheButton = Button("Article content cache")
-        contentCacheButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY)
-        contentCacheButton.addClickListener { ui.ifPresent { it.navigate("admin/article-content-cache") } }
-        val feedButton = Button("Feed")
-        feedButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY)
-        feedButton.addClickListener { ui.ifPresent { it.navigate("") } }
-        val themeButton = buildThemeToggleButton()
-        val logoutButton = Button("Logout")
-        logoutButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY)
-        logoutButton.addClickListener { logoutAndRedirect() }
-
-        val topBar = HorizontalLayout(titleGroup, addUserButton, contentCacheButton, feedButton, themeButton, logoutButton)
-        topBar.addClassName("czj-admin-top-bar")
-        topBar.width = "100%"
-        topBar.defaultVerticalComponentAlignment = Alignment.CENTER
-        topBar.expand(titleGroup)
+        val pageToolbar = HorizontalLayout(Span("Manage users").apply { addClassName("czj-admin-title") }, addUserButton)
+        pageToolbar.defaultVerticalComponentAlignment = Alignment.CENTER
+        pageToolbar.setWidthFull()
+        pageToolbar.expand(pageToolbar.getComponentAt(0))
+        pageToolbar.element.style.set("padding", "1rem 1rem 0")
 
         configureGrid()
         refreshGrid()
 
-        add(topBar, usersGrid)
-        expand(usersGrid)
+        val content = sharedPageContent(pageToolbar, usersGrid)
+        content.expand(usersGrid)
+        add(
+            buildCozadzbanTopBar(
+                currentPage = CozadzbanTopBarPage.MANAGE_USERS,
+                isAdmin = true,
+                facebookImportJobService = facebookImportJobService,
+                facebookImportProperties = facebookImportProperties,
+            ),
+            content,
+        )
+        expand(content)
     }
 
     private fun buildAddUserButton(): Button {

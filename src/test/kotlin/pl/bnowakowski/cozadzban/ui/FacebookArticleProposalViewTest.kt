@@ -5,8 +5,11 @@ package pl.bnowakowski.cozadzban.ui
 
 import com.vaadin.flow.component.Component
 import com.vaadin.flow.component.UI
+import com.vaadin.flow.component.button.Button
+import com.vaadin.flow.component.contextmenu.MenuItem
 import com.vaadin.flow.component.html.Anchor
 import com.vaadin.flow.component.html.Span
+import com.vaadin.flow.component.menubar.MenuBar
 import com.vaadin.flow.component.select.Select
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -60,6 +63,9 @@ class FacebookArticleProposalViewTest {
     fun `proposal links open in a new window`() {
         authenticateAs("user@example.com")
         UI.setCurrent(UI())
+        whenever(appUserRepository.findByEmail("user@example.com")).thenReturn(
+            AppUser(1L, "user@example.com", Role.USER),
+        )
         whenever(proposalService.findPage(FacebookArticleProposalStatusFilter.PENDING, 0, 100)).thenReturn(emptyList())
         whenever(proposalService.count(FacebookArticleProposalStatusFilter.PENDING)).thenReturn(0L)
         val view = FacebookArticleProposalView(proposalService, appUserRepository)
@@ -89,6 +95,27 @@ class FacebookArticleProposalViewTest {
         val badges = findComponents(view, Span::class.java)
             .filter { it.hasClassName("czj-import-source-badge") }
         assertTrue(badges.any { it.text == "Apify import" })
+    }
+
+    @Test
+    fun `view uses main site top bar navigation`() {
+        authenticateAs("user@example.com")
+        UI.setCurrent(UI())
+        whenever(appUserRepository.findByEmail("user@example.com")).thenReturn(
+            AppUser(1L, "user@example.com", Role.USER),
+        )
+        whenever(proposalService.findPage(FacebookArticleProposalStatusFilter.PENDING, 0, 100)).thenReturn(emptyList())
+        whenever(proposalService.count(FacebookArticleProposalStatusFilter.PENDING)).thenReturn(0L)
+
+        val view = FacebookArticleProposalView(proposalService, appUserRepository)
+        val buttons = findComponents(view, Button::class.java)
+
+        assertTrue(buttons.any { it.text == "RSS" })
+        assertTrue(buttons.any { it.text == "Logout" })
+        assertTrue(findMenuItem(view, "Menu") != null)
+        assertTrue(findMenuItem(view, "Feed") != null)
+        assertTrue(findMenuItem(view, "Article proposals") == null)
+        assertTrue(findMenuItem(view, "Notification settings") != null)
     }
 
     private fun authenticateAs(email: String) {
@@ -130,4 +157,12 @@ class FacebookArticleProposalViewTest {
         walk(root)
         return found
     }
+
+    private fun findMenuItem(root: Component, text: String): MenuItem? =
+        findComponents(root, MenuBar::class.java)
+            .flatMap { menuBar -> menuBar.items.flatMap(::flattenMenuItem) }
+            .firstOrNull { it.text == text || it.element.getAttribute("aria-label") == text }
+
+    private fun flattenMenuItem(item: MenuItem): List<MenuItem> =
+        listOf(item) + item.subMenu.items.flatMap(::flattenMenuItem)
 }

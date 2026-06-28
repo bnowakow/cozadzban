@@ -64,7 +64,7 @@ class FacebookImportJobService @Autowired constructor(
         terminateActiveImportIfTimedOut(requestedAt, runTimeout)
         synchronized(stateLock) {
             if (activeLaunchThread?.isAlive == true || runnersByType.values.any { it.isImportRunning() }) {
-                throw FacebookImportAlreadyRunningException()
+                throw FacebookImportAlreadyRunningException(activeRunningImportType())
             }
 
             val launchThread = Thread {
@@ -172,6 +172,10 @@ class FacebookImportJobService @Autowired constructor(
 
     fun isImportRunning(): Boolean =
         activeLaunchThread?.isAlive == true || runnersByType.values.any { it.isImportRunning() }
+
+    private fun activeRunningImportType(): FacebookImportType? =
+        activeImportType
+            ?: runnersByType.entries.firstOrNull { (_, runner) -> runner.isImportRunning() }?.key
 
     fun currentProgress(): FacebookImportProgressSnapshot? {
         val now = Instant.now()
