@@ -560,7 +560,8 @@ class ArticleListView(
                 FacebookImportRunStatus.FAILED -> "Facebook import failed"
                 FacebookImportRunStatus.TERMINATED -> "Facebook import stopped"
                 FacebookImportRunStatus.FINISHED -> "Facebook import finished"
-                FacebookImportRunStatus.RUNNING -> "Facebook import is running"
+                FacebookImportRunStatus.RUNNING ->
+                    "Facebook import is running (${facebookImportRunnerLabel(progress.importType)})"
             },
         )
         title.addClassName("czj-facebook-import-progress-title")
@@ -1160,6 +1161,12 @@ class ArticleListView(
         when (importType) {
             FacebookImportType.APIFY -> "Apify import"
             FacebookImportType.SELENIUM -> "Selenium import"
+        }
+
+    private fun facebookImportRunnerLabel(importType: FacebookImportType): String =
+        when (importType) {
+            FacebookImportType.APIFY -> "Apify"
+            FacebookImportType.SELENIUM -> "Selenium"
         }
 
     private fun facebookImportStartedMessage(importType: FacebookImportType): String =

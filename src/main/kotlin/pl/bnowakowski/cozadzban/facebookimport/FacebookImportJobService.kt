@@ -205,6 +205,7 @@ class FacebookImportJobService @Autowired constructor(
 
         return FacebookImportProgressSnapshot(
             importRunId = fallback.first,
+            importType = activeImportType ?: FacebookImportType.SELENIUM,
             status = FacebookImportRunStatus.RUNNING,
             startedAt = fallback.second,
             lastUpdatedAt = Instant.now(),

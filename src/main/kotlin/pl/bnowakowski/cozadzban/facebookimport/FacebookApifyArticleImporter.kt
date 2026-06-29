@@ -5,6 +5,7 @@ package pl.bnowakowski.cozadzban.facebookimport
 
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.databind.node.MissingNode
 import org.slf4j.LoggerFactory
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.http.HttpHeaders
@@ -209,8 +210,13 @@ class FacebookApifyArticleImporter(
         val visibleText = HTML_TAG_REGEX.replace(allText, " ")
         val textUrls = URL_REGEX.findAll(visibleText)
             .map { it.value.trimEnd('.', ',', ')', ']', '"', '\'') }
-        return (anchorHrefUrls + textUrls)
+        val externalUrls = (anchorHrefUrls + textUrls)
             .filter { isImportableUrl(it) }
+            .distinctBy { ArticleService.canonicalizeUrl(it) }
+            .toList()
+        if (externalUrls.isNotEmpty()) return externalUrls
+
+        return sharedFacebookPostUrls(item)
             .distinctBy { ArticleService.canonicalizeUrl(it) }
             .toList()
     }
@@ -241,6 +247,7 @@ class FacebookApifyArticleImporter(
         )
         latestProgressSnapshot = FacebookImportProgressSnapshot(
             importRunId = importRunId,
+            importType = importType,
             status = FacebookImportRunStatus.RUNNING,
             startedAt = activeImportStartedAt ?: now,
             lastUpdatedAt = now,
@@ -322,6 +329,27 @@ class FacebookApifyArticleImporter(
             uri.scheme in setOf("http", "https") && !isFacebookUrl(url) && !isMediaOrThumbnailUrl(url)
         }.getOrDefault(false)
 
+    private fun sharedFacebookPostUrls(item: JsonNode): Sequence<String> =
+        item.path("sharedPost").takeIf { it.isObject }
+            ?.let { sharedPost ->
+                val sharedPostUrl = firstString(sharedPost, "url", "postUrl", "topLevelUrl", "link")
+                val mediaUrl = firstString(sharedPost.path("media").firstOrNull() ?: MissingNode.getInstance(), "url")
+                sequenceOf(sharedPostUrl ?: mediaUrl)
+                    .filterNotNull()
+                    .filter { isFacebookPostUrl(it) }
+            }
+            ?: emptySequence()
+
+    private fun isFacebookPostUrl(url: String): Boolean =
+        runCatching {
+            val uri = URI(url)
+            val host = uri.host?.lowercase().orEmpty()
+            val path = uri.path.orEmpty()
+            uri.scheme in setOf("http", "https") &&
+                (host == "facebook.com" || host.endsWith(".facebook.com")) &&
+                (FACEBOOK_POST_PATH_REGEX.matches(path) || path == "/photo/" || path == "/photo.php")
+        }.getOrDefault(false)
+
     private fun isFacebookUrl(url: String): Boolean =
         runCatching { URI(url).host.orEmpty().contains("facebook.com", ignoreCase = true) }.getOrDefault(false)
 
@@ -371,5 +399,6 @@ class FacebookApifyArticleImporter(
         val ANCHOR_HREF_REGEX: Regex = Regex("""<a\b[^>]*\bhref\s*=\s*[\"']([^\"']+)[\"']""", RegexOption.IGNORE_CASE)
         val HTML_TAG_REGEX: Regex = Regex("""<[^>]+>""")
         val URL_REGEX: Regex = Regex("""https?://[^\s<>'\")]+""")
+        val FACEBOOK_POST_PATH_REGEX: Regex = Regex("""/[^/]+/posts/[^/]+/?""")
     }
 }

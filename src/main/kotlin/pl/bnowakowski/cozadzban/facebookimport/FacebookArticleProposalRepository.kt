@@ -373,7 +373,7 @@ class FacebookImportRunRepository(
     fun findLatestRunningProgress(): FacebookImportProgressSnapshot? =
         jdbc.query(
             """
-                SELECT import_run_id, status, started_at, last_status_at, phase, status_detail, phase_index,
+                SELECT import_run_id, import_type, status, started_at, last_status_at, phase, status_detail, phase_index,
                        phase_count, current_pass_index, pass_count, discovered_count,
                        submitted_count, skipped_existing_count, failed_count
                   FROM facebook_import_run
@@ -388,7 +388,7 @@ class FacebookImportRunRepository(
     fun findLatestProgress(): FacebookImportProgressSnapshot? =
         jdbc.query(
             """
-                SELECT import_run_id, status, started_at, last_status_at, phase, status_detail, phase_index,
+                SELECT import_run_id, import_type, status, started_at, last_status_at, phase, status_detail, phase_index,
                        phase_count, current_pass_index, pass_count, discovered_count,
                        submitted_count, skipped_existing_count, failed_count
                   FROM facebook_import_run
@@ -456,6 +456,7 @@ class FacebookImportRunRepository(
         val PROGRESS_ROW_MAPPER = RowMapper { rs, _ ->
             FacebookImportProgressSnapshot(
                 importRunId = rs.getString("import_run_id"),
+                importType = FacebookImportType.valueOf(rs.getString("import_type")),
                 status = FacebookImportRunStatus.valueOf(rs.getString("status")),
                 startedAt = rs.getTimestamp("started_at").toInstant(),
                 lastUpdatedAt = rs.getTimestamp("last_status_at").toInstant(),

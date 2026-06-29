@@ -520,6 +520,7 @@ class FacebookProfileArticleImporter(
         )
         latestProgressSnapshot = FacebookImportProgressSnapshot(
             importRunId = importRunId,
+            importType = importType,
             status = FacebookImportRunStatus.RUNNING,
             startedAt = activeImportStartedAt ?: now,
             lastUpdatedAt = now,

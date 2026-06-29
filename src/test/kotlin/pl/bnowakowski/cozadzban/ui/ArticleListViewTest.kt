@@ -117,6 +117,28 @@ class ArticleListViewTest {
     }
 
     @Test
+    fun `top bar logo and brand link to main page`() {
+        stubArticles()
+
+        val view = ArticleListView(
+            articleRepository,
+            articleContentRepository,
+            articleService,
+            facebookImportJobService,
+            articleProposalService,
+            appUserRepository,
+            buildProperties,
+            languageFlagCache,
+        )
+        val brandLink = findComponents(view, Anchor::class.java)
+            .single { it.element.getAttribute("aria-label") == "Go to main page" }
+
+        assertEquals("/", brandLink.href)
+        assertTrue(findComponents(brandLink, Image::class.java).any { it.alt.orElse(null) == "Co za dzban" })
+        assertTrue(findComponents(brandLink, Span::class.java).any { it.text == "Co za dzban" })
+    }
+
+    @Test
     fun `admin users see apify import button and can trigger it`() {
         val adminEmail = "admin@example.com"
         authenticateAs(adminEmail)
@@ -249,6 +271,7 @@ class ArticleListViewTest {
         whenever(facebookImportJobService.currentProgress()).thenReturn(
             FacebookImportProgressSnapshot(
                 importRunId = "run-progress",
+                importType = FacebookImportType.APIFY,
                 status = FacebookImportRunStatus.RUNNING,
                 startedAt = Instant.now().minusSeconds(125),
                 lastUpdatedAt = Instant.parse("2026-05-24T10:15:30Z"),
@@ -282,7 +305,7 @@ class ArticleListViewTest {
 
         assertTrue(progressPanel != null, "Expected Facebook import progress panel to be present")
         assertTrue(progressPanel!!.isVisible, "Expected Facebook import progress panel to be visible")
-        assertTrue(spans.contains("Facebook import is running"))
+        assertTrue(spans.contains("Facebook import is running (Apify)"))
         assertTrue(spans.contains("Sending proposals"))
         assertTrue(spans.contains("Facebook import discovery pass 2/4 scroll 3/3"))
         assertTrue(spans.contains("Matched posts"))

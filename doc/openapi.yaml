@@ -688,6 +688,37 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
 
+  /api/facebook-import/runs/abandoned-startup-cleanup:
+
+    post:
+      tags: [Facebook Import]
+      summary: Terminate abandoned Facebook import runs after worker startup
+      operationId: cleanupAbandonedFacebookImportRunsOnStartup
+      security:
+        - machineApiKey: []
+      description: >
+        Used by a worker on startup to mark previously running import runs as
+        terminated when the worker restarted before recording a terminal state.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FacebookImportStartupCleanupRequest'
+      responses:
+        '200':
+          description: Abandoned import runs terminated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FacebookImportStartupCleanupResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
   /api/articles/{id}:
 
     parameters:
@@ -1186,6 +1217,14 @@ components:
           type: string
           enum: [RUNNING, FINISHED, FAILED, TERMINATED]
           example: FINISHED
+        importType:
+          type: string
+          enum: [API, SELENIUM]
+          default: SELENIUM
+        trigger:
+          type: string
+          enum: [MANUAL, WORKER_STARTUP, SCHEDULED]
+          default: MANUAL
         discoveredCount:
           type: integer
           default: 0
@@ -1198,9 +1237,30 @@ components:
         failedCount:
           type: integer
           default: 0
+        statusDetail:
+          type: string
+          nullable: true
+          description: Optional terminal status detail persisted with the import run.
         logs:
           type: string
           nullable: true
+
+    FacebookImportStartupCleanupRequest:
+      type: object
+      properties:
+        startedAt:
+          type: string
+          format: date-time
+          description: UTC timestamp for the worker startup cleanup; defaults server-side if omitted.
+
+    FacebookImportStartupCleanupResponse:
+      type: object
+      required: [terminatedRunIds]
+      properties:
+        terminatedRunIds:
+          type: array
+          items:
+            type: string
 
     FacebookImportLoginRequiredRequest:
       type: object

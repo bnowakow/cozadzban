@@ -98,7 +98,7 @@ fun sharedPageContent(vararg components: Component): com.vaadin.flow.component.o
     return content
 }
 
-private fun Component.buildSharedTitleGroup(): HorizontalLayout {
+private fun Component.buildSharedTitleGroup(): Anchor {
     val logo = Image("/cozadzban-logo.png", "Co za dzban")
     logo.setWidth("46px")
     logo.setHeight("46px")
@@ -115,7 +115,11 @@ private fun Component.buildSharedTitleGroup(): HorizontalLayout {
     titleGroup.isPadding = false
     titleGroup.isSpacing = true
     titleGroup.defaultVerticalComponentAlignment = Alignment.CENTER
-    return titleGroup
+    return Anchor("/", titleGroup).apply {
+        addClassName("czj-brand-link")
+        element.setAttribute("aria-label", "Go to main page")
+        element.setAttribute("title", "Go to main page")
+    }
 }
 
 private fun Component.buildSharedThemeToggleButton(): Button {

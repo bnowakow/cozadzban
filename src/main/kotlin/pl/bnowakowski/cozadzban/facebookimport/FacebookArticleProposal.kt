@@ -157,6 +157,7 @@ data class FacebookImportProgressRequest(
 
 data class FacebookImportProgressSnapshot(
     val importRunId: String,
+    val importType: FacebookImportType = FacebookImportType.SELENIUM,
     val status: FacebookImportRunStatus,
     val startedAt: Instant,
     val lastUpdatedAt: Instant,

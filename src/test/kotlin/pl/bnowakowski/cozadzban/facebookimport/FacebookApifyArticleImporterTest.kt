@@ -75,4 +75,44 @@ class FacebookApifyArticleImporterTest {
 
         assertEquals(listOf("https://example.com/article", "https://example.org/news"), urls)
     }
+
+    @Test
+    fun `proposal urls fall back to shared facebook post when apify item has marker but no external article url`() {
+        val proposalClient: FacebookImportProposalClient = mock()
+        val importer = FacebookApifyArticleImporter(
+            properties = FacebookImportProperties(
+                apify = FacebookImportProperties.Apify(enabled = true, apiToken = "token"),
+            ),
+            proposalClient = proposalClient,
+        )
+        val objectMapper = ObjectMapper()
+        val item = objectMapper.readTree(
+            """
+            {
+              "facebookUrl": "https://www.facebook.com/bartek.dobrowolski.nowakowski/",
+              "postId": "10242248758499042",
+              "url": "https://www.facebook.com/bartek.dobrowolski.nowakowski/posts/pfbid02q17wouWvem6ZdSi4CRnou1cnenRv5ngKeU8uwwVfwTE3CXksyhPttqD1BWcW39Gtl",
+              "text": "Co za dzban",
+              "sharedPost": {
+                "url": "https://www.facebook.com/TheIndependentOnline/posts/pfbid02Jd1sh6WRFUR86UuXDJTYxHrDBHyERTQQW5kZ96dFb3L9tJSHpJdSZ3P4MsN7qyM7l",
+                "text": "Trump has claimed Reflecting Pool vandals could face years in jail.",
+                "media": [
+                  {
+                    "thumbnail": "https://scontent-iad6-1.xx.fbcdn.net/v/t39.99422-6/731199809_1796461034855739_2848968807400154079_n.png",
+                    "url": "https://www.facebook.com/photo/?fbid=1565111552311499&set=a.395690795920253"
+                  }
+                ]
+              },
+              "topLevelUrl": "https://www.facebook.com/1342758879/posts/10242248758499042"
+            }
+            """.trimIndent(),
+        )
+
+        val urls = importer.proposalUrlsFromItem(item)
+
+        assertEquals(
+            listOf("https://www.facebook.com/TheIndependentOnline/posts/pfbid02Jd1sh6WRFUR86UuXDJTYxHrDBHyERTQQW5kZ96dFb3L9tJSHpJdSZ3P4MsN7qyM7l"),
+            urls,
+        )
+    }
 }
