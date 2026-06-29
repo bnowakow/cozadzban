@@ -1,5 +1,5 @@
 
-.PHONY: help docker-up docker-down docker-data-permissions docker-pg-nuke docker-pg-backup install-pg-backup-cron ensure-pg-backup-cron build run run-local run-prod test clean docker-logs docker-spring-shell docker-pg-shell docker-upgrade docker-upgrade-no-cache sync-env-files bump-patch bump-minor codex-commit install-git-hooks install-codex-skills codex-skill-prompts
+.PHONY: help docker-up docker-down docker-data-permissions docker-upgrade-log-owner docker-pg-nuke docker-pg-backup install-pg-backup-cron ensure-pg-backup-cron build run run-local run-prod test clean docker-logs docker-spring-shell docker-pg-shell docker-upgrade docker-upgrade-no-cache sync-env-files bump-patch bump-minor codex-commit install-git-hooks install-codex-skills codex-skill-prompts
 
 -include .env
 
@@ -58,6 +58,12 @@ ifneq ($(wildcard $(SDKMAN_JAVA_HOME)/bin/java),)
 JAVA_HOME ?= $(SDKMAN_JAVA_HOME)
 endif
 GRADLE_USER_HOME ?= /tmp/cozadzban-gradle-home
+TEST_GRADLE_ARGS ?=
+TEST_GRADLE_WORKERS ?=
+TEST_GRADLE_JVMARGS ?=
+COZADZBAN_TEST_MAX_PARALLEL_FORKS ?=
+COZADZBAN_TEST_TIMEOUT_MINUTES ?=
+COZADZBAN_DOCKER_INFO_TIMEOUT_SECONDS ?=
 CRON_SCHEDULE ?= 0 2 * * *
 CRON_MAKE ?= $(shell command -v make 2>/dev/null || echo make)
 PG_BACKUP_CRON_MARKER ?= cozadzban-docker-pg-backup
@@ -65,7 +71,7 @@ PG_BACKUP_CRON_LEGACY_MARKER ?= cozazjeb-docker-pg-backup
 PG_BACKUP_CRON_MARKERS := $(PG_BACKUP_CRON_MARKER) $(PG_BACKUP_CRON_LEGACY_MARKER)
 ENV_SYNC_HOST ?= ovh.bnowakowski.pl
 ENV_SYNC_DIR ?= /home/sup/docker/cozadzban.pl
-export APP_BUILD_COMMIT JAVA_HOME GRADLE_USER_HOME
+export APP_BUILD_COMMIT JAVA_HOME GRADLE_USER_HOME COZADZBAN_TEST_MAX_PARALLEL_FORKS COZADZBAN_TEST_TIMEOUT_MINUTES COZADZBAN_DOCKER_INFO_TIMEOUT_SECONDS
 
 # Start local development environment from compose.yaml
 docker-up: docker-data-permissions
@@ -84,6 +90,13 @@ docker-data-permissions:
 	@chmod -R a+rwX ./logs
 	@docker run --rm -v "$(PWD)/docker-data:/work" alpine:3.20 \
 		sh -c "mkdir -p /work/postgres /work/data/favicons /work/backup/postgres /work/nginx && if [ ! -f /work/nginx/upstream.conf ]; then printf 'server springboot:8080 max_fails=3 fail_timeout=10s;\n' > /work/nginx/upstream.conf; fi && chown -R $(LOCAL_UID):$(LOCAL_GID) /work/backup /work/nginx && chmod 755 /work /work/postgres /work/nginx && chmod -R a+rwX /work/data && chmod -R u+rwX,go-rwx /work/backup && chmod 644 /work/nginx/upstream.conf"
+
+docker-upgrade-log-owner:
+	@mkdir -p ./logs
+	@if ! chmod -R a+rwX ./logs 2>/dev/null; then \
+		echo "! ./logs contains files this user cannot chmod; taking ownership with sudo"; \
+		sudo chown sup:sup -R logs; \
+	fi
 
 # Stop local development environment
 docker-down:
@@ -155,7 +168,7 @@ run-prod:
 
 # Run all tests
 test:
-	./gradlew test
+	./gradlew $(if $(TEST_GRADLE_WORKERS),--max-workers=$(TEST_GRADLE_WORKERS),) $(if $(TEST_GRADLE_JVMARGS),-Dorg.gradle.jvmargs="$(TEST_GRADLE_JVMARGS)",) test $(TEST_GRADLE_ARGS)
 
 # Configure repository-local git hooks.
 install-git-hooks:
@@ -257,13 +270,13 @@ docker-spring-shell:
 	docker compose -f compose.yaml exec springboot bash
 
 # Pull latest code, rebuild, restart, and follow logs
-docker-upgrade: docker-data-permissions
+docker-upgrade: docker-upgrade-log-owner docker-data-permissions
 	git pull --ff-only
 	docker-data/blue-green-upgrade.sh
 	docker compose -f compose.yaml logs -f
 
 # Pull latest code, rebuild from scratch, restart, and follow logs. Use only when cache corruption is suspected.
-docker-upgrade-no-cache: docker-data-permissions
+docker-upgrade-no-cache: docker-upgrade-log-owner docker-data-permissions
 	git pull --ff-only
 	NO_CACHE=true docker-data/blue-green-upgrade.sh
 	docker compose -f compose.yaml logs -f

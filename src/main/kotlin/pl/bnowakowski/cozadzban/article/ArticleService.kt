@@ -6,6 +6,7 @@ package pl.bnowakowski.cozadzban.article
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.slf4j.LoggerFactory
+import org.springframework.dao.DuplicateKeyException
 import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.web.context.request.RequestContextHolder
 import org.springframework.web.context.request.ServletRequestAttributes
@@ -121,19 +122,24 @@ class ArticleService(
             publishedAtForSave = publishedAt,
             contentPatchScheduled = false,
         )
-        val article = articleRepository.save(
-            Article(
-                url = url,
-                language = language,
-                quote = sanitizedInput.quote,
-                title = title,
-                thumbnail = enrichment.thumbnail,
-                favicon = enrichment.favicon,
-                lead = enrichment.lead,
-                publishedAt = publishedAt,
-                createdByUserId = creatorId,
+        val article = try {
+            articleRepository.save(
+                Article(
+                    url = url,
+                    language = language,
+                    quote = sanitizedInput.quote,
+                    title = title,
+                    thumbnail = enrichment.thumbnail,
+                    favicon = enrichment.favicon,
+                    lead = enrichment.lead,
+                    publishedAt = publishedAt,
+                    createdByUserId = creatorId,
+                )
             )
-        )
+        } catch (ex: DuplicateKeyException) {
+            logFacebookPhotoDuplicateUrlConflict("create", url, input.url, articleRepository.findByUrl(url))
+            throw ArticleUrlConflictException(url)
+        }
         preserveContent(article.id!!, article.url, contentForCache)
         logFacebookPhotoPersistenceState("create", article, contentForCache)
         val persistedArticle = logFacebookPhotoReloadedPersistenceState("create", article, contentForCache)

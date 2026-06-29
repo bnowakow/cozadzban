@@ -842,7 +842,7 @@ class FacebookProfileArticleImporter(
     private fun shouldReuseFirefoxBrowserAcrossRestarts(): Boolean =
         properties.reuseBrowserAcrossRestarts &&
             properties.browser == FacebookImportProperties.Browser.FIREFOX &&
-            !browserHeadless()
+            !properties.headless
 
     fun prepareProfileAndLogin(
         driver: WebDriver,

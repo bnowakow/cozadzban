@@ -525,6 +525,36 @@ html[theme~="dark"] .czj-version-badge {
   width: 100%;
 }
 
+.czj-facebook-import-progress-header vaadin-button.czj-facebook-import-collapse-toggle {
+  --vaadin-button-height: 1.8rem;
+  --vaadin-button-min-width: 1.8rem;
+  color: var(--czj-muted);
+  flex: 0 0 auto;
+  margin-left: 0.15rem;
+}
+
+.czj-facebook-import-progress-header vaadin-button.czj-facebook-import-collapse-toggle:hover {
+  color: var(--lumo-primary-color);
+}
+
+.czj-facebook-import-progress-header vaadin-button.czj-facebook-import-clear-button {
+  flex: 0 0 auto;
+  font-weight: 800;
+  margin-left: 0.15rem;
+}
+
+.czj-facebook-import-collapsible-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.95rem;
+  min-width: 0;
+  width: 100%;
+}
+
+.czj-facebook-import-history .czj-facebook-import-collapsible-body {
+  gap: 0.7rem;
+}
+
 .czj-facebook-import-progress-title {
   color: var(--czj-text);
   font-size: var(--lumo-font-size-m);

@@ -307,6 +307,26 @@ resolve_pull_conflict_with_codex() {
 	return 1
 }
 
+pull_rebase_upstream() {
+	if ! git pull --rebase --autostash; then
+		if has_unmerged_paths; then
+			if ! resolve_codex_command; then
+				echo "git pull produced conflicts, but codex command was not found." >&2
+				echo "Install the Codex CLI or resolve the conflicts manually before rerunning codex-commit." >&2
+				exit 1
+			fi
+
+			resolve_pull_conflict_with_codex || {
+				echo "Aborting codex-commit because the git conflict was not resolved."
+				exit 1
+			}
+		else
+			echo "git pull --rebase --autostash failed without unmerged paths. Aborting."
+			exit 1
+		fi
+	fi
+}
+
 extract_commit_message() {
 	local output_file=$1
 	local message
@@ -348,17 +368,7 @@ sync_upstream_before_push() {
 
 		if [ "$behind" -gt 0 ]; then
 			if confirm "Pull before push" "Upstream $upstream has $behind commit(s) not in this branch. Run git pull --rebase before push?"; then
-				if ! git pull --rebase; then
-					if has_unmerged_paths; then
-						resolve_pull_conflict_with_codex || {
-							echo "Aborting codex-commit because the git conflict was not resolved."
-							exit 1
-						}
-					else
-						echo "git pull --rebase failed without unmerged paths. Aborting."
-						exit 1
-					fi
-				fi
+				pull_rebase_upstream
 
 				read -r ahead behind < <(git rev-list --left-right --count HEAD..."$upstream")
 			else
@@ -368,6 +378,31 @@ sync_upstream_before_push() {
 		fi
 	else
 		echo "No upstream branch is configured; git push will use Git's default behavior."
+	fi
+}
+
+sync_upstream_before_commit() {
+	local upstream
+	local ahead
+	local behind
+
+	if ! upstream=$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null); then
+		echo "No upstream branch is configured; skipping pre-commit update check."
+		return 0
+	fi
+
+	echo "Fetching $upstream before commit check..."
+	git fetch --quiet
+	read -r ahead behind < <(git rev-list --left-right --count HEAD..."$upstream")
+
+	if [ "$behind" -eq 0 ]; then
+		return 0
+	fi
+
+	if confirm "Update before commit" "Upstream $upstream has $behind commit(s) not in this branch. Update with git pull --rebase --autostash before staging, bumping, and committing?"; then
+		pull_rebase_upstream
+	else
+		echo "Continuing without upstream updates."
 	fi
 }
 
@@ -439,6 +474,8 @@ if ! has_worktree_changes; then
 	prompt_for_push
 	exit 0
 fi
+
+sync_upstream_before_commit
 
 if ! has_version_change; then
 	choice=$(

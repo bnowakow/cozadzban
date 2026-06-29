@@ -12,9 +12,9 @@
 ./utilities/codex-commit.sh
 ```
 
-The script checks for a version bump, stages all current changes, asks the local `codex` command to suggest a commit message using the repository commit-message skill, creates the commit, checks the upstream branch, and optionally pushes.
+The script checks whether the upstream branch has new commits, optionally updates with `git pull --rebase --autostash`, checks for a version bump, stages all current changes, asks the local `codex` command to suggest a commit message using the repository commit-message skill, creates the commit, checks the upstream branch again, and optionally pushes.
 
-If the upstream branch has new commits, the script can run `git pull --rebase`. When that pull produces conflicts, it asks Codex to resolve the conflict markers and then continues the rebase if the tree is clean.
+If the upstream branch has new commits, the script can run `git pull --rebase --autostash` before version bumping and committing. When that pull produces conflicts, it asks Codex to resolve the conflict markers and then continues the rebase if the tree is clean.
 
 ### Requirements
 

@@ -2,6 +2,7 @@
 // Copyright (C) 2026 https://bnowakowski.pl
 
 import java.time.Instant
+import java.time.Duration
 import java.util.concurrent.TimeUnit
 
 plugins {
@@ -13,7 +14,7 @@ plugins {
 }
 
 group = "pl.bnowakowski"
-version = "0.58.7-SNAPSHOT"
+version = "0.58.8-SNAPSHOT"
 
 java {
 	toolchain {
@@ -90,6 +91,12 @@ kotlin {
 
 tasks.withType<Test> {
 	useJUnitPlatform()
+	optionalIntSetting("COZADZBAN_TEST_MAX_PARALLEL_FORKS")?.let {
+		maxParallelForks = it.coerceAtLeast(1)
+	}
+	optionalLongSetting("COZADZBAN_TEST_TIMEOUT_MINUTES")?.let {
+		timeout.set(Duration.ofMinutes(it.coerceAtLeast(1)))
+	}
 	systemProperty("app.facebook-import.selenium.enabled", "false")
 	systemProperty("app.facebook-import.api.enabled", "false")
 	systemProperty("app.facebook-import.schedule.enabled", "false")
@@ -102,13 +109,14 @@ tasks.withType<Test> {
 }
 
 fun isDockerAvailable(): Boolean {
+	val timeoutSeconds = optionalLongSetting("COZADZBAN_DOCKER_INFO_TIMEOUT_SECONDS")?.coerceAtLeast(1) ?: 5
 	val candidates = listOf("docker", "/opt/homebrew/bin/docker", "/usr/local/bin/docker")
 	return candidates.any { command ->
 		runCatching {
 			val process = ProcessBuilder(command, "info")
 				.redirectErrorStream(true)
 				.start()
-			if (!process.waitFor(5, TimeUnit.SECONDS)) {
+			if (!process.waitFor(timeoutSeconds, TimeUnit.SECONDS)) {
 				process.destroyForcibly()
 				false
 			} else {
@@ -117,6 +125,19 @@ fun isDockerAvailable(): Boolean {
 		}.getOrDefault(false)
 	}
 }
+
+fun optionalIntSetting(name: String): Int? =
+	optionalStringSetting(name)?.toIntOrNull()
+
+fun optionalLongSetting(name: String): Long? =
+	optionalStringSetting(name)?.toLongOrNull()
+
+fun optionalStringSetting(name: String): String? =
+	providers.gradleProperty(name)
+		.orElse(providers.environmentVariable(name))
+		.orNull
+		?.trim()
+		?.takeIf { it.isNotBlank() }
 
 tasks.named<ProcessResources>("processResources") {
 	val timestamp = Instant.now().toString()

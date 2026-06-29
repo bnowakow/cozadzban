@@ -452,7 +452,9 @@ class ArticleListView(
         icon.setSize("1.15rem")
         icon.color = "var(--lumo-primary-color)"
 
-        val header = HorizontalLayout(icon, title)
+        val toggle = facebookImportCollapseToggle("Hide Facebook import ${facebookImportTypeLabel(importType)} last runs")
+
+        val header = HorizontalLayout(icon, title, toggle)
         header.addClassName("czj-facebook-import-progress-header")
         header.isPadding = false
         header.isSpacing = true
@@ -468,8 +470,17 @@ class ArticleListView(
             facebookImportHistoryMetric("Automatic", articleProposalService.latestAutomaticRunTimestamp(importType)),
         )
 
+        val collapsibleBody = Div(metrics)
+        collapsibleBody.addClassName("czj-facebook-import-collapsible-body")
+
         content.add(header)
-        content.add(metrics)
+        content.add(collapsibleBody)
+        configureFacebookImportCollapsible(
+            content,
+            "cozadzban.facebookImport.history.${importType.name}.collapsed",
+            "Show Facebook import ${facebookImportTypeLabel(importType)} last runs",
+            "Hide Facebook import ${facebookImportTypeLabel(importType)} last runs",
+        )
         return content
     }
 
@@ -569,7 +580,17 @@ class ArticleListView(
         val phase = Span(progress.phase?.takeIf { it.isNotBlank() } ?: "Running")
         phase.addClassName("czj-facebook-import-progress-phase")
 
-        val header = HorizontalLayout(icon, title, phase)
+        val toggle = facebookImportCollapseToggle("Hide Facebook import status details")
+        val clearButton = if (progress.status == FacebookImportRunStatus.TERMINATED) {
+            facebookImportClearButton(progress.importRunId)
+        } else {
+            null
+        }
+
+        val header = HorizontalLayout()
+        header.add(icon, title, phase)
+        clearButton?.let { header.add(it) }
+        header.add(toggle)
         header.addClassName("czj-facebook-import-progress-header")
         header.isPadding = false
         header.isSpacing = true
@@ -594,10 +615,126 @@ class ArticleListView(
             Span(it).apply { addClassName("czj-facebook-import-progress-detail") }
         }
 
+        val collapsibleBody = Div()
+        collapsibleBody.addClassName("czj-facebook-import-collapsible-body")
+        detail?.let { collapsibleBody.add(it) }
+        collapsibleBody.add(metrics)
+
         content.add(header)
-        detail?.let { content.add(it) }
-        content.add(metrics)
+        content.add(collapsibleBody)
+        configureFacebookImportCollapsible(
+            content,
+            "cozadzban.facebookImport.progress.collapsed",
+            "Show Facebook import status details",
+            "Hide Facebook import status details",
+            progress.importRunId,
+        )
+        if (progress.status == FacebookImportRunStatus.TERMINATED) {
+            configureFacebookImportTerminatedDismissal(content, progress.importRunId)
+        }
         return content
+    }
+
+    private fun facebookImportCollapseToggle(expandedLabel: String): Button {
+        val icon = VaadinIcon.ANGLE_UP.create()
+        icon.addClassName("czj-facebook-import-collapse-icon")
+
+        return Button(icon).apply {
+            addClassName("czj-facebook-import-collapse-toggle")
+            addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY_INLINE)
+            element.setAttribute("aria-label", expandedLabel)
+            element.setAttribute("title", expandedLabel)
+        }
+    }
+
+    private fun facebookImportClearButton(importRunId: String): Button =
+        Button("Clear").apply {
+            addClassName("czj-facebook-import-clear-button")
+            addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY)
+            element.setAttribute("aria-label", "Clear stopped Facebook import result")
+            element.setAttribute("title", "Clear stopped Facebook import result")
+            element.setAttribute("data-import-run-id", importRunId)
+        }
+
+    private fun configureFacebookImportTerminatedDismissal(content: Div, importRunId: String) {
+        content.element.executeJs(
+            """
+                const root = this;
+                const importRunId = ${'$'}0;
+                const dismissedStorageKey = "cozadzban.facebookImport.progress.dismissedTerminatedRunId";
+                const hidePanel = () => {
+                    const panel = root.closest(".czj-facebook-import-progress");
+                    if (panel) {
+                        panel.hidden = true;
+                    } else {
+                        root.hidden = true;
+                    }
+                };
+                if (window.localStorage.getItem(dismissedStorageKey) === importRunId) {
+                    hidePanel();
+                    return;
+                }
+                const clearButton = root.querySelector(".czj-facebook-import-clear-button");
+                if (!clearButton) {
+                    return;
+                }
+                clearButton.onclick = event => {
+                    event.stopPropagation();
+                    window.localStorage.setItem(dismissedStorageKey, importRunId);
+                    hidePanel();
+                };
+            """.trimIndent(),
+            importRunId,
+        )
+    }
+
+    private fun configureFacebookImportCollapsible(
+        content: Div,
+        storageKey: String,
+        collapsedLabel: String,
+        expandedLabel: String,
+        importRunId: String? = null,
+    ) {
+        content.element.executeJs(
+            """
+                const root = this;
+                const storageKey = ${'$'}0;
+                const collapsedLabel = ${'$'}1;
+                const expandedLabel = ${'$'}2;
+                const importRunId = ${'$'}3;
+                const runStorageKey = "cozadzban.facebookImport.progress.lastRunId";
+                if (importRunId && window.localStorage.getItem(runStorageKey) !== importRunId) {
+                    window.localStorage.setItem(runStorageKey, importRunId);
+                    window.localStorage.removeItem(storageKey);
+                }
+                const toggle = root.querySelector(".czj-facebook-import-collapse-toggle");
+                const icon = root.querySelector(".czj-facebook-import-collapse-icon");
+                const body = root.querySelector(".czj-facebook-import-collapsible-body");
+                if (!toggle || !body) {
+                    return;
+                }
+                const setCollapsed = collapsed => {
+                    body.hidden = collapsed;
+                    root.classList.toggle("czj-facebook-import-collapsed", collapsed);
+                    toggle.setAttribute("aria-label", collapsed ? collapsedLabel : expandedLabel);
+                    toggle.setAttribute("title", collapsed ? collapsedLabel : expandedLabel);
+                    if (icon) {
+                        icon.setAttribute("icon", collapsed ? "vaadin:angle-down" : "vaadin:angle-up");
+                    }
+                };
+                setCollapsed(window.localStorage.getItem(storageKey) === "true");
+                toggle.onclick = event => {
+                    event.stopPropagation();
+                    const collapsed = !body.hidden;
+                    window.localStorage.setItem(storageKey, collapsed ? "true" : "false");
+                    setCollapsed(collapsed);
+                };
+            """.trimIndent(),
+            storageKey,
+            collapsedLabel,
+            expandedLabel,
+            importRunId ?: "",
+        )
     }
 
     private fun maybeShowFacebookImportFailure(progress: FacebookImportProgressSnapshot) {
@@ -824,13 +961,15 @@ class ArticleListView(
         date.element.style.set("color", "var(--lumo-secondary-text-color)")
 
         row.add(source, dot, date)
-        article.sourceImportType
-            ?.let(::facebookImportTypeLabel)
-            ?.let { label ->
-                val importDot = Span("•")
-                importDot.element.style.set("color", "var(--lumo-secondary-text-color)")
-                row.add(importDot, importSourceBadge(label))
-            }
+        if (isAuthenticated) {
+            article.sourceImportType
+                ?.let(::facebookImportTypeLabel)
+                ?.let { label ->
+                    val importDot = Span("•")
+                    importDot.element.style.set("color", "var(--lumo-secondary-text-color)")
+                    row.add(importDot, importSourceBadge(label))
+                }
+        }
         row.isPadding = false
         row.isSpacing = true
         row.defaultVerticalComponentAlignment = Alignment.CENTER

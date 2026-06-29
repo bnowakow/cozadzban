@@ -10,9 +10,11 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.any
+import org.mockito.kotlin.never
 import org.mockito.kotlin.whenever
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.verify
+import org.springframework.dao.DuplicateKeyException
 import org.springframework.transaction.annotation.Transactional
 import pl.bnowakowski.cozadzban.enrichment.EnrichmentResult
 import pl.bnowakowski.cozadzban.enrichment.EnrichmentService
@@ -29,6 +31,47 @@ class ArticleServiceTitleTest {
             .getAnnotation(Transactional::class.java)
 
         assertTrue(transactional.noRollbackFor.contains(ArticleUrlConflictException::class))
+    }
+
+    @Test
+    fun `create converts save-time duplicate url into article url conflict`() {
+        val articleRepository: ArticleRepository = mock()
+        val enrichmentService: EnrichmentService = mock()
+        val articleContentRepository: ArticleContentRepository = mock()
+        val service = ArticleService(
+            articleRepository,
+            enrichmentService,
+            mock<AppUserRepository>(),
+            articleContentRepository,
+        )
+        whenever(articleRepository.existsByUrl(any())).thenReturn(false)
+        whenever(enrichmentService.enrich(any())).thenReturn(
+            EnrichmentResult(
+                title = "Facebook post",
+                thumbnail = null,
+                lead = "Post text",
+                plainText = "Post text",
+                publishedAt = Instant.parse("2026-06-28T07:56:54Z"),
+            ),
+        )
+        whenever(articleRepository.findFacebookDuplicateCandidatesByPublishedAt(any())).thenReturn(emptyList())
+        whenever(articleRepository.save(any())).thenThrow(DuplicateKeyException("duplicate article_url_key"))
+
+        val exception = assertThrows(ArticleUrlConflictException::class.java) {
+            service.create(
+                ArticleInput(
+                    url = "https://www.facebook.com/photo/?fbid=3010606192664760&set=a.359995211059218",
+                    language = "pl",
+                ),
+                creatorId = 7L,
+            )
+        }
+
+        assertEquals(
+            "https://www.facebook.com/photo/?fbid=3010606192664760&set=a.359995211059218",
+            exception.url,
+        )
+        verify(articleContentRepository, never()).save(any())
     }
 
     @Test

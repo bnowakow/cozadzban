@@ -301,11 +301,25 @@ class ArticleListViewTest {
 
         val progressPanel = findComponents(view, Div::class.java)
             .firstOrNull { it.hasClassName("czj-facebook-import-progress") && it.isVisible }
+        val collapsibleBody = findComponents(view, Div::class.java)
+            .firstOrNull { it.hasClassName("czj-facebook-import-collapsible-body") }
+        val collapseToggle = findComponents(view, Button::class.java)
+            .firstOrNull { it.hasClassName("czj-facebook-import-collapse-toggle") }
+        val clearButton = findComponents(view, Button::class.java)
+            .firstOrNull { it.hasClassName("czj-facebook-import-clear-button") }
         val spans = findComponents(view, Span::class.java).map { it.text }
 
         assertTrue(progressPanel != null, "Expected Facebook import progress panel to be present")
         assertTrue(progressPanel!!.isVisible, "Expected Facebook import progress panel to be visible")
+<<<<<<< Updated upstream
         assertTrue(spans.contains("Facebook import is running (Apify)"))
+=======
+        assertTrue(collapsibleBody != null, "Expected Facebook import progress details to be collapsible")
+        assertTrue(collapseToggle != null, "Expected Facebook import progress collapse toggle to be present")
+        assertTrue(clearButton == null, "Expected clear button to be absent while Facebook import is running")
+        assertEquals("Hide Facebook import status details", collapseToggle!!.element.getAttribute("aria-label"))
+        assertTrue(spans.contains("Facebook import is running"))
+>>>>>>> Stashed changes
         assertTrue(spans.contains("Sending proposals"))
         assertTrue(spans.contains("Facebook import discovery pass 2/4 scroll 3/3"))
         assertTrue(spans.contains("Matched posts"))
@@ -318,6 +332,57 @@ class ArticleListViewTest {
         assertTrue(spans.contains("8 of 8"))
         assertTrue(spans.contains("Last updated"))
         assertTrue(spans.contains("2026-05-24 10:15:30 UTC"))
+    }
+
+    @Test
+    fun `admin users can clear terminated facebook import progress result`() {
+        val adminEmail = "admin@example.com"
+        authenticateAs(adminEmail)
+        UI.setCurrent(UI())
+        stubArticles()
+        whenever(appUserRepository.findByEmail(adminEmail)).thenReturn(
+            AppUser(1L, adminEmail, Role.ADMIN, AppUserStatus.ACTIVE),
+        )
+        whenever(facebookImportJobService.currentProgress()).thenReturn(
+            FacebookImportProgressSnapshot(
+                importRunId = "run-terminated",
+                status = FacebookImportRunStatus.TERMINATED,
+                startedAt = Instant.now().minusSeconds(125),
+                lastUpdatedAt = Instant.parse("2026-05-24T10:15:30Z"),
+                phase = "Terminated",
+                detail = "Facebook import was terminated.",
+                phaseIndex = 8,
+                phaseCount = 8,
+                passIndex = 2,
+                passCount = 3,
+                matchedPostCount = 9,
+                submittedCount = 4,
+                skippedExistingCount = 5,
+                failedCount = 0,
+            ),
+        )
+
+        val view = ArticleListView(
+            articleRepository,
+            articleContentRepository,
+            articleService,
+            facebookImportJobService,
+            articleProposalService,
+            appUserRepository,
+            buildProperties,
+            languageFlagCache,
+        )
+
+        val clearButton = findComponents(view, Button::class.java)
+            .firstOrNull { it.hasClassName("czj-facebook-import-clear-button") }
+        val spans = findComponents(view, Span::class.java).map { it.text }
+
+        assertTrue(clearButton != null, "Expected terminated Facebook import progress clear button")
+        assertEquals("Clear", clearButton!!.text)
+        assertEquals("Clear stopped Facebook import result", clearButton.element.getAttribute("aria-label"))
+        assertEquals("run-terminated", clearButton.element.getAttribute("data-import-run-id"))
+        assertTrue(spans.contains("Facebook import stopped"))
+        assertTrue(spans.contains("Terminated"))
     }
 
     @Test
@@ -580,6 +645,7 @@ class ArticleListViewTest {
 
     @Test
     fun `article card shows facebook import source attribution`() {
+        authenticateAs("user@example.com")
         stubArticles()
         val article = Article(
             id = 41L,
@@ -608,6 +674,38 @@ class ArticleListViewTest {
             .filter { it.hasClassName("czj-import-source-badge") }
 
         assertTrue(importBadges.any { it.text == "Apify import" })
+    }
+
+    @Test
+    fun `article card hides facebook import source attribution from anonymous users`() {
+        stubArticles()
+        val article = Article(
+            id = 41L,
+            url = "https://example.com/from-facebook",
+            language = "pl",
+            title = "Imported article",
+            createdByUserId = 1L,
+            sourceImportType = FacebookImportType.SELENIUM.name,
+        )
+
+        val view = ArticleListView(
+            articleRepository,
+            articleContentRepository,
+            articleService,
+            facebookImportJobService,
+            articleProposalService,
+            appUserRepository,
+            buildProperties,
+            languageFlagCache,
+        )
+        val method = view.javaClass.getDeclaredMethod("buildArticleCard", Article::class.java)
+        method.isAccessible = true
+        val card = method.invoke(view, article) as Component
+
+        val importBadges = findComponents(card, Span::class.java)
+            .filter { it.hasClassName("czj-import-source-badge") }
+
+        assertTrue(importBadges.isEmpty())
     }
 
     @Test
