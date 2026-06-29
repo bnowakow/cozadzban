@@ -311,18 +311,11 @@ class ArticleListViewTest {
 
         assertTrue(progressPanel != null, "Expected Facebook import progress panel to be present")
         assertTrue(progressPanel!!.isVisible, "Expected Facebook import progress panel to be visible")
-<<<<<<< Updated upstream
         assertTrue(spans.contains("Facebook import is running (Apify)"))
-=======
->>>>>>> Stashed changes
         assertTrue(collapsibleBody != null, "Expected Facebook import progress details to be collapsible")
         assertTrue(collapseToggle != null, "Expected Facebook import progress collapse toggle to be present")
         assertTrue(clearButton == null, "Expected clear button to be absent while Facebook import is running")
         assertEquals("Hide Facebook import status details", collapseToggle!!.element.getAttribute("aria-label"))
-<<<<<<< Updated upstream
-=======
-        assertTrue(spans.contains("Facebook import is running (Apify)"))
->>>>>>> Stashed changes
         assertTrue(spans.contains("Sending proposals"))
         assertTrue(spans.contains("Facebook import discovery pass 2/4 scroll 3/3"))
         assertTrue(spans.contains("Matched posts"))

@@ -40,8 +40,10 @@ import java.time.Duration
 import java.time.Instant
 import java.util.Collections
 import java.util.Properties
+import org.openqa.selenium.By
 import org.openqa.selenium.Cookie
 import org.openqa.selenium.NoSuchWindowException
+import org.openqa.selenium.TimeoutException
 import org.openqa.selenium.WebDriver
 import org.openqa.selenium.WebElement
 import org.springframework.context.ApplicationEventPublisher
@@ -607,6 +609,32 @@ class FacebookProfileArticleImporterJobTest {
 
         verify(driver, times(1)).findElements(any())
         verify(seeOriginalControl, times(1)).click()
+    }
+
+    @Test
+    fun `post container collection continues when one facebook selector times out`() {
+        val importer = FacebookProfileArticleImporter(
+            FacebookImportProperties(waitAfterScroll = Duration.ZERO),
+            appUserRepository,
+            articleService,
+        )
+        val driver = mock<WebDriver>()
+        val post = mock<WebElement>()
+
+        whenever(driver.findElements(any())).thenAnswer { invocation ->
+            val selector = invocation.arguments.first() as By
+            if (selector.toString().contains("FeedUnit_")) {
+                throw TimeoutException("java.util.concurrent.TimeoutException")
+            }
+            if (selector.toString().contains("role='article'")) listOf(post) else emptyList()
+        }
+
+        val posts = FacebookProfileArticleImporter::class.java
+            .getDeclaredMethod("collectPostContainers", WebDriver::class.java)
+            .apply { isAccessible = true }
+            .invoke(importer, driver) as List<*>
+
+        assertEquals(listOf(post), posts)
     }
 
     @Test

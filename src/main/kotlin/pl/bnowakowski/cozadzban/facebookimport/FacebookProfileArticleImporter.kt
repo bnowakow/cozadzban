@@ -11,7 +11,9 @@ import org.openqa.selenium.JavascriptExecutor
 import org.openqa.selenium.Keys
 import org.openqa.selenium.NoSuchWindowException
 import org.openqa.selenium.StaleElementReferenceException
+import org.openqa.selenium.TimeoutException
 import org.openqa.selenium.WebDriver
+import org.openqa.selenium.WebDriverException
 import org.openqa.selenium.WebElement
 import org.openqa.selenium.chrome.ChromeDriver
 import org.openqa.selenium.chrome.ChromeOptions
@@ -1139,7 +1141,37 @@ class FacebookProfileArticleImporter(
             By.cssSelector("div[aria-posinset]"),
             By.cssSelector("[data-ad-preview='message']"),
         )
-        return selectors.flatMap { selector -> driver.findElements(selector) }
+        return selectors.flatMap { selector ->
+            findPostContainers(driver, selector)
+        }
+    }
+
+    private fun findPostContainers(driver: WebDriver, selector: By): List<WebElement> =
+        try {
+            driver.findElements(selector)
+        } catch (ex: NoSuchWindowException) {
+            throw ex
+        } catch (ex: TimeoutException) {
+            logger.warn(
+                "Facebook import post container selector timed out; selector={}; reason={}",
+                selector,
+                failureMessage(ex),
+            )
+            emptyList()
+        } catch (ex: WebDriverException) {
+            if (!isSeleniumCommandTimeout(ex)) throw ex
+            logger.warn(
+                "Facebook import post container selector timed out; selector={}; reason={}",
+                selector,
+                failureMessage(ex),
+            )
+            emptyList()
+        }
+
+    private fun isSeleniumCommandTimeout(ex: Throwable): Boolean {
+        val root = rootCause(ex)
+        return root is java.util.concurrent.TimeoutException ||
+            root.javaClass.name == "java.util.concurrent.TimeoutException"
     }
 
     private fun candidateMarkerPhrases(): List<String> =
