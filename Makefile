@@ -273,6 +273,7 @@ docker-spring-shell:
 docker-upgrade: docker-upgrade-log-owner docker-data-permissions
 	git pull --ff-only
 	docker-data/blue-green-upgrade.sh
+	docker system prune -f
 	docker compose -f compose.yaml logs -f
 
 # Pull latest code, rebuild from scratch, restart, and follow logs. Use only when cache corruption is suspected.

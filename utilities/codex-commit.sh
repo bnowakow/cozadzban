@@ -253,6 +253,11 @@ has_unmerged_paths() {
 	[ -n "$(git diff --name-only --diff-filter=U)" ]
 }
 
+rebase_in_progress() {
+	[ -d "$(git rev-parse --git-path rebase-merge)" ] ||
+		[ -d "$(git rev-parse --git-path rebase-apply)" ]
+}
+
 view_last_commit_diff() {
 	local diff_base=${1:-HEAD~1}
 
@@ -277,7 +282,7 @@ resolve_pull_conflict_with_codex() {
 		-C "$repo_root" \
 		--sandbox workspace-write \
 		--output-last-message "$conflict_output" \
-		'Git is currently stopped on a pull/rebase conflict. Inspect the conflicted files, resolve the conflict markers in the working tree, preserve the intended behavior from both sides where possible, and do not commit, push, reset, abort, or continue the rebase. After editing, report whether all conflict markers and unmerged paths are resolved.'; then
+		'Git is currently stopped on a pull conflict, either during a rebase or while applying an autostash after the rebase. Inspect the conflicted files, resolve the conflict markers in the working tree, preserve the intended behavior from both sides where possible, and do not commit, push, reset, abort, or continue the rebase. After editing, report whether all conflict markers and unmerged paths are resolved.'; then
 		echo "Codex failed while attempting to resolve the pull conflict."
 		cat "$conflict_output" >&2
 		return 1
@@ -296,6 +301,11 @@ resolve_pull_conflict_with_codex() {
 	else
 		echo "Codex edits still contain conflict markers or whitespace errors."
 		return 1
+	fi
+
+	if ! rebase_in_progress; then
+		echo "Codex resolved the git conflict."
+		return 0
 	fi
 
 	if GIT_EDITOR=true git rebase --continue; then
