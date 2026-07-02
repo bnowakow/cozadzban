@@ -192,7 +192,7 @@ class FacebookArticleProposalView(
             element.style.set("display", "grid")
             element.style.set(
                 "grid-template-columns",
-                "minmax(6rem, 7rem) minmax(9rem, 10rem) minmax(5rem, 7rem) minmax(4rem, 5rem) minmax(18rem, 1.4fr) minmax(14rem, 1fr) minmax(7rem, 8rem) minmax(7rem, 8rem) minmax(7rem, 8rem)",
+                "minmax(6rem, 7rem) minmax(9rem, 10rem) minmax(5rem, 7rem) minmax(4rem, 5rem) minmax(16rem, 1.2fr) minmax(16rem, 1.2fr) minmax(7rem, 8rem) minmax(7rem, 8rem) minmax(7rem, 8rem)",
             )
             element.style.set("min-width", "83rem")
             element.style.set("width", "100%")
