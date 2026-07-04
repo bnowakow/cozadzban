@@ -528,7 +528,8 @@ class FacebookArticleProposalRepository(
                 )
                 RETURNING id, candidate_id, import_run_id, import_type, article_url, canonical_article_url,
                           facebook_post_url, guessed_language, corrected_language, status, article_id,
-                          decided_by_user_id, decided_at, submitted_at, last_seen_at, logs_compressed
+                          decided_by_user_id, decided_at, accepted_by, accepted_at, accepted_reason,
+                          submitted_at, last_seen_at, logs_compressed
             """.trimIndent(),
             MapSqlParameterSource()
                 .addValue("candidateId", candidateId)
@@ -545,6 +546,8 @@ class FacebookArticleProposalRepository(
     fun updateSeen(
         id: Long,
         importRunId: String,
+        articleUrl: String,
+        guessedLanguage: String,
         facebookPostUrl: String?,
         logsCompressed: ByteArray?,
         importType: FacebookImportType = FacebookImportType.SELENIUM,
@@ -555,7 +558,9 @@ class FacebookArticleProposalRepository(
                    SET last_seen_at = now(),
                        import_run_id = :importRunId,
                        import_type = :importType,
-                       facebook_post_url = COALESCE(facebook_post_url, :facebookPostUrl),
+                       article_url = :articleUrl,
+                       guessed_language = :guessedLanguage,
+                       facebook_post_url = COALESCE(:facebookPostUrl, facebook_post_url),
                        logs_compressed = COALESCE(:logsCompressed, logs_compressed)
                  WHERE id = :id
             """.trimIndent(),
@@ -563,6 +568,8 @@ class FacebookArticleProposalRepository(
                 .addValue("id", id)
                 .addValue("importRunId", importRunId)
                 .addValue("importType", importType.name)
+                .addValue("articleUrl", articleUrl)
+                .addValue("guessedLanguage", guessedLanguage)
                 .addValue("facebookPostUrl", facebookPostUrl)
                 .addValue("logsCompressed", logsCompressed),
         )
@@ -599,6 +606,8 @@ class FacebookArticleProposalRepository(
         decidedByUserId: Long,
         correctedLanguage: String,
         logsCompressed: ByteArray?,
+        acceptedBy: String,
+        acceptedReason: String,
     ) {
         markDecision(
             id = id,
@@ -607,6 +616,8 @@ class FacebookArticleProposalRepository(
             decidedByUserId = decidedByUserId,
             correctedLanguage = correctedLanguage,
             logsCompressed = logsCompressed,
+            acceptedBy = acceptedBy,
+            acceptedReason = acceptedReason,
         )
     }
 
@@ -618,6 +629,8 @@ class FacebookArticleProposalRepository(
             decidedByUserId = decidedByUserId,
             correctedLanguage = correctedLanguage,
             logsCompressed = logsCompressed,
+            acceptedBy = null,
+            acceptedReason = null,
         )
     }
 
@@ -629,6 +642,8 @@ class FacebookArticleProposalRepository(
             decidedByUserId = decidedByUserId,
             correctedLanguage = correctedLanguage,
             logsCompressed = logsCompressed,
+            acceptedBy = null,
+            acceptedReason = null,
         )
     }
 
@@ -640,6 +655,8 @@ class FacebookArticleProposalRepository(
             decidedByUserId = decidedByUserId,
             correctedLanguage = correctedLanguage,
             logsCompressed = logsCompressed,
+            acceptedBy = null,
+            acceptedReason = null,
         )
     }
 
@@ -650,6 +667,8 @@ class FacebookArticleProposalRepository(
         decidedByUserId: Long,
         correctedLanguage: String,
         logsCompressed: ByteArray?,
+        acceptedBy: String?,
+        acceptedReason: String?,
     ) {
         jdbc.update(
             """
@@ -658,6 +677,9 @@ class FacebookArticleProposalRepository(
                        article_id = :articleId,
                        decided_by_user_id = :decidedByUserId,
                        decided_at = now(),
+                       accepted_by = :acceptedBy,
+                       accepted_at = CASE WHEN :acceptedBy IS NULL THEN accepted_at ELSE now() END,
+                       accepted_reason = :acceptedReason,
                        corrected_language = :correctedLanguage,
                        logs_compressed = COALESCE(:logsCompressed, logs_compressed)
                  WHERE id = :id
@@ -667,6 +689,8 @@ class FacebookArticleProposalRepository(
                 .addValue("status", status.name)
                 .addValue("articleId", articleId)
                 .addValue("decidedByUserId", decidedByUserId)
+                .addValue("acceptedBy", acceptedBy)
+                .addValue("acceptedReason", acceptedReason)
                 .addValue("correctedLanguage", correctedLanguage)
                 .addValue("logsCompressed", logsCompressed),
         )
@@ -691,7 +715,8 @@ class FacebookArticleProposalRepository(
         const val SELECT_PROPOSAL_SQL = """
             SELECT id, candidate_id, import_run_id, import_type, article_url, canonical_article_url,
                    facebook_post_url, guessed_language, corrected_language, status, article_id,
-                   decided_by_user_id, decided_at, submitted_at, last_seen_at, logs_compressed
+                   decided_by_user_id, decided_at, accepted_by, accepted_at, accepted_reason,
+                   submitted_at, last_seen_at, logs_compressed
               FROM facebook_article_proposal
         """
 
@@ -710,6 +735,9 @@ class FacebookArticleProposalRepository(
                 articleId = rs.getLongOrNull("article_id"),
                 decidedByUserId = rs.getLongOrNull("decided_by_user_id"),
                 decidedAt = rs.getTimestamp("decided_at")?.toInstant(),
+                acceptedBy = rs.getString("accepted_by"),
+                acceptedAt = rs.getTimestamp("accepted_at")?.toInstant(),
+                acceptedReason = rs.getString("accepted_reason"),
                 submittedAt = rs.getTimestamp("submitted_at")?.toInstant() ?: Instant.EPOCH,
                 lastSeenAt = rs.getTimestamp("last_seen_at")?.toInstant() ?: Instant.EPOCH,
                 logsCompressed = rs.getBytes("logs_compressed"),

@@ -160,6 +160,20 @@ class MigrationSchemaIT {
     }
 
     @Test
+    fun `facebook proposal auto accept audit columns exist after V32 migration`() {
+        val count = jdbc.queryForObject(
+            """
+            SELECT COUNT(*) FROM information_schema.columns
+             WHERE table_name = 'facebook_article_proposal'
+               AND column_name IN ('accepted_by', 'accepted_at', 'accepted_reason')
+            """,
+            Int::class.java,
+        )
+
+        assertEquals(3, count, "facebook_article_proposal auto-accept audit columns should exist")
+    }
+
+    @Test
     fun `spring batch metadata tables and sequences exist after V19 migration`() {
         val tableCount = jdbc.queryForObject(
             """

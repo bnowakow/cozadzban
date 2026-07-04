@@ -294,12 +294,16 @@ Phases 4 and 5 are independent and can be developed in parallel.
 60a. **Facebook proposal inbox** — add `facebook_import_run` and
     `facebook_article_proposal` tables plus machine-only proposal submission,
     proposal existence precheck, and run completion endpoints. Proposal logs are
-    stored compressed; canonical article URL is unique across proposals.
+    stored compressed; canonical article URL is unique across proposals. Apify
+    submissions are handled synchronously: a brand-new Apify proposal is accepted
+    immediately, and an Apify match on an existing pending Selenium proposal reuses
+    that Selenium record, refreshes it with the Apify metadata, and auto-accepts it.
 60b. **Article proposal review view** — add `/article-proposals` for all ACTIVE
     logged-in users. The grid defaults to pending proposals, filters by status,
     opens article/Facebook links in new tabs, and allows language correction before
     Accept/Reject. Accept creates a normal Article owned by the configured import bot;
-    failures mark the proposal `FAILED` for retry.
+    failures mark the proposal `FAILED` for retry. Auto-accept audit fields store
+    `accepted_by`, `accepted_at`, and `accepted_reason`.
 61. **Lifecycle cleanup** — remove startup auto-run and stop closing the Selenium browser
     after every import; keep the window alive until application shutdown.
 61a. **Pushover notifications** — store encrypted self-service notification preferences,

@@ -128,6 +128,8 @@ class FacebookArticleProposalServiceTest {
         verify(proposalRepository).updateSeen(
             eq(existing.id),
             eq("run-2"),
+            eq("https://example.com/story"),
+            eq("en"),
             eq("https://www.facebook.com/source/posts/2"),
             logsCaptor.capture(),
             eq(FacebookImportType.SELENIUM),
@@ -406,7 +408,152 @@ class FacebookArticleProposalServiceTest {
         verify(articleService).create(inputCaptor.capture(), eq(7L))
         assertEquals(pending.canonicalArticleUrl, inputCaptor.firstValue.url)
         assertEquals("pl", inputCaptor.firstValue.language)
-        verify(proposalRepository).markAccepted(eq(1L), eq(99L), eq(3L), eq("pl"), any())
+        verify(proposalRepository).markAccepted(eq(1L), eq(99L), eq(3L), eq("pl"), any(), eq("USER:3"), eq("manual_review"))
+    }
+
+    @Test
+    fun `apify submit batch auto accepts a newly inserted proposal`() {
+        whenever(articleService.existsByUrl("https://example.com/apify-story")).thenReturn(false, false)
+        whenever(proposalRepository.findByCanonicalArticleUrl("https://example.com/apify-story")).thenReturn(null)
+        whenever(proposalRepository.insert(any(), any(), any(), any(), any(), any(), any(), any())).thenReturn(
+            proposal(status = null, importType = FacebookImportType.APIFY, importRunId = "run-apify"),
+        )
+        whenever(appUserRepository.findByEmail("facebook-import-bot@cozadzban.pl")).thenReturn(
+            AppUser(7L, "facebook-import-bot@cozadzban.pl", Role.USER),
+        )
+        whenever(articleService.create(any(), eq(7L))).thenReturn(
+            Article(
+                id = 101L,
+                url = "https://example.com/story",
+                language = "pl",
+                createdByUserId = 7L,
+            ),
+        )
+
+        val response = service.submitBatch(
+            FacebookProposalBatchRequest(
+                importRunId = "run-apify",
+                importType = FacebookImportType.APIFY,
+                passIndex = 1,
+                passCount = 1,
+                proposals = listOf(
+                    FacebookProposalSubmission(
+                        candidateId = "candidate-apify",
+                        articleUrl = "https://example.com/apify-story",
+                        facebookPostUrl = "https://www.facebook.com/source/posts/apify",
+                        language = "PL",
+                        logs = "apify logs",
+                    ),
+                ),
+            ),
+        )
+
+        assertEquals(1, response.submitted)
+        assertEquals(0, response.skippedExisting)
+        verify(proposalRepository).markAccepted(
+            eq(1L),
+            eq(101L),
+            eq(7L),
+            eq("pl"),
+            any(),
+            eq("APIFY_AUTO_ACCEPT"),
+            eq("new_apify_proposal"),
+        )
+    }
+
+    @Test
+    fun `apify submit batch auto accepts matching pending selenium proposal`() {
+        val existing = proposal(status = null, importType = FacebookImportType.SELENIUM)
+        whenever(articleService.existsByUrl("https://example.com/story")).thenReturn(false, false)
+        whenever(proposalRepository.findByCanonicalArticleUrl("https://example.com/story")).thenReturn(existing)
+        whenever(appUserRepository.findByEmail("facebook-import-bot@cozadzban.pl")).thenReturn(
+            AppUser(7L, "facebook-import-bot@cozadzban.pl", Role.USER),
+        )
+        whenever(articleService.create(any(), eq(7L))).thenReturn(
+            Article(
+                id = 102L,
+                url = "https://example.com/story",
+                language = "en",
+                createdByUserId = 7L,
+            ),
+        )
+
+        val response = service.submitBatch(
+            FacebookProposalBatchRequest(
+                importRunId = "run-apify-match",
+                importType = FacebookImportType.APIFY,
+                passIndex = 1,
+                passCount = 1,
+                proposals = listOf(
+                    FacebookProposalSubmission(
+                        candidateId = "candidate-match",
+                        articleUrl = "https://example.com/story",
+                        facebookPostUrl = "https://www.facebook.com/source/posts/apify-match",
+                        language = "EN",
+                        logs = "apify match logs",
+                    ),
+                ),
+            ),
+        )
+
+        assertEquals(0, response.submitted)
+        assertEquals(1, response.skippedExisting)
+        verify(proposalRepository).updateSeen(
+            eq(existing.id),
+            eq("run-apify-match"),
+            eq("https://example.com/story"),
+            eq("en"),
+            eq("https://www.facebook.com/source/posts/apify-match"),
+            any(),
+            eq(FacebookImportType.APIFY),
+        )
+        verify(proposalRepository).markAccepted(
+            eq(1L),
+            eq(102L),
+            eq(7L),
+            eq("en"),
+            any(),
+            eq("APIFY_AUTO_ACCEPT"),
+            eq("matched_pending_selenium_proposal"),
+        )
+    }
+
+    @Test
+    fun `apify submit batch does not auto accept previously rejected proposal`() {
+        val existing = proposal(status = FacebookArticleProposalStatus.REJECTED, importType = FacebookImportType.SELENIUM)
+        whenever(articleService.existsByUrl("https://example.com/story")).thenReturn(false)
+        whenever(proposalRepository.findByCanonicalArticleUrl("https://example.com/story")).thenReturn(existing)
+
+        val response = service.submitBatch(
+            FacebookProposalBatchRequest(
+                importRunId = "run-apify-rejected",
+                importType = FacebookImportType.APIFY,
+                passIndex = 1,
+                passCount = 1,
+                proposals = listOf(
+                    FacebookProposalSubmission(
+                        candidateId = "candidate-rejected",
+                        articleUrl = "https://example.com/story",
+                        facebookPostUrl = "https://www.facebook.com/source/posts/apify-rejected",
+                        language = "EN",
+                        logs = "apify rejected logs",
+                    ),
+                ),
+            ),
+        )
+
+        assertEquals(0, response.submitted)
+        assertEquals(1, response.skippedExisting)
+        verify(proposalRepository).updateSeen(
+            eq(existing.id),
+            eq("run-apify-rejected"),
+            eq("https://example.com/story"),
+            eq("en"),
+            eq("https://www.facebook.com/source/posts/apify-rejected"),
+            any(),
+            eq(FacebookImportType.APIFY),
+        )
+        verify(proposalRepository, never()).markAccepted(any(), any(), any(), any(), any(), any(), any())
     }
 
     @Test
@@ -462,11 +609,14 @@ class FacebookArticleProposalServiceTest {
     private fun proposal(
         status: FacebookArticleProposalStatus?,
         logsCompressed: ByteArray? = null,
+        importType: FacebookImportType = FacebookImportType.SELENIUM,
+        importRunId: String = "run-1",
     ): FacebookArticleProposal =
         FacebookArticleProposal(
             id = 1L,
             candidateId = "candidate-1",
-            importRunId = "run-1",
+            importRunId = importRunId,
+            importType = importType,
             articleUrl = "https://example.com/story",
             canonicalArticleUrl = "https://example.com/story",
             facebookPostUrl = "https://www.facebook.com/source/posts/1",
@@ -476,6 +626,9 @@ class FacebookArticleProposalServiceTest {
             articleId = null,
             decidedByUserId = null,
             decidedAt = null,
+            acceptedBy = null,
+            acceptedAt = null,
+            acceptedReason = null,
             submittedAt = Instant.parse("2026-05-24T10:00:00Z"),
             lastSeenAt = Instant.parse("2026-05-24T10:00:00Z"),
             logsCompressed = logsCompressed,

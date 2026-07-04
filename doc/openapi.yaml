@@ -33,6 +33,10 @@ info:
        articles directly.
     9. **Article proposal inbox** — ACTIVE logged-in users review Facebook import
        proposals at `/article-proposals`, correct language, and accept/reject.
+       Canonical proposal URLs are unique. Apify submissions are processed
+       synchronously: new Apify proposals are auto-accepted immediately, and
+       matching pending Selenium proposals are refreshed with Apify metadata and
+       auto-accepted in place.
     10. **Machine-to-machine writes** — the Facebook importer submits proposals,
        login-required reports, and run completion events using a dedicated API key
        tied to an allowlisted bot user.

@@ -29,6 +29,11 @@ class FacebookArticleProposalService(
     private val machineProperties: MachineToMachineProperties,
     private val eventPublisher: ApplicationEventPublisher? = null,
 ) {
+    private enum class AutoAcceptReason(val persistedValue: String) {
+        APIFY_NEW_PROPOSAL("new_apify_proposal"),
+        APIFY_MATCHED_PENDING_PROPOSAL("matched_pending_selenium_proposal"),
+    }
+
     @Transactional(readOnly = true)
     fun existsByArticleUrl(rawUrl: String): Boolean {
         val canonicalUrl = ArticleService.canonicalizeUrl(rawUrl)
@@ -59,18 +64,34 @@ class FacebookArticleProposalService(
 
             val existing = proposalRepository.findByCanonicalArticleUrl(canonicalUrl)
             if (existing != null) {
+                val mergedLogs = appendLogs(existing.logsCompressed, proposalLogs)
                 proposalRepository.updateSeen(
                     id = existing.id,
                     importRunId = request.importRunId,
+                    articleUrl = articleUrl,
+                    guessedLanguage = language,
                     importType = request.importType,
                     facebookPostUrl = proposal.facebookPostUrl,
-                    logsCompressed = appendLogs(existing.logsCompressed, proposalLogs),
+                    logsCompressed = mergedLogs,
                 )
+                if (request.importType == FacebookImportType.APIFY && existing.status == null) {
+                    autoAcceptProposal(
+                        existing.copy(
+                            importRunId = request.importRunId,
+                            importType = request.importType,
+                            articleUrl = articleUrl,
+                            facebookPostUrl = proposal.facebookPostUrl?.trim()?.takeIf { it.isNotBlank() },
+                            guessedLanguage = language,
+                            logsCompressed = mergedLogs,
+                        ),
+                        AutoAcceptReason.APIFY_MATCHED_PENDING_PROPOSAL,
+                    )
+                }
                 skippedExisting++
                 return@forEach
             }
 
-            proposalRepository.insert(
+            val inserted = proposalRepository.insert(
                 candidateId = candidateId,
                 importRunId = request.importRunId,
                 importType = request.importType,
@@ -80,6 +101,9 @@ class FacebookArticleProposalService(
                 guessedLanguage = language,
                 logsCompressed = GzipTextCodec.compress(proposalLogs),
             )
+            if (request.importType == FacebookImportType.APIFY) {
+                autoAcceptProposal(inserted, AutoAcceptReason.APIFY_NEW_PROPOSAL)
+            }
             submitted++
         }
 
@@ -291,6 +315,8 @@ class FacebookArticleProposalService(
                     proposal.logsCompressed,
                     "Accepted by userId=$decidedByUserId; articleId=${article.id}; botUserId=${bot.id}; language=$language",
                 ),
+                acceptedBy = "USER:$decidedByUserId",
+                acceptedReason = "manual_review",
             )
             articleService.recordImportSource(
                 articleId = article.id!!,
@@ -367,6 +393,61 @@ class FacebookArticleProposalService(
                 appendLine(it)
             }
         }
+
+    private fun autoAcceptProposal(proposal: FacebookArticleProposal, reason: AutoAcceptReason) {
+        val bot = importBotUser()
+        val language = proposal.effectiveLanguage
+        if (articleService.existsByUrl(proposal.canonicalArticleUrl)) {
+            proposalRepository.markAlreadyExists(
+                id = proposal.id,
+                decidedByUserId = bot.id!!,
+                correctedLanguage = language,
+                logsCompressed = appendLogs(
+                    proposal.logsCompressed,
+                    "Apify auto-accept skipped; alreadyExistsUrl=${proposal.canonicalArticleUrl}; reason=${reason.persistedValue}",
+                ),
+            )
+            return
+        }
+        try {
+            val article = articleService.create(
+                ArticleInput(
+                    url = proposal.canonicalArticleUrl,
+                    language = language,
+                    quote = null,
+                ),
+                bot.id!!,
+            )
+            proposalRepository.markAccepted(
+                id = proposal.id,
+                articleId = article.id!!,
+                decidedByUserId = bot.id,
+                correctedLanguage = language,
+                logsCompressed = appendLogs(
+                    proposal.logsCompressed,
+                    "Apify auto-accepted; articleId=${article.id}; botUserId=${bot.id}; language=$language; reason=${reason.persistedValue}",
+                ),
+                acceptedBy = "APIFY_AUTO_ACCEPT",
+                acceptedReason = reason.persistedValue,
+            )
+            articleService.recordImportSource(
+                articleId = article.id!!,
+                sourceImportType = proposal.importType,
+                sourceImportRunId = proposal.importRunId,
+                sourceFacebookProposalId = proposal.id,
+            )
+        } catch (ex: ArticleUrlConflictException) {
+            proposalRepository.markAlreadyExists(
+                id = proposal.id,
+                decidedByUserId = bot.id!!,
+                correctedLanguage = language,
+                logsCompressed = appendLogs(
+                    proposal.logsCompressed,
+                    "Apify auto-accept skipped; alreadyExistsUrl=${ex.url}; reason=${reason.persistedValue}",
+                ),
+            )
+        }
+    }
 
     private fun appendLogs(existingCompressed: ByteArray?, addition: String): ByteArray? {
         if (addition.isBlank()) return existingCompressed
