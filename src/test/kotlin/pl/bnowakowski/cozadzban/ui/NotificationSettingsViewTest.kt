@@ -45,6 +45,7 @@ class NotificationSettingsViewTest {
 
         val checkboxes = findComponents(view, Checkbox::class.java)
         assertTrue(checkboxes.any { it.label == "Article proposal review notifications" })
+        assertTrue(checkboxes.any { it.label == "Facebook auto-approved article notifications" })
         assertFalse(checkboxes.single { it.label == "Facebook login required notifications" }.isVisible)
     }
 
@@ -100,6 +101,7 @@ class NotificationSettingsViewTest {
             pushoverDevices = pushoverDevices,
             facebookLoginRequiredEnabled = false,
             facebookProposalsSubmittedEnabled = false,
+            facebookProposalsAutoApprovedEnabled = false,
             availablePushoverDevices = availablePushoverDevices,
         )
 

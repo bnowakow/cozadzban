@@ -53,6 +53,7 @@ class NotificationSettingsView(
     private val pushoverUserKey = PasswordField("Pushover user key")
     private val pushoverDevices = MultiSelectComboBox<String>("Pushover devices")
     private val proposalNotifications = Checkbox("Article proposal review notifications")
+    private val autoApprovedNotifications = Checkbox("Facebook auto-approved article notifications")
     private val loginRequiredNotifications = Checkbox("Facebook login required notifications")
     private val status = Span()
 
@@ -74,6 +75,7 @@ class NotificationSettingsView(
         pushoverDevices.setSelectedItemsOnTop(true)
         applyPushoverDeviceOptions(summary.availablePushoverDevices, summary.pushoverDevices)
         proposalNotifications.value = summary.facebookProposalsSubmittedEnabled
+        autoApprovedNotifications.value = summary.facebookProposalsAutoApprovedEnabled
         loginRequiredNotifications.value = summary.facebookLoginRequiredEnabled
         loginRequiredNotifications.isVisible = currentUser.role == Role.ADMIN
         status.text = if (summary.pushoverConfigured) "Pushover configured" else "Pushover not configured"
@@ -102,6 +104,7 @@ class NotificationSettingsView(
             pushoverUserKey,
             pushoverDevices,
             proposalNotifications,
+            autoApprovedNotifications,
             loginRequiredNotifications,
             actions,
         )
@@ -154,6 +157,7 @@ class NotificationSettingsView(
                     pushoverDevices = pushoverDevices.value,
                     facebookLoginRequiredEnabled = loginRequiredNotifications.value,
                     facebookProposalsSubmittedEnabled = proposalNotifications.value,
+                    facebookProposalsAutoApprovedEnabled = autoApprovedNotifications.value,
                 ),
             )
             pushoverUserKey.clear()

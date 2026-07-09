@@ -46,6 +46,7 @@ class FacebookArticleProposalService(
         require(request.importRunId.isNotBlank()) { "importRunId is required" }
 
         var submitted = 0
+        var autoApproved = 0
         var skippedExisting = 0
         request.proposals.forEach { proposal ->
             val candidateId = proposal.candidateId.trim()
@@ -75,7 +76,7 @@ class FacebookArticleProposalService(
                     logsCompressed = mergedLogs,
                 )
                 if (request.importType == FacebookImportType.APIFY && existing.status == null) {
-                    autoAcceptProposal(
+                    if (autoAcceptProposal(
                         existing.copy(
                             importRunId = request.importRunId,
                             importType = request.importType,
@@ -85,7 +86,9 @@ class FacebookArticleProposalService(
                             logsCompressed = mergedLogs,
                         ),
                         AutoAcceptReason.APIFY_MATCHED_PENDING_PROPOSAL,
-                    )
+                    )) {
+                        autoApproved++
+                    }
                 }
                 skippedExisting++
                 return@forEach
@@ -102,7 +105,9 @@ class FacebookArticleProposalService(
                 logsCompressed = GzipTextCodec.compress(proposalLogs),
             )
             if (request.importType == FacebookImportType.APIFY) {
-                autoAcceptProposal(inserted, AutoAcceptReason.APIFY_NEW_PROPOSAL)
+                if (autoAcceptProposal(inserted, AutoAcceptReason.APIFY_NEW_PROPOSAL)) {
+                    autoApproved++
+                }
             }
             submitted++
         }
@@ -135,6 +140,7 @@ class FacebookArticleProposalService(
             importRunId = request.importRunId,
             submitted = submitted,
             skippedExisting = skippedExisting,
+            autoApproved = autoApproved,
         )
     }
 
@@ -229,6 +235,7 @@ class FacebookArticleProposalService(
                 status = request.status,
                 discoveredCount = request.discoveredCount,
                 submittedCount = request.submittedCount,
+                autoApprovedCount = request.autoApprovedCount,
                 skippedExistingCount = request.skippedExistingCount,
                 failedCount = request.failedCount,
             ),
@@ -394,7 +401,7 @@ class FacebookArticleProposalService(
             }
         }
 
-    private fun autoAcceptProposal(proposal: FacebookArticleProposal, reason: AutoAcceptReason) {
+    private fun autoAcceptProposal(proposal: FacebookArticleProposal, reason: AutoAcceptReason): Boolean {
         val bot = importBotUser()
         val language = proposal.effectiveLanguage
         if (articleService.existsByUrl(proposal.canonicalArticleUrl)) {
@@ -407,7 +414,7 @@ class FacebookArticleProposalService(
                     "Apify auto-accept skipped; alreadyExistsUrl=${proposal.canonicalArticleUrl}; reason=${reason.persistedValue}",
                 ),
             )
-            return
+            return false
         }
         try {
             val article = articleService.create(
@@ -436,6 +443,7 @@ class FacebookArticleProposalService(
                 sourceImportRunId = proposal.importRunId,
                 sourceFacebookProposalId = proposal.id,
             )
+            return true
         } catch (ex: ArticleUrlConflictException) {
             proposalRepository.markAlreadyExists(
                 id = proposal.id,
@@ -446,6 +454,7 @@ class FacebookArticleProposalService(
                     "Apify auto-accept skipped; alreadyExistsUrl=${ex.url}; reason=${reason.persistedValue}",
                 ),
             )
+            return false
         }
     }
 

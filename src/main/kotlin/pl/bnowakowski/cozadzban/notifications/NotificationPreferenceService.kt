@@ -40,6 +40,7 @@ class NotificationPreferenceService(
             pushoverDevices = devices,
             facebookLoginRequiredEnabled = input.facebookLoginRequiredEnabled && user.role == Role.ADMIN,
             facebookProposalsSubmittedEnabled = input.facebookProposalsSubmittedEnabled,
+            facebookProposalsAutoApprovedEnabled = input.facebookProposalsAutoApprovedEnabled,
         )
         return saved.toSummary(validation.devices)
     }
@@ -78,6 +79,7 @@ class NotificationPreferenceService(
             pushoverDevices = this?.pushoverDevices.orEmpty(),
             facebookLoginRequiredEnabled = this?.facebookLoginRequiredEnabled == true,
             facebookProposalsSubmittedEnabled = this?.facebookProposalsSubmittedEnabled == true,
+            facebookProposalsAutoApprovedEnabled = this?.facebookProposalsAutoApprovedEnabled == true,
             availablePushoverDevices = availablePushoverDevices,
         )
 

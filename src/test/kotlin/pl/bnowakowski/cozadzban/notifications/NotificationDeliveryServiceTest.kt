@@ -149,6 +149,7 @@ class NotificationDeliveryServiceTest {
                 status = FacebookImportRunStatus.FINISHED,
                 discoveredCount = 2,
                 submittedCount = 2,
+                autoApprovedCount = 0,
                 skippedExistingCount = 0,
                 failedCount = 0,
             ),
@@ -161,6 +162,31 @@ class NotificationDeliveryServiceTest {
     }
 
     @Test
+    fun `completed run with auto approved posts sends auto approved summary`() {
+        whenever(repository.findPushoverRecipientsForAutoApprovedProposals()).thenReturn(
+            listOf(recipient(role = Role.USER)),
+        )
+        whenever(encryptor.decrypt("encrypted")).thenReturn("user-key")
+
+        service.onFacebookImportRunCompleted(
+            FacebookImportRunCompletedEvent(
+                importRunId = "run-1",
+                status = FacebookImportRunStatus.FINISHED,
+                discoveredCount = 2,
+                submittedCount = 2,
+                autoApprovedCount = 2,
+                skippedExistingCount = 0,
+                failedCount = 0,
+            ),
+        )
+
+        val captor = argumentCaptor<PushoverMessage>()
+        verify(pushoverClient).send(captor.capture())
+        assertEquals("Facebook articles auto-approved", captor.firstValue.title)
+        assertEquals("2 Facebook articles were auto-approved.", captor.firstValue.message)
+    }
+
+    @Test
     fun `completed run without new proposals sends nothing`() {
         service.onFacebookImportRunCompleted(
             FacebookImportRunCompletedEvent(
@@ -168,12 +194,14 @@ class NotificationDeliveryServiceTest {
                 status = FacebookImportRunStatus.FINISHED,
                 discoveredCount = 2,
                 submittedCount = 0,
+                autoApprovedCount = 0,
                 skippedExistingCount = 2,
                 failedCount = 0,
             ),
         )
 
         verify(repository, never()).findPushoverRecipientsForProposalSummary()
+        verify(repository, never()).findPushoverRecipientsForAutoApprovedProposals()
         verify(pushoverClient, never()).send(org.mockito.kotlin.any())
     }
 

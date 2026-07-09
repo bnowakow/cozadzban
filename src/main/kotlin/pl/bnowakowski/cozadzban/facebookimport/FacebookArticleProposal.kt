@@ -108,6 +108,7 @@ data class FacebookProposalBatchResponse(
     val importRunId: String,
     val submitted: Int,
     val skippedExisting: Int,
+    val autoApproved: Int = 0,
 )
 
 data class FacebookProposalExistsResponse(
@@ -120,6 +121,7 @@ data class FacebookImportRunCompletionRequest(
     val trigger: FacebookImportTrigger = FacebookImportTrigger.MANUAL,
     val discoveredCount: Int = 0,
     val submittedCount: Int = 0,
+    val autoApprovedCount: Int = 0,
     val skippedExistingCount: Int = 0,
     val failedCount: Int = 0,
     val statusDetail: String? = null,

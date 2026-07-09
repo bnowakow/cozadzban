@@ -52,4 +52,23 @@ class NotificationPreferenceRepositoryTest {
         assertTrue(sql.firstValue.contains("np.facebook_proposals_submitted_enabled = true"))
         assertTrue(sql.firstValue.contains("au.status = 'ACTIVE'"))
     }
+
+    @Test
+    fun `auto approved recipient query is scoped to active users`() {
+        val jdbc: NamedParameterJdbcTemplate = mock()
+        whenever(jdbc.query(any<String>(), any<Map<String, Any>>(), any<RowMapper<NotificationRecipient>>()))
+            .thenReturn(emptyList())
+        val repository = NotificationPreferenceRepository(jdbc)
+
+        repository.findPushoverRecipientsForAutoApprovedProposals()
+
+        val sql = argumentCaptor<String>()
+        org.mockito.kotlin.verify(jdbc).query(
+            sql.capture(),
+            any<Map<String, Any>>(),
+            any<RowMapper<NotificationRecipient>>(),
+        )
+        assertTrue(sql.firstValue.contains("np.facebook_proposals_auto_approved_enabled = true"))
+        assertTrue(sql.firstValue.contains("au.status = 'ACTIVE'"))
+    }
 }

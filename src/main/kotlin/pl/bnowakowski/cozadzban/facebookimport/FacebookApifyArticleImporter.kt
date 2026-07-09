@@ -143,6 +143,7 @@ class FacebookApifyArticleImporter(
                 ),
             )
             summary.submitted += response.submitted
+            summary.autoApproved += response.autoApproved
             summary.skippedExisting += response.skippedExisting
         }
         logger.info(
@@ -285,6 +286,7 @@ class FacebookApifyArticleImporter(
                     trigger = trigger,
                     discoveredCount = summary.discovered,
                     submittedCount = summary.submitted,
+                    autoApprovedCount = summary.autoApproved,
                     skippedExistingCount = summary.skippedExisting,
                     failedCount = summary.failed,
                     statusDetail = detail,
@@ -381,6 +383,7 @@ class FacebookApifyArticleImporter(
     private data class ApifyImportSummary(
         var discovered: Int = 0,
         var submitted: Int = 0,
+        var autoApproved: Int = 0,
         var skippedExisting: Int = 0,
         var failed: Int = 0,
         private val logs: MutableList<String> = mutableListOf(),

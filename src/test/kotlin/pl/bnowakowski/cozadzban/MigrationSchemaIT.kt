@@ -325,6 +325,20 @@ class MigrationSchemaIT {
     }
 
     @Test
+    fun `notification preferences store auto approved toggle after V33 migration`() {
+        val count = jdbc.queryForObject(
+            """
+            SELECT COUNT(*) FROM information_schema.columns
+             WHERE table_name = 'notification_preference'
+               AND column_name = 'facebook_proposals_auto_approved_enabled'
+            """,
+            Int::class.java,
+        )
+
+        assertEquals(1, count, "notification_preference should store auto-approved notification preference")
+    }
+
+    @Test
     fun `facebook import progress columns exist after migrations`() {
         val progressColumnCount = jdbc.queryForObject(
             """

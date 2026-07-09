@@ -50,17 +50,35 @@ class NotificationDeliveryService(
 
     @EventListener
     fun onFacebookImportRunCompleted(event: FacebookImportRunCompletedEvent) {
-        if (!properties.pushoverConfigured || event.submittedCount <= 0) return
-        val recipients = repository.findPushoverRecipientsForProposalSummary()
-        val proposalWord = if (event.submittedCount == 1) "proposal is" else "proposals are"
-        recipients.forEach { recipient ->
-            deliver(
-                recipient,
-                title = "New article proposals",
-                message = "${event.submittedCount} new Facebook article $proposalWord ready for review.",
-                url = "https://cozadzban.pl/article-proposals",
-                urlTitle = "Review proposals",
-            )
+        if (!properties.pushoverConfigured) return
+
+        val reviewCount = (event.submittedCount - event.autoApprovedCount).coerceAtLeast(0)
+        if (reviewCount > 0) {
+            val recipients = repository.findPushoverRecipientsForProposalSummary()
+            val proposalWord = if (reviewCount == 1) "proposal is" else "proposals are"
+            recipients.forEach { recipient ->
+                deliver(
+                    recipient,
+                    title = "New article proposals",
+                    message = "$reviewCount new Facebook article $proposalWord ready for review.",
+                    url = "https://cozadzban.pl/article-proposals",
+                    urlTitle = "Review proposals",
+                )
+            }
+        }
+
+        if (event.autoApprovedCount > 0) {
+            val recipients = repository.findPushoverRecipientsForAutoApprovedProposals()
+            val articleWord = if (event.autoApprovedCount == 1) "article was" else "articles were"
+            recipients.forEach { recipient ->
+                deliver(
+                    recipient,
+                    title = "Facebook articles auto-approved",
+                    message = "${event.autoApprovedCount} Facebook $articleWord auto-approved.",
+                    url = "https://cozadzban.pl/article-proposals",
+                    urlTitle = "Open article proposals",
+                )
+            }
         }
     }
 

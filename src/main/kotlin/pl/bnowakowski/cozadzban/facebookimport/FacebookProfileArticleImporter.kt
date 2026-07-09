@@ -447,6 +447,7 @@ class FacebookProfileArticleImporter(
                         ),
                     ) ?: FacebookProposalBatchResponse(facebookImportId, proposals.size, 0)
                     summary.submitted += response.submitted
+                    summary.autoApproved += response.autoApproved
                     summary.skippedExisting += response.skippedExisting
                 } catch (ex: Exception) {
                     summary.failed += proposals.size
@@ -568,6 +569,7 @@ class FacebookProfileArticleImporter(
                     trigger = trigger,
                     discoveredCount = summary.discovered,
                     submittedCount = summary.submitted,
+                    autoApprovedCount = summary.autoApproved,
                     skippedExistingCount = summary.skippedExisting,
                     failedCount = summary.failed,
                     statusDetail = detail,
@@ -2458,6 +2460,7 @@ class FacebookProfileArticleImporter(
     private data class ProposalImportSummary(
         var discovered: Int = 0,
         var submitted: Int = 0,
+        var autoApproved: Int = 0,
         var skippedExisting: Int = 0,
         var failed: Int = 0,
         private val workerLogs: MutableList<String> = mutableListOf(),

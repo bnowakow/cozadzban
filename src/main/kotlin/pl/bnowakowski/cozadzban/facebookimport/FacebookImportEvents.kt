@@ -82,6 +82,7 @@ data class FacebookImportRunCompletedEvent(
     val status: FacebookImportRunStatus,
     val discoveredCount: Int,
     val submittedCount: Int,
+    val autoApprovedCount: Int,
     val skippedExistingCount: Int,
     val failedCount: Int,
     val occurredAt: Instant = Instant.now(),

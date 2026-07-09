@@ -18,6 +18,7 @@ data class NotificationPreference(
     val pushoverDevices: List<String>,
     val facebookLoginRequiredEnabled: Boolean,
     val facebookProposalsSubmittedEnabled: Boolean,
+    val facebookProposalsAutoApprovedEnabled: Boolean,
     val createdAt: Instant?,
     val updatedAt: Instant?,
 )
@@ -35,6 +36,7 @@ data class NotificationPreferenceInput(
     val pushoverDevices: Collection<String>,
     val facebookLoginRequiredEnabled: Boolean,
     val facebookProposalsSubmittedEnabled: Boolean,
+    val facebookProposalsAutoApprovedEnabled: Boolean,
 )
 
 data class NotificationPreferenceSummary(
@@ -43,6 +45,7 @@ data class NotificationPreferenceSummary(
     val pushoverDevices: List<String>,
     val facebookLoginRequiredEnabled: Boolean,
     val facebookProposalsSubmittedEnabled: Boolean,
+    val facebookProposalsAutoApprovedEnabled: Boolean,
     val availablePushoverDevices: List<String> = emptyList(),
 )
 

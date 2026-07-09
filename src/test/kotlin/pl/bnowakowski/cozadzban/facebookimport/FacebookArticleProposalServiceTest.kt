@@ -250,6 +250,7 @@ class FacebookArticleProposalServiceTest {
                 status = FacebookImportRunStatus.TERMINATED,
                 discoveredCount = 7,
                 submittedCount = 3,
+                autoApprovedCount = 2,
                 skippedExistingCount = 2,
                 failedCount = 1,
                 logs = "terminated by admin",
@@ -263,6 +264,7 @@ class FacebookArticleProposalServiceTest {
         assertEquals(FacebookImportRunStatus.TERMINATED, event.status)
         assertEquals(7, event.discoveredCount)
         assertEquals(3, event.submittedCount)
+        assertEquals(2, event.autoApprovedCount)
         assertEquals(2, event.skippedExistingCount)
         assertEquals(1, event.failedCount)
     }
