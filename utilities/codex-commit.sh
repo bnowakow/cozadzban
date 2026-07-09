@@ -16,6 +16,11 @@ ui_fallback_explained=0
 
 codex_command=()
 resolve_codex_command() {
+	if [ -n "${CODEX_BIN:-}" ] && [ -x "${CODEX_BIN}" ]; then
+		codex_command=("${CODEX_BIN}")
+		return 0
+	fi
+
 	if command -v codex >/dev/null 2>&1; then
 		codex_command=(codex)
 		return 0
@@ -24,7 +29,9 @@ resolve_codex_command() {
 	local candidate
 	for candidate in \
 		"/Applications/Codex.app/Contents/Resources/codex" \
-		"$HOME/Applications/Codex.app/Contents/Resources/codex"; do
+		"$HOME/Applications/Codex.app/Contents/Resources/codex" \
+		"/Applications/ChatGPT.app/Contents/Resources/codex" \
+		"$HOME/Applications/ChatGPT.app/Contents/Resources/codex"; do
 		if [ -x "$candidate" ]; then
 			codex_command=("$candidate")
 			return 0
@@ -519,7 +526,7 @@ if git diff --cached --quiet; then
 fi
 
 if ! resolve_codex_command; then
-	echo "codex command not found. Install the Codex CLI or add Codex.app's bundled CLI to PATH." >&2
+	echo "codex command not found. Install the Codex CLI, set CODEX_BIN, or add Codex.app/ChatGPT.app's bundled CLI to PATH." >&2
 	exit 1
 fi
 

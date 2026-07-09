@@ -121,7 +121,7 @@ source Facebook post URL, and compressed diagnostics. Logged-in users review the
 ### 2. Start infrastructure
 
 ```sh
-make dev-up
+make docker-up
 ```
 
 Starts the Docker Compose stack from `compose.yaml`. PostgreSQL is exposed on
@@ -181,7 +181,7 @@ make help          # List all targets
 make build         # Build without tests
 make test          # Run all tests
 make docker-logs   # Follow Docker logs
-make dev-down      # Stop and remove containers
+make docker-down   # Stop and remove containers
 ```
 
 ### Additional docs
