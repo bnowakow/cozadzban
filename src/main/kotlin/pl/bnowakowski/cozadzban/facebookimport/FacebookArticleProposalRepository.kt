@@ -678,7 +678,7 @@ class FacebookArticleProposalRepository(
                        decided_by_user_id = :decidedByUserId,
                        decided_at = now(),
                        accepted_by = :acceptedBy,
-                       accepted_at = CASE WHEN :acceptedBy IS NULL THEN accepted_at ELSE now() END,
+                       accepted_at = CASE WHEN :markAcceptedAt THEN now() ELSE accepted_at END,
                        accepted_reason = :acceptedReason,
                        corrected_language = :correctedLanguage,
                        logs_compressed = COALESCE(:logsCompressed, logs_compressed)
@@ -690,6 +690,7 @@ class FacebookArticleProposalRepository(
                 .addValue("articleId", articleId)
                 .addValue("decidedByUserId", decidedByUserId)
                 .addValue("acceptedBy", acceptedBy)
+                .addValue("markAcceptedAt", acceptedBy != null)
                 .addValue("acceptedReason", acceptedReason)
                 .addValue("correctedLanguage", correctedLanguage)
                 .addValue("logsCompressed", logsCompressed),

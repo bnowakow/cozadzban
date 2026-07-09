@@ -88,7 +88,7 @@ docker-data-permissions:
 	@mkdir -p ./docker-data
 	@mkdir -p ./logs
 	@chmod -R a+rwX ./logs
-	@docker run --rm -v "$(PWD)/docker-data:/work" alpine:3.20 \
+	@docker run --rm -v "$(CURDIR)/docker-data:/work" alpine:3.20 \
 		sh -c "mkdir -p /work/postgres /work/data/favicons /work/backup/postgres /work/nginx && if [ ! -f /work/nginx/upstream.conf ]; then printf 'server springboot:8080 max_fails=3 fail_timeout=10s;\n' > /work/nginx/upstream.conf; fi && chown -R $(LOCAL_UID):$(LOCAL_GID) /work/backup /work/nginx && chmod 755 /work /work/postgres /work/nginx && chmod -R a+rwX /work/data && chmod -R u+rwX,go-rwx /work/backup && chmod 644 /work/nginx/upstream.conf"
 
 docker-upgrade-log-owner:
@@ -110,7 +110,7 @@ docker-pg-nuke:
 		echo "✓ Removed postgres data directory"; \
 	else \
 		echo "! Host cleanup failed (likely root-owned files), using containerized cleanup"; \
-		docker run --rm -v "$(PWD)/docker-data:/work" alpine:3.20 \
+		docker run --rm -v "$(CURDIR)/docker-data:/work" alpine:3.20 \
 			sh -c "rm -rf /work/postgres && mkdir -p /work/postgres && chown -R $(LOCAL_UID):$(LOCAL_GID) /work/postgres"; \
 	fi
 	@mkdir -p ./docker-data/postgres
@@ -131,7 +131,7 @@ docker-pg-backup: docker-data-permissions
 
 # Install or replace the current user's daily PostgreSQL backup cron job.
 install-pg-backup-cron: docker-data-permissions
-	@job='$(CRON_SCHEDULE) cd $(PWD) && $(CRON_MAKE) docker-pg-backup >> $(PWD)/docker-data/backup/postgres/cron.log 2>&1 # $(PG_BACKUP_CRON_MARKER)'; \
+	@job='$(CRON_SCHEDULE) cd $(CURDIR) && $(CRON_MAKE) docker-pg-backup >> $(CURDIR)/docker-data/backup/postgres/cron.log 2>&1 # $(PG_BACKUP_CRON_MARKER)'; \
 	current=$$(crontab -l 2>/dev/null || true); \
 	for marker in $(PG_BACKUP_CRON_MARKERS); do \
 		current=$$(printf '%s\n' "$$current" | grep -Fv "$$marker" || true); \

@@ -20,6 +20,7 @@ import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.security.oauth2.jwt.JwtDecoder
 import org.springframework.test.context.TestPropertySource
 import org.springframework.test.context.bean.override.mockito.MockitoBean
+import pl.bnowakowski.cozadzban.facebookimport.FacebookArticleProposalRepository
 import pl.bnowakowski.cozadzban.facebookimport.FACEBOOK_IMPORT_JOB_NAME
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportTrigger
 
@@ -47,6 +48,7 @@ import pl.bnowakowski.cozadzban.facebookimport.FacebookImportTrigger
 class MigrationSchemaIT {
 
     @Autowired private lateinit var jdbc: JdbcTemplate
+    @Autowired private lateinit var proposalRepository: FacebookArticleProposalRepository
     @Autowired private lateinit var jobRepository: JobRepository
     @Autowired @Qualifier(FACEBOOK_IMPORT_JOB_NAME) private lateinit var facebookImportJob: Job
 
@@ -171,6 +173,53 @@ class MigrationSchemaIT {
         )
 
         assertEquals(3, count, "facebook_article_proposal auto-accept audit columns should exist")
+    }
+
+    @Test
+    fun `rejecting proposal works when accepted audit fields stay null`() {
+        val runId = "schema-reject-${System.nanoTime()}"
+        val url = "https://proposal-schema.test/reject/${System.nanoTime()}"
+
+        jdbc.update("INSERT INTO facebook_import_run(import_run_id) VALUES (?)", runId)
+        jdbc.update(
+            """
+            INSERT INTO facebook_article_proposal(
+                candidate_id, import_run_id, article_url, canonical_article_url, guessed_language
+            )
+            VALUES (?, ?, ?, ?, 'pl')
+            """,
+            "candidate-reject",
+            runId,
+            url,
+            url,
+        )
+        val proposalId = jdbc.queryForObject(
+            "SELECT id FROM facebook_article_proposal WHERE canonical_article_url = ?",
+            Long::class.java,
+            url,
+        )!!
+
+        proposalRepository.markRejected(
+            proposalId,
+            decidedByUserId = 1L,
+            correctedLanguage = "pl",
+            logsCompressed = null,
+        )
+
+        val row = jdbc.queryForMap(
+            """
+            SELECT status, decided_by_user_id, decided_at, accepted_by, accepted_at, accepted_reason
+              FROM facebook_article_proposal
+             WHERE id = ?
+            """,
+            proposalId,
+        )
+        assertEquals("REJECTED", row["status"])
+        assertEquals(1L, (row["decided_by_user_id"] as Number).toLong())
+        assertTrue(row["decided_at"] != null, "decided_at should be set on rejection")
+        assertEquals(null, row["accepted_by"])
+        assertEquals(null, row["accepted_at"])
+        assertEquals(null, row["accepted_reason"])
     }
 
     @Test
