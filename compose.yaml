@@ -5,9 +5,11 @@ x-springboot-base: &springboot-base
       APP_BUILD_COMMIT: '${APP_BUILD_COMMIT:-unknown}'
   image: cozadzban:local
   restart: unless-stopped
-  cpus: '1.25'
-  mem_limit: 1536m
-  memswap_limit: 1536m
+  cpus: '0.75'
+  cpu_shares: 256
+  mem_limit: 768m
+  memswap_limit: 768m
+  pids_limit: 128
   depends_on:
     postgres:
       condition: service_healthy
@@ -100,9 +102,11 @@ services:
   postgres:
     image: 'postgres:latest'
     restart: unless-stopped
-    cpus: '0.75'
-    mem_limit: 1024m
-    memswap_limit: 1024m
+    cpus: '0.50'
+    cpu_shares: 128
+    mem_limit: 512m
+    memswap_limit: 512m
+    pids_limit: 128
     environment:
       - 'POSTGRES_DB=${POSTGRES_DB}'
       - 'POSTGRES_PASSWORD=${POSTGRES_PASSWORD}'
@@ -119,9 +123,11 @@ services:
   zipkin:
     image: 'openzipkin/zipkin:latest'
     restart: unless-stopped
-    cpus: '0.25'
-    mem_limit: 384m
-    memswap_limit: 384m
+    cpus: '0.15'
+    cpu_shares: 64
+    mem_limit: 256m
+    memswap_limit: 256m
+    pids_limit: 96
     ports:
       - '9411'
     healthcheck:
