@@ -144,6 +144,7 @@ class FacebookApifyArticleImporter(
             )
             summary.submitted += response.submitted
             summary.autoApproved += response.autoApproved
+            summary.failed += response.failed
             summary.skippedExisting += response.skippedExisting
         }
         logger.info(

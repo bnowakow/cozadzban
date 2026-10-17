@@ -210,7 +210,7 @@ class ArticleListView(
         refreshData()
         refreshArticleProposalReviewPanel()
         refreshFacebookImportHistoryPanel()
-        refreshFacebookImportProgressPanel()
+        refreshFacebookImportProgressPanel(showFailureDialog = false)
         configureFacebookImportProgressPolling()
         feedShell.add(articleProposalReviewPanel, facebookImportHistoryPanel, facebookImportProgressPanel, filterBar, feed)
         feedShell.expand(feed)
@@ -402,7 +402,7 @@ class ArticleListView(
         }
     }
 
-    private fun refreshFacebookImportProgressPanel() {
+    private fun refreshFacebookImportProgressPanel(showFailureDialog: Boolean = true) {
         val progress = if (canViewFacebookImportProgress()) {
             facebookImportJobService.currentProgress()
         } else {
@@ -417,7 +417,11 @@ class ArticleListView(
         facebookImportProgressPanel.isVisible = true
         facebookImportProgressPanel.removeAll()
         facebookImportProgressPanel.add(buildFacebookImportProgressContent(progress))
-        maybeShowFacebookImportFailure(progress)
+        if (showFailureDialog) {
+            maybeShowFacebookImportFailure(progress)
+        } else if (progress.status == FacebookImportRunStatus.FAILED) {
+            shownFacebookImportFailureRunIds.add(progress.importRunId)
+        }
     }
 
     private fun refreshFacebookImportHistoryPanel() {
@@ -744,7 +748,15 @@ class ArticleListView(
         dialog.headerTitle = "Facebook import failed"
         dialog.width = "min(42rem, 92vw)"
 
-        val message = Span(progress.detail?.takeIf { it.isNotBlank() } ?: "The import failed. Check worker logs for details.")
+        val message = Span(
+            progress.detail?.takeIf { it.isNotBlank() }
+                ?: if (progress.failedCount > 0) {
+                    "${progress.failedCount} ${if (progress.failedCount == 1) "proposal failed" else "proposals failed"}. " +
+                        "Review failed article proposals for details."
+                } else {
+                    "The import failed. Check worker logs for details."
+                },
+        )
         message.addClassName("czj-dialog-help-text")
 
         val closeButton = Button("Close") { dialog.close() }

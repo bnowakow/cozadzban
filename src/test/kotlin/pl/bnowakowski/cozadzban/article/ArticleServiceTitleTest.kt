@@ -17,6 +17,7 @@ import org.mockito.kotlin.verify
 import org.springframework.dao.DuplicateKeyException
 import org.springframework.transaction.annotation.Transactional
 import pl.bnowakowski.cozadzban.enrichment.EnrichmentResult
+import pl.bnowakowski.cozadzban.enrichment.EnrichmentException
 import pl.bnowakowski.cozadzban.enrichment.EnrichmentService
 import pl.bnowakowski.cozadzban.user.AppUserRepository
 import java.time.Instant
@@ -25,12 +26,13 @@ import java.util.Optional
 class ArticleServiceTitleTest {
 
     @Test
-    fun `create allows callers to handle article url conflicts without rolling back their transaction`() {
+    fun `create allows callers to handle pre-save failures without rolling back their transaction`() {
         val transactional = ArticleService::class.java
             .getDeclaredMethod("create", ArticleInput::class.java, Long::class.javaPrimitiveType)
             .getAnnotation(Transactional::class.java)
 
         assertTrue(transactional.noRollbackFor.contains(ArticleUrlConflictException::class))
+        assertTrue(transactional.noRollbackFor.contains(EnrichmentException::class))
     }
 
     @Test

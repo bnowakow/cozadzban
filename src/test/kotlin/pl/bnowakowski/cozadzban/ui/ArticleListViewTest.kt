@@ -331,6 +331,61 @@ class ArticleListViewTest {
     }
 
     @Test
+    fun `old import failure stays in panel without reopening dialog on page load`() {
+        val adminEmail = "admin@example.com"
+        authenticateAs(adminEmail)
+        val ui = UI()
+        UI.setCurrent(ui)
+        stubArticles()
+        whenever(appUserRepository.findByEmail(adminEmail)).thenReturn(
+            AppUser(1L, adminEmail, Role.ADMIN, AppUserStatus.ACTIVE),
+        )
+        val oldFailure = FacebookImportProgressSnapshot(
+            importRunId = "old-failed-run",
+            importType = FacebookImportType.APIFY,
+            status = FacebookImportRunStatus.FAILED,
+            startedAt = Instant.parse("2026-10-17T08:25:00Z"),
+            lastUpdatedAt = Instant.parse("2026-10-17T08:25:40Z"),
+            phase = "Failed",
+            detail = null,
+            phaseIndex = 8,
+            phaseCount = 8,
+            passIndex = 1,
+            passCount = 1,
+            matchedPostCount = 6,
+            submittedCount = 6,
+            skippedExistingCount = 0,
+            failedCount = 2,
+        )
+        whenever(facebookImportJobService.currentProgress()).thenReturn(
+            oldFailure,
+            oldFailure.copy(importRunId = "new-failed-run"),
+        )
+
+        val view = ArticleListView(
+            articleRepository,
+            articleContentRepository,
+            articleService,
+            facebookImportJobService,
+            articleProposalService,
+            appUserRepository,
+            buildProperties,
+            languageFlagCache,
+        )
+
+        assertTrue(findComponents(view, Span::class.java).any { it.text == "Facebook import failed" })
+        val shownFailureRunIds = view.javaClass.getDeclaredField("shownFacebookImportFailureRunIds")
+        shownFailureRunIds.isAccessible = true
+        assertEquals(setOf("old-failed-run"), shownFailureRunIds.get(view))
+
+        val refresh = view.javaClass.getDeclaredMethod("refreshFacebookImportProgressPanel", Boolean::class.javaPrimitiveType)
+        refresh.isAccessible = true
+        refresh.invoke(view, true)
+
+        assertEquals(setOf("old-failed-run", "new-failed-run"), shownFailureRunIds.get(view))
+    }
+
+    @Test
     fun `admin users can clear terminated facebook import progress result`() {
         val adminEmail = "admin@example.com"
         authenticateAs(adminEmail)

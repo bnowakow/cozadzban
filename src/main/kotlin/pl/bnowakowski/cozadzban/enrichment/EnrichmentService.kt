@@ -252,6 +252,9 @@ class EnrichmentService(
             fetchBloombergReaderFallback(url, ex.statusCode.value())?.let { readerText ->
                 return parseReaderMarkdownResult(url, readerText)
             }
+            fetchTelegraphReaderFallback(url, ex.statusCode.value())?.let { readerText ->
+                parseTelegraphReaderResult(url, readerText)?.let { return it }
+            }
             fetchTvn24ReaderFallback(url, ex.statusCode.value())?.let { readerText ->
                 return parseReaderMarkdownResult(url, readerText)
             }
@@ -306,6 +309,9 @@ class EnrichmentService(
             fetchBloombergReaderFallback(url)?.let { readerText ->
                 return parseReaderMarkdownResult(url, readerText)
             }
+            fetchTelegraphReaderFallback(url)?.let { readerText ->
+                parseTelegraphReaderResult(url, readerText)?.let { return it }
+            }
             fetchTvn24ReaderFallback(url)?.let { readerText ->
                 return parseReaderMarkdownResult(url, readerText)
             }
@@ -352,6 +358,9 @@ class EnrichmentService(
             }
             fetchBloombergReaderFallback(url)?.let { readerText ->
                 return parseReaderMarkdownResult(url, readerText)
+            }
+            fetchTelegraphReaderFallback(url)?.let { readerText ->
+                parseTelegraphReaderResult(url, readerText)?.let { return it }
             }
             fetchTvn24ReaderFallback(url)?.let { readerText ->
                 return parseReaderMarkdownResult(url, readerText)
@@ -2317,6 +2326,18 @@ class EnrichmentService(
         return fetchReaderFallback(url)
     }
 
+    private fun fetchTelegraphReaderFallback(url: String, statusCode: Int): String? {
+        if (statusCode != 402 && statusCode != 403) return null
+        return fetchTelegraphReaderFallback(url)
+    }
+
+    private fun fetchTelegraphReaderFallback(url: String): String? {
+        if (!isTelegraphUrl(url)) return null
+        val uri = runCatching { URI(url) }.getOrNull() ?: return null
+        val articleUrl = URI(uri.scheme, uri.authority, uri.path, null, null).toString()
+        return fetchReaderFallback(articleUrl)
+    }
+
     private fun fetchBloombergReaderFallbackIfIncomplete(url: String, result: EnrichmentResult): String? {
         if (!isBloombergUrl(url)) return null
         if (result.title != null && result.thumbnail != null && result.publishedAt != null) return null
@@ -3921,6 +3942,37 @@ internal fun isBloombergUrl(url: String): Boolean {
         host.endsWith(".bloom.bg") ||
         host == "bloomberg.com" ||
         host.endsWith(".bloomberg.com")
+}
+
+internal fun isTelegraphUrl(url: String): Boolean {
+    val host = runCatching { URI(url).host?.lowercase() }.getOrNull() ?: return false
+    return host == "telegraph.co.uk" || host.endsWith(".telegraph.co.uk")
+}
+
+internal fun parseTelegraphReaderResult(url: String, text: String): EnrichmentResult? {
+    val source = text.lineSequence().firstOrNull { it.startsWith("URL Source: ") }
+        ?.removePrefix("URL Source: ")?.trim() ?: return null
+    val sourceUri = runCatching { URI(source) }.getOrNull() ?: return null
+    val requestedUri = runCatching { URI(url) }.getOrNull() ?: return null
+    if (!isTelegraphUrl(source) || sourceUri.path != requestedUri.path) return null
+
+    val parsed = parseReaderMarkdownResult(url, text)
+    val title = parsed.title?.takeUnless { it == url || it.isBlank() } ?: return null
+    if (title.equals("Access Issue Help", ignoreCase = true) ||
+        title.equals("The Telegraph", ignoreCase = true) ||
+        title.equals("Just a moment...", ignoreCase = true)
+    ) return null
+    val articleBody = text.substringAfter("\n# $title\n", missingDelimiterValue = "")
+    val summary = articleBody.lineSequence().map { it.trim() }
+        .firstOrNull { it.isNotBlank() && !it.startsWith("[") && !it.startsWith("!") }
+        ?.normalizedText() ?: return null
+    if (summary.startsWith("This feature is available", ignoreCase = true)) return null
+
+    return parsed.copy(
+        lead = summary,
+        plainText = summary,
+        thumbnail = firstReaderMarkdownImage(articleBody),
+    )
 }
 
 internal fun isTvn24Url(url: String): Boolean {

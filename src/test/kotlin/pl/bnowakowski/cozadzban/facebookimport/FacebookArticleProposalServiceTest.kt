@@ -23,6 +23,7 @@ import pl.bnowakowski.cozadzban.article.Article
 import pl.bnowakowski.cozadzban.article.ArticleInput
 import pl.bnowakowski.cozadzban.article.ArticleService
 import pl.bnowakowski.cozadzban.article.ArticleUrlConflictException
+import pl.bnowakowski.cozadzban.enrichment.EnrichmentException
 import pl.bnowakowski.cozadzban.security.MachineToMachineProperties
 import pl.bnowakowski.cozadzban.user.AppUser
 import pl.bnowakowski.cozadzban.user.AppUserRepository
@@ -461,6 +462,44 @@ class FacebookArticleProposalServiceTest {
             eq("APIFY_AUTO_ACCEPT"),
             eq("new_apify_proposal"),
         )
+    }
+
+    @Test
+    fun `apify keeps other proposals when one article cannot be enriched`() {
+        val blockedUrl = "https://www.telegraph.co.uk/story"
+        val goodUrl = "https://example.com/story"
+        whenever(proposalRepository.insert(any(), any(), any(), any(), any(), any(), any(), any()))
+            .thenReturn(
+                proposal(status = null, importType = FacebookImportType.APIFY, importRunId = "run-apify")
+                    .copy(articleUrl = blockedUrl, canonicalArticleUrl = blockedUrl, guessedLanguage = "en"),
+                proposal(status = null, importType = FacebookImportType.APIFY, importRunId = "run-apify")
+                    .copy(id = 2L, articleUrl = goodUrl, canonicalArticleUrl = goodUrl, guessedLanguage = "en"),
+            )
+        whenever(appUserRepository.findByEmail("facebook-import-bot@cozadzban.pl")).thenReturn(
+            AppUser(7L, "facebook-import-bot@cozadzban.pl", Role.USER),
+        )
+        whenever(articleService.create(any(), eq(7L)))
+            .thenThrow(EnrichmentException("target returned HTTP 402", EnrichmentException.Reason.NON_2XX, 402))
+            .thenReturn(Article(id = 102L, url = goodUrl, language = "en", createdByUserId = 7L))
+
+        val response = service.submitBatch(
+            FacebookProposalBatchRequest(
+                importRunId = "run-apify",
+                importType = FacebookImportType.APIFY,
+                passIndex = 1,
+                passCount = 1,
+                proposals = listOf(
+                    FacebookProposalSubmission("candidate-blocked", blockedUrl, "https://www.facebook.com/source/posts/blocked", "en", null),
+                    FacebookProposalSubmission("candidate-good", goodUrl, "https://www.facebook.com/source/posts/good", "en", null),
+                ),
+            ),
+        )
+
+        assertEquals(2, response.submitted)
+        assertEquals(1, response.failed)
+        assertEquals(1, response.autoApproved)
+        verify(proposalRepository).markFailed(eq(1L), eq(7L), eq("en"), any())
+        verify(proposalRepository).markAccepted(eq(2L), eq(102L), eq(7L), eq("en"), any(), eq("APIFY_AUTO_ACCEPT"), eq("new_apify_proposal"))
     }
 
     @Test

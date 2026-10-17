@@ -72,6 +72,13 @@ class ArticleServiceUrlTest {
     }
 
     @Test
+    fun `canonicalizeUrl strips Telegraph campaign tracking variants`() {
+        val articleUrl = "https://www.telegraph.co.uk/world-news/2026/10/16/starlink/"
+        assertEquals(articleUrl, ArticleService.canonicalizeUrl("$articleUrl?WT.mc_id=facebook%2F"))
+        assertEquals(articleUrl, ArticleService.canonicalizeUrl("$articleUrl?WT.mc_id=facebook/"))
+    }
+
+    @Test
     fun `canonicalizeUrl keeps non tracking query parameters for external URLs`() {
         assertEquals(
             "https://youtu.be/Xi-HcxcM3dc?is=5gYGOGAFM0CG2OQ8",

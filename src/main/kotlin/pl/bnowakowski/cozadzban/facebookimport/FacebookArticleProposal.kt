@@ -109,6 +109,7 @@ data class FacebookProposalBatchResponse(
     val submitted: Int,
     val skippedExisting: Int,
     val autoApproved: Int = 0,
+    val failed: Int = 0,
 )
 
 data class FacebookProposalExistsResponse(

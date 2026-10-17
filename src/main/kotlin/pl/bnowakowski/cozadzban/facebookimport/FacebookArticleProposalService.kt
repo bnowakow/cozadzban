@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional
 import pl.bnowakowski.cozadzban.article.ArticleInput
 import pl.bnowakowski.cozadzban.article.ArticleService
 import pl.bnowakowski.cozadzban.article.ArticleUrlConflictException
+import pl.bnowakowski.cozadzban.enrichment.EnrichmentException
 import pl.bnowakowski.cozadzban.security.AllowlistAuthorizationManager
 import pl.bnowakowski.cozadzban.security.MachineToMachineProperties
 import pl.bnowakowski.cozadzban.user.AppUser
@@ -34,6 +35,8 @@ class FacebookArticleProposalService(
         APIFY_MATCHED_PENDING_PROPOSAL("matched_pending_selenium_proposal"),
     }
 
+    private enum class AutoAcceptResult { ACCEPTED, SKIPPED, FAILED }
+
     @Transactional(readOnly = true)
     fun existsByArticleUrl(rawUrl: String): Boolean {
         val canonicalUrl = ArticleService.canonicalizeUrl(rawUrl)
@@ -47,6 +50,7 @@ class FacebookArticleProposalService(
 
         var submitted = 0
         var autoApproved = 0
+        var failed = 0
         var skippedExisting = 0
         request.proposals.forEach { proposal ->
             val candidateId = proposal.candidateId.trim()
@@ -76,7 +80,7 @@ class FacebookArticleProposalService(
                     logsCompressed = mergedLogs,
                 )
                 if (request.importType == FacebookImportType.APIFY && existing.status == null) {
-                    if (autoAcceptProposal(
+                    when (autoAcceptProposal(
                         existing.copy(
                             importRunId = request.importRunId,
                             importType = request.importType,
@@ -87,7 +91,9 @@ class FacebookArticleProposalService(
                         ),
                         AutoAcceptReason.APIFY_MATCHED_PENDING_PROPOSAL,
                     )) {
-                        autoApproved++
+                        AutoAcceptResult.ACCEPTED -> autoApproved++
+                        AutoAcceptResult.FAILED -> failed++
+                        AutoAcceptResult.SKIPPED -> Unit
                     }
                 }
                 skippedExisting++
@@ -105,8 +111,10 @@ class FacebookArticleProposalService(
                 logsCompressed = GzipTextCodec.compress(proposalLogs),
             )
             if (request.importType == FacebookImportType.APIFY) {
-                if (autoAcceptProposal(inserted, AutoAcceptReason.APIFY_NEW_PROPOSAL)) {
-                    autoApproved++
+                when (autoAcceptProposal(inserted, AutoAcceptReason.APIFY_NEW_PROPOSAL)) {
+                    AutoAcceptResult.ACCEPTED -> autoApproved++
+                    AutoAcceptResult.FAILED -> failed++
+                    AutoAcceptResult.SKIPPED -> Unit
                 }
             }
             submitted++
@@ -141,6 +149,7 @@ class FacebookArticleProposalService(
             submitted = submitted,
             skippedExisting = skippedExisting,
             autoApproved = autoApproved,
+            failed = failed,
         )
     }
 
@@ -401,7 +410,7 @@ class FacebookArticleProposalService(
             }
         }
 
-    private fun autoAcceptProposal(proposal: FacebookArticleProposal, reason: AutoAcceptReason): Boolean {
+    private fun autoAcceptProposal(proposal: FacebookArticleProposal, reason: AutoAcceptReason): AutoAcceptResult {
         val bot = importBotUser()
         val language = proposal.effectiveLanguage
         if (articleService.existsByUrl(proposal.canonicalArticleUrl)) {
@@ -414,7 +423,7 @@ class FacebookArticleProposalService(
                     "Apify auto-accept skipped; alreadyExistsUrl=${proposal.canonicalArticleUrl}; reason=${reason.persistedValue}",
                 ),
             )
-            return false
+            return AutoAcceptResult.SKIPPED
         }
         try {
             val article = articleService.create(
@@ -443,7 +452,7 @@ class FacebookArticleProposalService(
                 sourceImportRunId = proposal.importRunId,
                 sourceFacebookProposalId = proposal.id,
             )
-            return true
+            return AutoAcceptResult.ACCEPTED
         } catch (ex: ArticleUrlConflictException) {
             proposalRepository.markAlreadyExists(
                 id = proposal.id,
@@ -454,7 +463,19 @@ class FacebookArticleProposalService(
                     "Apify auto-accept skipped; alreadyExistsUrl=${ex.url}; reason=${reason.persistedValue}",
                 ),
             )
-            return false
+            return AutoAcceptResult.SKIPPED
+        } catch (ex: EnrichmentException) {
+            LOG.warn("Facebook article proposal {} Apify auto-accept enrichment failed", proposal.id, ex)
+            proposalRepository.markFailed(
+                id = proposal.id,
+                decidedByUserId = bot.id!!,
+                correctedLanguage = language,
+                logsCompressed = appendLogs(
+                    proposal.logsCompressed,
+                    "Apify auto-accept failed; reason=${reason.persistedValue}; error=${failureMessage(ex)}",
+                ),
+            )
+            return AutoAcceptResult.FAILED
         }
     }
 

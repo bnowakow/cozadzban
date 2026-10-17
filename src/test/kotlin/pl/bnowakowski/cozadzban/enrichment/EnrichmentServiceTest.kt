@@ -825,6 +825,42 @@ class EnrichmentServiceTest {
     }
 
     @Test
+    fun `extracts Telegraph metadata from reader when primary request is blocked`() {
+        val url = "https://www.telegraph.co.uk/world-news/2026/10/16/musk-approached-trump-slow-down-starlink-help-ukraine/?WT.mc_id=facebook"
+        val title = "Exclusive: Musk approached Trump to slow down Starlink in Ukraine"
+        val thumbnail = "https://www.telegraph.co.uk/content/dam/briefs/2026/10/16/starlink.jpeg"
+        val reader = """
+            Title: $title
+
+            URL Source: http://www.telegraph.co.uk/world-news/2026/10/16/musk-approached-trump-slow-down-starlink-help-ukraine/
+
+            Published Time: 2026-10-16T17:59Z
+
+            Markdown Content:
+            [Jump to content](http://www.telegraph.co.uk/)
+
+            # $title
+
+            SpaceX founder had publicly blamed president for chaos over restrictions, but sources say he initiated them
+
+            This feature is available for registered users. Please register or log in to continue
+
+            ![Image 9: Elon Musk]($thumbnail)
+        """.trimIndent()
+
+        val result = parseTelegraphReaderResult(url, reader)
+
+        assertEquals(title, result?.title)
+        assertEquals(Instant.parse("2026-10-16T17:59:00Z"), result?.publishedAt)
+        assertEquals("SpaceX founder had publicly blamed president for chaos over restrictions, but sources say he initiated them", result?.lead)
+        assertEquals(result?.lead, result?.plainText)
+        assertEquals(thumbnail, result?.thumbnail)
+        assertNull(parseTelegraphReaderResult("https://example.com/story", reader))
+        assertNull(parseTelegraphReaderResult(url, reader.replace("# $title", "# Access Issue Help")))
+        assertNull(parseTelegraphReaderResult(url, reader.replace(title, "Access Issue Help")))
+    }
+
+    @Test
     fun `recognizes TVN24 links for reader fallback`() {
         assertEquals(true, isTvn24Url("https://tvn24.pl/biznes/ze-swiata/example-st9050825"))
         assertEquals(true, isTvn24Url("https://www.tvn24.pl/example"))

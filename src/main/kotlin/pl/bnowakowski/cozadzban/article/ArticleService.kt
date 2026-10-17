@@ -11,6 +11,7 @@ import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.web.context.request.RequestContextHolder
 import org.springframework.web.context.request.ServletRequestAttributes
 import pl.bnowakowski.cozadzban.enrichment.EnrichmentResult
+import pl.bnowakowski.cozadzban.enrichment.EnrichmentException
 import pl.bnowakowski.cozadzban.enrichment.EnrichmentService
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportType
 import pl.bnowakowski.cozadzban.user.AppUserRepository
@@ -82,7 +83,7 @@ class ArticleService(
         )
     }
 
-    @Transactional(noRollbackFor = [ArticleUrlConflictException::class])
+    @Transactional(noRollbackFor = [ArticleUrlConflictException::class, EnrichmentException::class])
     fun create(input: ArticleInput, creatorId: Long): Article {
         val sanitizedInput = input.withoutFacebookImportMarkerQuote()
         val url = canonicalizeUrl(input.url)
@@ -1275,6 +1276,7 @@ class ArticleService(
 
         private fun isTrackingQueryParam(name: String): Boolean =
             name == "fbclid" ||
+                name == "wt.mc_id" ||
                 name.startsWith("utm_") ||
                 name in GENERIC_TRACKING_QUERY_PARAMS
 
