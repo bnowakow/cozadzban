@@ -1124,6 +1124,7 @@ x-planned-features:
           rest. Schema, authorization, and settings behavior pass the test suite.
       - phase: 2
         name: Automatic image posts and article links
+        status: implemented
         work: >
           Create a durable publication job for each new article, publish an
           image post without a URL after commit, use a branded placeholder if

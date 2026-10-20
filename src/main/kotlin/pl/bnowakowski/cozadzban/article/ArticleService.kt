@@ -14,6 +14,7 @@ import pl.bnowakowski.cozadzban.enrichment.EnrichmentResult
 import pl.bnowakowski.cozadzban.enrichment.EnrichmentException
 import pl.bnowakowski.cozadzban.enrichment.EnrichmentService
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportType
+import pl.bnowakowski.cozadzban.facebookpublish.FacebookPublicationQueue
 import pl.bnowakowski.cozadzban.user.AppUserRepository
 import java.net.URI
 import java.time.Instant
@@ -25,6 +26,7 @@ class ArticleService(
     private val enrichmentService: EnrichmentService,
     private val appUserRepository: AppUserRepository,
     private val articleContentRepository: ArticleContentRepository,
+    private val facebookPublicationQueue: FacebookPublicationQueue? = null,
 ) {
 
     @Transactional(readOnly = true)
@@ -142,6 +144,7 @@ class ArticleService(
             throw ArticleUrlConflictException(url)
         }
         preserveContent(article.id!!, article.url, contentForCache)
+        facebookPublicationQueue?.enqueue(article.id, article.language)
         logFacebookPhotoPersistenceState("create", article, contentForCache)
         val persistedArticle = logFacebookPhotoReloadedPersistenceState("create", article, contentForCache)
         logFacebookPhotoDegradedOutcome("create", input, persistedArticle, enrichment, contentForCache, title, publishedAt)

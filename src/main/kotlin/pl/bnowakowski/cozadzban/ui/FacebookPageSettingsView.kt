@@ -28,6 +28,7 @@ import pl.bnowakowski.cozadzban.facebookpublish.FacebookPageConnectionService
 import pl.bnowakowski.cozadzban.facebookpublish.FacebookPageOAuthController
 import pl.bnowakowski.cozadzban.facebookpublish.FacebookPageProperties
 import pl.bnowakowski.cozadzban.facebookpublish.FacebookPageSettings
+import pl.bnowakowski.cozadzban.facebookpublish.FacebookPublicationQueue
 import pl.bnowakowski.cozadzban.facebookpublish.PendingFacebookPageSelection
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportJobService
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportProperties
@@ -44,6 +45,7 @@ class FacebookPageSettingsView(
     private val languageFlagCache: LanguageFlagCache,
     private val facebookImportJobService: FacebookImportJobService? = null,
     private val facebookImportProperties: FacebookImportProperties = FacebookImportProperties(),
+    private val publications: FacebookPublicationQueue? = null,
 ) : VerticalLayout() {
     private val articleLanguages = articleRepository.findDistinctLanguages()
     private val language = ComboBox<String>("Article language")
@@ -57,6 +59,7 @@ class FacebookPageSettingsView(
     private val connect = Button("Connect a Facebook Page")
     private val candidates = ComboBox<String>("Choose authorized Page")
     private val candidatePages = mutableMapOf<String, DiscoveredFacebookPage>()
+    private val publicationProblems = VerticalLayout()
 
     init {
         installCozadzbanThemeBootstrap()
@@ -114,6 +117,7 @@ class FacebookPageSettingsView(
             monthlyLinkLimit, minimumPostAgeHours, schedulerIntervalMinutes,
             HorizontalLayout(save, disconnect),
         )
+        form.add(Span("Publication problems"), Span("Uncertain results require checking the Facebook Page before retrying."), publicationProblems)
         val content = sharedPageContent(form)
         add(
             buildCozadzbanTopBar(
@@ -126,6 +130,7 @@ class FacebookPageSettingsView(
         )
         refreshConnections()
         readPendingSelection()
+        refreshPublicationProblems()
     }
 
     private fun readPendingSelection() {
@@ -212,6 +217,46 @@ class FacebookPageSettingsView(
         monthlyLinkLimit.value = page.monthlyLinkLimit
         minimumPostAgeHours.value = page.minimumPostAgeHours
         schedulerIntervalMinutes.value = page.schedulerIntervalMinutes
+    }
+
+    private fun refreshPublicationProblems() {
+        publicationProblems.removeAll()
+        val queue = publications ?: return
+        val problems = queue.recentProblems()
+        if (problems.isEmpty()) {
+            publicationProblems.add(Span("No publication problems."))
+            return
+        }
+        problems.forEach { job ->
+            val row = VerticalLayout()
+            row.isPadding = false
+            row.add(Span("Article ${job.articleId} · ${job.language} · ${job.status} · ${job.lastError ?: "No Page was enabled when this article was added."}"))
+            when (job.status) {
+                "FAILED" -> row.add(Button("Retry rejected post") {
+                    if (queue.retryFailed(job.id)) refreshPublicationProblems()
+                })
+                "NEEDS_RECONCILIATION" -> {
+                    val postId = TextField("Confirmed Meta Page post ID")
+                    postId.placeholder = "${job.pageId ?: "pageId"}_postId"
+                    val permalink = TextField("Confirmed Facebook post URL")
+                    row.add(postId, permalink, Button("Record existing post") {
+                        try {
+                            if (queue.confirmAfterManualReview(job.id, postId.value.trim(), permalink.value.trim())) {
+                                refreshPublicationProblems()
+                            } else notify("Page post ID does not match the connected Page")
+                        } catch (ex: Exception) { notify(ex.message ?: "Could not record post") }
+                    })
+                    val verifiedAbsent = Checkbox("I checked the Page and confirmed no post was published")
+                    val retry = Button("Retry after review") {
+                        if (verifiedAbsent.value && queue.retryAfterManualReview(job.id)) refreshPublicationProblems()
+                    }
+                    retry.isEnabled = false
+                    verifiedAbsent.addValueChangeListener { retry.isEnabled = it.value }
+                    row.add(verifiedAbsent, retry)
+                }
+            }
+            publicationProblems.add(row)
+        }
     }
 
     private fun notify(message: String) { Notification.show(message, 5000, Notification.Position.MIDDLE) }

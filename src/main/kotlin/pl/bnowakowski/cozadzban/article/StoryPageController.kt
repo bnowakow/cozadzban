@@ -9,21 +9,26 @@ import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.RestController
+import pl.bnowakowski.cozadzban.facebookpublish.FacebookPublicationQueue
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 
 /** A server-rendered public page so a story is useful to readers and crawlers on the first request. */
 @RestController
-class StoryPageController(private val articles: ArticleRepository) {
+class StoryPageController(
+    private val articles: ArticleRepository,
+    private val facebookPublications: FacebookPublicationQueue? = null,
+) {
 
     @GetMapping("/stories/{id}", produces = [MediaType.TEXT_HTML_VALUE])
     fun story(@PathVariable id: Long): ResponseEntity<String> {
         val article = articles.findById(id).orElse(null) ?: return ResponseEntity.notFound().build()
-        return ResponseEntity.ok().contentType(MediaType.TEXT_HTML).body(render(article))
+        return ResponseEntity.ok().contentType(MediaType.TEXT_HTML)
+            .body(render(article, facebookPublications?.permalink(id)))
     }
 
-    private fun render(article: Article): String {
+    private fun render(article: Article, facebookPostUrl: String?): String {
         val language = article.language.trim().lowercase().takeIf { it.matches(Regex("[a-z]{2,3}(-[a-z]{2,3})?")) } ?: "en"
         val polish = language.startsWith("pl")
         val title = article.title?.trim()?.takeIf { it.isNotEmpty() } ?: article.url
@@ -80,6 +85,10 @@ class StoryPageController(private val articles: ArticleRepository) {
         article.aiSummary?.trim()?.takeIf { it.isNotEmpty() }?.let { main.appendElement("p").text(it) }
         main.appendElement("a").attr("class", "original").attr("href", article.url)
             .attr("rel", "noopener noreferrer").text(if (polish) "Czytaj oryginalną publikację" else "Read the original story")
+        facebookPostUrl?.takeIf { it.startsWith("https://www.facebook.com/") }?.let { url ->
+            main.appendElement("p").appendElement("a").attr("href", url)
+                .attr("rel", "noopener noreferrer").text(if (polish) "Skomentuj na Facebooku" else "Comment on Facebook")
+        }
         return "<!doctype html>\n${doc.outerHtml()}"
     }
 }
