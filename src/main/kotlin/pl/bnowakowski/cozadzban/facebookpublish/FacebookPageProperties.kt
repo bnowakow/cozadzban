@@ -7,6 +7,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties
 data class FacebookPageProperties(
     val appId: String = "",
     val appSecret: String = "",
+    val configurationId: String = "",
     val redirectUri: String = "",
     val encryptionKey: String = "",
     val graphVersion: String = "v26.0",
@@ -14,5 +15,6 @@ data class FacebookPageProperties(
     val authorizationBaseUrl: String = "https://www.facebook.com",
 ) {
     val oauthConfigured: Boolean
-        get() = appId.isNotBlank() && appSecret.isNotBlank() && redirectUri.startsWith("https://") && encryptionKey.isNotBlank()
+        get() = appId.isNotBlank() && appSecret.isNotBlank() && configurationId.isNotBlank() &&
+            redirectUri.startsWith("https://") && encryptionKey.isNotBlank()
 }

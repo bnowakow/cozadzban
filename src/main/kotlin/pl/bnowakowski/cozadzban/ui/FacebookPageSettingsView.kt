@@ -60,7 +60,7 @@ class FacebookPageSettingsView(
         form.add(Span("Facebook Page publishing settings"))
         form.add(Span("Publishing is disabled until a Page is connected and explicitly enabled."))
         if (!properties.oauthConfigured) {
-            form.add(Span("Meta OAuth is not configured on this server. Set the app ID, app secret, redirect URI and encryption key."))
+            form.add(Span("Meta OAuth is not configured on this server. Set the app ID, app secret, Facebook Login for Business configuration ID, redirect URI and encryption key."))
             connect.isEnabled = false
         }
         language.placeholder = "pl"

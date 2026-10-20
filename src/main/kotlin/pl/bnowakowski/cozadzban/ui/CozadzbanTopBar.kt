@@ -229,6 +229,12 @@ private fun Component.buildSharedMenu(
         }
     }
     subMenu.addIconItem("Toggle dark mode", VaadinIcon.ADJUST) { themeButton.click() }
+    subMenu.addIconItem("Privacy Policy", VaadinIcon.LOCK) {
+        ui.ifPresent { it.page.setLocation("/privacy-policy.html") }
+    }
+    subMenu.addIconItem("User data deletion", VaadinIcon.TRASH) {
+        ui.ifPresent { it.page.setLocation("/user-data-deletion.html") }
+    }
 
     if (isAdmin) {
         subMenu.addSeparator()

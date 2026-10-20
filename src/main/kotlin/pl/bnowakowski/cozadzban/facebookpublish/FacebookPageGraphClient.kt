@@ -20,7 +20,7 @@ class FacebookPageGraphClient(private val properties: FacebookPageProperties) {
         .queryParam("client_id", properties.appId)
         .queryParam("redirect_uri", properties.redirectUri)
         .queryParam("response_type", "code")
-        .queryParam("scope", "pages_show_list,pages_read_engagement,pages_manage_posts,pages_manage_engagement")
+        .queryParam("config_id", properties.configurationId)
         .queryParam("state", state)
         .build().encode().toUriString()
 

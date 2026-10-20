@@ -65,6 +65,11 @@ import java.time.Instant
     "spring.security.oauth2.client.registration.google.redirect-uri=http://localhost:8080/login/oauth2/code/google",
     "spring.security.oauth2.resourceserver.jwt.audiences=test-audience",
     "SESSION_COOKIE_SECURE=true",
+    "app.facebook-page.app-id=test-app-id",
+    "app.facebook-page.app-secret=test-app-secret",
+    "app.facebook-page.configuration-id=test-config-id",
+    "app.facebook-page.redirect-uri=https://example.com/facebook-pages/oauth/callback",
+    "app.facebook-page.encryption-key=1234567890123456",
 ])
 class HybridAuthRegressionIT {
 
@@ -178,6 +183,24 @@ class HybridAuthRegressionIT {
             with(jwt().jwt { it.subject(adminEmail) })
         }.andExpect {
             status { isOk() }
+        }
+    }
+
+    @Test
+    fun `Facebook Page OAuth start allows admin browser session`() {
+        mockMvc.get("/facebook-pages/oauth/start?language=pl") {
+            with(oauth2Login().attributes { it["email"] = adminEmail })
+        }.andExpect {
+            status { isFound() }
+        }
+    }
+
+    @Test
+    fun `Facebook Page OAuth start rejects non-admin browser session`() {
+        mockMvc.get("/facebook-pages/oauth/start?language=pl") {
+            with(oauth2Login().attributes { it["email"] = userEmail })
+        }.andExpect {
+            status { isForbidden() }
         }
     }
 

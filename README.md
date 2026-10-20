@@ -48,6 +48,7 @@ Then edit the matching file for the role you are setting up:
 | `STATCOUNTER_SECURITY_ID` | StatCounter security code for the project. Required when `STATCOUNTER_PROJECT_ID` is set. | _(optional)_ |
 | `APP_FACEBOOK_PAGE_APP_ID` | Meta app ID for connecting Facebook Pages | _(optional until Page publishing is configured)_ |
 | `APP_FACEBOOK_PAGE_APP_SECRET` | Meta app secret, server-side only | _(optional until Page publishing is configured)_ |
+| `APP_FACEBOOK_PAGE_CONFIGURATION_ID` | Facebook Login for Business configuration ID for Page access | _(required to connect a Page)_ |
 | `APP_FACEBOOK_PAGE_REDIRECT_URI` | Exact Meta OAuth redirect URI registered for the app | `https://cozadzban.pl/facebook-pages/oauth/callback` in production |
 | `APP_FACEBOOK_PAGE_ENCRYPTION_KEY` | Stable 16-, 24-, or 32-byte AES key (base64 or hex) for stored Page tokens | _(required to connect a Page)_ |
 | `APP_FACEBOOK_IMPORT_APIFY_COST_SUMMARY_DAYS` | Lookback window for the admin Apify cost total and automatic-run average | `30` |
@@ -56,9 +57,11 @@ Then edit the matching file for the role you are setting up:
 
 ### Connect Facebook Pages (phase 1)
 
-Create a Meta app with Facebook Login for Business, enable Page permissions
+Create a Meta app with Facebook Login for Business. In **Configurations**, create
+a Page access configuration using a User access token and the permissions
 `pages_show_list`, `pages_read_engagement`, `pages_manage_posts`, and
-`pages_manage_engagement`, and register the exact callback URI above. Configure
+`pages_manage_engagement`. Copy its configuration ID into
+`APP_FACEBOOK_PAGE_CONFIGURATION_ID` and register the exact callback URI above. Configure
 the server variables in `.env.server`, sign in as an ADMIN, then open
 **Admin → Facebook Pages**. Enter an article language, authorize Meta, choose
 a Page that grants content creation, and save its settings. Each language can
@@ -67,6 +70,11 @@ sent to browser JavaScript. New connections start disabled.
 
 This first phase only connects and configures Pages. Automatic posts and link
 comments are introduced in the following phases in `doc/SPEC.yaml`.
+
+Public pages for the Meta app settings:
+
+- Privacy Policy: `https://cozadzban.pl/privacy-policy.html`
+- User data deletion instructions: `https://cozadzban.pl/user-data-deletion.html`
 
 ### Optional Facebook profile import
 

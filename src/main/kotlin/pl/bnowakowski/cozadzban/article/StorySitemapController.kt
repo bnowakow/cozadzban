@@ -15,7 +15,13 @@ class StorySitemapController(private val articles: ArticleRepository) {
         val xml = buildString {
             append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>")
             append("<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">")
-            listOf("https://cozadzban.pl/", "https://cozadzban.pl/?lang=pl", "https://cozadzban.pl/?lang=en")
+            listOf(
+                "https://cozadzban.pl/",
+                "https://cozadzban.pl/?lang=pl",
+                "https://cozadzban.pl/?lang=en",
+                "https://cozadzban.pl/privacy-policy.html",
+                "https://cozadzban.pl/user-data-deletion.html",
+            )
                 .forEach { url -> append("<url><loc>${url.replace("&", "&amp;")}</loc></url>") }
             articles.findForRss(null).forEach { article ->
                 article.id?.let { id ->

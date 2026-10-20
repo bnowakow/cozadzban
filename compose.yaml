@@ -99,6 +99,10 @@ services:
       - './docker-data/nginx/upstream.conf:/etc/nginx/upstream.conf:ro'
       - './docker-data/nginx/upgrading.html:/usr/share/nginx/html/upgrading.html:ro'
       - './src/main/resources/static/cozadzban-logo.png:/usr/share/nginx/html/cozadzban-logo.png:ro'
+      - './src/main/resources/static/favicon.png:/usr/share/nginx/html/favicon.png:ro'
+      - './src/main/resources/static/privacy-policy.html:/usr/share/nginx/html/privacy-policy.html:ro'
+      - './src/main/resources/static/user-data-deletion.html:/usr/share/nginx/html/user-data-deletion.html:ro'
+      - './src/main/resources/static/facebook-legal.css:/usr/share/nginx/html/facebook-legal.css:ro'
 
   postgres:
     image: 'postgres:latest'

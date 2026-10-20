@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.verifyNoInteractions
@@ -14,6 +15,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 class FacebookPageOAuthControllerTest {
     private val properties = FacebookPageProperties(
         appId = "app-id", appSecret = "app-secret",
+        configurationId = "page-config-id",
         redirectUri = "https://cozadzban.pl/facebook-pages/oauth/callback",
         encryptionKey = "0123456789abcdef",
     )
@@ -55,6 +57,8 @@ class FacebookPageOAuthControllerTest {
     @Test
     fun `Page authorization URL carries no app secret`() {
         val url = FacebookPageGraphClient(properties).authorizationUrl("state-value")
+        assertTrue(url.contains("config_id=page-config-id"))
+        assertFalse(url.contains("scope="))
         assertFalse(url.contains("app-secret"))
         assertFalse(url.contains("access_token"))
     }

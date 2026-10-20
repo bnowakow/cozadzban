@@ -1115,7 +1115,8 @@ x-planned-features:
           Page configuration, encrypted Page credentials, publication jobs,
           Meta post identity, reaction snapshots, and link-comment outcomes.
           Add an ADMIN-only settings view and server-side Meta authorization
-          flow. Keep publishing disabled until an ADMIN connects and enables a
+          flow using a Facebook Login for Business configuration ID rather than
+          a scope query parameter. Keep publishing disabled until an ADMIN connects and enables a
           Page. Do not backfill existing articles automatically.
         completion: >
           An ADMIN can connect, inspect, configure, disconnect, and reconnect

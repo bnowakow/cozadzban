@@ -56,7 +56,7 @@ class SecurityConfig(
                 // OAuth2 login and callback endpoints must stay public.
                 auth.requestMatchers("/auth/login", "/oauth2/**", "/login/oauth2/**").permitAll()
                 // Browser-discovered site assets must stay public (e.g. after OAuth redirects).
-                auth.requestMatchers("/favicon.ico", "/favicons/**", "/flags/**", "/cozadzban-logo.png", "/apple-touch-icon.png", "/apple-touch-icon-precomposed.png", "/manifest.webmanifest", "/site.webmanifest", "/robots.txt", "/sitemap.xml").permitAll()
+                auth.requestMatchers("/favicon.ico", "/favicons/**", "/flags/**", "/cozadzban-logo.png", "/apple-touch-icon.png", "/apple-touch-icon-precomposed.png", "/manifest.webmanifest", "/site.webmanifest", "/robots.txt", "/sitemap.xml", "/privacy-policy.html", "/user-data-deletion.html", "/facebook-legal.css").permitAll()
 
                 // Session-backed UI identity endpoints (Phase 11)
                 auth.requestMatchers(HttpMethod.GET, "/auth/me").authenticated()
@@ -64,7 +64,7 @@ class SecurityConfig(
 
                 // Meta connection uses a separate server-side OAuth callback and is ADMIN-only.
                 auth.requestMatchers("/facebook-pages/oauth/**").access { authentication, _ ->
-                    AuthorizationDecision(allowlist.checkAdmin(authentication.get()))
+                    AuthorizationDecision(allowlist.checkAdminSession(authentication.get()))
                 }
 
                 // /actuator/health and probe subpaths are always public (load balancer / k8s probes)

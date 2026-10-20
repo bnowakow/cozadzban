@@ -7,6 +7,7 @@ import org.springframework.security.authorization.AuthorizationDecision
 import org.springframework.security.authorization.AuthorizationManager
 import org.springframework.security.authorization.AuthorizationResult
 import org.springframework.security.core.Authentication
+import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken
 import org.springframework.security.oauth2.core.OAuth2AuthenticatedPrincipal
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken
 import org.springframework.security.web.access.intercept.RequestAuthorizationContext
@@ -52,6 +53,10 @@ class AllowlistAuthorizationManager(
 
     /** Convenience SpEL target: checks ADMIN role only. */
     fun checkAdmin(auth: Authentication): Boolean = isAllowlisted(auth, Role.ADMIN)
+
+    /** Checks an ADMIN's browser OAuth2 session for server-side UI callbacks. */
+    fun checkAdminSession(auth: Authentication): Boolean =
+        auth is OAuth2AuthenticationToken && isAllowlistedSessionOrBearer(auth, Role.ADMIN)
 
     /**
      * Checks allowlist membership for article writes performed through the machine-to-machine
