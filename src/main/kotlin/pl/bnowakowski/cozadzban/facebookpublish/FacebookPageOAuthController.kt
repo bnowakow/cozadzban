@@ -60,10 +60,16 @@ class FacebookPageOAuthController(
             return redirect(SETTINGS_PATH)
         }
         try {
-            val pages = graph.discoverPages(code)
-                .filter { "CREATE_CONTENT" in it.tasks || "MANAGE" in it.tasks }
+            val discovered = graph.discoverPages(code)
+            val pages = discovered.pages.filter { it.canCreateContent }
             session.setAttribute(SELECTION_SESSION_KEY, PendingFacebookPageSelection(pending.language, authentication.name, pages, Instant.now()))
-            session.setAttribute(MESSAGE_SESSION_KEY, if (pages.isEmpty()) "No Pages with content creation access were returned by Meta." else "Choose a Page for ${pending.language}.")
+            val message = when {
+                discovered.returnedPageCount == 0 -> "Meta returned no Pages. Check Page access, select the Page in Meta authorization, and include pages_show_list in the login configuration. For Pages in a business portfolio, also grant business_management and a role in that portfolio."
+                discovered.pages.isEmpty() -> "Meta returned ${discovered.returnedPageCount} Page(s), but no usable Page access tokens. Check the login configuration's Page permissions and that you granted this app access to the Pages."
+                pages.isEmpty() -> "Meta returned Pages, but none granted content creation access. Check your Page content task in Meta Business Suite."
+                else -> "Choose a Page for ${pending.language}."
+            }
+            session.setAttribute(MESSAGE_SESSION_KEY, message)
         } catch (_: Exception) {
             session.setAttribute(MESSAGE_SESSION_KEY, "Facebook connection failed. Check Meta app permissions and try again.")
         }

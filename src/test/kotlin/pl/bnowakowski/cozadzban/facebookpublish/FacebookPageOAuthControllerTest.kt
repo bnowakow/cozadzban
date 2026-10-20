@@ -62,4 +62,16 @@ class FacebookPageOAuthControllerTest {
         assertFalse(url.contains("app-secret"))
         assertFalse(url.contains("access_token"))
     }
+
+    @Test
+    fun `new Page experience content task allows Page connection`() {
+        val page = DiscoveredFacebookPage("123", "Example Page", setOf("PROFILE_PLUS_CREATE_CONTENT"), "page-token")
+        assertTrue(page.canCreateContent)
+    }
+
+    @Test
+    fun `analytics-only Page task does not allow Page connection`() {
+        val page = DiscoveredFacebookPage("123", "Example Page", setOf("PROFILE_PLUS_ANALYZE"), "page-token")
+        assertFalse(page.canCreateContent)
+    }
 }

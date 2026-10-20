@@ -16,7 +16,7 @@ class FacebookPageConnectionService(
     @Transactional
     fun connect(languageInput: String, page: DiscoveredFacebookPage): FacebookPageConnection {
         val language = ArticleService.normalizeLanguage(languageInput)
-        require("CREATE_CONTENT" in page.tasks || "MANAGE" in page.tasks) {
+        require(page.canCreateContent) {
             "The selected Page did not grant content creation access"
         }
         repository.upsert(language, AvailableFacebookPage(page.id, page.name, page.tasks), encryptor.encrypt(page.token))

@@ -8,7 +8,14 @@ import org.springframework.util.LinkedMultiValueMap
 import org.springframework.web.client.RestClient
 import org.springframework.web.util.UriComponentsBuilder
 
-data class DiscoveredFacebookPage(val id: String, val name: String, val tasks: Set<String>, val token: String)
+data class DiscoveredFacebookPage(val id: String, val name: String, val tasks: Set<String>, val token: String) {
+    val canCreateContent: Boolean
+        get() = tasks.any {
+            it in setOf("CREATE_CONTENT", "MANAGE", "PROFILE_PLUS_CREATE_CONTENT", "PROFILE_PLUS_MANAGE", "PROFILE_PLUS_FULL_CONTROL")
+        }
+}
+
+data class FacebookPageDiscovery(val pages: List<DiscoveredFacebookPage>, val returnedPageCount: Int)
 
 @Component
 class FacebookPageGraphClient(private val properties: FacebookPageProperties) {
@@ -24,10 +31,11 @@ class FacebookPageGraphClient(private val properties: FacebookPageProperties) {
         .queryParam("state", state)
         .build().encode().toUriString()
 
-    fun discoverPages(code: String): List<DiscoveredFacebookPage> {
+    fun discoverPages(code: String): FacebookPageDiscovery {
         val shortToken = exchangeCode(code)
         val longToken = exchangeLongLivedToken(shortToken)
         val result = mutableListOf<DiscoveredFacebookPage>()
+        var returnedPageCount = 0
         var cursor: String? = null
         repeat(10) {
             val url = UriComponentsBuilder.fromPath("/${properties.graphVersion}/me/accounts")
@@ -39,6 +47,7 @@ class FacebookPageGraphClient(private val properties: FacebookPageProperties) {
                 .retrieve().body(String::class.java) ?: error("Empty Meta Pages response")
             val root = json.readTree(body)
             root.path("data").forEach { item ->
+                returnedPageCount++
                 val id = item.path("id").asText()
                 val name = item.path("name").asText()
                 val token = item.path("access_token").asText()
@@ -48,7 +57,7 @@ class FacebookPageGraphClient(private val properties: FacebookPageProperties) {
                 }
             }
             cursor = root.path("paging").path("cursors").path("after").asText().takeIf { it.isNotBlank() }
-            if (cursor == null) return result
+            if (cursor == null) return FacebookPageDiscovery(result, returnedPageCount)
         }
         error("Meta returned too many Page result pages")
     }

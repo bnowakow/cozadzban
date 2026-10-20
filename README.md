@@ -68,6 +68,12 @@ a Page that grants content creation, and save its settings. Each language can
 have one connected Page. Page tokens are encrypted in PostgreSQL and never
 sent to browser JavaScript. New connections start disabled.
 
+If Meta returns no Pages during connection, confirm that the Facebook account
+has Page content access and that the Page was selected in the Meta consent dialog.
+For a Page linked to a Meta business portfolio, add `business_management` to
+the login configuration and give that person a role in the portfolio, then
+authorize again. Meta's `/me/accounts` endpoint omits such Pages without both.
+
 This first phase only connects and configures Pages. Automatic posts and link
 comments are introduced in the following phases in `doc/SPEC.yaml`.
 

@@ -5,18 +5,23 @@ import com.vaadin.flow.component.button.Button
 import com.vaadin.flow.component.button.ButtonVariant
 import com.vaadin.flow.component.checkbox.Checkbox
 import com.vaadin.flow.component.combobox.ComboBox
+import com.vaadin.flow.component.html.Image
 import com.vaadin.flow.component.html.Span
 import com.vaadin.flow.component.notification.Notification
+import com.vaadin.flow.component.orderedlayout.FlexComponent.Alignment
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout
 import com.vaadin.flow.component.orderedlayout.VerticalLayout
 import com.vaadin.flow.component.textfield.IntegerField
 import com.vaadin.flow.component.textfield.TextField
+import com.vaadin.flow.data.renderer.ComponentRenderer
 import com.vaadin.flow.router.PageTitle
 import com.vaadin.flow.router.Route
 import com.vaadin.flow.server.VaadinSession
 import jakarta.annotation.security.RolesAllowed
 import org.springframework.security.core.context.SecurityContextHolder
+import pl.bnowakowski.cozadzban.article.ArticleRepository
 import pl.bnowakowski.cozadzban.article.ArticleService
+import pl.bnowakowski.cozadzban.enrichment.LanguageFlagCache
 import pl.bnowakowski.cozadzban.facebookpublish.DiscoveredFacebookPage
 import pl.bnowakowski.cozadzban.facebookpublish.FacebookPageConnection
 import pl.bnowakowski.cozadzban.facebookpublish.FacebookPageConnectionService
@@ -35,10 +40,13 @@ import java.time.Instant
 class FacebookPageSettingsView(
     private val service: FacebookPageConnectionService,
     private val properties: FacebookPageProperties,
+    private val articleRepository: ArticleRepository,
+    private val languageFlagCache: LanguageFlagCache,
     private val facebookImportJobService: FacebookImportJobService? = null,
     private val facebookImportProperties: FacebookImportProperties = FacebookImportProperties(),
 ) : VerticalLayout() {
-    private val language = TextField("Article language")
+    private val articleLanguages = articleRepository.findDistinctLanguages()
+    private val language = ComboBox<String>("Article language")
     private val configured = ComboBox<String>("Connected language")
     private val enabled = Checkbox("Publish new articles automatically")
     private val timeZone = TextField("Page time zone")
@@ -61,12 +69,30 @@ class FacebookPageSettingsView(
         form.add(Span("Publishing is disabled until a Page is connected and explicitly enabled."))
         if (!properties.oauthConfigured) {
             form.add(Span("Meta OAuth is not configured on this server. Set the app ID, app secret, Facebook Login for Business configuration ID, redirect URI and encryption key."))
-            connect.isEnabled = false
         }
-        language.placeholder = "pl"
+        language.setItems(articleLanguages)
+        language.placeholder = "Select a language"
+        language.setRenderer(ComponentRenderer { code: String ->
+            HorizontalLayout().apply {
+                isPadding = false
+                defaultVerticalComponentAlignment = Alignment.CENTER
+                languageFlagCache.flagPath(code)?.let { path ->
+                    add(Image(path, "Flag for $code").apply {
+                        setWidth("1.5rem")
+                        setHeight("1rem")
+                    })
+                }
+                add(Span(code))
+            }
+        })
+        if (articleLanguages.isEmpty()) {
+            language.helperText = "Add an article before connecting a Facebook Page."
+        }
+        connect.isEnabled = properties.oauthConfigured && articleLanguages.isNotEmpty()
+        language.addValueChangeListener { connect.isEnabled = properties.oauthConfigured && it.value != null }
         connect.addClickListener {
             try {
-                val normalized = ArticleService.normalizeLanguage(language.value.trim())
+                val normalized = ArticleService.normalizeLanguage(language.value ?: return@addClickListener notify("Select an article language"))
                 val query = URLEncoder.encode(normalized, Charsets.UTF_8)
                 ui.ifPresent { it.page.setLocation("/facebook-pages/oauth/start?language=$query") }
             } catch (ex: IllegalArgumentException) {
@@ -112,6 +138,12 @@ class FacebookPageSettingsView(
         if (pending == null || pending.adminName != adminName || pending.createdAt.isBefore(Instant.now().minusSeconds(600))) {
             session.removeAttribute(FacebookPageOAuthController.SELECTION_SESSION_KEY)
             candidates.isVisible = false
+            return
+        }
+        if (pending.language !in articleLanguages) {
+            session.removeAttribute(FacebookPageOAuthController.SELECTION_SESSION_KEY)
+            candidates.isVisible = false
+            notify("No articles currently use ${pending.language}; add an article before connecting that language.")
             return
         }
         language.value = pending.language
