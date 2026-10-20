@@ -64,7 +64,14 @@ class FacebookPageOAuthController(
             val pages = discovered.pages.filter { it.canCreateContent }
             session.setAttribute(SELECTION_SESSION_KEY, PendingFacebookPageSelection(pending.language, authentication.name, pages, Instant.now()))
             val message = when {
-                discovered.returnedPageCount == 0 -> "Meta returned no Pages. Check Page access, select the Page in Meta authorization, and include pages_show_list in the login configuration. For Pages in a business portfolio, also grant business_management and a role in that portfolio."
+                discovered.returnedPageCount == 0 && discovered.grantedPermissions != null &&
+                    "pages_show_list" !in discovered.grantedPermissions ->
+                    "Meta did not grant pages_show_list. Add it to this app's Login for Business configuration and authorize again, selecting the Page."
+                discovered.returnedPageCount == 0 && discovered.grantedPermissions != null &&
+                    "business_management" !in discovered.grantedPermissions ->
+                    "Meta granted pages_show_list but returned no Pages. If the Page belongs to a business portfolio, add business_management and give this Facebook account a role in that portfolio, then authorize again."
+                discovered.returnedPageCount == 0 ->
+                    "Meta returned no Pages. Check Page access and select the Page in Meta authorization."
                 discovered.pages.isEmpty() -> "Meta returned ${discovered.returnedPageCount} Page(s), but no usable Page access tokens. Check the login configuration's Page permissions and that you granted this app access to the Pages."
                 pages.isEmpty() -> "Meta returned Pages, but none granted content creation access. Check your Page content task in Meta Business Suite."
                 else -> "Choose a Page for ${pending.language}."

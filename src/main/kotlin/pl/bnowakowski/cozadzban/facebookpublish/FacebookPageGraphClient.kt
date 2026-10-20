@@ -15,7 +15,11 @@ data class DiscoveredFacebookPage(val id: String, val name: String, val tasks: S
         }
 }
 
-data class FacebookPageDiscovery(val pages: List<DiscoveredFacebookPage>, val returnedPageCount: Int)
+data class FacebookPageDiscovery(
+    val pages: List<DiscoveredFacebookPage>,
+    val returnedPageCount: Int,
+    val grantedPermissions: Set<String>?,
+)
 
 @Component
 class FacebookPageGraphClient(private val properties: FacebookPageProperties) {
@@ -34,6 +38,7 @@ class FacebookPageGraphClient(private val properties: FacebookPageProperties) {
     fun discoverPages(code: String): FacebookPageDiscovery {
         val shortToken = exchangeCode(code)
         val longToken = exchangeLongLivedToken(shortToken)
+        val grantedPermissions = readGrantedPermissions(longToken)
         val result = mutableListOf<DiscoveredFacebookPage>()
         var returnedPageCount = 0
         var cursor: String? = null
@@ -57,10 +62,20 @@ class FacebookPageGraphClient(private val properties: FacebookPageProperties) {
                 }
             }
             cursor = root.path("paging").path("cursors").path("after").asText().takeIf { it.isNotBlank() }
-            if (cursor == null) return FacebookPageDiscovery(result, returnedPageCount)
+            if (cursor == null) return FacebookPageDiscovery(result, returnedPageCount, grantedPermissions)
         }
         error("Meta returned too many Page result pages")
     }
+
+    private fun readGrantedPermissions(userToken: String): Set<String>? = runCatching {
+        val body = client.get().uri("/${properties.graphVersion}/me/permissions?limit=100")
+            .headers { it.setBearerAuth(userToken) }
+            .retrieve().body(String::class.java) ?: return@runCatching null
+        json.readTree(body).path("data")
+            .filter { it.path("status").asText() == "granted" }
+            .mapNotNull { it.path("permission").asText().takeIf(String::isNotBlank) }
+            .toSet()
+    }.getOrNull()
 
     private fun exchangeCode(code: String): String {
         val body = LinkedMultiValueMap<String, String>().apply {
