@@ -182,6 +182,9 @@ class FacebookArticleProposalService(
     fun latestAutomaticRunTimestamp(importType: FacebookImportType): Instant? =
         runRepository.findLatestRunTimestamp(importType, setOf(FacebookImportTrigger.WORKER_STARTUP, FacebookImportTrigger.SCHEDULED))
 
+    @Transactional(readOnly = true)
+    fun apifyCostSummarySince(since: Instant): ApifyCostSummary = runRepository.apifyCostSummarySince(since)
+
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     fun terminateTimedOutRun(importRunId: String, timeout: Duration, timedOutAt: Instant = Instant.now()): Boolean {
         require(importRunId.isNotBlank()) { "importRunId is required" }
@@ -237,6 +240,8 @@ class FacebookArticleProposalService(
             failedCount = request.failedCount,
             statusDetail = request.statusDetail,
             logsCompressed = GzipTextCodec.compress(request.logs),
+            apifyActorRunId = request.apifyActorRunId,
+            apifyCostUsd = request.apifyCostUsd,
         )
         eventPublisher?.publishEvent(
             FacebookImportRunCompletedEvent(

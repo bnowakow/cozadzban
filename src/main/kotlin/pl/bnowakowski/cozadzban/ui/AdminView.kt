@@ -60,7 +60,10 @@ class AdminView(
         sharedContentOffset()
 
         val addUserButton = buildAddUserButton()
-        val pageToolbar = HorizontalLayout(Span("Manage users").apply { addClassName("czj-admin-title") }, addUserButton)
+        val facebookPagesButton = Button("Facebook Pages") {
+            ui.ifPresent { it.navigate("admin/facebook-pages") }
+        }
+        val pageToolbar = HorizontalLayout(Span("Manage users").apply { addClassName("czj-admin-title") }, facebookPagesButton, addUserButton)
         pageToolbar.defaultVerticalComponentAlignment = Alignment.CENTER
         pageToolbar.setWidthFull()
         pageToolbar.expand(pageToolbar.getComponentAt(0))

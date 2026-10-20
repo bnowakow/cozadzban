@@ -18,6 +18,7 @@ import pl.bnowakowski.cozadzban.article.ArticleService
 import java.net.URI
 import java.net.URLEncoder
 import java.net.http.HttpClient
+import java.math.BigDecimal
 import java.nio.charset.StandardCharsets
 import java.time.Instant
 import java.time.ZoneOffset
@@ -122,7 +123,7 @@ class FacebookApifyArticleImporter(
     private fun runImportInternal(importRunId: String, trigger: FacebookImportTrigger, summary: ApifyImportSummary) {
         throwIfInterrupted()
         reportProgress(importRunId, trigger, FacebookImportProgressPhase.COLLECTING_POSTS, summary, detail = "Running Apify actor", force = true)
-        val items = fetchApifyItems()
+        val items = fetchApifyItems(summary)
         val proposals = items.flatMap { item -> proposalsFromItem(importRunId, item) }
             .distinctBy { ArticleService.canonicalizeUrl(it.articleUrl) }
         summary.discovered = proposals.size
@@ -157,14 +158,50 @@ class FacebookApifyArticleImporter(
         )
     }
 
-    private fun fetchApifyItems(): List<JsonNode> {
-        val response = apifyClient()
+    private fun fetchApifyItems(summary: ApifyImportSummary): List<JsonNode> {
+        val client = apifyClient()
+        var run = client
             .post()
-            .uri(runSyncDatasetItemsUri())
+            .uri(startActorUri())
             .contentType(MediaType.APPLICATION_JSON)
             .accept(MediaType.APPLICATION_JSON)
             .header(HttpHeaders.AUTHORIZATION, "Bearer ${properties.apify.apiToken}")
             .body(apifyInput())
+            .retrieve()
+            .body<String>()
+            ?.let { objectMapper.readTree(it).path("data") }
+            ?: throw IllegalStateException("Apify did not return an actor run")
+        val actorRunId = run.path("id").asText().takeIf { it.isNotBlank() }
+            ?: throw IllegalStateException("Apify did not return an actor run ID")
+        summary.apifyActorRunId = actorRunId
+        val deadline = Instant.now().plus(properties.apify.readTimeout)
+        while (run.path("status").asText() !in TERMINAL_ACTOR_STATUSES) {
+            throwIfInterrupted()
+            if (Instant.now().isAfter(deadline)) throw IllegalStateException("Apify actor run $actorRunId timed out")
+            run = getActorRun(client, actorRunId, waitForFinish = true)
+        }
+        // Apify says the first terminal response can contain preliminary costs.
+        val settledRun = runCatching {
+            Thread.sleep(10_000)
+            getActorRun(client, actorRunId, waitForFinish = false)
+        }.onFailure { ex ->
+            if (ex is InterruptedException) throw ex
+            logger.warn("Apify actor run {} cost refresh failed", actorRunId, ex)
+        }.getOrDefault(run)
+        summary.apifyCostUsd = settledRun.path("usageTotalUsd")
+            .takeIf { it.isNumber }
+            ?.decimalValue()
+        if (summary.apifyCostUsd == null) logger.warn("Apify actor run {} did not report a cost", actorRunId)
+        logger.info("Facebook Apify actor run {} status={} costUsd={}", actorRunId, settledRun.path("status").asText(), summary.apifyCostUsd)
+        if (settledRun.path("status").asText() != "SUCCEEDED") {
+            throw IllegalStateException("Apify actor run $actorRunId ended with status ${settledRun.path("status").asText()}")
+        }
+        val datasetId = settledRun.path("defaultDatasetId").asText().takeIf { it.isNotBlank() }
+            ?: throw IllegalStateException("Apify actor run $actorRunId did not return a dataset ID")
+        val response = client.get()
+            .uri(datasetItemsUri(datasetId))
+            .accept(MediaType.APPLICATION_JSON)
+            .header(HttpHeaders.AUTHORIZATION, "Bearer ${properties.apify.apiToken}")
             .retrieve()
             .body<String>() ?: "[]"
         val root = objectMapper.readTree(response)
@@ -183,10 +220,29 @@ class FacebookApifyArticleImporter(
             "startUrls" to listOf(mapOf("url" to properties.apify.profileUrl)),
         )
 
-    private fun runSyncDatasetItemsUri(): URI {
+    private fun startActorUri(): URI {
         val baseUrl = properties.apify.baseUrl.trimEnd('/')
         val actorId = URLEncoder.encode(properties.apify.actorId.replace("/", "~"), StandardCharsets.UTF_8)
-        return URI.create("$baseUrl/v2/acts/$actorId/run-sync-get-dataset-items")
+        return URI.create("$baseUrl/v2/acts/$actorId/runs?waitForFinish=60")
+    }
+
+    private fun getActorRun(client: RestClient, actorRunId: String, waitForFinish: Boolean): JsonNode {
+        val baseUrl = properties.apify.baseUrl.trimEnd('/')
+        val runId = URLEncoder.encode(actorRunId, StandardCharsets.UTF_8)
+        val wait = if (waitForFinish) "?waitForFinish=60" else ""
+        val response = client.get()
+            .uri(URI.create("$baseUrl/v2/actor-runs/$runId$wait"))
+            .accept(MediaType.APPLICATION_JSON)
+            .header(HttpHeaders.AUTHORIZATION, "Bearer ${properties.apify.apiToken}")
+            .retrieve()
+            .body<String>() ?: throw IllegalStateException("Apify actor run $actorRunId returned no details")
+        return objectMapper.readTree(response).path("data")
+    }
+
+    private fun datasetItemsUri(datasetId: String): URI {
+        val baseUrl = properties.apify.baseUrl.trimEnd('/')
+        val id = URLEncoder.encode(datasetId, StandardCharsets.UTF_8)
+        return URI.create("$baseUrl/v2/datasets/$id/items")
     }
 
     private fun proposalsFromItem(importRunId: String, item: JsonNode): List<FacebookProposalSubmission> {
@@ -292,6 +348,8 @@ class FacebookApifyArticleImporter(
                     failedCount = summary.failed,
                     statusDetail = detail,
                     logs = logs,
+                    apifyActorRunId = summary.apifyActorRunId,
+                    apifyCostUsd = summary.apifyCostUsd,
                 ),
             )
         }.onFailure { ex ->
@@ -387,6 +445,8 @@ class FacebookApifyArticleImporter(
         var autoApproved: Int = 0,
         var skippedExisting: Int = 0,
         var failed: Int = 0,
+        var apifyActorRunId: String? = null,
+        var apifyCostUsd: BigDecimal? = null,
         private val logs: MutableList<String> = mutableListOf(),
     ) {
         fun recordWorkerLogs(value: String) {
@@ -398,6 +458,7 @@ class FacebookApifyArticleImporter(
     }
 
     private companion object {
+        val TERMINAL_ACTOR_STATUSES = setOf("SUCCEEDED", "FAILED", "TIMED-OUT", "ABORTED")
         const val PRICE_PER_RESULT_USD = 0.002
         val RUN_ID_FORMATTER: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'")
         val ANCHOR_HREF_REGEX: Regex = Regex("""<a\b[^>]*\bhref\s*=\s*[\"']([^\"']+)[\"']""", RegexOption.IGNORE_CASE)

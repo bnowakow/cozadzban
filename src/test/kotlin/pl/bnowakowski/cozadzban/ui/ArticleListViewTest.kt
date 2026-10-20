@@ -43,6 +43,7 @@ import pl.bnowakowski.cozadzban.facebookimport.FacebookCandidateApproval
 import pl.bnowakowski.cozadzban.facebookimport.FacebookCandidateApprovalDecision
 import pl.bnowakowski.cozadzban.facebookimport.FacebookArticleProposalService
 import pl.bnowakowski.cozadzban.facebookimport.FacebookArticleProposalStatusFilter
+import pl.bnowakowski.cozadzban.facebookimport.ApifyCostSummary
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportJobService
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportProgressSnapshot
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportProperties
@@ -151,6 +152,7 @@ class ArticleListViewTest {
             listOf(FacebookImportType.APIFY, FacebookImportType.SELENIUM),
         )
         whenever(facebookImportJobService.startImport(FacebookImportType.APIFY)).thenReturn("run-apify")
+        whenever(articleProposalService.apifyCostSummarySince(any())).thenReturn(ApifyCostSummary())
 
         val view = ArticleListView(
             articleRepository,
@@ -204,6 +206,7 @@ class ArticleListViewTest {
         )
         whenever(facebookImportJobService.availableImportTypes()).thenReturn(listOf(FacebookImportType.SELENIUM))
         whenever(facebookImportJobService.startImport(FacebookImportType.APIFY)).thenReturn("run-apify")
+        whenever(articleProposalService.apifyCostSummarySince(any())).thenReturn(ApifyCostSummary())
 
         val view = ArticleListView(
             articleRepository,

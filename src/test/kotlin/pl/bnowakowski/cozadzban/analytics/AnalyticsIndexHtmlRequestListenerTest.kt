@@ -46,6 +46,26 @@ class AnalyticsIndexHtmlRequestListenerTest {
         assertTrue(script?.data().orEmpty().contains("window.sc_project = 123"))
     }
 
+    @Test
+    fun `provides distinct Polish and English homepage descriptions`() {
+        val listener = AnalyticsIndexHtmlRequestListener(AnalyticsProperties())
+        val polish = Jsoup.parse("<html><head></head><body></body></html>")
+        val english = Jsoup.parse("<html><head></head><body></body></html>")
+        val method = AnalyticsIndexHtmlRequestListener::class.java.getDeclaredMethod(
+            "injectSearchMetadata", org.jsoup.nodes.Document::class.java, String::class.java,
+        )
+        method.isAccessible = true
+        method.invoke(listener, polish, "pl")
+        method.invoke(listener, english, "en")
+
+        assertEquals("pl", polish.selectFirst("html")?.attr("lang"))
+        assertEquals("en", english.selectFirst("html")?.attr("lang"))
+        assertTrue(polish.selectFirst("meta[name=description]")!!.attr("content").contains("wiadomości"))
+        assertTrue(english.selectFirst("meta[name=description]")!!.attr("content").contains("news"))
+        assertEquals("https://cozadzban.pl/?lang=pl", polish.selectFirst("link[rel=canonical]")?.attr("href"))
+        assertEquals(2, polish.select("link[hreflang]").size)
+    }
+
     private fun injectAnalyticsScript(listener: AnalyticsIndexHtmlRequestListener, doc: org.jsoup.nodes.Document) {
         val method = AnalyticsIndexHtmlRequestListener::class.java.getDeclaredMethod(
             "injectAnalyticsScript",

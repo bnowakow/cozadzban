@@ -7,13 +7,72 @@ import ch.qos.logback.classic.Logger
 import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.core.read.ListAppender
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.sun.net.httpserver.HttpServer
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.mockito.kotlin.argumentCaptor
+import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
+import org.mockito.kotlin.verify
 import org.slf4j.LoggerFactory
+import java.math.BigDecimal
+import java.net.InetSocketAddress
 
 class FacebookApifyArticleImporterTest {
+
+    @Test
+    fun `records the actual cost and actor run ID for the imported dataset`() {
+        val requests = mutableListOf<String>()
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/") { exchange ->
+            requests += "${exchange.requestMethod} ${exchange.requestURI.path}"
+            val response = when (exchange.requestURI.path) {
+                "/v2/acts/apify~facebook-posts-scraper/runs" ->
+                    """{"data":{"id":"actor-run-1","status":"SUCCEEDED","defaultDatasetId":"dataset-1"}}"""
+                "/v2/actor-runs/actor-run-1" ->
+                    """{"data":{"id":"actor-run-1","status":"SUCCEEDED","defaultDatasetId":"dataset-1","usageTotalUsd":0.127}}"""
+                "/v2/datasets/dataset-1/items" -> "[]"
+                else -> error("Unexpected Apify request: ${exchange.requestURI}")
+            }
+            val bytes = response.toByteArray()
+            exchange.responseHeaders.add("Content-Type", "application/json")
+            exchange.sendResponseHeaders(200, bytes.size.toLong())
+            exchange.responseBody.use { it.write(bytes) }
+        }
+        server.start()
+        try {
+            val proposalClient: FacebookImportProposalClient = mock()
+            val importer = FacebookApifyArticleImporter(
+                properties = FacebookImportProperties(
+                    apify = FacebookImportProperties.Apify(
+                        enabled = true,
+                        apiToken = "token",
+                        baseUrl = "http://127.0.0.1:${server.address.port}",
+                    ),
+                ),
+                proposalClient = proposalClient,
+            )
+
+            importer.runImport("import-1", FacebookImportTrigger.SCHEDULED)
+
+            val completion = argumentCaptor<FacebookImportRunCompletionRequest>()
+            verify(proposalClient).completeRun(eq("import-1"), completion.capture())
+            assertEquals(FacebookImportRunStatus.FINISHED, completion.firstValue.status)
+            assertEquals("actor-run-1", completion.firstValue.apifyActorRunId)
+            assertEquals(BigDecimal("0.127"), completion.firstValue.apifyCostUsd)
+            assertEquals(
+                listOf(
+                    "POST /v2/acts/apify~facebook-posts-scraper/runs",
+                    "GET /v2/actor-runs/actor-run-1",
+                    "GET /v2/datasets/dataset-1/items",
+                ),
+                requests,
+            )
+        } finally {
+            server.stop(0)
+        }
+    }
 
     @Test
     fun `unavailableReason logs the exceeded cost limit message`() {

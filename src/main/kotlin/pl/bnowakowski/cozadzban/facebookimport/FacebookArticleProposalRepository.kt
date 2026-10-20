@@ -8,12 +8,36 @@ import org.springframework.jdbc.core.namedparam.MapSqlParameterSource
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Repository
 import java.sql.Timestamp
+import java.math.BigDecimal
 import java.time.Instant
 
 @Repository
 class FacebookImportRunRepository(
     private val jdbc: NamedParameterJdbcTemplate,
 ) {
+    fun apifyCostSummarySince(since: Instant): ApifyCostSummary =
+        jdbc.queryForObject(
+            """
+                SELECT COUNT(*) AS run_count,
+                       COALESCE(SUM(apify_cost_usd), 0) AS total_cost_usd,
+                       COUNT(*) FILTER (WHERE import_trigger IN ('SCHEDULED', 'WORKER_STARTUP')) AS automatic_run_count,
+                       COALESCE(SUM(apify_cost_usd) FILTER (WHERE import_trigger IN ('SCHEDULED', 'WORKER_STARTUP')), 0)
+                           AS automatic_cost_usd
+                  FROM facebook_import_run
+                 WHERE import_type = :importType
+                   AND started_at >= :since
+                   AND apify_cost_usd IS NOT NULL
+            """.trimIndent(),
+            mapOf("importType" to FacebookImportType.APIFY.name, "since" to Timestamp.from(since)),
+        ) { rs, _ ->
+            ApifyCostSummary(
+                runCount = rs.getInt("run_count"),
+                totalCostUsd = rs.getBigDecimal("total_cost_usd"),
+                automaticRunCount = rs.getInt("automatic_run_count"),
+                automaticCostUsd = rs.getBigDecimal("automatic_cost_usd"),
+            )
+        } ?: ApifyCostSummary()
+
     fun recordBatch(
         importRunId: String,
         discoveredCount: Int,
@@ -170,18 +194,21 @@ class FacebookImportRunRepository(
         logsCompressed: ByteArray?,
         importType: FacebookImportType = FacebookImportType.SELENIUM,
         trigger: FacebookImportTrigger = FacebookImportTrigger.MANUAL,
+        apifyActorRunId: String? = null,
+        apifyCostUsd: BigDecimal? = null,
     ) {
+        require(apifyCostUsd == null || apifyCostUsd >= BigDecimal.ZERO) { "Apify cost must be nonnegative" }
         jdbc.update(
             """
                 INSERT INTO facebook_import_run(
                     import_run_id, import_type, import_trigger, status, finished_at, discovered_count, submitted_count,
                     skipped_existing_count, failed_count, phase, status_detail, phase_index,
-                    phase_count, last_status_at, summary_logs_compressed
+                    phase_count, last_status_at, summary_logs_compressed, apify_actor_run_id, apify_cost_usd
                 )
                 VALUES (
                     :importRunId, :importType, :trigger, :status, now(), :discoveredCount, :submittedCount,
                     :skippedExistingCount, :failedCount, :phase, :statusDetail, :phaseIndex,
-                    :phaseCount, now(), :logsCompressed
+                    :phaseCount, now(), :logsCompressed, :apifyActorRunId, :apifyCostUsd
                 )
                 ON CONFLICT (import_run_id) DO UPDATE
                    SET import_type = :importType,
@@ -215,7 +242,9 @@ class FacebookImportRunRepository(
                            WHEN facebook_import_run.finished_at IS NULL THEN now()
                            ELSE facebook_import_run.last_status_at
                        END,
-                       summary_logs_compressed = COALESCE(:logsCompressed, facebook_import_run.summary_logs_compressed)
+                       summary_logs_compressed = COALESCE(:logsCompressed, facebook_import_run.summary_logs_compressed),
+                       apify_actor_run_id = COALESCE(:apifyActorRunId, facebook_import_run.apify_actor_run_id),
+                       apify_cost_usd = COALESCE(:apifyCostUsd, facebook_import_run.apify_cost_usd)
             """.trimIndent(),
             MapSqlParameterSource()
                 .addValue("importRunId", importRunId)
@@ -230,7 +259,9 @@ class FacebookImportRunRepository(
                 .addValue("phase", terminalPhase(status))
                 .addValue("phaseIndex", FACEBOOK_IMPORT_PROGRESS_PHASE_COUNT)
                 .addValue("phaseCount", FACEBOOK_IMPORT_PROGRESS_PHASE_COUNT)
-                .addValue("logsCompressed", logsCompressed),
+                .addValue("logsCompressed", logsCompressed)
+                .addValue("apifyActorRunId", apifyActorRunId)
+                .addValue("apifyCostUsd", apifyCostUsd),
         )
     }
 
@@ -474,6 +505,13 @@ class FacebookImportRunRepository(
         }
     }
 }
+
+data class ApifyCostSummary(
+    val runCount: Int = 0,
+    val totalCostUsd: BigDecimal = BigDecimal.ZERO,
+    val automaticRunCount: Int = 0,
+    val automaticCostUsd: BigDecimal = BigDecimal.ZERO,
+)
 
 @Repository
 class FacebookArticleProposalRepository(

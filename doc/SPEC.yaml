@@ -1097,9 +1097,150 @@ x-runtime-configuration:
       - APP_FACEBOOK_IMPORT_APIFY_MAX_COST_USD
       - APP_FACEBOOK_IMPORT_APIFY_SCHEDULE_ENABLED
       - APP_FACEBOOK_IMPORT_APIFY_SCHEDULE_INTERVAL
+      - APP_FACEBOOK_IMPORT_APIFY_COST_SUMMARY_DAYS
       - APP_FACEBOOK_IMPORT_APIFY_CONNECT_TIMEOUT
       - APP_FACEBOOK_IMPORT_APIFY_READ_TIMEOUT
     schedulingSemantics: enabled import types run sequentially
+
+# Planned feature; this is a design contract, not an implemented API or schema.
+x-planned-features:
+  facebookPagePublishing:
+    status: planned
+    scope: Facebook Pages managed by this application, never personal profiles
+    implementationPhases:
+      - phase: 1
+        name: Page connection and persistence foundation
+        work: >
+          Add Flyway migrations and Spring Data JDBC models for per-language
+          Page configuration, encrypted Page credentials, publication jobs,
+          Meta post identity, reaction snapshots, and link-comment outcomes.
+          Add an ADMIN-only settings view and server-side Meta authorization
+          flow. Keep publishing disabled until an ADMIN connects and enables a
+          Page. Do not backfill existing articles automatically.
+        completion: >
+          An ADMIN can connect, inspect, configure, disconnect, and reconnect
+          each language's Page. Tokens remain server-side and are encrypted at
+          rest. Schema, authorization, and settings behavior pass the test suite.
+      - phase: 2
+        name: Automatic image posts and article links
+        work: >
+          Create a durable publication job for each new article, publish an
+          image post without a URL after commit, use a branded placeholder if
+          the thumbnail is absent or unusable, and show the successful Meta
+          post link in the article view. Record failures and support safe
+          reconciliation of ambiguous publish results.
+        completion: >
+          A new article in a configured language produces at most one Page
+          post; failures leave the article intact and visible to admins.
+          The article view links to the published Facebook post. Tests cover
+          UI, REST, and import-created articles and image fallback.
+      - phase: 3
+        name: Engagement, link selection, and synchronization
+        work: >
+          Schedule reaction-count collection, apply the configurable minimum
+          age and per-Page monthly link budget, add selected story links as
+          Page comments, and store attempts, confirmed success, and failures.
+          Queue and process article edit and deletion synchronization with
+          durable status and safe retry handling.
+        completion: >
+          The scheduler respects the five-link default and Page time zone,
+          never double-counts or blindly duplicates comments, and records
+          Meta reaction and synchronization outcomes. Tests cover concurrent
+          budget claims, failed Graph calls, edits, and deletions.
+      - phase: 4
+        name: Story views and ranking refinement
+        work: >
+          Count story-page views with bot filtering, expose useful article and
+          Page publication statistics to admins, and keep view counts
+          available to future link-selection rules. Retain reaction count as
+          the initial ranking signal until a different rule is chosen.
+        completion: >
+          Admins can compare story views with Facebook reactions without
+          exposing visitor or creator data publicly. View counting and
+          reporting pass the test suite.
+    pageConfiguration:
+      access: ADMIN-only Vaadin settings view
+      mapping: one enabled Facebook Page per normalized article language
+      fields: [language, pageId, enabled, timeZone, monthlyLinkLimit, minimumPostAge, schedulerInterval]
+      defaults:
+        timeZone: Europe/Warsaw
+        monthlyLinkLimit: 5
+        minimumPostAge: 24h
+      missingLanguagePage: retain the article and show an unpublished configuration status to admins
+      authorization: >
+        An ADMIN connects each Page through a server-side Meta authorization-code
+        flow. The server exchanges the code, obtains the Page access token and
+        stores it encrypted at rest. OAuth state and Page identity are verified.
+        Browser JavaScript never receives Meta access or ID tokens. The
+        application requests only the Page publishing, engagement and reading
+        permissions needed by the implemented Graph API calls.
+    articleCreation:
+      trigger: every newly persisted Article, including UI, REST API and import-created articles
+      delivery: >
+        Create a durable publication job in the article transaction. Publish
+        asynchronously after commit so Meta failures cannot roll back article
+        creation. Keep the article ID, language, Page ID, publishing state,
+        Meta post ID and permalink, timestamps, attempt count and sanitized
+        error details. Use a uniqueness constraint to prevent duplicate jobs.
+        Reconcile ambiguous Graph API timeouts before retrying to avoid
+        duplicate public posts.
+      format: image post with title and short lead or summary in the article language, without any external URL
+      image: >
+        Use the article thumbnail when available and usable. If absent or
+        unusable, render a branded local placeholder image. Keep image
+        selection and generation behind a replaceable component so a future
+        service can generate an image from article text. Document this
+        replacement point in that component's code when implemented.
+      thumbnailRightsReview: >
+        Republishing source-site thumbnails on Facebook may require rights
+        review. The initial implementation uses article thumbnails as
+        requested; revisit the source-image permission policy before
+        expanding publication to additional Pages or sources.
+    articleChanges:
+      update: >
+        Queue synchronization after an article edit and track the result.
+        The scheduler updates the Facebook post where the Graph API permits.
+        If an image cannot be changed in place, record that replacement is
+        required and preserve the existing post association until resolved.
+      delete: >
+        Persist a deletion job containing the Meta post ID before deleting the
+        article, then let the scheduler remove the Facebook post and record
+        success or failure. Do not lose a pending deletion job when the article
+        row is removed.
+    publicArticleView:
+      facebookPostLink: >
+        When a post is published, show a link to that Facebook post in the
+        article view as a place for readers to comment.
+      viewCount: >
+        Record article story-page views separately from Facebook engagement
+        snapshots, with bot filtering and no creator/user data exposure.
+    engagement:
+      collection: scheduled Graph API reads of each published post's reaction count
+      persistence: store the reaction count, measurement time and API error state per post
+      firstLinkSelectionRule: >
+        After the configurable minimum post age (initially 24 hours), rank
+        eligible posts on each Page by the latest reaction count. On each
+        scheduler run, choose the highest-ranked posts while that Page has
+        unused link slots for the current calendar month. Keep the selection
+        policy separate from publishing so later rules can use article views
+        or other statistics.
+    linkComments:
+      target: the canonical /stories/{articleId} URL of the published article
+      budget: >
+        Initial configurable cap of five successful external-link comments
+        per Page per calendar month in that Page's configured time zone.
+        Persist all timestamps in UTC. Reserve slots for in-flight attempts so
+        concurrent workers cannot overspend. The cap is an application policy,
+        not a claim about Meta's effective Page limit; Meta may reject a link
+        sooner or count comments against its own quota.
+      persistence: >
+        Store whether a link comment was selected, attempted, confirmed
+        successful, or failed; the Page, article, Meta post and comment IDs;
+        attempted and confirmed timestamps; and sanitized error details.
+        A link counts against the application's monthly budget only after
+        confirmed success. Reconcile ambiguous timeouts before retrying so
+        the scheduler does not create duplicate comments.
+      backfill: no automatic posting of existing articles; a separate ADMIN action is required
 
 x-problem-types:
   articleUrlConflict:

@@ -165,6 +165,8 @@ class ArticleListView(
 
     init {
         installCozadzbanThemeBootstrap()
+        languageFilter = VaadinServletRequest.getCurrent()?.getParameter("lang")
+            ?.lowercase()?.takeIf { it == "pl" || it == "en" }
 
         // Resolve auth state once; dataProvider callbacks read these fields lazily
         val auth = SecurityContextHolder.getContext().authentication
@@ -221,6 +223,12 @@ class ArticleListView(
     }
 
     override fun afterNavigation(event: AfterNavigationEvent) {
+        val requestedLanguage = event.location.queryParameters.getSingleParameter("lang")
+            .orElse(null)?.lowercase()?.takeIf { it == "pl" || it == "en" }
+        if (languageFilter != requestedLanguage) {
+            languageFilter = requestedLanguage
+            refreshData()
+        }
         val shouldOpenAddArticle = event.location.queryParameters
             .getSingleParameter("addArticle")
             .filter { it == "1" || it.equals("true", ignoreCase = true) }
@@ -473,6 +481,18 @@ class ArticleListView(
             ),
             facebookImportHistoryMetric("Automatic", articleProposalService.latestAutomaticRunTimestamp(importType)),
         )
+        if (importType == FacebookImportType.APIFY) {
+            val costSummaryDays = facebookImportProperties.apify.costSummaryDays.takeIf { it > 0 } ?: 30
+            val costs = articleProposalService.apifyCostSummarySince(Instant.now().minus(Duration.ofDays(costSummaryDays.toLong())))
+            metrics.add(
+                facebookImportMetric("Recorded cost (${costSummaryDays}d)", "${'$'}${costs.totalCostUsd.setScale(3, java.math.RoundingMode.HALF_UP)} / ${costs.runCount} runs"),
+                facebookImportMetric(
+                    "Automatic average (${costSummaryDays}d)",
+                    if (costs.automaticRunCount == 0) "awaiting data" else
+                        "${'$'}${costs.automaticCostUsd.divide(java.math.BigDecimal(costs.automaticRunCount), 3, java.math.RoundingMode.HALF_UP)} / run",
+                ),
+            )
+        }
 
         val collapsibleBody = Div(metrics)
         collapsibleBody.addClassName("czj-facebook-import-collapsible-body")
@@ -918,22 +938,19 @@ class ArticleListView(
         card.element.style.set("margin-bottom", "0")
         card.element.style.set("box-shadow", "var(--czj-card-shadow)")
 
-        val link = Anchor(article.url)
-        link.setTarget("_blank")
-        link.element.setAttribute("rel", "noopener noreferrer")
-        link.element.style.set("display", "block")
-        link.element.style.set("color", "inherit")
-        link.element.style.set("text-decoration", "none")
-
         val content = Div()
         article.thumbnail?.trim()?.takeIf { it.isNotBlank() }?.let { thumbnail ->
+            val imageLink = Anchor(article.url)
+            imageLink.setTarget("_blank")
+            imageLink.element.setAttribute("rel", "noopener noreferrer")
             val image = Image(thumbnail, article.title ?: "")
             image.width = "100%"
             image.element.style.set("display", "block")
             image.element.style.set("aspect-ratio", "1 / 1")
             image.element.style.set("object-fit", "cover")
             image.element.executeJs("this.addEventListener('error', () => this.style.display = 'none')")
-            content.add(image)
+            imageLink.add(image)
+            content.add(imageLink)
         }
 
         val body = Div()
@@ -943,12 +960,20 @@ class ArticleListView(
         body.element.style.set("gap", "1.2rem")
         body.element.style.set("padding", "1.35rem 1.55rem 1.6rem")
         body.add(buildArticleMeta(article))
-        visibleArticleTitle(article)?.let { body.add(buildArticleTitle(it)) }
-        article.quote?.trim()?.takeIf { it.isNotBlank() }?.let { body.add(buildQuote(it)) }
-        article.lead?.trim()?.takeIf { it.isNotBlank() }?.let { body.add(buildLead(it)) }
+        val articleLink = Anchor(article.url)
+        articleLink.setTarget("_blank")
+        articleLink.element.setAttribute("rel", "noopener noreferrer")
+        articleLink.element.style.set("display", "flex")
+        articleLink.element.style.set("flex-direction", "column")
+        articleLink.element.style.set("gap", "1.2rem")
+        articleLink.element.style.set("color", "inherit")
+        articleLink.element.style.set("text-decoration", "none")
+        visibleArticleTitle(article)?.let { articleLink.add(buildArticleTitle(it)) }
+        article.quote?.trim()?.takeIf { it.isNotBlank() }?.let { articleLink.add(buildQuote(it)) }
+        article.lead?.trim()?.takeIf { it.isNotBlank() }?.let { articleLink.add(buildLead(it)) }
+        body.add(articleLink)
         content.add(body)
-        link.add(content)
-        card.add(link)
+        card.add(content)
 
         if (isAuthenticated && authenticatedUser?.status == AppUserStatus.ACTIVE) {
             card.add(buildArticleActions(article))
@@ -968,7 +993,9 @@ class ArticleListView(
         val dot = Span("•")
         dot.element.style.set("color", "var(--lumo-secondary-text-color)")
 
-        val date = Span(article.publishedAt?.let { formatDate(it) } ?: "")
+        val dateLabel = formatDate(article.publishedAt ?: article.createdAt ?: Instant.EPOCH)
+        val date = Anchor("/stories/${article.id}", dateLabel)
+        date.element.setAttribute("aria-label", "View story from $dateLabel")
         date.element.style.set("font-size", "var(--lumo-font-size-xs)")
         date.element.style.set("color", "var(--lumo-secondary-text-color)")
 

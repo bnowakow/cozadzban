@@ -28,6 +28,7 @@ enum class CozadzbanTopBarPage {
     ARTICLE_PROPOSALS,
     NOTIFICATION_SETTINGS,
     MANAGE_USERS,
+    FACEBOOK_PAGES,
     ARTICLE_CONTENT_CACHE,
 }
 
@@ -234,6 +235,11 @@ private fun Component.buildSharedMenu(
         subMenu.addItem("Admin").isEnabled = false
         if (currentPage != CozadzbanTopBarPage.MANAGE_USERS) {
             subMenu.addIconItem("Manage users", VaadinIcon.USERS) { ui.ifPresent { it.navigate("admin") } }
+        }
+        if (currentPage != CozadzbanTopBarPage.FACEBOOK_PAGES) {
+            subMenu.addIconItem("Facebook Pages", VaadinIcon.GLOBE) {
+                ui.ifPresent { it.navigate("admin/facebook-pages") }
+            }
         }
         if (currentPage != CozadzbanTopBarPage.ARTICLE_CONTENT_CACHE) {
             subMenu.addIconItem("Article content cache", VaadinIcon.DATABASE) {

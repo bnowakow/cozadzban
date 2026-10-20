@@ -23,6 +23,12 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean
 import pl.bnowakowski.cozadzban.facebookimport.FacebookArticleProposalRepository
 import pl.bnowakowski.cozadzban.facebookimport.FACEBOOK_IMPORT_JOB_NAME
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportTrigger
+import pl.bnowakowski.cozadzban.facebookimport.FacebookImportRunRepository
+import pl.bnowakowski.cozadzban.facebookimport.FacebookImportRunStatus
+import pl.bnowakowski.cozadzban.facebookimport.FacebookImportType
+import java.math.BigDecimal
+import java.time.Instant
+import java.util.UUID
 
 /**
  * Phase 21 / Item 64 — Migration tests.
@@ -49,10 +55,39 @@ class MigrationSchemaIT {
 
     @Autowired private lateinit var jdbc: JdbcTemplate
     @Autowired private lateinit var proposalRepository: FacebookArticleProposalRepository
+    @Autowired private lateinit var importRunRepository: FacebookImportRunRepository
     @Autowired private lateinit var jobRepository: JobRepository
     @Autowired @Qualifier(FACEBOOK_IMPORT_JOB_NAME) private lateinit var facebookImportJob: Job
 
     @MockitoBean private lateinit var jwtDecoder: JwtDecoder
+
+    @Test
+    fun `apify run cost is persisted and included in automatic cost summary`() {
+        val importRunId = "apify-cost-${UUID.randomUUID()}"
+        val actorRunId = "actor-${UUID.randomUUID()}"
+        val since = Instant.now().minusSeconds(60)
+
+        importRunRepository.complete(
+            importRunId = importRunId,
+            status = FacebookImportRunStatus.FINISHED,
+            discoveredCount = 0,
+            submittedCount = 0,
+            skippedExistingCount = 0,
+            failedCount = 0,
+            statusDetail = null,
+            logsCompressed = null,
+            importType = FacebookImportType.APIFY,
+            trigger = FacebookImportTrigger.SCHEDULED,
+            apifyActorRunId = actorRunId,
+            apifyCostUsd = BigDecimal("0.127"),
+        )
+
+        assertEquals(actorRunId, jdbc.queryForObject("SELECT apify_actor_run_id FROM facebook_import_run WHERE import_run_id = ?", String::class.java, importRunId))
+        assertEquals(BigDecimal("0.127000000"), jdbc.queryForObject("SELECT apify_cost_usd FROM facebook_import_run WHERE import_run_id = ?", BigDecimal::class.java, importRunId))
+        val costs = importRunRepository.apifyCostSummarySince(since)
+        assertTrue(costs.automaticRunCount >= 1)
+        assertTrue(costs.automaticCostUsd >= BigDecimal("0.127"))
+    }
 
     @Test
     fun `article created_by_user_id is NOT NULL in schema`() {

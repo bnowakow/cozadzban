@@ -4,6 +4,7 @@
 package pl.bnowakowski.cozadzban.facebookimport
 
 import java.time.Instant
+import java.math.BigDecimal
 
 enum class FacebookArticleProposalStatus {
     ACCEPTED,
@@ -127,6 +128,8 @@ data class FacebookImportRunCompletionRequest(
     val failedCount: Int = 0,
     val statusDetail: String? = null,
     val logs: String? = null,
+    val apifyActorRunId: String? = null,
+    val apifyCostUsd: BigDecimal? = null,
 )
 
 data class FacebookImportLoginRequiredRequest(

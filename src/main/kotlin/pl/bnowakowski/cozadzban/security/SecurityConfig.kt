@@ -56,11 +56,16 @@ class SecurityConfig(
                 // OAuth2 login and callback endpoints must stay public.
                 auth.requestMatchers("/auth/login", "/oauth2/**", "/login/oauth2/**").permitAll()
                 // Browser-discovered site assets must stay public (e.g. after OAuth redirects).
-                auth.requestMatchers("/favicon.ico", "/favicons/**", "/flags/**", "/cozadzban-logo.png", "/apple-touch-icon.png", "/apple-touch-icon-precomposed.png", "/manifest.webmanifest", "/site.webmanifest", "/robots.txt").permitAll()
+                auth.requestMatchers("/favicon.ico", "/favicons/**", "/flags/**", "/cozadzban-logo.png", "/apple-touch-icon.png", "/apple-touch-icon-precomposed.png", "/manifest.webmanifest", "/site.webmanifest", "/robots.txt", "/sitemap.xml").permitAll()
 
                 // Session-backed UI identity endpoints (Phase 11)
                 auth.requestMatchers(HttpMethod.GET, "/auth/me").authenticated()
                 auth.requestMatchers(HttpMethod.POST, "/auth/logout").authenticated()
+
+                // Meta connection uses a separate server-side OAuth callback and is ADMIN-only.
+                auth.requestMatchers("/facebook-pages/oauth/**").access { authentication, _ ->
+                    AuthorizationDecision(allowlist.checkAdmin(authentication.get()))
+                }
 
                 // /actuator/health and probe subpaths are always public (load balancer / k8s probes)
                 auth.requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
@@ -77,6 +82,7 @@ class SecurityConfig(
                 }
                 // Public REST read endpoints (BR-10)
                 auth.requestMatchers(HttpMethod.GET, "/api/articles", "/api/articles/**", "/rss", "/rss/**").permitAll()
+                auth.requestMatchers(HttpMethod.GET, "/stories/**").permitAll()
 
                 // Protected article write endpoints: token must be valid and email allowlisted (BR-11, BR-13)
                 // POST and PATCH also accept the dedicated machine credential used by the Facebook importer.

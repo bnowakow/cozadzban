@@ -28,12 +28,42 @@ class AnalyticsIndexHtmlRequestListener(
     override fun serviceInit(event: ServiceInitEvent) {
         event.addIndexHtmlRequestListener { response ->
             val doc: Document = response.document
+            injectSearchMetadata(doc, response.vaadinRequest.getParameter("lang"))
             injectVaadinDevToolsBootstrap(doc)
             injectThemeBootstrap(doc)
             injectConsentBannerStyles(doc)
             injectConsentBannerHtml(doc)
             injectAnalyticsScript(doc)
         }
+    }
+
+    private fun injectSearchMetadata(doc: Document, requestedLanguage: String?) {
+        val language = requestedLanguage?.lowercase()?.takeIf { it == "pl" || it == "en" }
+        val polish = language == "pl"
+        val title = if (polish) "Co za dzban — wiadomości i historie" else "Co za dzban — news and stories"
+        val description = if (polish) {
+            "Przegląd wiadomości i historii z różnych źródeł. Czytaj streszczenia, poznaj kontekst i przejdź do oryginalnych publikacji."
+        } else {
+            "A collection of news and stories from different sources. Read summaries, explore the context, and follow links to the original publications."
+        }
+        val url = "https://cozadzban.pl" + when (language) {
+            "pl" -> "/?lang=pl"
+            "en" -> "/?lang=en"
+            else -> "/"
+        }
+        doc.selectFirst("html")!!.attr("lang", language ?: "en")
+        doc.head().select("title, meta[name=description], link[rel=canonical], link[rel=alternate][hreflang]").remove()
+        doc.head().appendElement("title").text(title)
+        doc.head().appendElement("meta").attr("name", "description").attr("content", description)
+        doc.head().appendElement("link").attr("rel", "canonical").attr("href", url)
+        listOf("pl", "en").forEach { lang ->
+            doc.head().appendElement("link").attr("rel", "alternate")
+                .attr("hreflang", lang).attr("href", "https://cozadzban.pl/?lang=$lang")
+        }
+        doc.head().appendElement("meta").attr("property", "og:title").attr("content", title)
+        doc.head().appendElement("meta").attr("property", "og:description").attr("content", description)
+        doc.head().appendElement("meta").attr("property", "og:url").attr("content", url)
+        doc.head().appendElement("meta").attr("property", "og:locale").attr("content", if (polish) "pl_PL" else "en_US")
     }
 
     private fun injectVaadinDevToolsBootstrap(doc: Document) {
@@ -158,6 +188,7 @@ class AnalyticsIndexHtmlRequestListener(
         // Cookie consent banner (visible by default only when analytics is enabled)
         val banner = body.prependElement("div")
         banner.attr("id", "czj-consent-banner")
+        banner.attr("data-nosnippet", "")
         if (!analytics.isAnyEnabled) {
             banner.attr("style", "display:none")
         }
@@ -179,6 +210,7 @@ class AnalyticsIndexHtmlRequestListener(
         if (analytics.isAnyEnabled) {
             val footer = body.appendElement("div")
             footer.attr("id", "czj-cookie-footer")
+            footer.attr("data-nosnippet", "")
             footer.attr("style", "position:fixed;bottom:4px;right:8px;z-index:9999")
             footer.appendElement("button")
                 .attr("id", "czj-manage-cookies")
