@@ -88,6 +88,17 @@ class FacebookPublicationQueue(private val jdbc: NamedParameterJdbcTemplate) {
         mapOf("id" to id),
     ) == 1
 
+    /** Attach the Page currently enabled for this language before queuing an unpublished article. */
+    fun retryUnconfigured(id: Long): Boolean = jdbc.update(
+        """UPDATE facebook_page_publication publication
+           SET page_id = page.page_id, status = 'PENDING', last_error = NULL, updated_at = now()
+           FROM facebook_page_connection page
+           WHERE publication.id = :id AND publication.status = 'UNCONFIGURED'
+             AND publication.article_id IS NOT NULL
+             AND page.language = publication.language AND page.enabled = true""",
+        mapOf("id" to id),
+    ) == 1
+
     /** Only an ADMIN who checked the Page can decide an uncertain request did not publish. */
     fun retryAfterManualReview(id: Long): Boolean = jdbc.update(
         """UPDATE facebook_page_publication SET status = 'PENDING', post_id = NULL,

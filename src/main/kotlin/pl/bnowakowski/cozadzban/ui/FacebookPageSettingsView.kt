@@ -232,6 +232,10 @@ class FacebookPageSettingsView(
             row.isPadding = false
             row.add(Span("Article ${job.articleId} · ${job.language} · ${job.status} · ${job.lastError ?: "No Page was enabled when this article was added."}"))
             when (job.status) {
+                "UNCONFIGURED" -> row.add(Button("Retry with enabled Page") {
+                    if (queue.retryUnconfigured(job.id)) refreshPublicationProblems()
+                    else notify("Enable a Page for ${job.language} and save its settings before retrying")
+                })
                 "FAILED" -> row.add(Button("Retry rejected post") {
                     if (queue.retryFailed(job.id)) refreshPublicationProblems()
                 })
