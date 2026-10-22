@@ -96,7 +96,7 @@ Phases 4 and 5 are independent and can be developed in parallel.
 
 23. **`UiAuthController` + OAuth2 login config** — secure first-party login flow:
     - `GET /auth/login` — redirects to Google OIDC authorization endpoint
-      using Authorization Code + PKCE (no tokens exposed to frontend JS)
+      using Authorization Code (no tokens exposed to frontend JS)
     - OAuth callback handled by Spring Security (`/login/oauth2/code/google`)
     - `GET /auth/me` — returns authenticated user details (email, nullable role, allowlisted) for UI shell
       from server-side SecurityContext; returns 401 if unauthenticated
@@ -106,7 +106,7 @@ Phases 4 and 5 are independent and can be developed in parallel.
     - resolve role from `app_user` allowlist table
     - deny write-capable UI actions when email not allowlisted
 25. **Session cookie + CSRF configuration**:
-    - session cookie `JSESSIONID`: HttpOnly, Secure (prod), SameSite=Lax, Path=/
+    - session cookie `JSESSIONID`: HttpOnly, SameSite=Lax, Path=/; set `SESSION_COOKIE_SECURE=true` for HTTPS production
     - CSRF enabled for UI session-backed endpoints (`/auth/logout`, Vaadin internal requests)
     - no OAuth token material stored in localStorage/sessionStorage
 
@@ -166,9 +166,9 @@ Phases 4 and 5 are independent and can be developed in parallel.
     - `GET /auth/me` returns 200 with `{email, role, allowlisted}` for valid session and 401 otherwise
     - `POST /auth/logout` invalidates session and subsequent `/auth/me` returns 401
 31. **Session security hardening tests**:
-    - Validate `JSESSIONID` cookie flags: HttpOnly, Secure (prod profile), SameSite policy, Path=/
+    - Validate `JSESSIONID` cookie flags: HttpOnly, Secure when SESSION_COOKIE_SECURE=true, SameSite=Lax, Path=/
     - Validate session fixation protection on successful login
-    - Validate idle timeout and absolute timeout behavior (session expires as configured)
+    - Validate the configured idle timeout (no separate absolute lifetime is implemented)
 32. **CSRF regression tests for cookie-authenticated UI flows**:
     - Verify CSRF token is required on session-backed state-changing endpoints
     - Verify requests missing/invalid CSRF token are rejected (403)
@@ -197,12 +197,12 @@ Phases 4 and 5 are independent and can be developed in parallel.
     `JDBC_DATABASE_PASSWORD` derived from the existing `POSTGRES_*` variables
 38. **PostgreSQL healthcheck** — make the app wait for PostgreSQL readiness through
     `depends_on: condition: service_healthy`
-39. **TODO: Nginx server block for production domain** — fix
-    `Could not automatically find a matching server block for www.cozadzban.bnowakowski.pl. Set the server_name directive to use the Nginx installer.`
-    by setting the appropriate `server_name` directive for `www.cozadzban.bnowakowski.pl`
-40. **TODO: Google OAuth HTTPS redirect URI** — replace the temporary HTTP callback in Google
-    OAuth settings with `https://cozadzban.bnowakowski.pl/login/oauth2/code/google` once
-    HTTPS/DNS is stable
+39. **Production reverse proxy** — serve `cozadzban.pl` over HTTPS and forward to
+    the Compose reverse proxy at `127.0.0.1:${APP_PORT:-8086}`. Preserve the public
+    scheme in forwarded headers.
+40. **Google OAuth HTTPS redirect URI** — register
+    `https://cozadzban.pl/login/oauth2/code/google` and set `SESSION_COOKIE_SECURE=true`
+    for the HTTPS deployment.
 
 ---
 
@@ -214,8 +214,8 @@ Phases 4 and 5 are independent and can be developed in parallel.
     `(created_at ASC, id ASC)`. Migration must fail if articles exist but no user exists.
 42. **`AppUser` status model** — add `AppUserStatus`, expose status in admin APIs/UI,
     keep email unique even for `DELETED` users, and make delete a soft-delete operation.
-43. **Auth and allowlist checks** — only `ACTIVE` users can log in, create articles, or manage
-    resources. Deleted users are denied even if their Google JWT/session is otherwise valid.
+43. **Auth and allowlist checks** — only `ACTIVE` allowlisted users can create articles or manage resources.
+    Deleted users may authenticate with Google but have no allowlisted role or write access.
     Minimum-admin invariant counts only `ACTIVE ADMIN` users.
 44. **User restoration** — admin edit flow can change status from `DELETED` back to `ACTIVE`;
     restoring an ADMIN must preserve the minimum-admin invariant and email uniqueness.
@@ -304,8 +304,10 @@ Phases 4 and 5 are independent and can be developed in parallel.
     Accept/Reject. Accept creates a normal Article owned by the configured import bot;
     failures mark the proposal `FAILED` for retry. Auto-accept audit fields store
     `accepted_by`, `accepted_at`, and `accepted_reason`.
-61. **Lifecycle cleanup** — remove startup auto-run and stop closing the Selenium browser
-    after every import; keep the window alive until application shutdown.
+61. **Lifecycle cleanup** — disable Spring Batch auto-run and launch imports explicitly
+    through services. Optional worker-startup runs use
+    `APP_FACEBOOK_IMPORT_SCHEDULE_RUN_ON_STARTUP` with scheduling enabled; keep the
+    Selenium browser alive across imports, with optional Firefox session reuse across restarts.
 61a. **Pushover notifications** — store encrypted self-service notification preferences,
     report worker login-required events to the server over the machine API, and deliver
     best-effort Pushover alerts for scheduled interval Facebook login-required events and completed
@@ -336,7 +338,8 @@ Phases 4 and 5 are independent and can be developed in parallel.
 
 65. **Article content preservation** — article text/content is captured at creation and
     update time into the `article_content` table (`V5__article_content.sql`). Content is
-    stored for archival/preservation only (max 5 MiB of UTF-8 text, `truncated` flag). NOT used
+    stored for archival/preservation only (normally 1,200 characters plus ellipsis, a historical repair exception,
+    and a final 5 MiB UTF-8 cap; `truncated` flag). NOT used
     for UI rendering, source fallback, or AI summary.
 66. **Potential future uses** — preserved content may later support article display when
     source URL stops responding, AI summary generation, or audit/debugging. Requires
@@ -365,7 +368,7 @@ Phases 4 and 5 are independent and can be developed in parallel.
 
 69. **Migration tests** — verify creator backfill to oldest user, migration failure when
     articles exist without users, `created_by_user_id NOT NULL`, and nullable `published_at`.
-70. **Auth/user tests** — verify soft-deleted users cannot log in or authorize writes, admins
+70. **Auth/user tests** — verify soft-deleted users cannot authorize writes and have no allowlisted role, admins
     can restore users, and final active admin cannot be deleted or demoted.
 71. **Article tests** — verify creator immutability, authenticated-only creator exposure,
     RSS creator omission, publication date parsing/override/clearing, thumbnail extraction,
@@ -373,3 +376,20 @@ Phases 4 and 5 are independent and can be developed in parallel.
 72. **UI/manual tests** — verify language dropdown, date filters, publication date picker/time
     picker, creator visibility rules, RSS `<link rel="alternate">` discovery + visible RSS
     link, analytics consent/script rendering, and the Facebook import admin button/job flow.
+
+
+---
+
+## Facebook Page publishing — implementation status
+
+- **Implemented (phases 1–2):** V35 schema foundation, encrypted per-language Page
+  connections, ADMIN settings at `/admin/facebook-pages`, server-side Meta OAuth,
+  transactional publication queue, image posting with branded fallback, and manual
+  reconciliation of uncertain results. The worker polls every 15 seconds. Existing
+  articles are not backfilled.
+- **Implemented public pages:** `/stories/{id}` renders story metadata and links to
+  published Facebook posts; `/sitemap.xml` lists public site and story URLs.
+- **Planned (phases 3–4):** reaction collection, monthly-budget link comments,
+  edit/delete synchronization, bot-filtered story view counts, and ranking/reporting.
+  V35 includes schema foundations for these later phases; their workers are pending.
+  See `SPEC.yaml` → `x-planned-features.facebookPagePublishing` for the design contract.

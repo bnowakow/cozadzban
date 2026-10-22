@@ -25,6 +25,7 @@ import org.springframework.security.oauth2.server.resource.web.authentication.Be
 import org.springframework.web.cors.CorsConfiguration
 import org.springframework.web.cors.CorsConfigurationSource
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource
+import pl.bnowakowski.cozadzban.user.AppUserRepository
 
 @Configuration
 @EnableWebSecurity
@@ -33,6 +34,7 @@ class SecurityConfig(
     private val allowlist: AllowlistAuthorizationManager,
     private val uiRoleAuthoritiesMapper: UiRoleAuthoritiesMapper,
     private val machineToMachineAuthenticationFilter: MachineToMachineAuthenticationFilter,
+    private val appUserRepository: AppUserRepository,
 ) {
 
     @Bean
@@ -152,6 +154,8 @@ class SecurityConfig(
                 }
             }
         http.addFilterBefore(machineToMachineAuthenticationFilter, BearerTokenAuthenticationFilter::class.java)
+        // Register only inside Spring Security, after session/bearer authentication is resolved.
+        http.addFilterAfter(UiSessionAuthorizationFilter(appUserRepository), BearerTokenAuthenticationFilter::class.java)
         return http.build()
     }
 

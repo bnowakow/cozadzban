@@ -4,9 +4,9 @@
 
 App and Postgres must be running:
 ```bash
-docker compose up -d
+docker compose -f compose-dev.yaml up -d
 ./gradlew bootRun --args='--spring.profiles.active=local'
-# OR just use the docker compose springboot service if already built
+# Or run the full compose.yaml stack and use its reverse-proxy port (APP_PORT, default 8086)
 ```
 
 You need at least one allowlisted user with ADMIN role.  
@@ -178,4 +178,30 @@ curl -s http://localhost:8080/rss | grep -i "email\|creator\|author\|user"
 curl -s "http://localhost:8080/api/articles" | jq '.content[0] | has("createdBy")'
 ```
 
-**Expected:** `false` — list responses never include `createdBy` (field is `@JsonIgnore` on the `Article` domain object; `ArticlePage` wraps `List<Article>`, not `List<ArticleResponse>`).
+**Expected:** `false` for anonymous requests. Authenticated list and detail responses include `createdBy: {id, email}` through `ArticleResponse`; the creator remains immutable.
+
+
+## Step 11: Revoke privileges in an already-open Vaadin session
+
+Use an isolated test environment with two ADMIN users:
+
+1. Open `/admin`, `/admin/article-content-cache`, `/admin/facebook-pages`, and the
+   public feed in the first admin's session. Open a user-edit or cache dialog.
+2. In the second admin's session, demote the first admin to USER.
+3. In the first session, try a test-user update, a cache action, a Page settings
+   action, and an import control from each already-open view/dialog.
+4. **Expected:** the first request after the change returns HTTP 401 with
+   "Your permissions changed. Please sign in again." The session is invalidated
+   before any action runs. Previously rendered sensitive data is not erased
+   from the browser, but further reads and writes require a new login.
+5. Reload and log in again. The first user must now have USER permissions only.
+6. Restore the first user's ADMIN role, log in again, and repeat with soft deletion.
+   The stale session must again be invalidated on its next request; a fresh login
+   must have no allowlisted role.
+7. In a disposable environment, remove the allowlist row for a session user with
+   no referencing articles; the stale session must also be rejected.
+
+An unchanged ACTIVE ADMIN session must continue working. Bearer and machine API
+requests retain their existing database-backed authorization. A request already
+executing when a role/status change commits may finish; revocation is enforced
+before dispatching subsequent requests.

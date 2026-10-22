@@ -20,12 +20,11 @@ import java.util.function.Supplier
 /**
  * Authorization manager that checks:
  * 1. The request has a valid JWT authentication (produced by [GoogleJwtAuthenticationConverter]).
- * 2. The normalized email (trim + lowercase) exists in the [app_user] table (BR-13).
+ * 2. The normalized email (trim + lowercase) belongs to an ACTIVE app_user (BR-13).
  * 3. Optionally, the user has the required [requiredRole].
  *
- * Usage via method security:
- *   @PreAuthorize("@allowlist.check(authentication)")        — any allowlisted user (USER or ADMIN)
- *   @PreAuthorize("@allowlist.checkAdmin(authentication)")   — ADMIN only
+ * Used by HTTP authorization rules in [SecurityConfig]. Vaadin views use
+ * @RolesAllowed instead of @PreAuthorize on final Kotlin classes.
  */
 @Component("allowlist")
 class AllowlistAuthorizationManager(

@@ -24,7 +24,19 @@ cp .env.sample-server .env.server
 cp .env.sample-worker .env.worker
 ```
 
-Then edit the matching file for the role you are setting up:
+Then edit the matching file for the role you are setting up. Activate it before running
+Make, Gradle, or Compose; these read `.env`, not `.env.server` or `.env.worker`:
+
+```sh
+cp .env.server .env   # public server
+# Or, on the local import worker:
+cp .env.worker .env
+```
+
+`make sync-env-files` deploys `.env.server` to the configured remote server and
+activates `.env.worker` locally. It requires SSH access to that server.
+
+Key settings:
 
 | Variable | Description | Default |
 |---|---|---|
@@ -49,7 +61,7 @@ Then edit the matching file for the role you are setting up:
 | `APP_FACEBOOK_PAGE_APP_ID` | Meta app ID for connecting Facebook Pages | _(optional until Page publishing is configured)_ |
 | `APP_FACEBOOK_PAGE_APP_SECRET` | Meta app secret, server-side only | _(optional until Page publishing is configured)_ |
 | `APP_FACEBOOK_PAGE_CONFIGURATION_ID` | Facebook Login for Business configuration ID for Page access | _(required to connect a Page)_ |
-| `APP_FACEBOOK_PAGE_REDIRECT_URI` | Exact Meta OAuth redirect URI registered for the app | `https://cozadzban.pl/facebook-pages/oauth/callback` in production |
+| `APP_FACEBOOK_PAGE_REDIRECT_URI` | Exact Meta OAuth redirect URI registered for the app | _(required; e.g. `https://cozadzban.pl/facebook-pages/oauth/callback`)_ |
 | `APP_FACEBOOK_PAGE_ENCRYPTION_KEY` | Stable 16-, 24-, or 32-byte AES key (base64 or hex) for stored Page tokens | _(required to connect a Page)_ |
 | `APP_FACEBOOK_IMPORT_APIFY_COST_SUMMARY_DAYS` | Lookback window for the admin Apify cost total and automatic-run average | `30` |
 
@@ -105,7 +117,10 @@ Public pages for the Meta app settings:
 
 The app can run a Selenium import for posts on
 `https://www.facebook.com/bartek.dobrowolski.nowakowski` that contain the marker phrase
-`co za dzban`. It is disabled by default and only runs when explicitly triggered.
+`co za dzban`. It is disabled by default. When enabled, ADMIN users can trigger it manually;
+`APP_FACEBOOK_IMPORT_SCHEDULE_ENABLED=true` enables periodic runs and
+`APP_FACEBOOK_IMPORT_SCHEDULE_RUN_ON_STARTUP=true` enables a worker-startup run.
+Apify has separate enablement and scheduling settings in the env templates.
 
 Minimum configuration:
 
@@ -176,7 +191,12 @@ source Facebook post URL, and compressed diagnostics. Logged-in users review the
 make docker-up
 ```
 
-Starts the Docker Compose stack from `compose.yaml`. PostgreSQL is exposed on
+Starts PostgreSQL, Zipkin, the Spring Boot app, and the reverse proxy from
+`compose.yaml`. For only the infrastructure needed by a local Gradle run, use
+`docker compose -f compose-dev.yaml up -d`; the local Spring profile also manages
+that development stack through Spring Boot Docker Compose support.
+
+PostgreSQL is exposed on
 `localhost:${POSTGRES_PORT}` and the Dockerized reverse proxy is exposed on
 `http://localhost:${APP_PORT:-8086}`. Spring Boot containers are only reachable on the Compose
 network; host nginx should proxy to `127.0.0.1:${APP_PORT:-8086}`.
@@ -271,11 +291,13 @@ WordPress and MySQL containers:
 
 | Service | CPU limit | Memory limit |
 |---|---:|---:|
-| `springboot` | `1.25` CPUs | `1536m` |
-| `postgres` | `0.75` CPUs | `1024m` |
-| `zipkin` | `0.25` CPUs | `384m` |
+| `springboot` (each blue/green instance) | `0.75` CPUs | `768m` |
+| `postgres` | `0.50` CPUs | `512m` |
+| `zipkin` | `0.15` CPUs | `256m` |
 
-The stack is capped at about `2.25` CPUs and `2944m` memory total. `memswap_limit` is set equal
+These three services total `1.40` CPUs and `1536m` memory with one app instance,
+or `2.15` CPUs and `2304m` during blue/green overlap. The nginx reverse proxy has
+no explicit CPU or memory limit, so these totals exclude it. `memswap_limit` is set equal
 to `mem_limit` for each service to avoid heavy swap pressure on the host. The Spring Boot
 container also sets `JAVA_TOOL_OPTIONS` so the JVM heap stays inside the container memory limit.
 
@@ -294,10 +316,10 @@ Set the following environment variables on your deployment platform (no `.env` f
 | `SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_SECRET` | Google OAuth2 client secret |
 | `COZADZBAN_BOOTSTRAP_ADMIN_EMAIL` | First admin email (required until at least one ADMIN row exists) |
 
-### Production TODOs
+### Production reverse proxy and OAuth
 
-- TODO: Fix Nginx virtual host configuration for `www.cozadzban.bnowakowski.pl`.
-  Current installer error:
-  `Could not automatically find a matching server block for www.cozadzban.bnowakowski.pl. Set the server_name directive to use the Nginx installer.`
-- TODO: Update Google OAuth authorized redirect URI from the temporary HTTP callback to
-  `https://cozadzban.bnowakowski.pl/login/oauth2/code/google` once HTTPS/DNS is stable.
+Configure the host HTTPS virtual host for `cozadzban.pl` to forward to the Compose
+proxy at `127.0.0.1:${APP_PORT:-8086}`. Register
+`https://cozadzban.pl/login/oauth2/code/google` as the Google OAuth redirect URI
+and set `SESSION_COOKIE_SECURE=true` for HTTPS deployments. Forwarded headers
+must preserve the public HTTPS scheme through the proxy chain.

@@ -7,7 +7,8 @@
 # business rules and UI specifications.
 #
 # Intended audience: LLMs used for code generation / review.
-# Runtime OpenAPI (served by springdoc) lives in openapi.yaml.
+# The maintained API contract lives in openapi.yaml; springdoc generates
+# /v3/api-docs from the running application, not from either YAML file.
 # ============================================================
 
 openapi: 3.0.3
@@ -31,7 +32,7 @@ x-architecture:
       technology: Spring Security Resource Server + Google OpenID Connect
       description: >
         Google is the selected OAuth/OIDC provider.
-        JWT access tokens are validated using issuer metadata from
+        Signed Google JWTs are validated using issuer metadata from
         https://accounts.google.com.
         Read endpoints are public. Write-inducing endpoints require a valid
         Bearer token and allowlisted email.
@@ -116,7 +117,7 @@ x-architecture:
         email, one ADMIN row is seeded (or an existing USER is promoted).
 
     - name: Frontend authentication
-      technology: Vaadin UI + Spring Security oauth2Login (Authorization Code + PKCE)
+      technology: Vaadin UI + Spring Security oauth2Login (Authorization Code)
       description: >
         Login starts with redirect to Google authorization endpoint.
         OAuth callback is handled server-side; frontend JavaScript never receives
@@ -126,7 +127,7 @@ x-architecture:
     - name: Authentication endpoints
       technology: Spring MVC UiAuthController + Spring Security oauth2Login
       description: >
-        GET /auth/login starts OAuth Authorization Code + PKCE flow.
+        GET /auth/login starts OAuth Authorization Code flow.
         GET /auth/me returns current user email, nullable role, and allowlist state.
         POST /auth/logout invalidates server session and clears session cookie.
     - name: Admin management panel
@@ -167,13 +168,15 @@ x-architecture:
         requests emit best-effort server-side analytics events when the matching
         server-side analytics credentials are configured.
     - name: Article content preservation cache
-      technology: Future PostgreSQL-backed content cache
+      technology: PostgreSQL-backed content cache
       description: >
         Implemented: article text/content is captured at creation/update time
         into the article_content table (V5 migration) for preservation only.
         Content is NOT used for UI rendering, source fallback, or AI summary.
-        Max stored length is 5 MiB of UTF-8 text; longer content is truncated
-        and flagged. Separate product/legal decisions required before any
+        New cache writes normally retain at most 1,200 characters plus an ellipsis,
+        preferring a word boundary after character 900. A historical repaired
+        Facebook post is exempt from this shortening. The final safety cap is
+        5 MiB of UTF-8 text; either shortening sets the truncated flag. Separate product/legal decisions required before any
         further use.
 
 # ──────────────────────────────────────────────────────────────
@@ -236,6 +239,18 @@ x-database:
           type: BIGINT
           constraints: "NOT NULL REFERENCES app_user(id)"
           description: Immutable FK to the user who created the article.
+        - name: source_import_type
+          type: VARCHAR(32)
+          migration: V29__facebook_import_type_attribution.sql
+          constraints: "nullable"
+        - name: source_import_run_id
+          type: TEXT
+          migration: V29__facebook_import_type_attribution.sql
+          constraints: "REFERENCES facebook_import_run(import_run_id) ON DELETE SET NULL"
+        - name: source_facebook_proposal_id
+          type: BIGINT
+          migration: V29__facebook_import_type_attribution.sql
+          constraints: "REFERENCES facebook_article_proposal(id) ON DELETE SET NULL"
       indexes:
         - name: article_language_idx
           columns: [language]
@@ -267,7 +282,7 @@ x-database:
         - name: status
           type: VARCHAR(16)
           constraints: "NOT NULL DEFAULT 'ACTIVE'"
-          description: User lifecycle status, one of ACTIVE or DELETED. DELETED users are retained but cannot authenticate or authorize writes.
+          description: User lifecycle status, one of ACTIVE or DELETED. DELETED users are retained but are not allowlisted for writes; Google authentication may still establish an unprivileged session.
         - name: created_at
           type: TIMESTAMPTZ
           constraints: "NOT NULL DEFAULT now()"
@@ -280,6 +295,202 @@ x-database:
           columns: [status]
           description: Supports active-user authorization and admin filtering.
 
+    - name: facebook_page_connection
+      migration: V35__facebook_page_publishing_foundation.sql
+      description: >
+        Per-language Page configuration with a language primary key, unique Page ID,
+        encrypted access token, enabled flag, time zone and future link-selection
+        settings. New connections default to disabled. Timestamps are UTC.
+      columns:
+        - name: language
+          type: VARCHAR(20)
+          migration: V35__facebook_page_publishing_foundation.sql
+          constraints: "PRIMARY KEY"
+        - name: page_id
+          type: TEXT
+          migration: V35__facebook_page_publishing_foundation.sql
+          constraints: "NOT NULL UNIQUE"
+        - name: page_name
+          type: TEXT
+          migration: V35__facebook_page_publishing_foundation.sql
+          constraints: "NOT NULL"
+        - name: access_token_encrypted
+          type: TEXT
+          migration: V35__facebook_page_publishing_foundation.sql
+          constraints: "NOT NULL"
+        - name: enabled
+          type: BOOLEAN
+          migration: V35__facebook_page_publishing_foundation.sql
+          constraints: "NOT NULL DEFAULT false"
+        - name: time_zone
+          type: TEXT
+          migration: V35__facebook_page_publishing_foundation.sql
+          constraints: "NOT NULL DEFAULT 'Europe/Warsaw'"
+        - name: monthly_link_limit
+          type: INTEGER
+          migration: V35__facebook_page_publishing_foundation.sql
+          constraints: "NOT NULL DEFAULT 5 CHECK (monthly_link_limit >= 0)"
+        - name: minimum_post_age_hours
+          type: INTEGER
+          migration: V35__facebook_page_publishing_foundation.sql
+          constraints: "NOT NULL DEFAULT 24 CHECK (minimum_post_age_hours >= 0)"
+        - name: scheduler_interval_minutes
+          type: INTEGER
+          migration: V35__facebook_page_publishing_foundation.sql
+          constraints: "NOT NULL DEFAULT 60 CHECK (scheduler_interval_minutes > 0)"
+        - name: connected_at
+          type: TIMESTAMPTZ
+          migration: V35__facebook_page_publishing_foundation.sql
+          constraints: "NOT NULL DEFAULT now()"
+        - name: updated_at
+          type: TIMESTAMPTZ
+          migration: V35__facebook_page_publishing_foundation.sql
+          constraints: "NOT NULL DEFAULT now()"
+    - name: facebook_page_publication
+      migration: V35__facebook_page_publishing_foundation.sql
+      description: >
+        Durable publication queue with unique article_id_snapshot and post_id.
+        article_id is a nullable FK with ON DELETE SET NULL; the snapshot preserves
+        identity after deletion. Tracks Page, status, post permalink, image source,
+        attempt count, sanitized error and UTC timestamps. UPDATE_PENDING and
+        DELETE_PENDING are reserved for future synchronization.
+      columns:
+        - name: id
+          type: BIGSERIAL
+          migration: V35__facebook_page_publishing_foundation.sql
+          constraints: "PRIMARY KEY"
+        - name: article_id
+          type: BIGINT
+          migration: V35__facebook_page_publishing_foundation.sql
+          constraints: "UNIQUE REFERENCES article(id) ON DELETE SET NULL"
+        - name: article_id_snapshot
+          type: BIGINT
+          migration: V35__facebook_page_publishing_foundation.sql
+          constraints: "NOT NULL UNIQUE"
+        - name: language
+          type: VARCHAR(20)
+          migration: V35__facebook_page_publishing_foundation.sql
+          constraints: "NOT NULL"
+        - name: page_id
+          type: TEXT
+          migration: V35__facebook_page_publishing_foundation.sql
+          constraints: "nullable"
+        - name: status
+          type: VARCHAR(32)
+          migration: V35__facebook_page_publishing_foundation.sql
+          constraints: "NOT NULL DEFAULT 'PENDING'"
+        - name: post_id
+          type: TEXT
+          migration: V35__facebook_page_publishing_foundation.sql
+          constraints: "UNIQUE"
+        - name: post_permalink
+          type: TEXT
+          migration: V35__facebook_page_publishing_foundation.sql
+          constraints: "nullable"
+        - name: image_source
+          type: VARCHAR(32)
+          migration: V35__facebook_page_publishing_foundation.sql
+          constraints: "CHECK (image_source IN ('THUMBNAIL', 'PLACEHOLDER'))"
+        - name: attempt_count
+          type: INTEGER
+          migration: V35__facebook_page_publishing_foundation.sql
+          constraints: "NOT NULL DEFAULT 0 CHECK (attempt_count >= 0)"
+        - name: last_error
+          type: TEXT
+          migration: V35__facebook_page_publishing_foundation.sql
+          constraints: "nullable"
+        - name: created_at
+          type: TIMESTAMPTZ
+          migration: V35__facebook_page_publishing_foundation.sql
+          constraints: "NOT NULL DEFAULT now()"
+        - name: published_at
+          type: TIMESTAMPTZ
+          migration: V35__facebook_page_publishing_foundation.sql
+          constraints: "nullable"
+        - name: updated_at
+          type: TIMESTAMPTZ
+          migration: V35__facebook_page_publishing_foundation.sql
+          constraints: "NOT NULL DEFAULT now()"
+    - name: facebook_post_reaction_snapshot
+      migration: V35__facebook_page_publishing_foundation.sql
+      description: Schema foundation for future reaction collection; no collection worker yet.
+      columns:
+        - name: id
+          type: BIGSERIAL
+          migration: V35__facebook_page_publishing_foundation.sql
+          constraints: "PRIMARY KEY"
+        - name: publication_id
+          type: BIGINT
+          migration: V35__facebook_page_publishing_foundation.sql
+          constraints: "NOT NULL REFERENCES facebook_page_publication(id) ON DELETE CASCADE"
+        - name: reaction_count
+          type: BIGINT
+          migration: V35__facebook_page_publishing_foundation.sql
+          constraints: "CHECK (reaction_count >= 0)"
+        - name: status
+          type: VARCHAR(16)
+          migration: V35__facebook_page_publishing_foundation.sql
+          constraints: "NOT NULL CHECK (status IN ('SUCCESS', 'FAILED'))"
+        - name: error_detail
+          type: TEXT
+          migration: V35__facebook_page_publishing_foundation.sql
+          constraints: "nullable"
+        - name: measured_at
+          type: TIMESTAMPTZ
+          migration: V35__facebook_page_publishing_foundation.sql
+          constraints: "NOT NULL DEFAULT now()"
+    - name: facebook_link_comment
+      migration: V35__facebook_page_publishing_foundation.sql
+      description: Schema foundation for future link comments and monthly budget tracking; no comment worker yet.
+      columns:
+        - name: id
+          type: BIGSERIAL
+          migration: V35__facebook_page_publishing_foundation.sql
+          constraints: "PRIMARY KEY"
+        - name: publication_id
+          type: BIGINT
+          migration: V35__facebook_page_publishing_foundation.sql
+          constraints: "NOT NULL UNIQUE REFERENCES facebook_page_publication(id) ON DELETE CASCADE"
+        - name: page_id
+          type: TEXT
+          migration: V35__facebook_page_publishing_foundation.sql
+          constraints: "NOT NULL"
+        - name: post_id
+          type: TEXT
+          migration: V35__facebook_page_publishing_foundation.sql
+          constraints: "NOT NULL"
+        - name: story_url
+          type: TEXT
+          migration: V35__facebook_page_publishing_foundation.sql
+          constraints: "NOT NULL"
+        - name: status
+          type: VARCHAR(32)
+          migration: V35__facebook_page_publishing_foundation.sql
+          constraints: "NOT NULL CHECK (status IN ('SELECTED', 'ATTEMPTING', 'CONFIRMED', 'FAILED', 'NEEDS_RECONCILIATION'))"
+        - name: comment_id
+          type: TEXT
+          migration: V35__facebook_page_publishing_foundation.sql
+          constraints: "UNIQUE"
+        - name: attempted_at
+          type: TIMESTAMPTZ
+          migration: V35__facebook_page_publishing_foundation.sql
+          constraints: "nullable"
+        - name: confirmed_at
+          type: TIMESTAMPTZ
+          migration: V35__facebook_page_publishing_foundation.sql
+          constraints: "nullable"
+        - name: last_error
+          type: TEXT
+          migration: V35__facebook_page_publishing_foundation.sql
+          constraints: "nullable"
+        - name: created_at
+          type: TIMESTAMPTZ
+          migration: V35__facebook_page_publishing_foundation.sql
+          constraints: "NOT NULL DEFAULT now()"
+        - name: updated_at
+          type: TIMESTAMPTZ
+          migration: V35__facebook_page_publishing_foundation.sql
+          constraints: "NOT NULL DEFAULT now()"
     - name: sessions
       migration: none (server-managed web session)
       description: No additional DB table required; session is server-managed and identified by HttpOnly cookie.
@@ -294,18 +505,18 @@ x-database:
         - name: content
           type: TEXT
           constraints: NOT NULL
-          description: Captured article text, truncated to 5 MiB of UTF-8 bytes when necessary.
+          description: Captured text normally shortened to 1200 characters plus ellipsis, with a historical repair exception and final 5 MiB UTF-8 cap; truncation is flagged.
         - name: truncated
           type: BOOLEAN
           constraints: "NOT NULL DEFAULT false"
           description: True when the stored content was truncated due to length limit.
         - name: captured_at
           type: TIMESTAMPTZ
-          constraints: nullable
+          constraints: "NOT NULL DEFAULT now()"
           description: Timestamp of when content was last captured.
     - name: facebook_import_run
       migration: V18__facebook_article_proposals.sql
-      description: Stores Facebook import run metadata for proposal batches and future notifications.
+      description: Stores Facebook import lifecycle, progress, cost and notification metadata.
       columns:
         - name: import_run_id
           type: TEXT
@@ -348,9 +559,65 @@ x-database:
           type: TEXT
           constraints: nullable
           description: Facebook profile URL involved in the login-required report.
+        - name: discovered_count
+          type: INTEGER
+          migration: V18__facebook_article_proposals.sql
+          constraints: "NOT NULL DEFAULT 0"
+        - name: submitted_count
+          type: INTEGER
+          migration: V18__facebook_article_proposals.sql
+          constraints: "NOT NULL DEFAULT 0"
+        - name: skipped_existing_count
+          type: INTEGER
+          migration: V18__facebook_article_proposals.sql
+          constraints: "NOT NULL DEFAULT 0"
+        - name: failed_count
+          type: INTEGER
+          migration: V18__facebook_article_proposals.sql
+          constraints: "NOT NULL DEFAULT 0"
+        - name: current_pass_index
+          type: INTEGER
+          migration: V24__facebook_import_progress.sql
+          constraints: "NOT NULL DEFAULT 0"
+        - name: pass_count
+          type: INTEGER
+          migration: V24__facebook_import_progress.sql
+          constraints: "NOT NULL DEFAULT 0"
+        - name: phase
+          type: TEXT
+          migration: V24__facebook_import_progress.sql
+          constraints: "nullable"
+        - name: phase_index
+          type: INTEGER
+          migration: V24__facebook_import_progress.sql
+          constraints: "NOT NULL DEFAULT 0"
+        - name: phase_count
+          type: INTEGER
+          migration: V24__facebook_import_progress.sql
+          constraints: "NOT NULL DEFAULT 0"
+        - name: last_status_at
+          type: TIMESTAMPTZ
+          migration: V24__facebook_import_progress.sql
+          constraints: "NOT NULL DEFAULT now()"
+        - name: status_detail
+          type: TEXT
+          migration: V25__facebook_import_status_detail.sql
+          constraints: "nullable"
+        - name: import_trigger
+          type: VARCHAR(32)
+          migration: V31__facebook_import_trigger.sql
+          constraints: "NOT NULL DEFAULT 'MANUAL'"
+        - name: apify_actor_run_id
+          type: TEXT
+          migration: V34__facebook_import_apify_run_cost.sql
+          constraints: "nullable"
+        - name: apify_cost_usd
+          type: NUMERIC(18, 9)
+          migration: V34__facebook_import_apify_run_cost.sql
+          constraints: "nullable"
     - name: facebook_article_proposal
       migration: V18__facebook_article_proposals.sql
-      description: Stores discovered Facebook import candidates awaiting human review.
+      description: Stores discovered Facebook import candidates, review decisions and auto-acceptance audit data.
       columns:
         - name: id
           type: BIGSERIAL
@@ -366,12 +633,92 @@ x-database:
           description: Import implementation that most recently submitted or refreshed this proposal.
         - name: status
           type: VARCHAR(32)
-          constraints: "nullable CHECK IN (ACCEPTED, REJECTED, FAILED)"
+          constraints: "nullable CHECK IN (ACCEPTED, REJECTED, FAILED, ALREADY_EXISTS)"
           description: NULL means pending review.
         - name: logs_compressed
           type: BYTEA
           constraints: nullable
           description: UTF-8 GZIP compressed proposal diagnostics.
+        - name: candidate_id
+          type: TEXT
+          migration: V18__facebook_article_proposals.sql
+          constraints: "NOT NULL"
+        - name: import_run_id
+          type: TEXT
+          migration: V18__facebook_article_proposals.sql
+          constraints: "NOT NULL REFERENCES facebook_import_run(import_run_id) ON DELETE CASCADE"
+        - name: article_url
+          type: TEXT
+          migration: V18__facebook_article_proposals.sql
+          constraints: "NOT NULL"
+        - name: facebook_post_url
+          type: TEXT
+          migration: V18__facebook_article_proposals.sql
+          constraints: "nullable"
+        - name: guessed_language
+          type: VARCHAR(20)
+          migration: V18__facebook_article_proposals.sql
+          constraints: "NOT NULL"
+        - name: corrected_language
+          type: VARCHAR(20)
+          migration: V18__facebook_article_proposals.sql
+          constraints: "nullable"
+        - name: article_id
+          type: BIGINT
+          migration: V18__facebook_article_proposals.sql
+          constraints: "REFERENCES article(id) ON DELETE SET NULL"
+        - name: decided_by_user_id
+          type: BIGINT
+          migration: V18__facebook_article_proposals.sql
+          constraints: "REFERENCES app_user(id) ON DELETE SET NULL"
+        - name: decided_at
+          type: TIMESTAMPTZ
+          migration: V18__facebook_article_proposals.sql
+          constraints: "nullable"
+        - name: submitted_at
+          type: TIMESTAMPTZ
+          migration: V18__facebook_article_proposals.sql
+          constraints: "NOT NULL DEFAULT now()"
+        - name: last_seen_at
+          type: TIMESTAMPTZ
+          migration: V18__facebook_article_proposals.sql
+          constraints: "NOT NULL DEFAULT now()"
+        - name: browser_enriched_title
+          type: TEXT
+          migration: V28__facebook_article_proposal_browser_enrichment.sql
+          constraints: "nullable"
+        - name: browser_enriched_thumbnail
+          type: TEXT
+          migration: V28__facebook_article_proposal_browser_enrichment.sql
+          constraints: "nullable"
+        - name: browser_enriched_lead
+          type: TEXT
+          migration: V28__facebook_article_proposal_browser_enrichment.sql
+          constraints: "nullable"
+        - name: browser_enriched_favicon
+          type: TEXT
+          migration: V28__facebook_article_proposal_browser_enrichment.sql
+          constraints: "nullable"
+        - name: browser_enriched_published_at
+          type: TIMESTAMP WITH TIME ZONE
+          migration: V28__facebook_article_proposal_browser_enrichment.sql
+          constraints: "nullable"
+        - name: browser_enriched_plain_text
+          type: TEXT
+          migration: V28__facebook_article_proposal_browser_enrichment.sql
+          constraints: "nullable"
+        - name: accepted_by
+          type: TEXT
+          migration: V32__facebook_article_proposal_auto_accept_audit.sql
+          constraints: "nullable"
+        - name: accepted_at
+          type: TIMESTAMPTZ
+          migration: V32__facebook_article_proposal_auto_accept_audit.sql
+          constraints: "nullable"
+        - name: accepted_reason
+          type: TEXT
+          migration: V32__facebook_article_proposal_auto_accept_audit.sql
+          constraints: "nullable"
     - name: Spring Batch metadata tables
       migration: V19__spring_batch_metadata.sql
       description: >
@@ -379,7 +726,7 @@ x-database:
         lifecycle/history. Flyway owns the BATCH_JOB_*, BATCH_STEP_*, and
         BATCH_*_SEQ objects; Spring Batch schema initialization remains disabled.
     - name: notification_preference
-      migration: V20__notification_preferences_and_login_required.sql, V21__notification_preference_pushover_devices.sql
+      migration: V20__notification_preferences_and_login_required.sql, V21__notification_preference_pushover_devices.sql, V33__notification_preference_auto_approved.sql
       description: Stores encrypted per-user notification settings for Pushover.
       columns:
         - name: app_user_id
@@ -412,6 +759,10 @@ x-database:
         - name: updated_at
           type: TIMESTAMPTZ
           constraints: "NOT NULL DEFAULT now()"
+        - name: facebook_proposals_auto_approved_enabled
+          type: BOOLEAN
+          migration: V33__notification_preference_auto_approved.sql
+          constraints: "NOT NULL DEFAULT false"
 # ──────────────────────────────────────────────────────────────
 # BUSINESS RULES  (x-business-rules)
 # ──────────────────────────────────────────────────────────────
@@ -436,11 +787,12 @@ x-business-rules:
     name: Partial update enrichment
     description: >
       When an Article is patched (PATCH /api/articles/{id}) and the url field
-      is included in the payload, the server MUST re-fetch to refresh enriched
-      fields. If the patch explicitly includes publishedAt, the supplied value
-      overrides fetched publication metadata. The operation is fully atomic: if enrichment fails, the server
+      changes the canonical URL, the server re-fetches to refresh title, thumbnail,
+      favicon, lead and preserved content. publishedAt changes only when explicitly
+      provided; null clears it. An unchanged canonical URL does not trigger enrichment. The operation is fully atomic: if enrichment fails, the server
       responds with 422 and the existing article record is left unchanged.
-      If url is absent, enriched fields are left unchanged.
+      Without a URL change, enriched fields stay unchanged except that a content
+      patch may repair a degraded Facebook post title.
   - id: BR-04
     name: Language normalization and validation
     description: >
@@ -590,8 +942,8 @@ x-business-rules:
     description: >
       Every 409 response uses ProblemDetail with mandatory fields:
       status, type, title, detail.
-      type must be a stable URI discriminator. Optional extension fields such as
-      conflictField, existingId, remainingAdmins may be included when relevant.
+      type must be a stable URI discriminator. Current handlers do not emit
+      conflictField, existingId, or remainingAdmins extensions.
   - id: BR-26
     name: Sort field allowlist
     description: >
@@ -618,7 +970,8 @@ x-business-rules:
       normalized to lowercase, and must match ^[a-z]{2,3}(-[a-z0-9]{2,8})*$.
       quote: minLength 1 when present and non-null, maxLength 2000.
       publishedAt: nullable ISO-8601 date-time when present.
-      Empty string ("") is invalid for any string field and returns 400.
+      Empty strings are invalid for url, language and quote. PATCH content may
+      be null or blank to clear the preserved cache; non-string values return 400.
       Violations return 400 Bad Request with ProblemDetail.
   - id: BR-29
     name: Allowlist email and role validation
@@ -635,7 +988,7 @@ x-business-rules:
     description: >
       User clicks "Login" button on ArticleListView.
       Frontend navigates to GET /auth/login which redirects to Google OIDC.
-      OAuth callback is processed server-side using Authorization Code + PKCE.
+      OAuth callback is processed server-side using Authorization Code.
       Frontend JavaScript MUST NOT receive or store raw OAuth tokens.
       UI stores only minimal display state (e.g. authenticated=true, email, role).
       ArticleListView updates UI to show logout button and "Add Article" button.
@@ -643,10 +996,13 @@ x-business-rules:
     name: Backend session issuance
     description: >
       On successful OAuth callback, backend creates authenticated server session.
-      Session cookie is HttpOnly, Secure in production, SameSite=Lax, Path=/.
+      Session cookie is HttpOnly, SameSite=Lax, Path=/. Secure follows
+      SESSION_COOKIE_SECURE (default false; set true for HTTPS production).
       Role is resolved from allowlist (`app_user`) using normalized email.
-      Users with status DELETED cannot log in or authorize write operations.
-      Session lifetime has idle timeout and absolute timeout configured in app properties.
+      Users with status DELETED cannot authorize write operations. Google login may
+      still establish a session; /auth/me reports no role and allowlisted=false.
+      Idle timeout is SERVER_SERVLET_SESSION_TIMEOUT (default 30m).
+      No separate absolute session lifetime is currently implemented.
   - id: BR-32
     name: Logout clears session
     description: >
@@ -671,7 +1027,7 @@ x-business-rules:
   - id: BR-35
     name: Session renewal and expiry
     description: >
-      Session expiry is controlled server-side by idle and absolute timeouts.
+      Session expiry is controlled server-side by the configured idle timeout.
       Session renewal uses server policy (sliding expiration) and does not expose
       OAuth tokens or custom JWT refresh endpoints to frontend JavaScript.
       Expired session returns 401 for /auth/me and requires re-login.
@@ -709,7 +1065,8 @@ x-business-rules:
     description: >
       Deleting a user changes status from ACTIVE to DELETED. User rows and email
       uniqueness are retained for audit/history and article creator FKs. DELETED
-      users cannot log in or authorize writes. Admins can restore users by
+      users cannot authorize writes. Google authentication does not restore allowlist
+      membership. Admins can restore users by
       changing status back to ACTIVE.
   - id: BR-41
     name: Publication date metadata
@@ -757,7 +1114,8 @@ x-business-rules:
     name: Article content preservation cache future consideration
     description: >
       Article text/content is captured at creation/update time (V5 migration,
-      article_content table, max 5 MiB of UTF-8 text with truncation flag). Used for
+      article_content table, normally 1200 characters plus ellipsis with a historical
+      repair exception and a final 5 MiB UTF-8 cap with truncation flag). Used for
       archival/preservation only. Do NOT use for UI rendering, source fallback,
       or AI summary generation without separate product/legal decisions on
       sanitization, access control, copyright/privacy posture, and purge behavior.
@@ -798,7 +1156,7 @@ x-business-rules:
       compressed diagnostics. Canonical article URL is unique across proposals;
       if the URL already exists as an Article or Proposal the worker/server skips it.
       Rediscovery updates lastSeen/log diagnostics without resetting an existing decision.
-      Proposal status is null for pending or one of accepted, rejected, failed.
+      Proposal status is null for pending or ACCEPTED, REJECTED, FAILED, ALREADY_EXISTS.
       All ACTIVE logged-in users may review proposals at /article-proposals, open
       article/Facebook links in a new tab, correct language, and accept or reject.
       Accept creates a normal Article owned by the configured import bot and records
@@ -816,7 +1174,8 @@ x-business-rules:
       preference and notifies the same scheduled ADMIN audience when the worker
       times out waiting for manual login or two-factor approval during a
       SCHEDULED interval import. FacebookImportRunCompletedEvent notifies ACTIVE
-      users who enabled article proposal notifications when submittedCount > 0.
+      users who enabled review notifications when max(submittedCount - autoApprovedCount, 0) > 0.
+      Separate auto-approval notifications go to opted-in ACTIVE users when autoApprovedCount > 0.
       Notification delivery failures are logged and must never block or fail an
       import run.
   - id: BR-51
@@ -883,6 +1242,14 @@ x-vaadin-ui:
         - "Submit invokes AppUserService create, error toast on 400/409, success toast + table refresh"
         - "Logout button in top-right (same as every other view): invalidates session, redirects to /"
 
+    - name: FacebookPageSettingsView
+      route: /admin/facebook-pages
+      description: >
+        ACTIVE ADMIN-only Page connection, configuration, disconnect and reconnect
+        view. Supports failed-publication retries and manual reconciliation of
+        uncertain results. Tokens remain server-side. Link budget, minimum age
+        and scheduler interval settings are stored for planned phase 3; the
+        current image publication worker runs every 15 seconds.
     - name: ArticleContentCacheAdminView
       route: /admin/article-content-cache
       description: >
@@ -909,7 +1276,7 @@ x-vaadin-ui:
         - Users enter and validate their own Pushover user key; saved keys are encrypted and not shown again
         - Optional multi-device Pushover selector; empty selection sends to all active devices
         - Device suggestions are loaded from Pushover user validation response devices
-        - ACTIVE USER and ADMIN accounts can toggle article proposal review notifications
+        - ACTIVE USER and ADMIN accounts can separately toggle proposal review and auto-approval notifications
         - ACTIVE ADMIN accounts can additionally toggle scheduled Facebook login-required notifications
         - Send test notification button
 # ──────────────────────────────────────────────────────────────
@@ -934,19 +1301,32 @@ info:
     5. **Vaadin UI** — server-side lazy feed of articles (separate from
        this REST spec; rendered at the root path `/`).
 
-    6. **Frontend authentication** — Vaadin UI starts OAuth Authorization Code + PKCE
+    6. **Frontend authentication** — Vaadin UI starts OAuth Authorization Code
        via backend redirect (`GET /auth/login`) and uses server-side session cookie.
     7. **Admin pages** — Vaadin UI at `/admin` for ADMIN users to manage allowlist
        (add/soft-delete/restore/update users) and at `/admin/article-content-cache`
        to inspect, refresh, edit, and purge preserved article content cache entries,
        using server-side service calls.
-    8. **Facebook import job** — Spring Batch runs the Selenium import tasklet.
-       Scheduled runs execute enabled import types sequentially, and manual ADMIN
-       UI controls can trigger enabled importers explicitly.
+    8. **Facebook import job** — Spring Batch can run the Selenium profile importer
+       and the paid Apify external retrieval importer. Startup sequencing runs Apify
+       before Selenium when both are enabled. Apify uses the synchronous actor run
+       endpoint, has scheduling separate from Selenium scheduling, and checks persisted
+       APIFY run timestamps so paid runs can be limited to a daily cadence across restarts.
+       Import runs submit proposal candidates for later review instead of creating
+       articles directly.
     9. **Article proposal inbox** — ACTIVE logged-in users review Facebook import
        proposals at `/article-proposals`, correct language, and accept/reject.
-    10. **Machine-to-machine writes** — the Facebook importer submits proposals and
-       run completion events using a dedicated API key tied to an allowlisted bot user.
+       Canonical proposal URLs are unique. Apify submissions are processed
+       synchronously: new Apify proposals are auto-accepted immediately, and
+       matching pending Selenium proposals are refreshed with Apify metadata and
+       auto-accepted in place.
+    10. **Machine-to-machine writes** — the Facebook importer submits proposals,
+       login-required reports, and run completion events using a dedicated API key
+       tied to an allowlisted bot user.
+    11. **Notifications** — ACTIVE users can configure Pushover delivery in the
+       server-side UI. Proposal review and auto-approval summaries use separate opt-in preferences for ACTIVE users; scheduled
+       Facebook login/2FA alerts are sent only to opted-in ACTIVE ADMIN users,
+       excluding the worker-startup import.
     ## Implementation notes
     - Language is normalized to lowercase and validated against a conservative
       BCP-47-like pattern (e.g. `pl`, `en`, `en-gb`).
@@ -957,10 +1337,11 @@ info:
     - Each article stores an immutable creator FK. Creator data is omitted from
       anonymous article responses and RSS; authenticated article responses may
       include `createdBy`.
-    - `aiSummary` is reserved for a future AI enrichment step; always `null`
-      in the current version.
+    - `aiSummary` is reserved for a future AI enrichment step. Null article fields,
+      including `aiSummary`, are omitted from JSON responses.
     - Read endpoints (`GET /api/articles`, `GET /api/articles/{id}`, `GET /rss`)
-      are public. REST write endpoints require Google OAuth2/OIDC Bearer tokens.
+      are public. REST writes require Google OAuth2/OIDC Bearer tokens; article
+      POST and PATCH also accept the configured machine API key for an ACTIVE bot user.
       First-party Vaadin UI writes are executed server-side and authenticated by session.
     - Write endpoints additionally require the token email to be present in
       database allowlist (`app_user` entity managed via API).
@@ -969,11 +1350,14 @@ info:
       in `app_user`; if ADMINs already exist the var is ignored.
     - If required and missing/empty/invalid, startup fails fast.
     - If required and valid, startup seeds one ADMIN row (or promotes USER).
+    - Google login may establish a session for a non-allowlisted or deleted user;
+      `/auth/me` reports `role: null` and `allowlisted: false`. Privileged actions
+      require an ACTIVE allowlist entry.
     - All API timestamps are UTC.
     - Error responses use `application/problem+json` (RFC 9457 /
       Spring `ProblemDetail`).
 
-  version: 0.49.0-SNAPSHOT
+  version: 0.60.2-SNAPSHOT
   license:
     name: GNU General Public License v3.0
     url: https://www.gnu.org/licenses/gpl-3.0.html
@@ -985,7 +1369,7 @@ servers:
 x-security-policy:
   provider: google-oidc
   issuer: https://accounts.google.com
-  acceptedTokenType: access_token_jwt
+  acceptedTokenType: signed_google_jwt
   requiredClaims: [iss, aud, exp, sub, email, email_verified]
   requireEmailVerified: true
   acceptedAlgorithms: [RS256]
@@ -1010,6 +1394,23 @@ x-security-policy:
       - POST /api/articles
       - PATCH /api/articles/{id}
       - /api/facebook-import/**
+  uiSessionRoleRefresh:
+    currentBehavior: >
+      Roles are mapped at Google login. Before dispatching subsequent requests,
+      UiSessionAuthorizationFilter rechecks sessions carrying USER or ADMIN
+      privileges against the current database role and ACTIVE status.
+    revocation: >
+      A changed role, soft-deleted user, missing allowlist row or missing email
+      invalidates the privileged session and rejects that request with HTTP 401
+      before Vaadin navigation, UIDL events or other application handlers execute.
+      A fresh Google login is required to obtain the current permissions.
+      Requests already executing when a role/status change commits may complete.
+    scope: >
+      Applies to all privileged Google UI sessions, including already-open admin
+      views, dialogs and shared import controls on the feed. Anonymous requests,
+      unprivileged Google sessions, and API bearer/machine credentials retain
+      their existing authorization behavior. UI requests also validate the
+      attached OAuth session when a bearer header replaces request authentication.
   bootstrap:
     adminEmailEnvVar: COZADZBAN_BOOTSTRAP_ADMIN_EMAIL
     enforcedOnlyWhenNoAdminsExist: true
@@ -1030,6 +1431,7 @@ x-security-policy:
 x-runtime-configuration:
   analytics:
     googleAnalyticsMeasurementIdEnvVar: GOOGLE_ANALYTICS_MEASUREMENT_ID
+    googleAnalyticsApiSecretEnvVar: GOOGLE_ANALYTICS_API_SECRET
     statCounterProjectIdEnvVar: STATCOUNTER_PROJECT_ID
     statCounterSecurityIdEnvVar: STATCOUNTER_SECURITY_ID
     renderOnlyWhenConfigured: true
@@ -1040,6 +1442,7 @@ x-runtime-configuration:
     encryptionKeyEnvVar: APP_NOTIFICATIONS_ENCRYPTION_KEY
     pushoverBaseUrlEnvVar: APP_NOTIFICATIONS_PUSHOVER_BASE_URL
     pushoverDeviceSemantics: zero selected devices means all active devices; multiple selected devices are sent as comma-separated Pushover device targets
+    pushoverDeviceDiscovery: device suggestions are read from the Pushover user validation response devices array
     deliverySemantics: best-effort; failures are logged and do not block imports
   facebookImport:
     springBatchAutoRunProperty: spring.batch.job.enabled=false
@@ -1102,14 +1505,16 @@ x-runtime-configuration:
       - APP_FACEBOOK_IMPORT_APIFY_READ_TIMEOUT
     schedulingSemantics: enabled import types run sequentially
 
-# Planned feature; this is a design contract, not an implemented API or schema.
+# Phases 1-2 are implemented. Later phases remain a design contract;
+# their schema foundation exists but engagement/synchronization workers do not.
 x-planned-features:
   facebookPagePublishing:
-    status: planned
+    status: partially-implemented
     scope: Facebook Pages managed by this application, never personal profiles
     implementationPhases:
       - phase: 1
         name: Page connection and persistence foundation
+        status: implemented
         work: >
           Add Flyway migrations and Spring Data JDBC models for per-language
           Page configuration, encrypted Page credentials, publication jobs,
@@ -1138,6 +1543,7 @@ x-planned-features:
           UI, REST, and import-created articles and image fallback.
       - phase: 3
         name: Engagement, link selection, and synchronization
+        status: planned
         work: >
           Schedule reaction-count collection, apply the configurable minimum
           age and per-Page monthly link budget, add selected story links as
@@ -1151,6 +1557,7 @@ x-planned-features:
           budget claims, failed Graph calls, edits, and deletions.
       - phase: 4
         name: Story views and ranking refinement
+        status: planned
         work: >
           Count story-page views with bot filtering, expose useful article and
           Page publication statistics to admins, and keep view counts
@@ -1199,6 +1606,7 @@ x-planned-features:
         requested; revisit the source-image permission policy before
         expanding publication to additional Pages or sources.
     articleChanges:
+      status: planned
       update: >
         Queue synchronization after an article edit and track the result.
         The scheduler updates the Facebook post where the Graph API permits.
@@ -1217,6 +1625,7 @@ x-planned-features:
         Record article story-page views separately from Facebook engagement
         snapshots, with bot filtering and no creator/user data exposure.
     engagement:
+      status: planned
       collection: scheduled Graph API reads of each published post's reaction count
       persistence: store the reaction count, measurement time and API error state per post
       firstLinkSelectionRule: >
@@ -1227,6 +1636,7 @@ x-planned-features:
         policy separate from publishing so later rules can use article views
         or other statistics.
     linkComments:
+      status: planned
       target: the canonical /stories/{articleId} URL of the published article
       budget: >
         Initial configurable cap of five successful external-link comments
@@ -1279,6 +1689,134 @@ tags:
     description: Manual Facebook post import job endpoints; scheduled worker launches use the same Batch job internally
 
 paths:
+
+  /stories/{id}:
+    get:
+      tags: [Articles]
+      summary: Read a public server-rendered story page
+      description: Includes source and available Facebook post links, metadata and structured data; never includes creator data or preserved article content.
+      operationId: getStoryPage
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ArticleId'
+      responses:
+        '200':
+          description: Public story HTML
+          content:
+            text/html:
+              schema:
+                type: string
+        '404':
+          description: Article does not exist
+
+  /sitemap.xml:
+    get:
+      tags: [Articles]
+      summary: List public site and story URLs for crawlers
+      operationId: getStorySitemap
+      security: []
+      responses:
+        '200':
+          description: Sitemap XML with story lastmod from publishedAt or createdAt
+          content:
+            application/xml:
+              schema:
+                type: string
+
+  /favicons/{filename}:
+    get:
+      tags: [Articles]
+      summary: Read a cached source favicon
+      operationId: getCachedFavicon
+      security: []
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[a-f0-9]{64}\.(png|jpg|gif|webp|ico|svg)$'
+      responses:
+        '200':
+          description: Cached image with public 30-day Cache-Control
+          content:
+            image/*:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: Invalid filename or missing cached image
+
+  /flags/{filename}:
+    get:
+      tags: [Articles]
+      summary: Read a cached language flag
+      operationId: getCachedLanguageFlag
+      security: []
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[a-z]{2}\.svg$'
+      responses:
+        '200':
+          description: Cached flag with public 30-day Cache-Control
+          content:
+            image/svg+xml:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: Invalid filename or missing cached flag
+
+  /facebook-pages/oauth/start:
+    get:
+      tags: [Authentication]
+      summary: Start server-side Facebook Page authorization
+      description: Requires an ACTIVE ADMIN Google OAuth login session and configured Meta credentials. Stores OAuth state and normalized language in the session; tokens stay server-side.
+      operationId: startFacebookPageAuthorization
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: language
+          in: query
+          required: true
+          schema:
+            type: string
+            maxLength: 20
+            pattern: '^[a-z]{2,3}(-[a-z0-9]{2,8})*$'
+      responses:
+        '302':
+          description: Redirect to Meta authorization
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /facebook-pages/oauth/callback:
+    get:
+      tags: [Authentication]
+      summary: Complete server-side Facebook Page authorization
+      description: Requires the same ACTIVE ADMIN Google OAuth login session. Validates one-time state and a 10-minute expiry, exchanges the code server-side, and stores eligible Pages in the session for selection. Failures redirect with a session message.
+      operationId: completeFacebookPageAuthorization
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: code
+          in: query
+          schema:
+            type: string
+        - name: state
+          in: query
+          schema:
+            type: string
+        - name: error
+          in: query
+          schema:
+            type: string
+      responses:
+        '302':
+          description: Redirect to /admin/facebook-pages
 
   /api/articles:
 
@@ -1479,7 +2017,8 @@ paths:
       security:
         - cookieAuth: []
       description: >
-        Invalidates server session and clears session cookie.
+        Invalidates server session and clears session cookie. Requires a valid
+        Spring CSRF token in all profiles; cookies alone are insufficient.
         Returns 204 No Content.
       responses:
         '204':
@@ -1848,7 +2387,7 @@ paths:
         Updates only the provided fields. Updatable fields: url, language, quote, publishedAt,
         and internal preserved content.
         Setting quote to null explicitly clears it; omitting quote leaves it unchanged.
-        Setting publishedAt to null explicitly clears it; omitting publishedAt leaves it unchanged unless url changes and no override is supplied.
+        Setting publishedAt to null explicitly clears it; omitting publishedAt leaves it unchanged, including when url changes.
         Setting content stores/replaces the preserved content cache; setting content to null or blank clears it.
         If url is changed the server re-fetches the page to refresh the enriched
         fields. Fully atomic — if enrichment fails the server responds with 422
@@ -2084,7 +2623,7 @@ paths:
         - googleOidc: []
       responses:
         '204':
-          description: User marked DELETED and no longer allowed to authenticate or authorize writes
+          description: User marked DELETED and no longer allowlisted for writes
         '409':
           $ref: '#/components/responses/Conflict'
         '404':
@@ -2239,6 +2778,14 @@ components:
       type: object
       required: [importRunId, passIndex, passCount, proposals]
       properties:
+        importType:
+          type: string
+          enum: [API, APIFY, SELENIUM]
+          default: SELENIUM
+        trigger:
+          type: string
+          enum: [MANUAL, WORKER_STARTUP, SCHEDULED]
+          default: MANUAL
         importRunId:
           type: string
           example: facebook-import-20260524T100000Z-1
@@ -2260,7 +2807,7 @@ components:
 
     FacebookProposalBatchResponse:
       type: object
-      required: [importRunId, submitted, skippedExisting]
+      required: [importRunId, submitted, skippedExisting, autoApproved, failed]
       properties:
         importRunId:
           type: string
@@ -2270,6 +2817,14 @@ components:
         skippedExisting:
           type: integer
           example: 1
+
+        autoApproved:
+          type: integer
+          description: Number of proposals automatically accepted as articles.
+          default: 0
+        failed:
+          type: integer
+          default: 0
 
     FacebookImportRunCompletionRequest:
       type: object
@@ -2281,7 +2836,7 @@ components:
           example: FINISHED
         importType:
           type: string
-          enum: [API, SELENIUM]
+          enum: [API, APIFY, SELENIUM]
           default: SELENIUM
         trigger:
           type: string
@@ -2306,6 +2861,17 @@ components:
         logs:
           type: string
           nullable: true
+
+        autoApprovedCount:
+          type: integer
+          default: 0
+        apifyActorRunId:
+          type: string
+          nullable: true
+        apifyCostUsd:
+          type: number
+          nullable: true
+          description: Actual Apify actor run cost in USD when available.
 
     FacebookImportStartupCleanupRequest:
       type: object
@@ -2356,7 +2922,7 @@ components:
       properties:
         importType:
           type: string
-          enum: [API, SELENIUM]
+          enum: [API, APIFY, SELENIUM]
           default: SELENIUM
         trigger:
           type: string
@@ -2401,6 +2967,7 @@ components:
       type: object
       required:
         - importRunId
+        - importType
         - status
         - startedAt
         - lastUpdatedAt
@@ -2413,6 +2980,10 @@ components:
         - skippedExistingCount
         - failedCount
       properties:
+        importType:
+          type: string
+          enum: [API, APIFY, SELENIUM]
+          default: SELENIUM
         importRunId:
           type: string
         status:
@@ -2481,7 +3052,7 @@ components:
         content:
           type: string
           nullable: true
-          description: Internal preserved content cache value; null or blank clears cached content. Not exposed in article responses or RSS.
+          description: Preserved content cache input, normally shortened to 1200 characters plus ellipsis (with a historical repair exception) and capped at 5 MiB UTF-8; null or blank clears it. May repair a degraded Facebook post title. Cached content itself is not exposed in article responses or RSS.
 
     Article:
       type: object
@@ -2639,7 +3210,7 @@ components:
 
     ArticlePage:
       type: object
-      description: Frozen page response shape for Article
+      description: Frozen page response shape using creator-aware Article DTOs
       properties:
         content:
           type: array
@@ -2720,7 +3291,7 @@ components:
         type:
           type: string
           format: uri
-          example: https://example.com/problems/validation-error
+          example: about:blank
         title:
           type: string
           example: Bad Request
@@ -2734,19 +3305,6 @@ components:
           type: string
           format: uri
           example: /api/articles
-        conflictField:
-          type: string
-          description: Optional field name that caused a conflict
-          example: url
-        existingId:
-          type: integer
-          format: int64
-          description: Optional existing resource identifier for conflict cases
-          example: 42
-        remainingAdmins:
-          type: integer
-          description: Optional count of admins that would remain after operation
-          example: 0
 
   responses:
 
@@ -2770,29 +3328,24 @@ components:
                 type: https://cozadzban.pl/problems/article-url-conflict
                 title: Article URL Already Exists
                 status: 409
-                detail: "Article with this URL already exists (canonicalized: <url>)."
+                detail: "An article with URL 'https://example.com/story' already exists"
                 instance: /api/articles
-                conflictField: url
-                existingId: 42
             allowlistEmailConflict:
               summary: Duplicate allowlist email
               value:
                 type: https://cozadzban.pl/problems/allowlist-email-conflict
                 title: Allowlisted Email Already Exists
                 status: 409
-                detail: User with this email is already allowlisted.
+                detail: "User with email 'user@example.com' is already allowlisted"
                 instance: /api/users
-                conflictField: email
-                existingId: 7
             lastAdminRequired:
               summary: Attempt to remove final admin
               value:
                 type: https://cozadzban.pl/problems/last-admin-required
                 title: Last Admin Required
                 status: 409
-                detail: Operation would leave the system without an ADMIN user.
+                detail: Operation would leave the system without an ADMIN user
                 instance: /api/users/1
-                remainingAdmins: 0
             facebookImportBusy:
               summary: Facebook import already running
               value:

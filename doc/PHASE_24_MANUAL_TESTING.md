@@ -102,7 +102,9 @@ active Pushover devices for that user key.
 4. The UI should immediately show a success toast and remain usable.
 5. Open `/article-proposals`.
 
-**Expected:** discovered candidates appear as pending proposals after worker submission.
+**Expected:** Selenium candidates appear as pending proposals. Apify candidates are
+auto-accepted synchronously; matching pending Selenium proposals are refreshed and
+auto-accepted in place. Inspect Accepted, Already exists, or Failed as appropriate.
 Server-only runtimes without an enabled importer show no manual import button.
 
 ---
@@ -142,7 +144,7 @@ only one import runs at a time on the runtime.
 
 1. Confirm the grid is sorted by **Submitted** descending.
 2. Confirm the default status filter shows only pending proposals.
-3. Change the filter to **All**, **Accepted**, **Rejected**, and **Failed**.
+3. Change the filter to **All**, **Accepted**, **Rejected**, and **Failed**, and **Already exists**.
 4. Click article and Facebook post links.
 
 **Expected:** links open in a new tab/window, and the filter shows the selected status set.
@@ -188,4 +190,7 @@ identity; Facebook post URL is review context only.
 2. Confirm opted-in ACTIVE users receive one Pushover summary after the server records run completion.
 3. Complete another import that submits zero new proposals.
 
-**Expected:** proposal-review notifications are sent only when `submittedCount > 0`.
+**Expected:** review notifications use `max(submittedCount - autoApprovedCount, 0) > 0`.
+Enable **Facebook auto-approved article notifications** separately and confirm a run with
+`autoApprovedCount > 0` sends that summary. An entirely auto-approved Apify run
+does not produce a proposal-review notification.

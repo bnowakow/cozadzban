@@ -20,6 +20,8 @@ If the upstream branch has new commits, the script can run `git pull --rebase --
 
 `git` must be on `PATH`. The script uses `codex` from `PATH` when available, honors `CODEX_BIN` as an explicit override, and on macOS also falls back to the bundled CLI inside either `Codex.app` or `ChatGPT.app` under `/Applications` or `~/Applications`. `dialog` or `whiptail` is optional for full-screen terminal prompts; without one, or when the current process has no usable TTY/TERM for curses, prompts fall back to plain terminal input with a diagnostic.
 
+Both `Contents/Resources/codex` and `Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex` bundle layouts are supported. When there are changes to commit, CLI availability is checked before syncing upstream, bumping the version, or staging files.
+
 ## Facebook feed auto-scroll
 
 Paste `facebook-feed-autoscroll.js` into the browser developer console while Facebook is open. It scrolls the feed for 2 minutes to load more posts.

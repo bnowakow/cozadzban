@@ -12,12 +12,12 @@ import java.io.File
 
 /**
  * Loads key=value pairs from a .env file in the working directory into
- * Spring's Environment as the lowest-priority property source.
+ * Spring's Environment below system environment variables and above config files.
  *
  * - Silently skips when .env is absent (production / CI environments
  *   supply vars through the platform, not a file).
  * - Variables already present in the environment (system env / JVM system
- *   properties) take precedence because .env is added last (addLast).
+ *   properties) take precedence. Config-file values are fallbacks for .env values.
  * - Runs at [ORDER] = [Ordered.HIGHEST_PRECEDENCE] + 5, which is just before
  *   [org.springframework.boot.context.config.ConfigDataEnvironmentPostProcessor]
  *   (HIGHEST_PRECEDENCE + 10). This ensures SPRING_PROFILES_ACTIVE from .env

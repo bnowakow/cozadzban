@@ -226,6 +226,10 @@ class ArticleService(
         val publishedAtPresent = patch.containsKey("publishedAt")
         val contentPresent = patch.containsKey("content")
 
+        require(!contentPresent || patch["content"] == null || patch["content"] is String) {
+            "content must be a string or null"
+        }
+
         if (urlPresent && patch["url"] == null) throw IllegalArgumentException("url must not be null")
         if (languagePresent && patch["language"] == null) throw IllegalArgumentException("language must not be null")
 
@@ -244,8 +248,10 @@ class ArticleService(
         val newQuote = when {
             quotePresent -> {
                 val q = patch["quote"]
-                if (q != null && (q as? String)?.isBlank() == true) {
-                    throw IllegalArgumentException("quote must not be blank when provided")
+                require(q == null || q is String) { "quote must be a string or null" }
+                if (q is String) {
+                    require(q.isNotBlank()) { "quote must not be blank when provided" }
+                    require(q.length <= 2000) { "quote must be at most 2000 characters" }
                 }
                 (q as? String).withoutFacebookImportMarkerQuote()
             }
@@ -483,9 +489,8 @@ class ArticleService(
         this?.replace(LOG_WHITESPACE_PATTERN, " ")?.trim()?.takeIf { it.isNotBlank() } ?: "absent"
 
     /**
-     * Persists plain-text content for an article, truncating to [MAX_CONTENT_BYTES] if needed.
-     * Runs inside the same transaction as the article save; failures are logged but do not
-     * roll back the article itself.
+     * Shortens preserved text through [trimContentCache], then enforces [MAX_CONTENT_BYTES].
+     * Runs inside the article transaction; cache write failures propagate to the caller.
      */
     private fun preserveContent(articleId: Long, url: String, plainText: String?) {
         if (plainText.isNullOrBlank()) return
@@ -1218,6 +1223,7 @@ class ArticleService(
          * pattern. Throws [IllegalArgumentException] (→ 400) on invalid input (BR-04).
          */
         fun normalizeLanguage(lang: String): String {
+            require(lang.length <= 20) { "language must be at most 20 characters" }
             val normalized = lang.lowercase()
             require(normalized.matches(BCP47_PATTERN)) {
                 "Invalid language tag '$lang'. Must match ${BCP47_PATTERN.pattern}"
@@ -1226,9 +1232,16 @@ class ArticleService(
         }
 
         fun canonicalizeUrl(raw: String): String {
-            val uri = URI(raw)
-            val scheme = uri.scheme.lowercase()
-            val host = uri.host.lowercase()
+            require(raw.length <= 2048) { "url must be at most 2048 characters" }
+            val uri = try {
+                URI(raw)
+            } catch (_: java.net.URISyntaxException) {
+                throw IllegalArgumentException("url must be a valid HTTP or HTTPS URI")
+            }
+            val scheme = uri.scheme?.lowercase()
+            require(scheme == "http" || scheme == "https") { "url must use HTTP or HTTPS" }
+            val host = uri.host?.lowercase()
+            require(!host.isNullOrBlank()) { "url must have a valid host" }
             val port = uri.port // -1 when absent
             val authority = buildString {
                 append(host)

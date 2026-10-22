@@ -30,8 +30,12 @@ resolve_codex_command() {
 	for candidate in \
 		"/Applications/Codex.app/Contents/Resources/codex" \
 		"$HOME/Applications/Codex.app/Contents/Resources/codex" \
+		"/Applications/Codex.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex" \
+		"$HOME/Applications/Codex.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex" \
 		"/Applications/ChatGPT.app/Contents/Resources/codex" \
-		"$HOME/Applications/ChatGPT.app/Contents/Resources/codex"; do
+		"$HOME/Applications/ChatGPT.app/Contents/Resources/codex" \
+		"/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex" \
+		"$HOME/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex"; do
 		if [ -x "$candidate" ]; then
 			codex_command=("$candidate")
 			return 0
@@ -492,6 +496,11 @@ if ! has_worktree_changes; then
 	exit 0
 fi
 
+if ! resolve_codex_command; then
+	echo "codex command not found. Install the Codex CLI, set CODEX_BIN, or add Codex.app/ChatGPT.app's bundled CLI to PATH." >&2
+	exit 1
+fi
+
 sync_upstream_before_commit
 
 if ! has_version_change; then
@@ -523,11 +532,6 @@ git add --all
 if git diff --cached --quiet; then
 	echo "No staged changes to commit."
 	exit 0
-fi
-
-if ! resolve_codex_command; then
-	echo "codex command not found. Install the Codex CLI, set CODEX_BIN, or add Codex.app/ChatGPT.app's bundled CLI to PATH." >&2
-	exit 1
 fi
 
 codex_output=$(mktemp "${TMPDIR:-/tmp}/cozadzban-codex-commit.XXXXXX")

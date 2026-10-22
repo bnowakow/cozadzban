@@ -18,7 +18,7 @@ info:
     5. **Vaadin UI** — server-side lazy feed of articles (separate from
        this REST spec; rendered at the root path `/`).
 
-    6. **Frontend authentication** — Vaadin UI starts OAuth Authorization Code + PKCE
+    6. **Frontend authentication** — Vaadin UI starts OAuth Authorization Code
        via backend redirect (`GET /auth/login`) and uses server-side session cookie.
     7. **Admin pages** — Vaadin UI at `/admin` for ADMIN users to manage allowlist
        (add/soft-delete/restore/update users) and at `/admin/article-content-cache`
@@ -41,7 +41,7 @@ info:
        login-required reports, and run completion events using a dedicated API key
        tied to an allowlisted bot user.
     11. **Notifications** — ACTIVE users can configure Pushover delivery in the
-       server-side UI. Proposal summaries are sent to opted-in ACTIVE users; scheduled
+       server-side UI. Proposal review and auto-approval summaries use separate opt-in preferences for ACTIVE users; scheduled
        Facebook login/2FA alerts are sent only to opted-in ACTIVE ADMIN users,
        excluding the worker-startup import.
     ## Implementation notes
@@ -54,10 +54,11 @@ info:
     - Each article stores an immutable creator FK. Creator data is omitted from
       anonymous article responses and RSS; authenticated article responses may
       include `createdBy`.
-    - `aiSummary` is reserved for a future AI enrichment step; always `null`
-      in the current version.
+    - `aiSummary` is reserved for a future AI enrichment step. Null article fields,
+      including `aiSummary`, are omitted from JSON responses.
     - Read endpoints (`GET /api/articles`, `GET /api/articles/{id}`, `GET /rss`)
-      are public. REST write endpoints require Google OAuth2/OIDC Bearer tokens.
+      are public. REST writes require Google OAuth2/OIDC Bearer tokens; article
+      POST and PATCH also accept the configured machine API key for an ACTIVE bot user.
       First-party Vaadin UI writes are executed server-side and authenticated by session.
     - Write endpoints additionally require the token email to be present in
       database allowlist (`app_user` entity managed via API).
@@ -66,11 +67,14 @@ info:
       in `app_user`; if ADMINs already exist the var is ignored.
     - If required and missing/empty/invalid, startup fails fast.
     - If required and valid, startup seeds one ADMIN row (or promotes USER).
+    - Google login may establish a session for a non-allowlisted or deleted user;
+      `/auth/me` reports `role: null` and `allowlisted: false`. Privileged actions
+      require an ACTIVE allowlist entry.
     - All API timestamps are UTC.
     - Error responses use `application/problem+json` (RFC 9457 /
       Spring `ProblemDetail`).
 
-  version: 0.49.0-SNAPSHOT
+  version: 0.60.2-SNAPSHOT
   license:
     name: GNU General Public License v3.0
     url: https://www.gnu.org/licenses/gpl-3.0.html
@@ -82,7 +86,7 @@ servers:
 x-security-policy:
   provider: google-oidc
   issuer: https://accounts.google.com
-  acceptedTokenType: access_token_jwt
+  acceptedTokenType: signed_google_jwt
   requiredClaims: [iss, aud, exp, sub, email, email_verified]
   requireEmailVerified: true
   acceptedAlgorithms: [RS256]
@@ -107,6 +111,23 @@ x-security-policy:
       - POST /api/articles
       - PATCH /api/articles/{id}
       - /api/facebook-import/**
+  uiSessionRoleRefresh:
+    currentBehavior: >
+      Roles are mapped at Google login. Before dispatching subsequent requests,
+      UiSessionAuthorizationFilter rechecks sessions carrying USER or ADMIN
+      privileges against the current database role and ACTIVE status.
+    revocation: >
+      A changed role, soft-deleted user, missing allowlist row or missing email
+      invalidates the privileged session and rejects that request with HTTP 401
+      before Vaadin navigation, UIDL events or other application handlers execute.
+      A fresh Google login is required to obtain the current permissions.
+      Requests already executing when a role/status change commits may complete.
+    scope: >
+      Applies to all privileged Google UI sessions, including already-open admin
+      views, dialogs and shared import controls on the feed. Anonymous requests,
+      unprivileged Google sessions, and API bearer/machine credentials retain
+      their existing authorization behavior. UI requests also validate the
+      attached OAuth session when a bearer header replaces request authentication.
   bootstrap:
     adminEmailEnvVar: COZADZBAN_BOOTSTRAP_ADMIN_EMAIL
     enforcedOnlyWhenNoAdminsExist: true
@@ -127,6 +148,7 @@ x-security-policy:
 x-runtime-configuration:
   analytics:
     googleAnalyticsMeasurementIdEnvVar: GOOGLE_ANALYTICS_MEASUREMENT_ID
+    googleAnalyticsApiSecretEnvVar: GOOGLE_ANALYTICS_API_SECRET
     statCounterProjectIdEnvVar: STATCOUNTER_PROJECT_ID
     statCounterSecurityIdEnvVar: STATCOUNTER_SECURITY_ID
     renderOnlyWhenConfigured: true
@@ -137,6 +159,7 @@ x-runtime-configuration:
     encryptionKeyEnvVar: APP_NOTIFICATIONS_ENCRYPTION_KEY
     pushoverBaseUrlEnvVar: APP_NOTIFICATIONS_PUSHOVER_BASE_URL
     pushoverDeviceSemantics: zero selected devices means all active devices; multiple selected devices are sent as comma-separated Pushover device targets
+    deliverySemantics: best-effort; failures are logged and do not block imports
     pushoverDeviceDiscovery: device suggestions are read from the Pushover user validation response devices array
   facebookImport:
     markerPhraseEnvVar: APP_FACEBOOK_IMPORT_MARKER_PHRASE
@@ -184,6 +207,7 @@ x-runtime-configuration:
       - APP_FACEBOOK_IMPORT_APIFY_MAX_COST_USD
       - APP_FACEBOOK_IMPORT_APIFY_SCHEDULE_ENABLED
       - APP_FACEBOOK_IMPORT_APIFY_SCHEDULE_INTERVAL
+      - APP_FACEBOOK_IMPORT_APIFY_COST_SUMMARY_DAYS
       - APP_FACEBOOK_IMPORT_APIFY_CONNECT_TIMEOUT
       - APP_FACEBOOK_IMPORT_APIFY_READ_TIMEOUT
     schedulingSemantics: enabled import types run sequentially
@@ -223,6 +247,134 @@ tags:
     description: Manual Facebook post import job endpoints; scheduled worker launches use the same Batch job internally
 
 paths:
+
+  /stories/{id}:
+    get:
+      tags: [Articles]
+      summary: Read a public server-rendered story page
+      description: Includes source and available Facebook post links, metadata and structured data; never includes creator data or preserved article content.
+      operationId: getStoryPage
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ArticleId'
+      responses:
+        '200':
+          description: Public story HTML
+          content:
+            text/html:
+              schema:
+                type: string
+        '404':
+          description: Article does not exist
+
+  /sitemap.xml:
+    get:
+      tags: [Articles]
+      summary: List public site and story URLs for crawlers
+      operationId: getStorySitemap
+      security: []
+      responses:
+        '200':
+          description: Sitemap XML with story lastmod from publishedAt or createdAt
+          content:
+            application/xml:
+              schema:
+                type: string
+
+  /favicons/{filename}:
+    get:
+      tags: [Articles]
+      summary: Read a cached source favicon
+      operationId: getCachedFavicon
+      security: []
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[a-f0-9]{64}\.(png|jpg|gif|webp|ico|svg)$'
+      responses:
+        '200':
+          description: Cached image with public 30-day Cache-Control
+          content:
+            image/*:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: Invalid filename or missing cached image
+
+  /flags/{filename}:
+    get:
+      tags: [Articles]
+      summary: Read a cached language flag
+      operationId: getCachedLanguageFlag
+      security: []
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[a-z]{2}\.svg$'
+      responses:
+        '200':
+          description: Cached flag with public 30-day Cache-Control
+          content:
+            image/svg+xml:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: Invalid filename or missing cached flag
+
+  /facebook-pages/oauth/start:
+    get:
+      tags: [Authentication]
+      summary: Start server-side Facebook Page authorization
+      description: Requires an ACTIVE ADMIN Google OAuth login session and configured Meta credentials. Stores OAuth state and normalized language in the session; tokens stay server-side.
+      operationId: startFacebookPageAuthorization
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: language
+          in: query
+          required: true
+          schema:
+            type: string
+            maxLength: 20
+            pattern: '^[a-z]{2,3}(-[a-z0-9]{2,8})*$'
+      responses:
+        '302':
+          description: Redirect to Meta authorization
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /facebook-pages/oauth/callback:
+    get:
+      tags: [Authentication]
+      summary: Complete server-side Facebook Page authorization
+      description: Requires the same ACTIVE ADMIN Google OAuth login session. Validates one-time state and a 10-minute expiry, exchanges the code server-side, and stores eligible Pages in the session for selection. Failures redirect with a session message.
+      operationId: completeFacebookPageAuthorization
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: code
+          in: query
+          schema:
+            type: string
+        - name: state
+          in: query
+          schema:
+            type: string
+        - name: error
+          in: query
+          schema:
+            type: string
+      responses:
+        '302':
+          description: Redirect to /admin/facebook-pages
 
   /api/articles:
 
@@ -423,7 +575,8 @@ paths:
       security:
         - cookieAuth: []
       description: >
-        Invalidates server session and clears session cookie.
+        Invalidates server session and clears session cookie. Requires a valid
+        Spring CSRF token in all profiles; cookies alone are insufficient.
         Returns 204 No Content.
       responses:
         '204':
@@ -479,6 +632,7 @@ paths:
           $ref: '#/components/responses/Forbidden'
 
   /api/admin/facebook-import/run/apify:
+
     post:
       tags: [Facebook Import]
       summary: Trigger the Apify Facebook import job
@@ -487,8 +641,9 @@ paths:
       security:
         - googleOidc: []
       description: >
-        Starts the paid Apify Facebook import if no import is currently running.
-        Scheduled Apify imports use their own interval and cost/post guards.
+        Starts the paid Apify import if no import is currently running. The job uses
+        configured post age, result-limit, and max-cost guards before submitting
+        proposal candidates to the shared proposal inbox.
       responses:
         '202':
           description: Apify Facebook import accepted for execution
@@ -790,7 +945,7 @@ paths:
         Updates only the provided fields. Updatable fields: url, language, quote, publishedAt,
         and internal preserved content.
         Setting quote to null explicitly clears it; omitting quote leaves it unchanged.
-        Setting publishedAt to null explicitly clears it; omitting publishedAt leaves it unchanged unless url changes and no override is supplied.
+        Setting publishedAt to null explicitly clears it; omitting publishedAt leaves it unchanged, including when url changes.
         Setting content stores/replaces the preserved content cache; setting content to null or blank clears it.
         If url is changed the server re-fetches the page to refresh the enriched
         fields. Fully atomic — if enrichment fails the server responds with 422
@@ -1026,7 +1181,7 @@ paths:
         - googleOidc: []
       responses:
         '204':
-          description: User marked DELETED and no longer allowed to authenticate or authorize writes
+          description: User marked DELETED and no longer allowlisted for writes
         '409':
           $ref: '#/components/responses/Conflict'
         '404':
@@ -1181,6 +1336,14 @@ components:
       type: object
       required: [importRunId, passIndex, passCount, proposals]
       properties:
+        importType:
+          type: string
+          enum: [API, APIFY, SELENIUM]
+          default: SELENIUM
+        trigger:
+          type: string
+          enum: [MANUAL, WORKER_STARTUP, SCHEDULED]
+          default: MANUAL
         importRunId:
           type: string
           example: facebook-import-20260524T100000Z-1
@@ -1202,7 +1365,7 @@ components:
 
     FacebookProposalBatchResponse:
       type: object
-      required: [importRunId, submitted, skippedExisting]
+      required: [importRunId, submitted, skippedExisting, autoApproved, failed]
       properties:
         importRunId:
           type: string
@@ -1212,6 +1375,14 @@ components:
         skippedExisting:
           type: integer
           example: 1
+
+        autoApproved:
+          type: integer
+          description: Number of proposals automatically accepted as articles.
+          default: 0
+        failed:
+          type: integer
+          default: 0
 
     FacebookImportRunCompletionRequest:
       type: object
@@ -1223,7 +1394,7 @@ components:
           example: FINISHED
         importType:
           type: string
-          enum: [API, SELENIUM]
+          enum: [API, APIFY, SELENIUM]
           default: SELENIUM
         trigger:
           type: string
@@ -1248,6 +1419,17 @@ components:
         logs:
           type: string
           nullable: true
+
+        autoApprovedCount:
+          type: integer
+          default: 0
+        apifyActorRunId:
+          type: string
+          nullable: true
+        apifyCostUsd:
+          type: number
+          nullable: true
+          description: Actual Apify actor run cost in USD when available.
 
     FacebookImportStartupCleanupRequest:
       type: object
@@ -1298,7 +1480,7 @@ components:
       properties:
         importType:
           type: string
-          enum: [API, SELENIUM]
+          enum: [API, APIFY, SELENIUM]
           default: SELENIUM
         trigger:
           type: string
@@ -1343,6 +1525,7 @@ components:
       type: object
       required:
         - importRunId
+        - importType
         - status
         - startedAt
         - lastUpdatedAt
@@ -1355,6 +1538,10 @@ components:
         - skippedExistingCount
         - failedCount
       properties:
+        importType:
+          type: string
+          enum: [API, APIFY, SELENIUM]
+          default: SELENIUM
         importRunId:
           type: string
         status:
@@ -1423,7 +1610,7 @@ components:
         content:
           type: string
           nullable: true
-          description: Internal preserved content cache value; null or blank clears cached content. Not exposed in article responses or RSS.
+          description: Preserved content cache input, normally shortened to 1200 characters plus ellipsis (with a historical repair exception) and capped at 5 MiB UTF-8; null or blank clears it. May repair a degraded Facebook post title. Cached content itself is not exposed in article responses or RSS.
 
     Article:
       type: object
@@ -1581,7 +1768,7 @@ components:
 
     ArticlePage:
       type: object
-      description: Frozen page response shape for Article
+      description: Frozen page response shape using creator-aware Article DTOs
       properties:
         content:
           type: array
@@ -1662,7 +1849,7 @@ components:
         type:
           type: string
           format: uri
-          example: https://example.com/problems/validation-error
+          example: about:blank
         title:
           type: string
           example: Bad Request
@@ -1676,19 +1863,6 @@ components:
           type: string
           format: uri
           example: /api/articles
-        conflictField:
-          type: string
-          description: Optional field name that caused a conflict
-          example: url
-        existingId:
-          type: integer
-          format: int64
-          description: Optional existing resource identifier for conflict cases
-          example: 42
-        remainingAdmins:
-          type: integer
-          description: Optional count of admins that would remain after operation
-          example: 0
 
   responses:
 
@@ -1712,29 +1886,24 @@ components:
                 type: https://cozadzban.pl/problems/article-url-conflict
                 title: Article URL Already Exists
                 status: 409
-                detail: "Article with this URL already exists (canonicalized: <url>)."
+                detail: "An article with URL 'https://example.com/story' already exists"
                 instance: /api/articles
-                conflictField: url
-                existingId: 42
             allowlistEmailConflict:
               summary: Duplicate allowlist email
               value:
                 type: https://cozadzban.pl/problems/allowlist-email-conflict
                 title: Allowlisted Email Already Exists
                 status: 409
-                detail: User with this email is already allowlisted.
+                detail: "User with email 'user@example.com' is already allowlisted"
                 instance: /api/users
-                conflictField: email
-                existingId: 7
             lastAdminRequired:
               summary: Attempt to remove final admin
               value:
                 type: https://cozadzban.pl/problems/last-admin-required
                 title: Last Admin Required
                 status: 409
-                detail: Operation would leave the system without an ADMIN user.
+                detail: Operation would leave the system without an ADMIN user
                 instance: /api/users/1
-                remainingAdmins: 0
             facebookImportBusy:
               summary: Facebook import already running
               value:

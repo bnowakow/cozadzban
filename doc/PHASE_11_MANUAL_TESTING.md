@@ -59,7 +59,7 @@ curl http://localhost:8080/auth/me
 - **Should have:**
   - ✓ HttpOnly flag (checked)
   - ✓ SameSite=Lax (in Chrome: "Lax")
-  - ✗ Secure flag (not set in localhost, but would be in production)
+  - Secure follows `SESSION_COOKIE_SECURE` (false by default; set true for HTTPS production)
 
 ## Step 6: Test /auth/me with Session
 
@@ -83,17 +83,14 @@ fetch('http://localhost:8080/auth/me')
 
 ## Step 7: Test /auth/logout
 
-**In browser**, after authenticated session from Step 4:
+Use the top-bar **Logout** button and confirm the session is invalidated and the
+browser returns to `/`.
 
-```bash
-# In DevTools Console:
-fetch('http://localhost:8080/auth/logout', { method: 'POST' })
-  .then(r => console.log('Status:', r.status))
-```
-
-**Expected:**
-- HTTP 204 No Content
-- Session cookie `JSESSIONID` is cleared/removed
+For the separate `POST /auth/logout` endpoint, a direct browser `fetch` without a
+CSRF token must return **403** in local and production profiles. To verify its
+**204** response, use an authenticated request with a valid Spring CSRF token;
+the integration test harness supplies it with `with(csrf())`. Cookies alone do
+not supply the CSRF token.
 
 ## Step 8: Verify Logout Worked
 
@@ -124,7 +121,7 @@ curl -H "Authorization: Bearer YOUR_JWT_TOKEN" http://localhost:8080/api/article
 **Expected:**
 - Endpoints still accept bearer tokens as before
 - No change to REST API auth mechanism
-- 403 if you don't have a valid token and it's a protected endpoint
+- Protected API writes return 401 for missing/invalid credentials, or 403 for a valid principal without permission
 
 ## Troubleshooting
 
@@ -136,25 +133,24 @@ curl -H "Authorization: Bearer YOUR_JWT_TOKEN" http://localhost:8080/api/article
 ### /auth/me Returns Error
 - Ensure you've completed OAuth flow and have active session
 - Check JSESSIONID cookie exists
-- Verify email matches an ACTIVE entry in `app_user` allowlist table
-- Verify the matching user is not soft-deleted (`status != DELETED`)
+- An authenticated user without an ACTIVE allowlist entry receives `role: null` and `allowlisted: false`
 
 ### Session Cookie Missing
 - OAuth callback handler didn't execute properly
 - Check Spring Security configuration in `SecurityConfig.kt`
-- Verify `spring.servlet.session.cookie.http-only=true` is set
+- Verify `server.servlet.session.cookie.http-only=true` is set
 
 ### CSRF Errors on Logout
-- POST /auth/logout requires CSRF token in production
-- In localhost/curl testing, CSRF is typically disabled in dev
-- Browser automatically handles CSRF tokens
+- POST /auth/logout requires a CSRF token in every profile
+- A plain browser fetch does not automatically attach a Spring CSRF token
+- Use the Vaadin Logout button for the normal manual logout flow
 
 ## Summary Checklist
 
 - [ ] OAuth login redirects to Google
 - [ ] GET /auth/me returns 401 when unauthenticated  
 - [ ] After OAuth flow, GET /auth/me returns user + role
-- [ ] Soft-deleted users cannot log in or authorize writes
+- [ ] Soft-deleted users have no allowlisted role and cannot authorize writes
 - [ ] JSESSIONID cookie has HttpOnly flag
 - [ ] POST /auth/logout returns 204
 - [ ] GET /auth/me returns 401 after logout
@@ -166,7 +162,7 @@ curl -H "Authorization: Bearer YOUR_JWT_TOKEN" http://localhost:8080/api/article
 2. As ADMIN, change that user to `status=DELETED`
 3. Log out
 4. Attempt login again with the deleted user
-5. **Expected:** login/session is denied or treated as unauthenticated
+5. **Expected:** Google login may succeed, but `/auth/me` reports `role: null` and `allowlisted: false`; privileged actions remain unavailable
 6. Attempt REST write with that user's bearer token
 7. **Expected:** 403 Forbidden
 8. As ADMIN, restore the user to `status=ACTIVE`

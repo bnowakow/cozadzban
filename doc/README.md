@@ -7,10 +7,18 @@ Project documentation, specs, and developer aids.
 - **[SPEC.yaml](SPEC.yaml)** — single source of truth for the system. OpenAPI 3.0 with `x-`
   extensions covering architecture, database schema, business rules, and UI specs. Intended
   audience: LLMs used for code generation and review.
-- **[openapi.yaml](openapi.yaml)** — runtime API contract served by springdoc. Describes the REST
-  endpoints, RSS feed, and request/response schemas.
+- **[openapi.yaml](openapi.yaml)** — maintained API contract describing REST endpoints,
+  public story/assets routes, Page OAuth, RSS, and request/response schemas.
+  Springdoc generates `/v3/api-docs` from the running application; it does not serve
+  this YAML file. Keep the API sections here and in `SPEC.yaml` aligned.
 
 ## Plans and testing
+
+- **[FACEBOOK_APP_REVIEW.md](FACEBOOK_APP_REVIEW.md)** — permission selection and
+  paste-ready App Review descriptions for the implemented Facebook publishing flow.
+- **[FACEBOOK_APP_REVIEW_KIT.md](FACEBOOK_APP_REVIEW_KIT.md)** — Graph API Explorer
+  requests, token troubleshooting, reviewer access instructions, recording script,
+  and evidence from the 21 October 2026 review session.
 
 - **[IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md)** — bottom-up, phased implementation plan
   respecting compile-time dependencies.
