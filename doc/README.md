@@ -19,6 +19,10 @@ Project documentation, specs, and developer aids.
 - **[FACEBOOK_APP_REVIEW_KIT.md](FACEBOOK_APP_REVIEW_KIT.md)** — Graph API Explorer
   requests, token troubleshooting, reviewer access instructions, recording script,
   and evidence from the 21 October 2026 review session.
+- **[FACEBOOK_PHASE3_TESTING.md](FACEBOOK_PHASE3_TESTING.md)** — engagement,
+  link-comment budget, and post synchronization checks.
+- **[FACEBOOK_PHASE4_TESTING.md](FACEBOOK_PHASE4_TESTING.md)** — story views and
+  article-level Facebook statistics checks.
 
 - **[IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md)** — bottom-up, phased implementation plan
   respecting compile-time dependencies.

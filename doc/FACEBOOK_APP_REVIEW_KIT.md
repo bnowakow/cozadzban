@@ -5,6 +5,12 @@ https://cozadzban.pl/. Instructions are templates; the dated evidence section
 separately records responses and screenshots supplied during the session.
 Use with [the permission descriptions](FACEBOOK_APP_REVIEW.md).
 
+The requests and screenshots below are a **21–22 October historical test
+record**, not a current permission recommendation. The application now has
+reaction collection, Page-authored story-link comments, and post edit/delete
+synchronization. See [current permission descriptions](FACEBOOK_APP_REVIEW.md)
+and [Phase 3 checks](FACEBOOK_PHASE3_TESTING.md) before preparing a new review.
+
 ## Session identifiers and submission scope
 
 | Object | Value observed during the 21–22 October 2026 session |
@@ -34,11 +40,13 @@ An earlier request used `61595742805131`, which was not the Page ID returned
 by discovery. Use the ID from a successful `/me/accounts` response instead of
 assuming an ID from a browser URL is the correct Graph Page object.
 
-Keep `pages_manage_posts`, `pages_show_list`, `pages_read_engagement`, and
-`public_profile`; keep `business_management` only if needed for this
-business-portfolio Page connection. Remove `pages_manage_engagement` and
-`pages_read_user_content` from the current review request. The manual comment
-test below is retained as troubleshooting history, not a feature claim.
+For the 21–22 October Phase 2 submission, the advice was to keep
+`pages_manage_posts`, `pages_show_list`, `pages_read_engagement`, and
+`public_profile`; keep `business_management` only if needed for that
+business-portfolio Page connection; and defer `pages_manage_engagement` and
+`pages_read_user_content`. This was before the application implemented its
+comment scheduler. The manual comment test below is retained as historical
+evidence; it does not verify the current Page token or scheduler.
 
 ## 1. Graph API Explorer: copy-paste requests
 
@@ -186,8 +194,8 @@ After each permission test, inspect the app's Testing screen. Record the
 method, path, time, HTTP outcome, returned object ID, and whether Meta counted
 the call. Never record tokens. Successful API responses do not guarantee that
 Meta attributes them to a particular permission. Do not submit errors as proof
-of successful access. Further comment tests are unnecessary for the current
-submission, which defers `pages_manage_engagement` and `pages_read_user_content`.
+of successful access. For the 21–22 October Phase 2 submission, further
+comment tests were unnecessary because comment permissions were deferred.
 
 ### Exact requests for the Page used in this session
 
@@ -220,7 +228,7 @@ Set `url`, `caption`, and `published` using the publishing parameter table
 above. A GET of `/photos` lists existing photos and does not test publishing.
 Do not create another public post if publishing has already been demonstrated.
 
-### Historical comment test (deferred feature)
+### Historical comment test (before the application comment workflow)
 
 The following **POST** succeeded manually in Explorer, using a Page token:
 
@@ -247,8 +255,9 @@ Successful response supplied by the user:
 ```
 
 This created a real comment. Do not rerun it to refresh a dashboard counter.
-The app has no corresponding comment workflow; an Explorer success cannot
-replace the required end-to-end app demonstration for Advanced Access.
+At the time, the app had no corresponding comment workflow. The current
+scheduler must be demonstrated separately; this Explorer success cannot
+replace an end-to-end app demonstration for Advanced Access.
 
 ### Troubleshooting observed during the session
 
@@ -260,7 +269,7 @@ replace the required end-to-end app demonstration for Advanced Access.
 | “User or Page” shows a Page while configuration says “User access token” | Validate the token privately with Meta's Access Token Debugger and verify `/me?fields=id,name`; configuration labels alone do not establish the actual token type. |
 | `(#100) Tried accessing nonexisting field (permalink_url)` on `/1415412431653305` | This is a Page object, not a post. Read the photo's `page_story_id`, then request `permalink_url` on that full post ID. |
 | `(#200) You do not have sufficient permissions` on comment POST | Check the Page token's `pages_manage_engagement` grant and Page assignment/tasks. Minting another token without fixing missing grants is insufficient. |
-| OAuth says `Invalid Scopes: pages_read_user_content` when adding `pages_manage_engagement` | The review form required `pages_read_user_content` and `pages_show_list` as dependencies. Add/enable the required scope under the same app's Page use case and Login for Business configuration, then authorize again. The user reported this resolved token generation. If the scope is unavailable, inspect app/use-case eligibility instead of repeatedly retrying. For the current submission, defer both comment-related permissions. |
+| OAuth says `Invalid Scopes: pages_read_user_content` when adding `pages_manage_engagement` | In the 21–22 October session, the form required `pages_read_user_content` and `pages_show_list` as dependencies. Check the current app use case and Login for Business configuration, then authorize again after correcting missing grants. The user reported this resolved token generation. Do not claim application use of `pages_read_user_content` unless such a workflow is implemented. |
 | Error `197`, subcode `1446001`, “No comment entered” | The POST had no message body. Add the `message` parameter or JSON body above; selecting POST and entering the path does not supply the text. Adding the parameter produced the confirmed successful comment. |
 
 Changing the Login for Business configuration does not update existing tokens.
@@ -480,8 +489,8 @@ why. Preserve the actual response without inferring an edit operation.
 Reading a Page-authored comment does not establish that Meta used
 `pages_read_user_content`; reading an actual person's comment would be a more
 relevant diagnostic for that scope, but no such response was supplied. Further
-comment tests are unnecessary for the current submission, which defers both
-comment-related permissions.
+comment tests were unnecessary for the 21–22 October Phase 2 submission,
+which deferred both comment-related permissions.
 
 The **14:11 App Review screenshot** displayed only `pages_manage_posts`,
 `pages_show_list`, `business_management`, `pages_read_engagement`, and

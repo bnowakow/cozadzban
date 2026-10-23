@@ -389,11 +389,11 @@ Phases 4 and 5 are independent and can be developed in parallel.
   articles are not backfilled.
 - **Implemented public pages:** `/stories/{id}` renders story metadata and links to
   published Facebook posts; `/sitemap.xml` lists public site and story URLs.
-- **Implemented in the checkout (phase 3):** scheduled reaction collection,
+- **Implemented and deployed (phase 3):** scheduled reaction collection,
   monthly-budget link comments, and edit/delete synchronization. These use the
   V35 foundation and V36 migration. The initial link-selection rule ranks by
   Facebook reactions.
-- **Implemented in the checkout (phase 4):** bot-filtered daily story view
+- **Implemented and deployed (phase 4):** bot-filtered daily story view
   aggregates and an ADMIN-only report comparing views with Facebook reactions.
   This uses the V37 migration. Story views are retained for a future selection
   rule; reactions remain the current ranking signal.

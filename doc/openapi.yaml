@@ -74,7 +74,7 @@ info:
     - Error responses use `application/problem+json` (RFC 9457 /
       Spring `ProblemDetail`).
 
-  version: 0.60.2-SNAPSHOT
+  version: 0.61.1-SNAPSHOT
   license:
     name: GNU General Public License v3.0
     url: https://www.gnu.org/licenses/gpl-3.0.html
@@ -252,7 +252,7 @@ paths:
     get:
       tags: [Articles]
       summary: Read a public server-rendered story page
-      description: Includes source and available Facebook post links, metadata and structured data; never includes creator data or preserved article content.
+      description: Includes source icon and name, a back link, available Facebook post link, and Open Graph metadata; never includes creator data or preserved article content.
       operationId: getStoryPage
       security: []
       parameters:
@@ -1042,7 +1042,7 @@ paths:
 
     get:
       tags: [RSS]
-      summary: Proxy an article thumbnail for RSS readers
+      summary: Proxy an article thumbnail for RSS readers and story pages
       operationId: getRssImage
       security: []
       parameters:

@@ -204,7 +204,7 @@ class FacebookImportScheduler(
         properties.schedule.interval.takeIf { !it.isNegative && !it.isZero } ?: Duration.ofHours(8)
 
     private fun apifyScheduleInterval(): Duration =
-        properties.apify.scheduleInterval.takeIf { !it.isNegative && !it.isZero } ?: Duration.ofHours(8)
+        properties.apify.scheduleInterval.takeIf { !it.isNegative && !it.isZero } ?: Duration.ofHours(24)
 
     internal fun apifyDelayUntilNextEligibleRun(now: Instant = Instant.now()): Duration {
         val interval = apifyScheduleInterval()

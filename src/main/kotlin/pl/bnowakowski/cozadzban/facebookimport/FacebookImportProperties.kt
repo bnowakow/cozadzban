@@ -77,7 +77,7 @@ data class FacebookImportProperties(
         val captionText: Boolean = false,
         val maxCostUsd: Double = 0.10,
         val scheduleEnabled: Boolean = false,
-        val scheduleInterval: Duration = Duration.ofHours(8),
+        val scheduleInterval: Duration = Duration.ofHours(24),
         val costSummaryDays: Int = 30,
         val connectTimeout: Duration = Duration.ofSeconds(10),
         val readTimeout: Duration = Duration.ofMinutes(15),

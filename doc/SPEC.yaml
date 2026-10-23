@@ -1423,7 +1423,7 @@ info:
     - Error responses use `application/problem+json` (RFC 9457 /
       Spring `ProblemDetail`).
 
-  version: 0.60.2-SNAPSHOT
+  version: 0.61.1-SNAPSHOT
   license:
     name: GNU General Public License v3.0
     url: https://www.gnu.org/licenses/gpl-3.0.html
@@ -1571,11 +1571,11 @@ x-runtime-configuration:
       - APP_FACEBOOK_IMPORT_APIFY_READ_TIMEOUT
     schedulingSemantics: enabled import types run sequentially
 
-# Phases 1-2 are implemented. Later phases remain a design contract;
-# their schema foundation exists but engagement/synchronization workers do not.
+# Phases 1-4 are implemented. The full test suite for phases 3-4 remains
+# pending on a development machine; do not run it on the deployment server.
 x-planned-features:
   facebookPagePublishing:
-    status: partially-implemented
+    status: implemented_pending_full_tests
     scope: Facebook Pages managed by this application, never personal profiles
     implementationPhases:
       - phase: 1
@@ -1780,7 +1780,7 @@ paths:
     get:
       tags: [Articles]
       summary: Read a public server-rendered story page
-      description: Includes source and available Facebook post links, metadata and structured data; never includes creator data or preserved article content.
+      description: Includes source icon and name, a back link, available Facebook post link, and Open Graph metadata; never includes creator data or preserved article content.
       operationId: getStoryPage
       security: []
       parameters:
@@ -2570,7 +2570,7 @@ paths:
 
     get:
       tags: [RSS]
-      summary: Proxy an article thumbnail for RSS readers
+      summary: Proxy an article thumbnail for RSS readers and story pages
       operationId: getRssImage
       security: []
       parameters:

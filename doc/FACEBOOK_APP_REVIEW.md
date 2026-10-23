@@ -1,6 +1,7 @@
 # Meta Page permissions: App Review submission
 
-This draft reflects the implemented Page connection and Phase 2 publication flow.
+This draft reflects the implemented Page connection, publication, engagement,
+link-comment, and post synchronization flows (phases 1–4).
 It is text for the app owner to review and paste into Meta's App Review forms.
 Updated from the App Review session on 21–22 October 2026. See the
 [review kit](FACEBOOK_APP_REVIEW_KIT.md) for exact requests, troubleshooting,
@@ -13,18 +14,19 @@ make the compliance attestations.
 
 | Permission | Decision | Implemented purpose |
 | --- | --- | --- |
-| `pages_manage_posts` | Keep | Publish article photo posts on the selected Page. |
+| `pages_manage_posts` | Keep | Publish article photo posts, update their captions after article edits, and delete posts after article deletion. |
 | `pages_show_list` | Keep | Display authorized Pages and check content creation tasks. |
-| `pages_read_engagement` | Keep | Read the published post's permalink. |
+| `pages_read_engagement` | Keep | Read post permalinks, reaction totals, and photo object IDs needed for caption updates. |
 | `business_management` | Keep only if necessary for the business-portfolio Page connection | Support discovery of the administrator's assigned business Page. |
 | `public_profile` | Keep | Basic Facebook login identity. |
-| `pages_manage_engagement` | Remove from this review submission | No implemented application comment workflow. |
-| `pages_read_user_content` | Remove from this review submission | No implemented reading of user comments, ratings, tagged posts, or other user content. |
+| `pages_manage_engagement` | Request for the implemented workflow | Add the article's canonical story URL as a Page-authored comment under a selected post. |
+| `pages_read_user_content` | No implemented use | The application does not read people's comments, ratings, or tagged posts; resolve any Meta review dependency before requesting it. |
 
-Use **Edit your submission** to remove the two deferred permissions from the
-Advanced Access request. This is separate from changing a Login for Business
-configuration or revoking an existing token. A manual comment test does not
-justify claiming a comment-management feature in the application.
+The 21–22 October review evidence below predates the Phase 3 scheduler. Its
+advice to defer comment permissions described that earlier implementation and
+is not the current application scope. Confirm the permissions actually granted
+to the stored Page token and the requirements shown in the current Meta review
+form; implementation alone does not establish approval or token access.
 
 ## First check whether Advanced Access is needed
 
@@ -100,48 +102,64 @@ establish application necessity; the app does not call that endpoint.
 > POST /{page-id}/photos with an image, the article title, and a short lead.
 > The caption contains no external article URL. The application stores the
 > returned post ID and links the article's story page to the published Facebook
-> post, allowing readers to open the discussion.
+> post, allowing readers to open the discussion. When an article is edited or
+> deleted, it queues a Page post update or deletion and records the outcome.
 >
 > This saves administrators from manually recreating each article announcement
 > on Facebook and helps readers discover and discuss new articles. The permission
-> is necessary to create these photo posts on the selected Page. The current
-> implementation does not edit or delete Facebook posts, publish to personal
-> profiles, or manage user-generated content.
+> is necessary to create and maintain these photo posts on the selected Page.
+> The application does not publish to personal profiles.
 
 ### `pages_read_engagement`
 
-> Co Za Dzban uses pages_read_engagement to retrieve the permalink of a photo
-> post published by the application on an administrator-selected Facebook Page.
+> Co Za Dzban uses pages_read_engagement to retrieve post metadata and reaction
+> totals for photo posts published on an administrator-selected Facebook Page.
 >
 > After publishing, the application calls GET /{post-id}?fields=permalink_url
 > using the selected Page's access token. If Facebook returns only a photo ID,
 > the application first reads the photo's page_story_id to identify the post.
 >
 > It stores the resulting permalink and displays it on the article's story page
-> as “Skomentuj na Facebooku” (“Comment on Facebook”). This lets readers open
-> the correct Facebook discussion and helps administrators connect each article
-> with its published Page announcement.
+> as “Skomentuj na Facebooku” (“Comment on Facebook”). The scheduler reads
+> GET /{post-id}?fields=reactions.limit(0).summary(total_count) to rank eligible
+> posts for link comments. An article edit may read the post's object_id to
+> locate the photo whose caption needs updating.
 >
-> The permission is needed to read the published post's permalink from Facebook.
-> The current implementation does not collect follower identities, reactions,
-> user comments, or engagement analytics.
+> The application stores reaction counts and measurement times, without
+> collecting follower identities or reading people's comments.
 
 The publisher constructs a fallback URL if the permalink read fails. A working
 story link alone therefore does not prove a successful `pages_read_engagement`
 call. Failed or uncertain publications are shown to administrators; uncertain
 requests are never retried automatically.
 
-## Defer `pages_manage_engagement` and `pages_read_user_content`
+## `pages_manage_engagement` and `pages_read_user_content`
 
-Phase 2 does not create Page comments. Do not request Advanced Access for
-`pages_manage_engagement` yet: there is no implemented end-to-end user
-experience to show. A manual Explorer comment succeeded on 21 October 2026,
-but does not demonstrate an application feature. There is also no implemented
-use of `pages_read_user_content`. Phase 3 plans link comments,
-reaction collection, and the application-level monthly link limit. Meta's
-current review form also requires `pages_read_user_content` in the same
-submission for `pages_manage_engagement`; the supplied form and token-generation
-failure confirmed the dependency in this session. Assess it with Phase 3.
+The implemented scheduler calls POST `/{post-id}/comments` with the article's
+canonical story URL using the selected Page token. It waits for the configured
+minimum post age, ranks eligible posts by the latest reaction total, and
+respects a configurable monthly confirmed-link budget (default five) per Page.
+The ADMIN Page view shows comment status and failures. This is the application
+workflow to demonstrate for `pages_manage_engagement`.
+
+> Co Za Dzban uses pages_manage_engagement to add a Page-authored comment
+> containing the canonical story URL below a photo post that the application
+> published on an administrator-selected Facebook Page.
+>
+> An administrator connects and enables a Page, sets the minimum post age and
+> monthly link budget, and adds articles. The application publishes photo posts
+> without links in their captions. Its scheduler reads post reaction totals,
+> selects eligible posts, and calls POST /{post-id}/comments with the matching
+> https://cozadzban.pl/stories/{article-id} URL. The application records the
+> comment ID and status. Administrators can review failures or uncertain
+> results before retrying. The default budget is five confirmed link comments
+> per Page calendar month.
+
+The code does not read user-authored content, so there is no application
+workflow to claim for `pages_read_user_content`. The October 2026 Meta form
+presented it as a dependency for `pages_manage_engagement`; the app owner must
+resolve that requirement in the current review form without describing a use
+the application does not implement.
 
 ## Suggested API calls and evidence
 
@@ -153,7 +171,8 @@ reported `pages_manage_posts` counter was still `0 of 1`, so its registration
 remains pending despite the successful POST. Do not create duplicate posts to
 repeat a successful test. The [kit's evidence log](FACEBOOK_APP_REVIEW_KIT.md#4-evidence-and-review-status-21-october-2026)
 records the exact responses, additional comment tests, and 14:11 submission
-status. Comment tests remain separate from the implemented application scope.
+status. Those manual tests predate the scheduler and do not prove its current
+token grant or end-to-end operation.
 
 Further tests confirmed two additional photo publications (captioned 17:33
 and 17:34 on 21 October) and a successful edit of post
@@ -180,8 +199,8 @@ repository.
 | `pages_show_list` | Connect Page in the app; the callback calls `GET /me/accounts?fields=id,name,access_token,tasks`. |
 | `business_management` | With a User token, make a read-only Business Manager API call such as `GET /me/businesses?fields=id,name`; verify Meta attributes it to this permission. |
 | `pages_manage_posts` | With an authorized Page token, create one real article and capture the app's `POST /{page-id}/photos` and resulting Page post. |
-| `pages_read_engagement` | Capture the app's `GET /{post-id}?fields=permalink_url` after publishing, or read the selected Page's posts with a Page token that has this scope. |
-| `pages_manage_engagement` | Wait for Phase 3, then capture a real Page comment created through its configured scheduler. |
+| `pages_read_engagement` | Capture the app's post permalink or reaction-count GET for an app-published post. |
+| `pages_manage_engagement` | Capture a real canonical story-link comment created by the configured scheduler and its confirmed status in the ADMIN Page view. |
 
 Meta determines whether a call satisfies its review counter. Check its Testing
 screen after each successful call. A Graph HTTP error does not demonstrate
@@ -198,8 +217,9 @@ working permission access.
 5. Show the new image post on the selected Facebook Page and that its text has
    no external link.
 6. Open `/stories/{article-id}` and follow **Skomentuj na Facebooku** to the
-   published post. Show the corresponding Meta test-call status if available.
+   published post. Show the reaction check in **Admin → Facebook Pages**.
+7. For the comment permission, let an eligible post reach the minimum age and
+   show its confirmed canonical story-link comment on Facebook and in the app.
 
-Use a real article that can remain published: Phase 3 deletion synchronization
-is not implemented yet. Separate short clips can reuse the same flow while
-highlighting the step relevant to each permission.
+Use a real article that can remain published. Separate short clips can reuse
+the same flow while highlighting the step relevant to each permission.
