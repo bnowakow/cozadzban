@@ -389,7 +389,17 @@ Phases 4 and 5 are independent and can be developed in parallel.
   articles are not backfilled.
 - **Implemented public pages:** `/stories/{id}` renders story metadata and links to
   published Facebook posts; `/sitemap.xml` lists public site and story URLs.
-- **Planned (phases 3–4):** reaction collection, monthly-budget link comments,
-  edit/delete synchronization, bot-filtered story view counts, and ranking/reporting.
-  V35 includes schema foundations for these later phases; their workers are pending.
-  See `SPEC.yaml` → `x-planned-features.facebookPagePublishing` for the design contract.
+- **Implemented in the checkout (phase 3):** scheduled reaction collection,
+  monthly-budget link comments, and edit/delete synchronization. These use the
+  V35 foundation and V36 migration. The initial link-selection rule ranks by
+  Facebook reactions.
+- **Implemented in the checkout (phase 4):** bot-filtered daily story view
+  aggregates and an ADMIN-only report comparing views with Facebook reactions.
+  This uses the V37 migration. Story views are retained for a future selection
+  rule; reactions remain the current ranking signal.
+- **Verification and deployment:** production and test sources compiled on the
+  deployment server. V37 has applied in the deployed app and read-only report
+  queries returned data. The full test suite remains pending on a development
+  machine; tests are prohibited on this server. See `SPEC.yaml`
+  and `FACEBOOK_PHASE3_TESTING.md` / `FACEBOOK_PHASE4_TESTING.md` for the
+  implementation contract and manual checks.

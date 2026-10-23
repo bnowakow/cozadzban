@@ -63,7 +63,10 @@ class AdminView(
         val facebookPagesButton = Button("Facebook Pages") {
             ui.ifPresent { it.navigate("admin/facebook-pages") }
         }
-        val pageToolbar = HorizontalLayout(Span("Manage users").apply { addClassName("czj-admin-title") }, facebookPagesButton, addUserButton)
+        val facebookStatisticsButton = Button("Story statistics") {
+            ui.ifPresent { it.navigate("admin/facebook-statistics") }
+        }
+        val pageToolbar = HorizontalLayout(Span("Manage users").apply { addClassName("czj-admin-title") }, facebookPagesButton, facebookStatisticsButton, addUserButton)
         pageToolbar.defaultVerticalComponentAlignment = Alignment.CENTER
         pageToolbar.setWidthFull()
         pageToolbar.expand(pageToolbar.getComponentAt(0))

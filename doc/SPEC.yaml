@@ -352,8 +352,9 @@ x-database:
         Durable publication queue with unique article_id_snapshot and post_id.
         article_id is a nullable FK with ON DELETE SET NULL; the snapshot preserves
         identity after deletion. Tracks Page, status, post permalink, image source,
-        attempt count, sanitized error and UTC timestamps. UPDATE_PENDING and
-        DELETE_PENDING are reserved for future synchronization.
+        attempt count, sanitized error and UTC timestamps. The photo ID added
+        in V36 supports later caption updates. Edit and delete work is tracked
+        separately in facebook_page_sync.
       columns:
         - name: id
           type: BIGSERIAL
@@ -387,6 +388,10 @@ x-database:
           type: TEXT
           migration: V35__facebook_page_publishing_foundation.sql
           constraints: "nullable"
+        - name: photo_id
+          type: TEXT
+          migration: V36__facebook_page_synchronization.sql
+          constraints: "nullable"
         - name: image_source
           type: VARCHAR(32)
           migration: V35__facebook_page_publishing_foundation.sql
@@ -413,7 +418,7 @@ x-database:
           constraints: "NOT NULL DEFAULT now()"
     - name: facebook_post_reaction_snapshot
       migration: V35__facebook_page_publishing_foundation.sql
-      description: Schema foundation for future reaction collection; no collection worker yet.
+      description: Per-post reaction totals and sanitized Graph read failures, collected by the engagement scheduler.
       columns:
         - name: id
           type: BIGSERIAL
@@ -441,7 +446,7 @@ x-database:
           constraints: "NOT NULL DEFAULT now()"
     - name: facebook_link_comment
       migration: V35__facebook_page_publishing_foundation.sql
-      description: Schema foundation for future link comments and monthly budget tracking; no comment worker yet.
+      description: Per-post link selection, attempt, confirmed comment, failure and reconciliation record.
       columns:
         - name: id
           type: BIGSERIAL
@@ -491,6 +496,59 @@ x-database:
           type: TIMESTAMPTZ
           migration: V35__facebook_page_publishing_foundation.sql
           constraints: "NOT NULL DEFAULT now()"
+    - name: facebook_page_sync
+      migration: V36__facebook_page_synchronization.sql
+      description: Durable update and delete requests, with uncertain-result reconciliation and manual image-replacement status.
+      columns:
+        - name: id
+          type: BIGSERIAL
+          constraints: "PRIMARY KEY"
+        - name: publication_id
+          type: BIGINT
+          constraints: "NOT NULL REFERENCES facebook_page_publication(id) ON DELETE CASCADE"
+        - name: action
+          type: VARCHAR(16)
+          constraints: "NOT NULL; UPDATE or DELETE; unique with publication_id"
+        - name: status
+          type: VARCHAR(32)
+          constraints: "NOT NULL; PENDING, ATTEMPTING, CONFIRMED, FAILED, NEEDS_RECONCILIATION, REPLACEMENT_REQUIRED or CANCELLED"
+        - name: attempt_count
+          type: INTEGER
+          constraints: "NOT NULL DEFAULT 0"
+        - name: dirty
+          type: BOOLEAN
+          constraints: "NOT NULL DEFAULT false"
+        - name: replacement_required
+          type: BOOLEAN
+          constraints: "NOT NULL DEFAULT false"
+        - name: requested_at
+          type: TIMESTAMPTZ
+          constraints: "NOT NULL DEFAULT now()"
+        - name: attempted_at
+          type: TIMESTAMPTZ
+          constraints: "nullable"
+        - name: completed_at
+          type: TIMESTAMPTZ
+          constraints: "nullable"
+        - name: last_error
+          type: TEXT
+          constraints: "nullable"
+        - name: updated_at
+          type: TIMESTAMPTZ
+          constraints: "NOT NULL DEFAULT now()"
+    - name: article_story_view_daily
+      migration: V37__article_story_view_daily.sql
+      description: Daily UTC aggregate of qualifying story-page loads, without visitor identifiers or request metadata.
+      columns:
+        - name: article_id
+          type: BIGINT
+          constraints: "NOT NULL REFERENCES article(id) ON DELETE CASCADE; primary key with view_date_utc"
+        - name: view_date_utc
+          type: DATE
+          constraints: "NOT NULL; UTC calendar date; primary key with article_id"
+        - name: view_count
+          type: BIGINT
+          constraints: "NOT NULL DEFAULT 0 CHECK (view_count >= 0)"
     - name: sessions
       migration: none (server-managed web session)
       description: No additional DB table required; session is server-managed and identified by HttpOnly cookie.
@@ -1247,9 +1305,17 @@ x-vaadin-ui:
       description: >
         ACTIVE ADMIN-only Page connection, configuration, disconnect and reconnect
         view. Supports failed-publication retries and manual reconciliation of
-        uncertain results. Tokens remain server-side. Link budget, minimum age
-        and scheduler interval settings are stored for planned phase 3; the
-        current image publication worker runs every 15 seconds.
+        uncertain publication, comment, update and deletion results. Shows recent
+        reaction totals and link-comment states for published posts. Tokens remain
+        server-side. Link budget, minimum age and scheduler interval settings
+        control the engagement worker; image publication runs every 15 seconds.
+    - name: FacebookStatisticsView
+      route: /admin/facebook-statistics
+      description: >
+        ADMIN-only report of current Page totals and paged article statistics.
+        Compares all-time and last-seven-UTC-day story page loads with the
+        latest successful Facebook reaction count, Page post status, and link
+        comment status. No visitor or article creator data is exposed.
     - name: ArticleContentCacheAdminView
       route: /admin/article-content-cache
       description: >
@@ -1543,7 +1609,11 @@ x-planned-features:
           UI, REST, and import-created articles and image fallback.
       - phase: 3
         name: Engagement, link selection, and synchronization
-        status: planned
+        status: implemented
+        verification: >
+          Compilation and read-only SQL query plans were checked on the deployment
+          server. Full tests and Flyway runtime validation remain pending on a
+          development machine because tests must not run on this server.
         work: >
           Schedule reaction-count collection, apply the configurable minimum
           age and per-Page monthly link budget, add selected story links as
@@ -1557,7 +1627,12 @@ x-planned-features:
           budget claims, failed Graph calls, edits, and deletions.
       - phase: 4
         name: Story views and ranking refinement
-        status: planned
+        status: implemented_pending_full_tests
+        verification: >
+          Production and test sources compiled on the deployment server.
+          Deployed Flyway V37 applied and read-only article and Page report
+          queries returned data. The full test suite remains pending on a
+          development machine because tests must not run on this server.
         work: >
           Count story-page views with bot filtering, expose useful article and
           Page publication statistics to admins, and keep view counts
@@ -1606,7 +1681,7 @@ x-planned-features:
         requested; revisit the source-image permission policy before
         expanding publication to additional Pages or sources.
     articleChanges:
-      status: planned
+      status: implemented
       update: >
         Queue synchronization after an article edit and track the result.
         The scheduler updates the Facebook post where the Graph API permits.
@@ -1618,14 +1693,25 @@ x-planned-features:
         success or failure. Do not lose a pending deletion job when the article
         row is removed.
     publicArticleView:
+      presentation: >
+        Show the same source favicon and source name as the main article list,
+        with a back link to the previous same-site page or the article list.
+        Serve the thumbnail through the existing image endpoint so browser
+        image rendering and social previews do not depend on source hotlinking.
       facebookPostLink: >
         When a post is published, show a link to that Facebook post in the
         article view as a place for readers to comment.
+      theme: >
+        The server-rendered story page uses the saved Co za dzban light or dark
+        setting, falling back to the system color preference.
       viewCount: >
-        Record article story-page views separately from Facebook engagement
-        snapshots, with bot filtering and no creator/user data exposure.
+        Record qualifying GET browser HTML navigations as per-article daily
+        UTC aggregates, separately from Facebook engagement snapshots. Exclude
+        known bots, link previews, and non-navigation requests by request
+        headers; no IP address, visitor ID, user agent, or creator data is
+        persisted in the view table. Counts are page loads, not unique visitors.
     engagement:
-      status: planned
+      status: implemented
       collection: scheduled Graph API reads of each published post's reaction count
       persistence: store the reaction count, measurement time and API error state per post
       firstLinkSelectionRule: >
@@ -1636,7 +1722,7 @@ x-planned-features:
         policy separate from publishing so later rules can use article views
         or other statistics.
     linkComments:
-      status: planned
+      status: implemented
       target: the canonical /stories/{articleId} URL of the published article
       budget: >
         Initial configurable cap of five successful external-link comments

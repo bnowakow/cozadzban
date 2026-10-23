@@ -46,12 +46,13 @@ class FacebookPublicationQueue(private val jdbc: NamedParameterJdbcTemplate) {
         emptyMap<String, Any>(), mapper,
     ).firstOrNull()
 
-    fun markPublished(id: Long, postId: String, permalink: String, imageSource: String) {
+    fun markPublished(id: Long, postId: String, permalink: String, imageSource: String, photoId: String?) {
         jdbc.update(
             """UPDATE facebook_page_publication SET status = 'PUBLISHED', post_id = :postId,
-               post_permalink = :permalink, image_source = :imageSource, last_error = NULL,
+               post_permalink = :permalink, image_source = :imageSource, photo_id = :photoId, last_error = NULL,
                published_at = now(), updated_at = now() WHERE id = :id AND status = 'PUBLISHING'""",
-            mapOf("id" to id, "postId" to postId, "permalink" to permalink, "imageSource" to imageSource),
+            mapOf("id" to id, "postId" to postId, "permalink" to permalink, "imageSource" to imageSource,
+                "photoId" to photoId),
         )
     }
 
@@ -100,12 +101,26 @@ class FacebookPublicationQueue(private val jdbc: NamedParameterJdbcTemplate) {
     ) == 1
 
     /** Only an ADMIN who checked the Page can decide an uncertain request did not publish. */
-    fun retryAfterManualReview(id: Long): Boolean = jdbc.update(
-        """UPDATE facebook_page_publication SET status = 'PENDING', post_id = NULL,
-               last_error = NULL, updated_at = now()
-           WHERE id = :id AND status = 'NEEDS_RECONCILIATION'""",
-        mapOf("id" to id),
-    ) == 1
+    @Transactional
+    fun retryAfterManualReview(id: Long): Boolean {
+        val updated = jdbc.update(
+            """UPDATE facebook_page_publication SET
+                 status = CASE WHEN article_id IS NULL THEN 'DELETED' ELSE 'PENDING' END,
+                 post_id = NULL, last_error = NULL, updated_at = now()
+               WHERE id = :id AND status = 'NEEDS_RECONCILIATION'""",
+            mapOf("id" to id),
+        ) == 1
+        if (updated) {
+            jdbc.update(
+                """UPDATE facebook_page_sync SET status = 'CANCELLED', updated_at = now()
+                   WHERE publication_id = :id AND action = 'DELETE' AND status = 'PENDING'
+                     AND EXISTS (SELECT 1 FROM facebook_page_publication
+                                 WHERE id = :id AND status = 'DELETED')""",
+                mapOf("id" to id),
+            )
+        }
+        return updated
+    }
 
     fun confirmAfterManualReview(id: Long, postId: String, permalink: String): Boolean {
         require(postId.matches(Regex("[0-9]+_[0-9]+"))) { "Use a Page post ID in pageId_postId format" }

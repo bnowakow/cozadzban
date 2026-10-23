@@ -14,7 +14,7 @@ plugins {
 }
 
 group = "pl.bnowakowski"
-version = "0.60.3-SNAPSHOT"
+version = "0.61.0-SNAPSHOT"
 
 java {
 	toolchain {
@@ -27,6 +27,13 @@ repositories {
 }
 
 extra["vaadinVersion"] = "25.1.4"
+
+vaadin {
+	forceProductionBuild = providers.gradleProperty("forceVaadinProductionBuild")
+		.map(String::toBoolean)
+		.orElse(false)
+		.get()
+}
 
 dependencies {
 	implementation("org.springframework.boot:spring-boot-micrometer-tracing-brave")

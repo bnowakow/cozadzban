@@ -7,7 +7,6 @@ import org.springframework.scheduling.annotation.EnableScheduling
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
 import org.springframework.web.client.RestClientResponseException
-import pl.bnowakowski.cozadzban.article.Article
 import pl.bnowakowski.cozadzban.article.ArticleRepository
 
 @Configuration
@@ -47,7 +46,7 @@ class FacebookPublicationWorker(
             return
         }
         var image = imageProvider.forArticle(article)
-        val caption = caption(article)
+        val caption = FacebookPostCaption.forArticle(article)
         try {
             val result = try {
                 publisher.publish(page.pageId, token, caption, image)
@@ -63,7 +62,7 @@ class FacebookPublicationWorker(
                     image.source, result.photoId)
                 return
             }
-            queue.markPublished(job.id, postId, result.permalink!!, image.source)
+            queue.markPublished(job.id, postId, result.permalink!!, image.source, result.photoId)
             log.info("Published Facebook Page post for article {} on Page {}", article.id, page.pageId)
         } catch (ex: RestClientResponseException) {
             if (ex.statusCode.is4xxClientError && ex.statusCode.value() != 429) {
@@ -77,15 +76,4 @@ class FacebookPublicationWorker(
         }
     }
 
-    private fun caption(article: Article): String {
-        val fallback = if (article.language.startsWith("pl")) "Nowa historia" else "New story"
-        val title = clean(article.title).takeIf { it.isNotBlank() } ?: fallback
-        val lead = sequenceOf(article.lead, article.aiSummary, article.quote)
-            .map(::clean).firstOrNull { it.isNotBlank() }?.take(550)
-        return listOfNotNull(title.take(230), lead).joinToString("\n\n")
-    }
-
-    private fun clean(raw: String?): String = raw.orEmpty()
-        .replace(Regex("(?i)\\b(?:https?://|www\\.)\\S+|\\b(?:[a-z0-9-]+\\.)+[a-z]{2,}(?:/\\S*)?"), "")
-        .replace(Regex("\\s+"), " ").trim()
 }

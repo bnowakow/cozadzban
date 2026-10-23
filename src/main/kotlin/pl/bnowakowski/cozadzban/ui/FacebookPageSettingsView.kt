@@ -5,6 +5,7 @@ import com.vaadin.flow.component.button.Button
 import com.vaadin.flow.component.button.ButtonVariant
 import com.vaadin.flow.component.checkbox.Checkbox
 import com.vaadin.flow.component.combobox.ComboBox
+import com.vaadin.flow.component.html.Anchor
 import com.vaadin.flow.component.html.Image
 import com.vaadin.flow.component.html.Span
 import com.vaadin.flow.component.notification.Notification
@@ -28,6 +29,8 @@ import pl.bnowakowski.cozadzban.facebookpublish.FacebookPageConnectionService
 import pl.bnowakowski.cozadzban.facebookpublish.FacebookPageOAuthController
 import pl.bnowakowski.cozadzban.facebookpublish.FacebookPageProperties
 import pl.bnowakowski.cozadzban.facebookpublish.FacebookPageSettings
+import pl.bnowakowski.cozadzban.facebookpublish.FacebookEngagementRepository
+import pl.bnowakowski.cozadzban.facebookpublish.FacebookPageSyncRepository
 import pl.bnowakowski.cozadzban.facebookpublish.FacebookPublicationQueue
 import pl.bnowakowski.cozadzban.facebookpublish.PendingFacebookPageSelection
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportJobService
@@ -46,6 +49,8 @@ class FacebookPageSettingsView(
     private val facebookImportJobService: FacebookImportJobService? = null,
     private val facebookImportProperties: FacebookImportProperties = FacebookImportProperties(),
     private val publications: FacebookPublicationQueue? = null,
+    private val engagement: FacebookEngagementRepository? = null,
+    private val pageSync: FacebookPageSyncRepository? = null,
 ) : VerticalLayout() {
     private val articleLanguages = articleRepository.findDistinctLanguages()
     private val language = ComboBox<String>("Article language")
@@ -60,6 +65,9 @@ class FacebookPageSettingsView(
     private val candidates = ComboBox<String>("Choose authorized Page")
     private val candidatePages = mutableMapOf<String, DiscoveredFacebookPage>()
     private val publicationProblems = VerticalLayout()
+    private val commentProblems = VerticalLayout()
+    private val engagementActivity = VerticalLayout()
+    private val syncProblems = VerticalLayout()
 
     init {
         installCozadzbanThemeBootstrap()
@@ -69,6 +77,9 @@ class FacebookPageSettingsView(
         form.setWidthFull()
         form.maxWidth = "44rem"
         form.add(Span("Facebook Page publishing settings"))
+        form.add(Button("View story and Facebook statistics") {
+            ui.ifPresent { it.navigate("admin/facebook-statistics") }
+        })
         form.add(Span("Publishing is disabled until a Page is connected and explicitly enabled."))
         if (!properties.oauthConfigured) {
             form.add(Span("Meta OAuth is not configured on this server. Set the app ID, app secret, Facebook Login for Business configuration ID, redirect URI and encryption key."))
@@ -118,6 +129,9 @@ class FacebookPageSettingsView(
             HorizontalLayout(save, disconnect),
         )
         form.add(Span("Publication problems"), Span("Uncertain results require checking the Facebook Page before retrying."), publicationProblems)
+        form.add(Span("Link comment problems"), Span("Check uncertain comments on the Facebook post before retrying."), commentProblems)
+        form.add(Span("Recent Facebook engagement"), Button("Refresh engagement") { refreshEngagementActivity() }, engagementActivity)
+        form.add(Span("Post update and deletion problems"), syncProblems)
         val content = sharedPageContent(form)
         add(
             buildCozadzbanTopBar(
@@ -131,6 +145,9 @@ class FacebookPageSettingsView(
         refreshConnections()
         readPendingSelection()
         refreshPublicationProblems()
+        refreshCommentProblems()
+        refreshEngagementActivity()
+        refreshSyncProblems()
     }
 
     private fun readPendingSelection() {
@@ -260,6 +277,116 @@ class FacebookPageSettingsView(
                 }
             }
             publicationProblems.add(row)
+        }
+    }
+
+    private fun refreshCommentProblems() {
+        commentProblems.removeAll()
+        val repository = engagement ?: return
+        val problems = repository.recentCommentProblems()
+        if (problems.isEmpty()) {
+            commentProblems.add(Span("No link comment problems."))
+            return
+        }
+        problems.forEach { problem ->
+            val row = VerticalLayout()
+            row.isPadding = false
+            row.add(Span("Article ${problem.articleId} · ${problem.language} · ${problem.status} · ${problem.lastError ?: "Unknown error"}"))
+            if (problem.status == "FAILED") {
+                row.add(Button("Retry rejected comment") {
+                    val page = service.all().firstOrNull { it.language == problem.language && it.enabled }
+                    if (page != null && repository.retryFailedComment(problem.id, page, Instant.now())) refreshCommentProblems()
+                    else notify("Enable the Page and check its remaining monthly link budget before retrying")
+                })
+            } else {
+                val commentId = TextField("Confirmed Meta comment ID")
+                row.add(commentId, Button("Record existing comment") {
+                    try {
+                        if (repository.confirmReviewedComment(problem.id, commentId.value.trim())) refreshCommentProblems()
+                        else notify("This comment is no longer awaiting review")
+                    } catch (ex: IllegalArgumentException) { notify(ex.message ?: "Invalid comment ID") }
+                })
+                val verifiedAbsent = Checkbox("I checked the Facebook post and confirmed the link comment is absent")
+                val retry = Button("Retry after review") {
+                    if (verifiedAbsent.value && repository.retryReviewedAbsent(problem.id)) refreshCommentProblems()
+                }
+                retry.isEnabled = false
+                verifiedAbsent.addValueChangeListener { retry.isEnabled = it.value }
+                row.add(verifiedAbsent, retry)
+            }
+            commentProblems.add(row)
+        }
+    }
+
+    private fun refreshEngagementActivity() {
+        engagementActivity.removeAll()
+        val rows = engagement?.recentActivity() ?: return
+        if (rows.isEmpty()) {
+            engagementActivity.add(Span("No published Facebook posts yet."))
+            return
+        }
+        rows.forEach { item ->
+            val reactions = when (item.reactionStatus) {
+                "SUCCESS" -> "${item.reactionCount ?: 0} reactions"
+                "FAILED" -> "reaction read failed"
+                else -> "reactions not measured"
+            }
+            val row = HorizontalLayout(
+                Anchor("/stories/${item.articleId}", "Article ${item.articleId}").apply {
+                    element.setAttribute("router-ignore", true)
+                },
+                Span("· ${item.language} · $reactions · link: ${item.commentStatus ?: "not selected"}"),
+            )
+            item.postUrl?.let { row.add(Anchor(it, "Facebook post")) }
+            engagementActivity.add(row)
+        }
+    }
+
+    private fun refreshSyncProblems() {
+        syncProblems.removeAll()
+        val repository = pageSync ?: return
+        val problems = repository.recentProblems()
+        if (problems.isEmpty()) {
+            syncProblems.add(Span("No post update or deletion problems."))
+            return
+        }
+        problems.forEach { problem ->
+            val row = VerticalLayout()
+            row.isPadding = false
+            row.add(Span("Article ${problem.articleId} · ${problem.language} · ${problem.action} · ${problem.status} · ${problem.lastError ?: "Unknown error"}"))
+            when (problem.status) {
+                "FAILED" -> {
+                    row.add(Button("Retry rejected ${problem.action.lowercase()}") {
+                        if (repository.retryReviewed(problem.id)) refreshSyncProblems()
+                    })
+                    if (problem.action == "DELETE") {
+                        val gone = Checkbox("I checked Facebook and confirmed this post is already absent")
+                        val confirm = Button("Record deleted post") {
+                            if (gone.value && repository.confirmReviewed(problem.id)) refreshSyncProblems()
+                        }
+                        confirm.isEnabled = false
+                        gone.addValueChangeListener { confirm.isEnabled = it.value }
+                        row.add(gone, confirm)
+                    }
+                }
+                "NEEDS_RECONCILIATION" -> {
+                    val completed = Checkbox("I checked Facebook and confirmed this ${problem.action.lowercase()} completed")
+                    val confirm = Button("Record completed action") {
+                        if (completed.value && repository.confirmReviewed(problem.id)) refreshSyncProblems()
+                    }
+                    confirm.isEnabled = false
+                    completed.addValueChangeListener { confirm.isEnabled = it.value }
+                    val notCompleted = Checkbox("I checked Facebook and confirmed this ${problem.action.lowercase()} did not happen")
+                    val retry = Button("Retry after review") {
+                        if (notCompleted.value && repository.retryReviewed(problem.id)) refreshSyncProblems()
+                    }
+                    retry.isEnabled = false
+                    notCompleted.addValueChangeListener { retry.isEnabled = it.value }
+                    row.add(completed, confirm, notCompleted, retry)
+                }
+                "REPLACEMENT_REQUIRED" -> row.add(Span("The existing Facebook post remains associated with this article. Replace its image manually if needed."))
+            }
+            syncProblems.add(row)
         }
     }
 

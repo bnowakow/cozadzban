@@ -1,7 +1,7 @@
 # Agent Instructions
 
 ## After every code change
-Always run the test suite before considering the task complete:
+On development machines, including the MacBook, run the test suite before considering the task complete:
 ```
 make test
 ```
@@ -10,6 +10,14 @@ or equivalently:
 ./gradlew test
 ```
 If tests fail, fix the failures before finishing.
+
+Identify the deployment server by running `hostname`: if it prints
+`ovh.bnowakowski.pl`, this is the server covered by the no-tests rule (its checkout is
+at `/home/sup/docker/cozadzban.pl`). Do not run Gradle tests here, including
+`make test` or `./gradlew test`. This server is too weak for them. Use appropriate
+checks that do not run tests and state in the handoff that the test suite was not run here.
+Never run tests on this deployment server.
+Run the suite on a development machine instead when one is available.
 
 ## Coding rules (from SPEC.yaml)
 
@@ -22,8 +30,9 @@ If tests fail, fix the failures before finishing.
 - Migration scripts live in `src/main/resources/db/migration/` and follow the naming convention
   `V<version>__<snake_case_description>.sql`.
 - Never edit an already-applied Flyway migration. Add a new `V<next_version>__...sql` migration
-  instead, then verify it through the Kotlin/Spring runtime by running the test suite so Flyway
-  validation and migration execution are exercised before finishing.
+  instead, then verify it through the Kotlin/Spring runtime by running the test suite on a
+  development machine so Flyway validation and migration execution are exercised. On the
+  deployment server, report this verification as pending rather than running Gradle tests there.
 
 ### Security
 - Frontend JavaScript MUST NEVER receive OAuth access tokens or ID tokens; the OAuth callback is

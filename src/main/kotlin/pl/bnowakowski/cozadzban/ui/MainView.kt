@@ -995,6 +995,7 @@ class ArticleListView(
 
         val dateLabel = formatDate(article.publishedAt ?: article.createdAt ?: Instant.EPOCH)
         val date = Anchor("/stories/${article.id}", dateLabel)
+        date.element.setAttribute("router-ignore", true)
         date.element.setAttribute("aria-label", "View story from $dateLabel")
         date.element.style.set("font-size", "var(--lumo-font-size-xs)")
         date.element.style.set("color", "var(--lumo-secondary-text-color)")

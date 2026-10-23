@@ -15,6 +15,7 @@ import pl.bnowakowski.cozadzban.enrichment.EnrichmentException
 import pl.bnowakowski.cozadzban.enrichment.EnrichmentService
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportType
 import pl.bnowakowski.cozadzban.facebookpublish.FacebookPublicationQueue
+import pl.bnowakowski.cozadzban.facebookpublish.FacebookPageSyncRepository
 import pl.bnowakowski.cozadzban.user.AppUserRepository
 import java.net.URI
 import java.time.Instant
@@ -27,6 +28,7 @@ class ArticleService(
     private val appUserRepository: AppUserRepository,
     private val articleContentRepository: ArticleContentRepository,
     private val facebookPublicationQueue: FacebookPublicationQueue? = null,
+    private val facebookPageSync: FacebookPageSyncRepository? = null,
 ) {
 
     @Transactional(readOnly = true)
@@ -211,6 +213,9 @@ class ArticleService(
             )
         )
         preserveContent(article.id!!, article.url, contentForCache)
+        if (facebookCaptionChanged(existing, article)) {
+            facebookPageSync?.queueUpdate(id, existing.thumbnail != article.thumbnail || existing.language != article.language)
+        }
         logFacebookPhotoPersistenceState("replace", article, contentForCache)
         val persistedArticle = logFacebookPhotoReloadedPersistenceState("replace", article, contentForCache)
         logFacebookPhotoDegradedOutcome("replace", input, persistedArticle, enrichment, contentForCache, title, publishedAt)
@@ -350,6 +355,10 @@ class ArticleService(
             preserveContent(saved.id!!, saved.url, contentForChangedUrl)
         }
 
+        if (facebookCaptionChanged(existing, saved)) {
+            facebookPageSync?.queueUpdate(id, existing.thumbnail != saved.thumbnail || existing.language != saved.language)
+        }
+
         logFacebookPhotoPersistenceState("patch", saved, contentPatchForTitle ?: contentForChangedUrl)
         return saved
     }
@@ -388,6 +397,7 @@ class ArticleService(
         val existing = articleRepository.findById(id).orElse(null)
             ?: throw NoSuchElementException("Article $id not found")
         logFacebookPhotoDeleteDecision(existing)
+        facebookPageSync?.queueDelete(id)
         articleRepository.deleteById(id)
         logFacebookPhotoDeleteCompleted(existing)
     }
@@ -400,6 +410,10 @@ class ArticleService(
         val favicon: String?,
         val lead: String?,
     )
+
+    private fun facebookCaptionChanged(before: Article, after: Article): Boolean =
+        before.title != after.title || before.lead != after.lead || before.aiSummary != after.aiSummary ||
+            before.quote != after.quote || before.thumbnail != after.thumbnail || before.language != after.language
 
     private fun enrichArticleUrl(operation: String, url: String): EnrichmentResult {
         val startedAt = System.nanoTime()
@@ -602,6 +616,7 @@ class ArticleService(
             val title = titleForSave(article.url, article.title, article.lead, contentForCache)
             if (title != article.title) {
                 articleRepository.save(article.copy(title = title))
+                facebookPageSync?.queueUpdate(article.id, false)
                 finalTitle = title
                 titleUpdated = true
             }

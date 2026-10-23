@@ -29,6 +29,7 @@ enum class CozadzbanTopBarPage {
     NOTIFICATION_SETTINGS,
     MANAGE_USERS,
     FACEBOOK_PAGES,
+    FACEBOOK_STATISTICS,
     ARTICLE_CONTENT_CACHE,
 }
 
@@ -245,6 +246,11 @@ private fun Component.buildSharedMenu(
         if (currentPage != CozadzbanTopBarPage.FACEBOOK_PAGES) {
             subMenu.addIconItem("Facebook Pages", VaadinIcon.GLOBE) {
                 ui.ifPresent { it.navigate("admin/facebook-pages") }
+            }
+        }
+        if (currentPage != CozadzbanTopBarPage.FACEBOOK_STATISTICS) {
+            subMenu.addIconItem("Story and Facebook statistics", VaadinIcon.CHART) {
+                ui.ifPresent { it.navigate("admin/facebook-statistics") }
             }
         }
         if (currentPage != CozadzbanTopBarPage.ARTICLE_CONTENT_CACHE) {
