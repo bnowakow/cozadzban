@@ -5,7 +5,10 @@ import com.vaadin.flow.component.button.Button
 import com.vaadin.flow.component.button.ButtonVariant
 import com.vaadin.flow.component.checkbox.Checkbox
 import com.vaadin.flow.component.combobox.ComboBox
+import com.vaadin.flow.component.dependency.CssImport
 import com.vaadin.flow.component.html.Anchor
+import com.vaadin.flow.component.html.H2
+import com.vaadin.flow.component.html.H3
 import com.vaadin.flow.component.html.Image
 import com.vaadin.flow.component.html.Span
 import com.vaadin.flow.component.notification.Notification
@@ -41,6 +44,11 @@ import java.time.Instant
 @Route("admin/facebook-pages")
 @PageTitle("Facebook Pages")
 @RolesAllowed("ADMIN")
+@CssImport("./styles/cozadzban-feed.css")
+@CssImport(value = "./styles/cozadzban-context-menu-overlay.css", themeFor = "vaadin-context-menu-overlay")
+@CssImport(value = "./styles/cozadzban-context-menu-overlay.css", themeFor = "vaadin-menu-bar-overlay")
+@CssImport(value = "./styles/cozadzban-menu-bar.css", themeFor = "vaadin-menu-bar")
+@CssImport(value = "./styles/cozadzban-menu-bar-button.css", themeFor = "vaadin-menu-bar-button")
 class FacebookPageSettingsView(
     private val service: FacebookPageConnectionService,
     private val properties: FacebookPageProperties,
@@ -63,6 +71,7 @@ class FacebookPageSettingsView(
     private val pageLabel = Span()
     private val connect = Button("Connect a Facebook Page")
     private val candidates = ComboBox<String>("Choose authorized Page")
+    private val selectCandidate = Button("Use selected Page") { connectSelected() }
     private val candidatePages = mutableMapOf<String, DiscoveredFacebookPage>()
     private val publicationProblems = VerticalLayout()
     private val commentProblems = VerticalLayout()
@@ -72,17 +81,26 @@ class FacebookPageSettingsView(
     init {
         installCozadzbanThemeBootstrap()
         setSizeFull()
+        addClassName("czj-admin-view")
         sharedContentOffset()
         val form = VerticalLayout()
+        form.addClassName("czj-settings-body")
         form.setWidthFull()
-        form.maxWidth = "44rem"
-        form.add(Span("Facebook Page publishing settings"))
-        form.add(Button("View story and Facebook statistics") {
+        form.maxWidth = "76rem"
+        val statistics = Button("View story and Facebook statistics") {
             ui.ifPresent { it.navigate("admin/facebook-statistics") }
-        })
-        form.add(Span("Publishing is disabled until a Page is connected and explicitly enabled."))
+        }
+        statistics.addThemeVariants(ButtonVariant.LUMO_TERTIARY)
+        val header = VerticalLayout(
+            H2("Facebook Page publishing"),
+            Span("Connect a Page, choose when articles are published, and review delivery problems."),
+            statistics,
+        )
+        header.addClassName("czj-settings-header")
+        form.add(header)
+        val connectionCard = settingsCard("Connect a Page", "Choose an article language and authorize a Facebook Page.")
         if (!properties.oauthConfigured) {
-            form.add(Span("Meta OAuth is not configured on this server. Set the app ID, app secret, Facebook Login for Business configuration ID, redirect URI and encryption key."))
+            connectionCard.add(Span("Meta OAuth is not configured on this server. Set the app ID, app secret, Facebook Login for Business configuration ID, redirect URI and encryption key."))
         }
         language.setItems(articleLanguages)
         language.placeholder = "Select a language"
@@ -120,18 +138,25 @@ class FacebookPageSettingsView(
         val save = Button("Save Page settings") { saveSettings() }
         save.addThemeVariants(ButtonVariant.LUMO_PRIMARY)
         val disconnect = Button("Disconnect Page") { disconnectSelected() }
-        val select = Button("Use selected Page") { connectSelected() }
-        form.add(
-            HorizontalLayout(language, connect),
-            candidates, select,
-            configured, pageLabel, enabled, timeZone,
-            monthlyLinkLimit, minimumPostAgeHours, schedulerIntervalMinutes,
-            HorizontalLayout(save, disconnect),
-        )
-        form.add(Span("Publication problems"), Span("Uncertain results require checking the Facebook Page before retrying."), publicationProblems)
-        form.add(Span("Link comment problems"), Span("Check uncertain comments on the Facebook post before retrying."), commentProblems)
-        form.add(Span("Recent Facebook engagement"), Button("Refresh engagement") { refreshEngagementActivity() }, engagementActivity)
-        form.add(Span("Post update and deletion problems"), syncProblems)
+        val connectActions = HorizontalLayout(language, connect).apply { addClassName("czj-settings-actions") }
+        connectionCard.add(connectActions, candidates, selectCandidate)
+        val connectedSettingsCard = settingsCard("Connected Page settings", "Publishing starts only after you enable a connected Page and save these settings.")
+        pageLabel.addClassName("czj-settings-status")
+        val fields = HorizontalLayout(timeZone, monthlyLinkLimit, minimumPostAgeHours, schedulerIntervalMinutes)
+        fields.addClassName("czj-settings-fields")
+        fields.setWidthFull()
+        val settingsActions = HorizontalLayout(save, disconnect).apply { addClassName("czj-settings-actions") }
+        connectedSettingsCard.add(configured, pageLabel, enabled, fields, settingsActions)
+        form.add(connectionCard, connectedSettingsCard)
+        form.add(settingsCard("Publication problems", "Check uncertain results on the Facebook Page before retrying.").apply { add(publicationProblems) })
+        form.add(settingsCard("Link comment problems", "Check uncertain comments on the Facebook post before retrying.").apply { add(commentProblems) })
+        form.add(settingsCard("Recent Facebook engagement", "Latest published posts and reaction checks.").apply {
+            add(Button("Refresh engagement") { refreshEngagementActivity() }, engagementActivity)
+        })
+        form.add(settingsCard("Post update and deletion problems", "Review failed or uncertain changes before retrying.").apply { add(syncProblems) })
+        listOf(publicationProblems, commentProblems, engagementActivity, syncProblems).forEach {
+            it.addClassName("czj-settings-list")
+        }
         val content = sharedPageContent(form)
         add(
             buildCozadzbanTopBar(
@@ -160,11 +185,13 @@ class FacebookPageSettingsView(
         if (pending == null || pending.adminName != adminName || pending.createdAt.isBefore(Instant.now().minusSeconds(600))) {
             session.removeAttribute(FacebookPageOAuthController.SELECTION_SESSION_KEY)
             candidates.isVisible = false
+            selectCandidate.isVisible = false
             return
         }
         if (pending.language !in articleLanguages) {
             session.removeAttribute(FacebookPageOAuthController.SELECTION_SESSION_KEY)
             candidates.isVisible = false
+            selectCandidate.isVisible = false
             notify("No articles currently use ${pending.language}; add an article before connecting that language.")
             return
         }
@@ -173,6 +200,7 @@ class FacebookPageSettingsView(
         pending.pages.forEach { candidatePages[it.id] = it }
         candidates.setItems(candidatePages.keys)
         candidates.isVisible = candidatePages.isNotEmpty()
+        selectCandidate.isVisible = candidates.isVisible
     }
 
     private fun connectSelected() {
@@ -189,6 +217,7 @@ class FacebookPageSettingsView(
             session.removeAttribute(FacebookPageOAuthController.SELECTION_SESSION_KEY)
             candidatePages.clear()
             candidates.isVisible = false
+            selectCandidate.isVisible = false
             refreshConnections(connected.language)
             notify("Connected ${connected.pageName}. Publishing remains disabled until you enable and save it.")
         } catch (_: Exception) {
@@ -246,6 +275,7 @@ class FacebookPageSettingsView(
         }
         problems.forEach { job ->
             val row = VerticalLayout()
+            row.addClassName("czj-settings-problem")
             row.isPadding = false
             row.add(Span("Article ${job.articleId} · ${job.language} · ${job.status} · ${job.lastError ?: "No Page was enabled when this article was added."}"))
             when (job.status) {
@@ -290,6 +320,7 @@ class FacebookPageSettingsView(
         }
         problems.forEach { problem ->
             val row = VerticalLayout()
+            row.addClassName("czj-settings-problem")
             row.isPadding = false
             row.add(Span("Article ${problem.articleId} · ${problem.language} · ${problem.status} · ${problem.lastError ?: "Unknown error"}"))
             if (problem.status == "FAILED") {
@@ -337,6 +368,7 @@ class FacebookPageSettingsView(
                 },
                 Span("· ${item.language} · $reactions · link: ${item.commentStatus ?: "not selected"}"),
             )
+            row.addClassName("czj-settings-activity")
             item.postUrl?.let { row.add(Anchor(it, "Facebook post")) }
             engagementActivity.add(row)
         }
@@ -352,6 +384,7 @@ class FacebookPageSettingsView(
         }
         problems.forEach { problem ->
             val row = VerticalLayout()
+            row.addClassName("czj-settings-problem")
             row.isPadding = false
             row.add(Span("Article ${problem.articleId} · ${problem.language} · ${problem.action} · ${problem.status} · ${problem.lastError ?: "Unknown error"}"))
             when (problem.status) {
@@ -391,4 +424,8 @@ class FacebookPageSettingsView(
     }
 
     private fun notify(message: String) { Notification.show(message, 5000, Notification.Position.MIDDLE) }
+
+    private fun settingsCard(title: String, description: String): VerticalLayout = VerticalLayout(
+        H3(title), Span(description).apply { addClassName("czj-settings-description") },
+    ).apply { addClassName("czj-settings-card") }
 }

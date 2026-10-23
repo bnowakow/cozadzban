@@ -1,4 +1,5 @@
 :root {
+  color-scheme: light;
   --czj-page-bg: #eef0f3;
   --czj-card-bg: #ffffff;
   --czj-border: #d4d9df;
@@ -31,6 +32,7 @@
 }
 
 html[theme~="dark"] {
+  color-scheme: dark;
   --lumo-base-color: #181c21;
   --lumo-contrast-5pct: #0f1114;
   --lumo-contrast-10pct: #2a3037;
@@ -106,6 +108,10 @@ vaadin-confirm-dialog-overlay::part(footer) {
 vaadin-text-field::part(input-field),
 vaadin-text-area::part(input-field),
 vaadin-select::part(input-field),
+vaadin-combo-box::part(input-field),
+vaadin-multi-select-combo-box::part(input-field),
+vaadin-integer-field::part(input-field),
+vaadin-password-field::part(input-field),
 vaadin-date-time-picker-date-picker::part(input-field),
 vaadin-date-time-picker-time-picker::part(input-field),
 vaadin-date-picker::part(input-field),
@@ -133,11 +139,25 @@ html[theme~="dark"] vaadin-time-picker::part(toggle-button) {
 vaadin-text-field::part(label),
 vaadin-text-area::part(label),
 vaadin-select::part(label),
+vaadin-combo-box::part(label),
+vaadin-multi-select-combo-box::part(label),
+vaadin-integer-field::part(label),
+vaadin-password-field::part(label),
 vaadin-date-time-picker::part(label),
 vaadin-date-picker::part(label),
 vaadin-time-picker::part(label) {
   color: var(--czj-muted);
   font-weight: 700;
+}
+
+vaadin-checkbox::part(label) {
+  color: var(--czj-text);
+  line-height: 1.45;
+  white-space: normal;
+}
+
+vaadin-checkbox::part(checkbox) {
+  border: 1px solid var(--czj-field-border);
 }
 
 vaadin-text-field::part(input-field):hover,
@@ -150,6 +170,12 @@ vaadin-date-time-picker-time-picker::part(input-field):hover {
 
 vaadin-button {
   color: var(--czj-text);
+}
+
+vaadin-button[theme~="primary"] {
+  --vaadin-button-primary-background: #254b91;
+  --vaadin-button-primary-text-color: #ffffff;
+  color: #ffffff;
 }
 
 vaadin-radio-button::part(radio) {
@@ -249,6 +275,152 @@ vaadin-radio-button::part(label) {
 
 .czj-admin-muted {
   color: var(--czj-muted);
+}
+
+.czj-settings-header {
+  box-sizing: border-box;
+  gap: 0.55rem !important;
+  padding: 1.5rem 1.5rem 0.5rem !important;
+  width: 100%;
+}
+
+.czj-settings-header h2 {
+  color: var(--czj-text);
+  font-size: clamp(1.5rem, 2.5vw, 2rem);
+  line-height: 1.2;
+  margin: 0;
+}
+
+.czj-settings-body {
+  --vaadin-input-field-background: var(--czj-field-bg);
+  --vaadin-input-field-border-color: var(--czj-field-border);
+  --vaadin-input-field-icon-color: var(--czj-muted);
+  --vaadin-input-field-placeholder-color: var(--czj-muted);
+  --vaadin-input-field-value-color: var(--czj-text);
+  box-sizing: border-box;
+  gap: 1rem !important;
+  margin: 0 auto;
+  padding: 0 1.5rem 1.5rem !important;
+}
+
+.czj-settings-card {
+  background: var(--czj-field-bg);
+  border: 1px solid var(--czj-border);
+  border-radius: 12px;
+  box-sizing: border-box;
+  color: var(--czj-text);
+  gap: 0.7rem !important;
+  padding: 1.25rem !important;
+  width: 100%;
+}
+
+.czj-settings-card h3 {
+  color: var(--czj-text);
+  font-size: 1.13rem;
+  line-height: 1.3;
+  margin: 0;
+}
+
+.czj-settings-description {
+  color: var(--czj-muted);
+  line-height: 1.5;
+  max-width: 68ch;
+}
+
+.czj-settings-actions,
+.czj-settings-fields,
+.czj-settings-activity {
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.7rem !important;
+}
+
+.czj-settings-actions vaadin-button {
+  white-space: normal;
+}
+
+.czj-settings-fields > * {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+.czj-settings-status {
+  background: var(--lumo-primary-color-10pct);
+  border-radius: 8px;
+  color: var(--czj-text);
+  line-height: 1.4;
+  padding: 0.55rem 0.75rem;
+}
+
+.czj-settings-options,
+.czj-settings-list {
+  box-sizing: border-box;
+  gap: 0.65rem !important;
+  padding: 0 !important;
+  width: 100%;
+}
+
+.czj-settings-options vaadin-checkbox {
+  --vaadin-checkbox-label-color: var(--czj-text);
+  width: 100%;
+}
+
+.czj-settings-options vaadin-checkbox::part(label) {
+  color: var(--czj-text) !important;
+}
+
+.czj-settings-body vaadin-multi-select-combo-box::part(input-field) {
+  background: var(--czj-field-bg) !important;
+  color: var(--czj-text) !important;
+}
+
+.czj-settings-body vaadin-multi-select-combo-box input[slot="input"] {
+  color: var(--czj-text);
+}
+
+.czj-settings-body vaadin-multi-select-combo-box input[slot="input"]::placeholder {
+  color: var(--czj-muted);
+  opacity: 1;
+}
+
+.czj-settings-body vaadin-multi-select-combo-box-chip {
+  --vaadin-chip-background: var(--czj-card-bg);
+  --vaadin-chip-text-color: var(--czj-text);
+  --vaadin-chip-remove-button-text-color: var(--czj-muted);
+}
+
+.czj-settings-problem,
+.czj-settings-activity {
+  background: var(--czj-card-bg);
+  border: 1px solid var(--czj-border);
+  border-radius: 8px;
+  box-sizing: border-box;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  padding: 0.8rem !important;
+  width: 100%;
+}
+
+.czj-settings-problem {
+  gap: 0.55rem !important;
+}
+
+@media (max-width: 640px) {
+  .czj-settings-header {
+    padding: 1rem 1rem 0.5rem !important;
+  }
+
+  .czj-settings-body {
+    padding: 0 1rem 1rem !important;
+  }
+
+  .czj-settings-card {
+    padding: 1rem !important;
+  }
+
+  .czj-settings-fields > * {
+    flex-basis: 100%;
+  }
 }
 
 .czj-admin-grid {

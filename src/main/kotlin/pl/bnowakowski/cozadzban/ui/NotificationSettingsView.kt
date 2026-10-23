@@ -9,6 +9,7 @@ import com.vaadin.flow.component.checkbox.Checkbox
 import com.vaadin.flow.component.combobox.MultiSelectComboBox
 import com.vaadin.flow.component.dependency.CssImport
 import com.vaadin.flow.component.html.H2
+import com.vaadin.flow.component.html.H3
 import com.vaadin.flow.component.html.Image
 import com.vaadin.flow.component.html.Span
 import com.vaadin.flow.component.icon.VaadinIcon
@@ -96,25 +97,43 @@ class NotificationSettingsView(
         }
         testButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY)
 
-        val actions = HorizontalLayout(saveButton, loadDevicesButton, testButton)
+        val actions = HorizontalLayout(saveButton)
+        actions.addClassName("czj-settings-actions")
         actions.defaultVerticalComponentAlignment = Alignment.CENTER
 
-        val form = VerticalLayout(
+        val pushoverCard = VerticalLayout(
+            H3("Pushover delivery"),
+            Span("Enter your user key, choose devices, and send a test notification.").apply { addClassName("czj-settings-description") },
             status,
             pushoverUserKey,
+            Span("Leave the key blank to keep the one already saved.").apply { addClassName("czj-settings-description") },
             pushoverDevices,
+            HorizontalLayout(loadDevicesButton, testButton).apply { addClassName("czj-settings-actions") },
+        )
+        pushoverCard.addClassName("czj-settings-card")
+        val notificationTypes = VerticalLayout(
             proposalNotifications,
             autoApprovedNotifications,
             loginRequiredNotifications,
-            actions,
         )
-        form.addClassName("czj-admin-dialog-content")
+        notificationTypes.addClassName("czj-settings-options")
+        val eventsCard = VerticalLayout(
+            H3("Notification types"),
+            Span("Choose which Facebook events should send a Pushover notification.").apply { addClassName("czj-settings-description") },
+            notificationTypes,
+        )
+        eventsCard.addClassName("czj-settings-card")
+        val form = VerticalLayout(pushoverCard, eventsCard, actions)
+        form.addClassName("czj-settings-body")
         form.setWidthFull()
-        form.maxWidth = "42rem"
+        form.maxWidth = "48rem"
 
-        val pageTitle = Span("Notification settings").apply { addClassName("czj-admin-title") }
-        pageTitle.element.style.set("padding", "1rem 1rem 0")
-        val content = sharedPageContent(pageTitle, form)
+        val heading = VerticalLayout(
+            H2("Notification settings"),
+            Span("Control how you receive alerts about Facebook imports and account access.").apply { addClassName("czj-settings-description") },
+        )
+        heading.addClassName("czj-settings-header")
+        val content = sharedPageContent(heading, form)
         add(
             buildCozadzbanTopBar(
                 currentPage = CozadzbanTopBarPage.NOTIFICATION_SETTINGS,
