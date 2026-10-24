@@ -1,8 +1,8 @@
 # Article image generation — proposed feature
 
-Status: experimental Codex CLI adapter, article image job, and public display
-implemented. The production provider, usage budget, and admin controls remain
-planned. New articles without a usable source thumbnail receive a
+Status: experimental Codex CLI adapter, article image job, public display,
+and basic ADMIN status/trigger page implemented. The production provider,
+usage budget, and provider connection controls remain planned. New articles without a usable source thumbnail receive a
 `MISSING_THUMBNAIL` image status. The source thumbnail remains the first choice;
 the branded placeholder remains the failure fallback.
 
@@ -47,6 +47,16 @@ Codex's image tool writes its initial file under `CODEX_HOME/generated_images`;
 the Java adapter accepts only a freshly created path inside that directory from
 Codex's final response. It performs the validation and copy itself because the
 CLI's shell sandbox could not copy the file in the first live attempt.
+
+The ADMIN-only `/admin/facebook-thumbnails` page lists articles in pages of 50,
+shows the source or generated image where available, filters by thumbnail state,
+and shows attempts, next attempt, and last error. `Generate now` is available
+for missing and failed image jobs. It claims one job immediately and processes
+it outside the browser request; the automatic and manual workers use the same
+database lock, so only one generation runs across app instances. A manual claim
+also moves the next automatic slot ten minutes forward. Refresh the page to see
+the result. It does not replace generated images or already published Facebook
+posts.
 
 The preferred admin-initiated ChatGPT OAuth flow is **not currently a suitable
 production dependency** for this hosted site:

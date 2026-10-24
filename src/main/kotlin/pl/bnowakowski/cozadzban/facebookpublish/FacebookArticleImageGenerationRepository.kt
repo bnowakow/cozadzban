@@ -5,11 +5,52 @@ import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Repository
 import org.springframework.transaction.annotation.Transactional
 import java.net.URI
+import java.time.Instant
 
 data class FacebookArticleImageJob(val articleId: Long, val attemptCount: Int)
+data class FacebookArticleImageStatusRow(
+    val articleId: Long,
+    val title: String?,
+    val language: String,
+    val sourceThumbnail: String?,
+    val status: String,
+    val attemptCount: Int,
+    val nextAttemptAt: Instant?,
+    val lastError: String?,
+    val updatedAt: Instant?,
+)
 
 @Repository
 class FacebookArticleImageGenerationRepository(private val jdbc: NamedParameterJdbcTemplate) {
+    fun countStatuses(status: String): Long = jdbc.queryForObject(
+        """SELECT count(*) FROM article a
+           LEFT JOIN facebook_article_image_generation job ON job.article_id = a.id
+           WHERE :status = '' OR COALESCE(job.status, 'SOURCE_THUMBNAIL') = :status""",
+        mapOf("status" to status), Long::class.java,
+    ) ?: 0L
+
+    fun statusPage(status: String, limit: Int, offset: Int): List<FacebookArticleImageStatusRow> = jdbc.query(
+        """SELECT a.id, a.title, a.language, a.thumbnail, job.status, job.attempt_count,
+                  job.next_attempt_at, job.last_error, job.updated_at
+           FROM article a
+           LEFT JOIN facebook_article_image_generation job ON job.article_id = a.id
+           WHERE :status = '' OR COALESCE(job.status, 'SOURCE_THUMBNAIL') = :status
+           ORDER BY a.id DESC LIMIT :limit OFFSET :offset""",
+        mapOf("status" to status, "limit" to limit, "offset" to offset),
+    ) { rs, _ ->
+        FacebookArticleImageStatusRow(
+            articleId = rs.getLong("id"),
+            title = rs.getString("title"),
+            language = rs.getString("language"),
+            sourceThumbnail = rs.getString("thumbnail"),
+            status = rs.getString("status") ?: "SOURCE_THUMBNAIL",
+            attemptCount = rs.getInt("attempt_count"),
+            nextAttemptAt = rs.getTimestamp("next_attempt_at")?.toInstant(),
+            lastError = rs.getString("last_error"),
+            updatedAt = rs.getTimestamp("updated_at")?.toInstant(),
+        )
+    }
+
     /** Called in the article creation transaction, after the enrichment result has been saved. */
     fun markMissingIfNeeded(articleId: Long, sourceThumbnail: String?) {
         if (hasUsableSourceThumbnail(sourceThumbnail)) return
@@ -66,6 +107,7 @@ class FacebookArticleImageGenerationRepository(private val jdbc: NamedParameterJ
                WHERE id = 1 AND next_claim_at <= now() FOR UPDATE SKIP LOCKED""",
             emptyMap<String, Any>(),
         ) { rs, _ -> rs.getInt(1) }.firstOrNull() ?: return null
+        if (hasGenerating()) return null
         val job = jdbc.query(
             """WITH candidate AS (
                    SELECT article_id FROM facebook_article_image_generation
@@ -87,6 +129,39 @@ class FacebookArticleImageGenerationRepository(private val jdbc: NamedParameterJ
         }
         return job
     }
+
+    /** ADMIN request: bypass the wait, but share the global lock and pace with automatic claims. */
+    @Transactional
+    fun claimManual(articleId: Long): FacebookArticleImageJob? {
+        val slot = jdbc.query(
+            "SELECT id FROM facebook_article_image_generation_pace WHERE id = 1 FOR UPDATE SKIP LOCKED",
+            emptyMap<String, Any>(),
+        ) { rs, _ -> rs.getInt(1) }.firstOrNull() ?: return null
+        if (hasGenerating()) return null
+        val job = jdbc.query(
+            """UPDATE facebook_article_image_generation
+               SET status = 'GENERATING',
+                   attempt_count = CASE WHEN status = 'FAILED' THEN 1 ELSE attempt_count + 1 END,
+                   last_error = NULL, updated_at = now()
+               WHERE article_id = :articleId AND status IN ('MISSING_THUMBNAIL', 'FAILED')
+               RETURNING article_id, attempt_count""",
+            mapOf("articleId" to articleId),
+        ) { rs, _ -> FacebookArticleImageJob(rs.getLong("article_id"), rs.getInt("attempt_count")) }.firstOrNull()
+        if (job != null) {
+            jdbc.update(
+                """UPDATE facebook_article_image_generation_pace
+                   SET next_claim_at = GREATEST(next_claim_at, now() + interval '10 minutes')
+                   WHERE id = :slot""",
+                mapOf("slot" to slot),
+            )
+        }
+        return job
+    }
+
+    private fun hasGenerating(): Boolean = jdbc.queryForObject(
+        "SELECT EXISTS (SELECT 1 FROM facebook_article_image_generation WHERE status = 'GENERATING')",
+        emptyMap<String, Any>(), Boolean::class.java,
+    ) == true
 
     fun complete(articleId: Long): Boolean = jdbc.update(
         """UPDATE facebook_article_image_generation
