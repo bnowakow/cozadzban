@@ -6,6 +6,7 @@ import com.vaadin.flow.component.button.ButtonVariant
 import com.vaadin.flow.component.checkbox.Checkbox
 import com.vaadin.flow.component.combobox.ComboBox
 import com.vaadin.flow.component.dependency.CssImport
+import com.vaadin.flow.component.grid.Grid
 import com.vaadin.flow.component.html.Anchor
 import com.vaadin.flow.component.html.H2
 import com.vaadin.flow.component.html.H3
@@ -33,6 +34,7 @@ import pl.bnowakowski.cozadzban.facebookpublish.FacebookPageOAuthController
 import pl.bnowakowski.cozadzban.facebookpublish.FacebookPageProperties
 import pl.bnowakowski.cozadzban.facebookpublish.FacebookPageSettings
 import pl.bnowakowski.cozadzban.facebookpublish.FacebookEngagementRepository
+import pl.bnowakowski.cozadzban.facebookpublish.FacebookEngagementActivity
 import pl.bnowakowski.cozadzban.facebookpublish.FacebookPageSyncRepository
 import pl.bnowakowski.cozadzban.facebookpublish.FacebookPublicationQueue
 import pl.bnowakowski.cozadzban.facebookpublish.PendingFacebookPageSelection
@@ -76,7 +78,8 @@ class FacebookPageSettingsView(
     private val candidatePages = mutableMapOf<String, DiscoveredFacebookPage>()
     private val publicationProblems = VerticalLayout()
     private val commentProblems = VerticalLayout()
-    private val engagementActivity = VerticalLayout()
+    private val engagementGrid = Grid(FacebookEngagementActivity::class.java, false)
+    private val engagementEmpty = Span("No published Facebook posts yet.")
     private val engagementPageInfo = Span()
     private val engagementPrevious = Button("Previous") { changeEngagementPage(-1) }
     private val engagementNext = Button("Next") { changeEngagementPage(1) }
@@ -147,13 +150,14 @@ class FacebookPageSettingsView(
         form.add(connectionCard, connectedSettingsCard)
         form.add(settingsCard("Publication problems", "Check uncertain results on the Facebook Page before retrying.").apply { add(publicationProblems) })
         form.add(settingsCard("Link comment problems", "Check uncertain comments on the Facebook post before retrying.").apply { add(commentProblems) })
+        configureEngagementGrid()
         val engagementNavigation = HorizontalLayout(engagementPrevious, engagementPageInfo, engagementNext)
         engagementNavigation.addClassName("czj-settings-actions")
         form.add(settingsCard("Recent Facebook engagement", "Published posts and their latest reaction checks, newest first.").apply {
-            add(Button("Refresh engagement") { refreshEngagementActivity() }, engagementActivity, engagementNavigation)
+            add(Button("Refresh engagement") { refreshEngagementActivity() }, engagementGrid, engagementEmpty, engagementNavigation)
         })
         form.add(settingsCard("Post update and deletion problems", "Review failed or uncertain changes before retrying.").apply { add(syncProblems) })
-        listOf(publicationProblems, commentProblems, engagementActivity, syncProblems).forEach {
+        listOf(publicationProblems, commentProblems, syncProblems).forEach {
             it.addClassName("czj-settings-list")
         }
         val content = sharedPageContent(form)
@@ -372,36 +376,42 @@ class FacebookPageSettingsView(
         }
     }
 
+    private fun configureEngagementGrid() {
+        engagementEmpty.isVisible = false
+        engagementGrid.setWidthFull()
+        engagementGrid.setHeight("32rem")
+        engagementGrid.setMinHeight("20rem")
+        engagementGrid.addClassName("czj-admin-grid")
+        engagementGrid.addComponentColumn { item ->
+            Anchor("/stories/${item.articleId}", "Article ${item.articleId}").apply {
+                element.setAttribute("router-ignore", true)
+            }
+        }.setHeader("Article").setAutoWidth(true)
+        engagementGrid.addColumn(FacebookEngagementActivity::language).setHeader("Language").setAutoWidth(true)
+        engagementGrid.addColumn { item ->
+            when (item.reactionStatus) {
+                "SUCCESS" -> "${item.reactionCount ?: 0}"
+                "FAILED" -> "Read failed"
+                else -> "Not measured"
+            }
+        }.setHeader("Reactions").setAutoWidth(true)
+        engagementGrid.addColumn { it.commentStatus ?: "Not selected" }.setHeader("Link comment").setAutoWidth(true)
+        engagementGrid.addComponentColumn { item ->
+            item.postUrl?.let { Anchor(it, "Open post") } ?: Span("—")
+        }.setHeader("Facebook").setAutoWidth(true)
+    }
+
     private fun refreshEngagementActivity() {
-        engagementActivity.removeAll()
         val repository = engagement ?: return
         val total = repository.publishedActivityCount()
         val lastPage = if (total == 0L) 0 else ((total - 1) / ENGAGEMENT_PAGE_SIZE).toInt()
         engagementPage = engagementPage.coerceAtMost(lastPage)
         val rows = repository.recentActivity(ENGAGEMENT_PAGE_SIZE, engagementPage * ENGAGEMENT_PAGE_SIZE)
+        engagementGrid.setItems(rows)
+        engagementEmpty.isVisible = rows.isEmpty()
         engagementPageInfo.text = "Page ${engagementPage + 1} of ${lastPage + 1} · $total posts"
         engagementPrevious.isEnabled = engagementPage > 0
         engagementNext.isEnabled = engagementPage < lastPage
-        if (rows.isEmpty()) {
-            engagementActivity.add(Span("No published Facebook posts yet."))
-            return
-        }
-        rows.forEach { item ->
-            val reactions = when (item.reactionStatus) {
-                "SUCCESS" -> "${item.reactionCount ?: 0} reactions"
-                "FAILED" -> "reaction read failed"
-                else -> "reactions not measured"
-            }
-            val row = HorizontalLayout(
-                Anchor("/stories/${item.articleId}", "Article ${item.articleId}").apply {
-                    element.setAttribute("router-ignore", true)
-                },
-                Span("· ${item.language} · $reactions · link: ${item.commentStatus ?: "not selected"}"),
-            )
-            row.addClassName("czj-settings-activity")
-            item.postUrl?.let { row.add(Anchor(it, "Facebook post")) }
-            engagementActivity.add(row)
-        }
     }
 
     private fun changeEngagementPage(direction: Int) {
