@@ -52,6 +52,10 @@ class AdminView(
 ) : VerticalLayout() {
 
     private val usersGrid = Grid(AppUser::class.java, false)
+    private val pageInfo = Span()
+    private val previousPageButton = Button("Previous") { changePage(-1) }
+    private val nextPageButton = Button("Next") { changePage(1) }
+    private var page = 0
 
     init {
         installCozadzbanThemeBootstrap()
@@ -78,7 +82,9 @@ class AdminView(
         configureGrid()
         refreshGrid()
 
-        val content = sharedPageContent(pageToolbar, usersGrid)
+        val navigation = HorizontalLayout(previousPageButton, pageInfo, nextPageButton)
+        navigation.defaultVerticalComponentAlignment = Alignment.CENTER
+        val content = sharedPageContent(pageToolbar, usersGrid, navigation)
         content.expand(usersGrid)
         add(
             buildCozadzbanTopBar(
@@ -177,6 +183,7 @@ class AdminView(
 
             try {
                 appUserService.create(AppUserInput(email = email, role = role))
+                page = Int.MAX_VALUE
                 refreshGrid()
                 dialog.close()
                 showSuccess("User added")
@@ -294,7 +301,18 @@ class AdminView(
     }
 
     private fun refreshGrid() {
-        usersGrid.setItems(appUserService.list())
+        val users = appUserService.list()
+        val lastPage = if (users.isEmpty()) 0 else (users.size - 1) / PAGE_SIZE
+        page = page.coerceIn(0, lastPage)
+        usersGrid.setItems(users.drop(page * PAGE_SIZE).take(PAGE_SIZE))
+        pageInfo.text = "Page ${page + 1} of ${lastPage + 1} · ${users.size} users"
+        previousPageButton.isEnabled = page > 0
+        nextPageButton.isEnabled = page < lastPage
+    }
+
+    private fun changePage(direction: Int) {
+        page += direction
+        refreshGrid()
     }
 
     private fun logoutAndRedirect() {
@@ -331,5 +349,9 @@ class AdminView(
         layout.width = "100%"
         notification.add(layout)
         notification.open()
+    }
+
+    private companion object {
+        const val PAGE_SIZE = 50
     }
 }
