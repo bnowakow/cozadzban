@@ -45,8 +45,15 @@ shares the application container and Codex credential volume, so it does not
 provide the isolation intended for the later dedicated worker.
 Codex's image tool writes its initial file under `CODEX_HOME/generated_images`;
 the Java adapter accepts only a freshly created path inside that directory from
-Codex's final response. It performs the validation and copy itself because the
-CLI's shell sandbox could not copy the file in the first live attempt.
+Codex's final response. If that response omits the path, it accepts a single
+fresh PNG from the same directory. It performs the validation and copy itself
+because the CLI's shell sandbox could not copy the file in the first live
+attempt. Failure reasons distinguish a timeout, CLI exit, missing image, and
+invalid image. An article with no title, lead, quote, summary, or cached text is
+marked `FAILED` without calling Codex: there is no subject to illustrate, and
+the branded placeholder remains available for Facebook publishing. The
+scheduler removes such jobs before claiming its next ten-minute generation
+slot. An admin can retry after correcting the article metadata.
 
 The ADMIN-only `/admin/facebook-thumbnails` page lists articles in pages of 50,
 shows the source or generated image where available, filters by thumbnail state,
@@ -57,6 +64,12 @@ database lock, so only one generation runs across app instances. A manual claim
 also moves the next automatic slot ten minutes forward. Refresh the page to see
 the result. It does not replace generated images or already published Facebook
 posts.
+Below the status table, a separately paginated queue lists every
+`MISSING_THUMBNAIL` job in the scheduler's `next_attempt_at, article_id` order,
+with its position and the number waiting. The count of currently generating
+jobs appears beside it. Refresh updates both tables; manual claims can change
+the queue order. Failed jobs need an explicit manual retry and do not appear in
+the waiting queue.
 
 The preferred admin-initiated ChatGPT OAuth flow is **not currently a suitable
 production dependency** for this hosted site:

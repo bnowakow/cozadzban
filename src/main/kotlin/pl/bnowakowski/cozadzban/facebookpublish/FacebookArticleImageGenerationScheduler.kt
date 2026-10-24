@@ -47,6 +47,8 @@ class FacebookArticleImageGenerationScheduler(
     fun generateOne() {
         if (!generator.isEnabled()) return
         jobs.recoverInterrupted(MAX_ATTEMPTS)
+        val missingContext = jobs.failMissingContext()
+        if (missingContext > 0) log.info("Skipped {} image jobs with no article text", missingContext)
         val job = jobs.claim() ?: return
         process(job)
     }
@@ -59,12 +61,17 @@ class FacebookArticleImageGenerationScheduler(
                 return
             }
             val content = contents.findById(job.articleId).orElse(null)
-            if (generator.generate(article, content) == null) {
-                jobs.fail(job.articleId, MAX_ATTEMPTS, "Codex did not produce a usable image.")
-                return
-            }
-            if (jobs.complete(job.articleId)) {
-                log.info("Generated Facebook illustration for article {}", job.articleId)
+            when (val result = generator.generate(article, content)) {
+                is ArticleImageGenerationResult.Generated -> {
+                    if (jobs.complete(job.articleId)) {
+                        log.info("Generated Facebook illustration for article {}", job.articleId)
+                    }
+                }
+                is ArticleImageGenerationResult.Failed -> {
+                    if (result.retryable) jobs.fail(job.articleId, MAX_ATTEMPTS, result.reason)
+                    else jobs.failPermanent(job.articleId, result.reason)
+                    log.warn("Facebook illustration not generated for article {} ({})", job.articleId, result.reason)
+                }
             }
         } catch (ex: Exception) {
             jobs.fail(job.articleId, MAX_ATTEMPTS, ex.javaClass.simpleName)

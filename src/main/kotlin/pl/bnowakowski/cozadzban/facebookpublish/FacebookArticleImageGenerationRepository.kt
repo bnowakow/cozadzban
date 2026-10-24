@@ -8,6 +8,7 @@ import java.net.URI
 import java.time.Instant
 
 data class FacebookArticleImageJob(val articleId: Long, val attemptCount: Int)
+const val MISSING_IMAGE_CONTEXT_REASON = "Article has no text to illustrate."
 data class FacebookArticleImageStatusRow(
     val articleId: Long,
     val title: String?,
@@ -19,9 +20,48 @@ data class FacebookArticleImageStatusRow(
     val lastError: String?,
     val updatedAt: Instant?,
 )
+data class FacebookArticleImageQueueRow(
+    val position: Long,
+    val articleId: Long,
+    val title: String?,
+    val language: String,
+    val attemptCount: Int,
+    val nextAttemptAt: Instant,
+    val lastError: String?,
+)
 
 @Repository
 class FacebookArticleImageGenerationRepository(private val jdbc: NamedParameterJdbcTemplate) {
+    fun queuedCount(): Long = jdbc.queryForObject(
+        "SELECT count(*) FROM facebook_article_image_generation WHERE status = 'MISSING_THUMBNAIL'",
+        emptyMap<String, Any>(), Long::class.java,
+    ) ?: 0L
+
+    /** Use the same ordering as claim(); rows not yet due remain visible in the queue. */
+    fun queuePage(limit: Int, offset: Int): List<FacebookArticleImageQueueRow> = jdbc.query(
+        """WITH ranked AS (
+               SELECT article_id, attempt_count, next_attempt_at, last_error,
+                      row_number() OVER (ORDER BY next_attempt_at, article_id) AS queue_position
+               FROM facebook_article_image_generation
+               WHERE status = 'MISSING_THUMBNAIL'
+           )
+           SELECT ranked.queue_position, ranked.article_id, a.title, a.language,
+                  ranked.attempt_count, ranked.next_attempt_at, ranked.last_error
+           FROM ranked JOIN article a ON a.id = ranked.article_id
+           ORDER BY ranked.queue_position LIMIT :limit OFFSET :offset""",
+        mapOf("limit" to limit, "offset" to offset),
+    ) { rs, _ ->
+        FacebookArticleImageQueueRow(
+            position = rs.getLong("queue_position"),
+            articleId = rs.getLong("article_id"),
+            title = rs.getString("title"),
+            language = rs.getString("language"),
+            attemptCount = rs.getInt("attempt_count"),
+            nextAttemptAt = rs.getTimestamp("next_attempt_at").toInstant(),
+            lastError = rs.getString("last_error"),
+        )
+    }
+
     fun countStatuses(status: String): Long = jdbc.queryForObject(
         """SELECT count(*) FROM article a
            LEFT JOIN facebook_article_image_generation job ON job.article_id = a.id
@@ -99,6 +139,24 @@ class FacebookArticleImageGenerationRepository(private val jdbc: NamedParameterJ
         )
     }
 
+    /** Remove jobs that cannot produce a story-specific image without using a ten-minute slot. */
+    fun failMissingContext(): Int = jdbc.update(
+        """UPDATE facebook_article_image_generation job
+           SET status = 'FAILED', last_error = :reason, updated_at = now()
+           WHERE job.status = 'MISSING_THUMBNAIL'
+             AND EXISTS (
+                 SELECT 1 FROM article a
+                 LEFT JOIN article_content c ON c.article_id = a.id
+                 WHERE a.id = job.article_id
+                   AND coalesce(btrim(a.title), '') = ''
+                   AND coalesce(btrim(a.lead), '') = ''
+                   AND coalesce(btrim(a.quote), '') = ''
+                   AND coalesce(btrim(a.ai_summary), '') = ''
+                   AND coalesce(btrim(c.content), '') = ''
+             )""",
+        mapOf("reason" to MISSING_IMAGE_CONTEXT_REASON),
+    )
+
     /** Claim at most one article per ten minutes across blue and green containers. */
     @Transactional
     fun claim(): FacebookArticleImageJob? {
@@ -144,6 +202,16 @@ class FacebookArticleImageGenerationRepository(private val jdbc: NamedParameterJ
                    attempt_count = CASE WHEN status = 'FAILED' THEN 1 ELSE attempt_count + 1 END,
                    last_error = NULL, updated_at = now()
                WHERE article_id = :articleId AND status IN ('MISSING_THUMBNAIL', 'FAILED')
+                 AND EXISTS (
+                     SELECT 1 FROM article a
+                     LEFT JOIN article_content c ON c.article_id = a.id
+                     WHERE a.id = :articleId
+                       AND (coalesce(btrim(a.title), '') <> ''
+                            OR coalesce(btrim(a.lead), '') <> ''
+                            OR coalesce(btrim(a.quote), '') <> ''
+                            OR coalesce(btrim(a.ai_summary), '') <> ''
+                            OR coalesce(btrim(c.content), '') <> '')
+                 )
                RETURNING article_id, attempt_count""",
             mapOf("articleId" to articleId),
         ) { rs, _ -> FacebookArticleImageJob(rs.getLong("article_id"), rs.getInt("attempt_count")) }.firstOrNull()
@@ -178,6 +246,15 @@ class FacebookArticleImageGenerationRepository(private val jdbc: NamedParameterJ
                    last_error = :reason, updated_at = now()
                WHERE article_id = :articleId AND status = 'GENERATING'""",
             mapOf("articleId" to articleId, "maxAttempts" to maxAttempts, "reason" to reason.take(200)),
+        )
+    }
+
+    fun failPermanent(articleId: Long, reason: String) {
+        jdbc.update(
+            """UPDATE facebook_article_image_generation
+               SET status = 'FAILED', last_error = :reason, updated_at = now()
+               WHERE article_id = :articleId AND status = 'GENERATING'""",
+            mapOf("articleId" to articleId, "reason" to reason.take(200)),
         )
     }
 

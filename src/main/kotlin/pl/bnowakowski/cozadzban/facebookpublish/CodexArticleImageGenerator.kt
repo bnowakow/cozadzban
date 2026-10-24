@@ -17,6 +17,11 @@ import java.time.Instant
 import java.util.concurrent.TimeUnit
 import javax.imageio.ImageIO
 
+sealed interface ArticleImageGenerationResult {
+    data class Generated(val png: ByteArray) : ArticleImageGenerationResult
+    data class Failed(val reason: String, val retryable: Boolean = true) : ArticleImageGenerationResult
+}
+
 /** Experimental operator-controlled adapter. The generated file is data, never a Codex response parsed as a path. */
 @Component
 class CodexArticleImageGenerator(
@@ -33,10 +38,15 @@ class CodexArticleImageGenerator(
         readValidated(Path.of(assetDir).resolve("article-$articleId.png"))
     }.getOrNull()
 
-    /** Returns a Facebook-sized PNG, or null so publication can use the branded placeholder. */
-    fun generate(article: Article, content: ArticleContent? = null): ByteArray? {
-        if (!enabled) return null
-        val articleId = article.id ?: return null
+    /** Returns a Facebook-sized PNG or a classified failure for the job queue. */
+    fun generate(article: Article, content: ArticleContent? = null): ArticleImageGenerationResult {
+        if (!enabled) return ArticleImageGenerationResult.Failed("Image generation is disabled.", retryable = false)
+        val articleId = article.id ?: return ArticleImageGenerationResult.Failed("Article has no ID.", retryable = false)
+        if (listOf(article.title, article.lead, article.quote, article.aiSummary, content?.content)
+                .all { it.isNullOrBlank() }
+        ) {
+            return ArticleImageGenerationResult.Failed(MISSING_IMAGE_CONTEXT_REASON, retryable = false)
+        }
         var workdir: Path? = null
         try {
             val destination = Path.of(assetDir).resolve("article-$articleId.png")
@@ -67,11 +77,11 @@ class CodexArticleImageGenerator(
                 child.outputStream.bufferedWriter().use { it.write(prompt(article, content)) }
                 if (!child.waitFor(timeoutSeconds.coerceIn(30, 540), TimeUnit.SECONDS)) {
                     log.warn("Codex image generation timed out for article {}", article.id)
-                    return null
+                    return ArticleImageGenerationResult.Failed("Codex image generation timed out.")
                 }
                 if (child.exitValue() != 0) {
                     log.warn("Codex image generation failed for article {} (exit {})", article.id, child.exitValue())
-                    return null
+                    return ArticleImageGenerationResult.Failed("Codex exited with code ${child.exitValue()}.")
                 }
             } finally {
                 if (child.isAlive) {
@@ -80,14 +90,15 @@ class CodexArticleImageGenerator(
                 }
             }
             val generatedFile = findGeneratedFile(finalMessage, Path.of(codexHome), startedAt)
+                ?: findFreshGeneratedFile(Path.of(codexHome), startedAt)
             if (generatedFile == null) {
-                log.warn("Codex returned no usable generated-image path for article {}", articleId)
-                return null
+                log.warn("Codex completed without an image for article {}", articleId)
+                return ArticleImageGenerationResult.Failed("Codex completed without generating an image.")
             }
             val png = readValidated(generatedFile)
             if (png == null) {
                 log.warn("Codex returned an invalid generated image for article {}", articleId)
-                return null
+                return ArticleImageGenerationResult.Failed("Codex produced an invalid image.")
             }
             Files.createDirectories(destination.parent)
             val temporary = Files.createTempFile(destination.parent, "article-${article.id}-", ".png")
@@ -98,10 +109,10 @@ class CodexArticleImageGenerator(
                 Files.deleteIfExists(temporary)
             }
             runCatching { Files.deleteIfExists(generatedFile) }
-            return png
+            return ArticleImageGenerationResult.Generated(png)
         } catch (ex: Exception) {
             log.warn("Codex image generation unavailable for article {} ({})", article.id, ex.javaClass.simpleName)
-            return null
+            return ArticleImageGenerationResult.Failed("Image generation unavailable (${ex.javaClass.simpleName}).")
         } finally {
             workdir?.let { directory ->
                 runCatching {
@@ -135,18 +146,34 @@ class CodexArticleImageGenerator(
 
     private fun findGeneratedFile(messageFile: Path, codexHome: Path, startedAt: Instant): Path? {
         if (!Files.isRegularFile(messageFile) || Files.size(messageFile) !in 1L..10_000L) return null
-        val root = codexHome.resolve("generated_images").toRealPath()
+        val root = generatedRoot(codexHome) ?: return null
         val message = Files.readString(messageFile)
         return Regex("""(/[^\s`'"]+\.png)""").findAll(message).mapNotNull { match ->
-            runCatching {
-                val candidate = Path.of(match.groupValues[1]).toRealPath()
-                candidate.takeIf {
-                    it.startsWith(root) && Files.isRegularFile(it, LinkOption.NOFOLLOW_LINKS) &&
-                        !Files.getLastModifiedTime(it).toInstant().isBefore(startedAt.minusSeconds(5))
-                }
-            }.getOrNull()
+            freshGeneratedImage(Path.of(match.groupValues[1]), root, startedAt)
         }.firstOrNull()
     }
+
+    /** Imagegen can create an image while Codex omits its path from the final message. */
+    private fun findFreshGeneratedFile(codexHome: Path, startedAt: Instant): Path? {
+        val root = generatedRoot(codexHome) ?: return null
+        return Files.walk(root, 2).use { paths ->
+            val candidates = paths.filter { it.fileName.toString().endsWith(".png", ignoreCase = true) }
+                .map { freshGeneratedImage(it, root, startedAt) }
+                .filter { it != null }.toList()
+            candidates.singleOrNull()
+        }
+    }
+
+    private fun generatedRoot(codexHome: Path): Path? =
+        codexHome.resolve("generated_images").takeIf { Files.isDirectory(it) }?.toRealPath()
+
+    private fun freshGeneratedImage(path: Path, root: Path, startedAt: Instant): Path? = runCatching {
+        val candidate = path.toRealPath()
+        candidate.takeIf {
+            it.startsWith(root) && Files.isRegularFile(it, LinkOption.NOFOLLOW_LINKS) &&
+                !Files.getLastModifiedTime(it).toInstant().isBefore(startedAt.minusSeconds(5))
+        }
+    }.getOrNull()
 
     private fun readValidated(path: Path): ByteArray? {
         if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS) || Files.size(path) !in 1L..10_000_000L) return null
