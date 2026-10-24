@@ -149,12 +149,15 @@ class FacebookThumbnailStatusView(
     private fun thumbnail(row: FacebookArticleImageStatusRow): Component {
         val preview: Component = when (row.status) {
             "GENERATED" -> Image("/generated-images/${row.articleId}.png", "AI-generated illustration")
-            "SOURCE_THUMBNAIL" -> row.sourceThumbnail?.let { Image(it, "Source thumbnail") } ?: Span("—")
+            "SOURCE_THUMBNAIL" -> row.sourceThumbnail
+                ?.takeIf { FacebookArticleImageGenerationRepository.hasUsableSourceThumbnail(it) }
+                ?.let { Image("/rss/image/${row.articleId}", "Source thumbnail") } ?: Span("—")
             else -> Span("—")
         }
         if (preview is Image) {
             preview.setWidth("96px")
             preview.setHeight("50px")
+            preview.element.setAttribute("loading", "lazy")
             preview.element.style.set("object-fit", "cover")
             preview.element.style.set("border-radius", "4px")
         }
