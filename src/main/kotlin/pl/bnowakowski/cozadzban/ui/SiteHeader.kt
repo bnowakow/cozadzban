@@ -38,7 +38,8 @@ object SiteHeader {
     fun appendTo(parent: Element, options: Options): Element {
         val header = parent.appendElement("header").attr("class", "czj-site-header")
         val brand = header.appendElement("a").attr("class", "czj-site-brand")
-            .attr("href", "/").attr("title", "Go to main page").attr("aria-label", "Go to main page")
+            .attr("href", "/").attr("router-ignore", "")
+            .attr("title", "Go to main page").attr("aria-label", "Go to main page")
         brand.appendElement("img").attr("src", "/cozadzban-logo.png")
             .attr("alt", "Co za dzban").attr("width", "46").attr("height", "46")
         brand.appendElement("span").text("Co za dzban")
@@ -46,7 +47,8 @@ object SiteHeader {
         val actions = header.appendElement("nav").attr("class", "czj-site-actions")
             .attr("aria-label", "Main navigation")
         val rss = actions.appendElement("a").attr("class", "czj-site-rss")
-            .attr("href", "/rss").attr("target", "_blank").attr("rel", "noopener noreferrer")
+            .attr("href", "/rss").attr("router-ignore", "")
+            .attr("target", "_blank").attr("rel", "noopener noreferrer")
         icon(rss, "rss")
         rss.appendElement("span").text("RSS")
 
@@ -61,7 +63,7 @@ object SiteHeader {
                 .text("Logout")
         } else {
             actions.appendElement("a").attr("class", "czj-site-auth")
-                .attr("href", "/auth/login").text("Login")
+                .attr("href", "/auth/login").attr("router-ignore", "").text("Login")
         }
 
         val menu = actions.appendElement("details").attr("class", "czj-site-menu")
@@ -105,7 +107,7 @@ object SiteHeader {
     }
 
     private fun link(parent: Element, href: String, label: String, symbol: String) {
-        val item = parent.appendElement("a").attr("href", href)
+        val item = parent.appendElement("a").attr("href", href).attr("router-ignore", "")
         icon(item, symbol)
         item.appendElement("span").text(label)
     }
