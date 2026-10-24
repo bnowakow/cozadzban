@@ -79,6 +79,7 @@ x-springboot-base: &springboot-base
     - './.env:/app/.env:ro'
     - './logs:/app/logs'
     - './docker-data/data:/app/data'
+    - 'codex-auth:/home/spring/.codex'
 
 services:
   springboot:
@@ -88,6 +89,28 @@ services:
     <<: *springboot-base
     profiles:
       - green
+
+  # Runs only for operator auth checks. It shares the Codex credential volume
+  # with Java, but none of the application's env vars, database, or data mounts.
+  codex-auth-check:
+    image: cozadzban:local
+    profiles:
+      - ops
+    entrypoint: [codex]
+    working_dir: /tmp
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,size=32m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
+    pids_limit: 32
+    volumes:
+      - 'codex-auth:/home/spring/.codex'
+    networks:
+      - codex-egress
 
   reverse-proxy:
     image: nginx:1.27-alpine
@@ -140,3 +163,9 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+volumes:
+  codex-auth:
+
+networks:
+  codex-egress:

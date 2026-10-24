@@ -1574,6 +1574,32 @@ x-runtime-configuration:
 # Phases 1-4 are implemented. The full test suite for phases 3-4 remains
 # pending on a development machine; do not run it on the deployment server.
 x-planned-features:
+  articleImageGeneration:
+    status: planned
+    plan: doc/ARTICLE_IMAGE_GENERATION_PLAN.md
+    codexCliRuntime: >
+      Installed in the Spring Boot Docker image for operator device-code login
+      and feasibility work. A named Docker volume persists CODEX_HOME across
+      container replacement. No article workflow invokes the CLI yet.
+    codexAuthMonitoring: >
+      A daily host cron checks the cached ChatGPT login and makes one bounded
+      live Codex request from an isolated one-off container. The check uses
+      only the auth volume and egress network, logs its result, and reports
+      failure through the configured cron mail when available.
+    firstUseCase: >
+      Generate a labeled editorial illustration for an article with no usable
+      source thumbnail before its Facebook Page photo post. Keep the source
+      thumbnail as first choice and the branded placeholder as fallback.
+    productionProvider: OpenAI Image API with server-side API key
+    authentication: >
+      ADMIN-only key connection with encrypted server-side storage. Do not use
+      Codex app-server ChatGPT login for this hosted service. A containerized
+      Codex CLI/device-code proof of concept is operator-only until an approved
+      hosted OAuth route supports image generation.
+    delivery: >
+      Durable bounded generation job, local validated asset, ADMIN preview and
+      usage caps, then integration with the existing publication queue without
+      changing its one-post-per-article or uncertain-result handling.
   facebookPagePublishing:
     status: implemented_pending_full_tests
     scope: Facebook Pages managed by this application, never personal profiles
