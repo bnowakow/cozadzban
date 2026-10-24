@@ -188,7 +188,12 @@ class FacebookEngagementRepository(private val jdbc: NamedParameterJdbcTemplate)
         rs.getString("language"), rs.getString("status"), rs.getString("post_id"),
         rs.getString("story_url"), rs.getString("last_error")) }
 
-    fun recentActivity(): List<FacebookEngagementActivity> = jdbc.query(
+    fun publishedActivityCount(): Long = jdbc.queryForObject(
+        "SELECT count(*) FROM facebook_page_publication WHERE status = 'PUBLISHED'",
+        emptyMap<String, Any>(), Long::class.java,
+    ) ?: 0L
+
+    fun recentActivity(limit: Int, offset: Int): List<FacebookEngagementActivity> = jdbc.query(
         """SELECT publication.article_id_snapshot, publication.language, publication.post_permalink,
                   reaction.reaction_count, reaction.status AS reaction_status, comment.status AS comment_status
            FROM facebook_page_publication publication
@@ -198,8 +203,8 @@ class FacebookEngagementRepository(private val jdbc: NamedParameterJdbcTemplate)
            ) reaction ON true
            LEFT JOIN facebook_link_comment comment ON comment.publication_id = publication.id
            WHERE publication.status = 'PUBLISHED'
-           ORDER BY publication.published_at DESC, publication.id DESC LIMIT 100""",
-        emptyMap<String, Any>(),
+           ORDER BY publication.published_at DESC, publication.id DESC LIMIT :limit OFFSET :offset""",
+        mapOf("limit" to limit.coerceIn(1, 100), "offset" to offset.coerceAtLeast(0)),
     ) { rs, _ -> FacebookEngagementActivity(rs.getLong("article_id_snapshot"), rs.getString("language"),
         rs.getString("post_permalink"), rs.getLong("reaction_count").takeUnless { rs.wasNull() },
         rs.getString("reaction_status"), rs.getString("comment_status")) }

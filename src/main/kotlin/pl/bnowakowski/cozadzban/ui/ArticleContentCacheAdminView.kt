@@ -21,7 +21,6 @@ import com.vaadin.flow.component.orderedlayout.HorizontalLayout
 import com.vaadin.flow.component.orderedlayout.VerticalLayout
 import com.vaadin.flow.component.textfield.TextArea
 import com.vaadin.flow.component.textfield.TextField
-import com.vaadin.flow.data.provider.DataProvider
 import com.vaadin.flow.data.value.ValueChangeMode
 import com.vaadin.flow.router.PageTitle
 import com.vaadin.flow.router.Route
@@ -59,6 +58,10 @@ class ArticleContentCacheAdminView(
     private val contentGrid = Grid(ArticleContent::class.java, false)
     private val contentArticleCache = mutableMapOf<Long, Article>()
     private val contentTotalInfo = Span()
+    private val contentPageInfo = Span()
+    private val contentPrevious = Button("Previous") { changeContentPage(-1) }
+    private val contentNext = Button("Next") { changeContentPage(1) }
+    private var contentPage = 0
 
     private var contentArticleIdFilter: Long? = null
     private var contentArticleUrlFilter: String? = null
@@ -66,38 +69,6 @@ class ArticleContentCacheAdminView(
     private var contentPublishedToFilter: Instant? = null
     private var contentCreatedFromFilter: Instant? = null
     private var contentCreatedToFilter: Instant? = null
-
-    private val contentDataProvider = DataProvider.fromCallbacks<ArticleContent>(
-        { query ->
-            val requestedLimit = query.limit.coerceAtLeast(1)
-            val requestedOffset = query.offset
-            val page = requestedOffset / requestedLimit
-            val entries = articleContentRepository.findPage(
-                page = page,
-                size = requestedLimit,
-                articleId = contentArticleIdFilter,
-                articleUrl = contentArticleUrlFilter,
-                publishedFrom = contentPublishedFromFilter,
-                publishedTo = contentPublishedToFilter,
-                createdFrom = contentCreatedFromFilter,
-                createdTo = contentCreatedToFilter,
-            )
-            populateContentArticleCache(entries)
-            entries.stream()
-        },
-        { _ ->
-            val count = articleContentRepository.countFiltered(
-                articleId = contentArticleIdFilter,
-                articleUrl = contentArticleUrlFilter,
-                publishedFrom = contentPublishedFromFilter,
-                publishedTo = contentPublishedToFilter,
-                createdFrom = contentCreatedFromFilter,
-                createdTo = contentCreatedToFilter,
-            ).toInt()
-            contentTotalInfo.text = "$count cache entries"
-            count
-        },
-    )
 
     init {
         installCozadzbanThemeBootstrap()
@@ -109,7 +80,8 @@ class ArticleContentCacheAdminView(
         val pageTitle = Span("Article content cache").apply { addClassName("czj-admin-title") }
         pageTitle.element.style.set("padding", "1rem 1rem 0")
         val contentFilters = buildContentFilters()
-        val contentPanel = VerticalLayout(contentFilters, contentGrid)
+        val contentNavigation = HorizontalLayout(contentPrevious, contentPageInfo, contentNext)
+        val contentPanel = VerticalLayout(contentFilters, contentGrid, contentNavigation)
         contentPanel.isPadding = false
         contentPanel.isSpacing = true
         contentPanel.setSizeFull()
@@ -127,6 +99,7 @@ class ArticleContentCacheAdminView(
             content,
         )
         expand(content)
+        refreshContentGrid()
     }
 
     private fun buildAdminTitleGroup(pageTitle: String): HorizontalLayout {
@@ -180,8 +153,6 @@ class ArticleContentCacheAdminView(
     private fun configureContentGrid() {
         contentGrid.addClassName("czj-admin-grid")
         contentGrid.setSizeFull()
-        contentGrid.setPageSize(50)
-        contentGrid.setDataProvider(contentDataProvider)
         contentGrid.addColumn { it.articleId.toString() }
             .setHeader("Article ID")
             .setAutoWidth(true)
@@ -217,7 +188,7 @@ class ArticleContentCacheAdminView(
         articleIdField.addValueChangeListener { event ->
             val value = event.value?.trim().orEmpty()
             contentArticleIdFilter = if (value.isBlank()) null else value.toLongOrNull() ?: NO_MATCHING_ARTICLE_ID
-            refreshContentGrid()
+            resetContentPage()
         }
 
         val articleUrlField = TextField("Article URL")
@@ -226,31 +197,31 @@ class ArticleContentCacheAdminView(
         articleUrlField.width = "28rem"
         articleUrlField.addValueChangeListener { event ->
             contentArticleUrlFilter = event.value?.trim()?.takeIf { it.isNotBlank() }
-            refreshContentGrid()
+            resetContentPage()
         }
 
         val publishedFromPicker = DateTimePicker("Published from")
         publishedFromPicker.addValueChangeListener { event ->
             contentPublishedFromFilter = event.value?.toInstant(ZoneOffset.UTC)
-            refreshContentGrid()
+            resetContentPage()
         }
 
         val publishedToPicker = DateTimePicker("Published to")
         publishedToPicker.addValueChangeListener { event ->
             contentPublishedToFilter = event.value?.toInstant(ZoneOffset.UTC)
-            refreshContentGrid()
+            resetContentPage()
         }
 
         val createdFromPicker = DateTimePicker("Created from")
         createdFromPicker.addValueChangeListener { event ->
             contentCreatedFromFilter = event.value?.toInstant(ZoneOffset.UTC)
-            refreshContentGrid()
+            resetContentPage()
         }
 
         val createdToPicker = DateTimePicker("Created to")
         createdToPicker.addValueChangeListener { event ->
             contentCreatedToFilter = event.value?.toInstant(ZoneOffset.UTC)
-            refreshContentGrid()
+            resetContentPage()
         }
 
         val clearButton = Button("Clear filters") {
@@ -376,7 +347,42 @@ class ArticleContentCacheAdminView(
 
     private fun refreshContentGrid() {
         contentArticleCache.clear()
-        contentDataProvider.refreshAll()
+        val total = articleContentRepository.countFiltered(
+            articleId = contentArticleIdFilter,
+            articleUrl = contentArticleUrlFilter,
+            publishedFrom = contentPublishedFromFilter,
+            publishedTo = contentPublishedToFilter,
+            createdFrom = contentCreatedFromFilter,
+            createdTo = contentCreatedToFilter,
+        )
+        val lastPage = if (total == 0L) 0 else ((total - 1) / CONTENT_PAGE_SIZE).toInt()
+        contentPage = contentPage.coerceAtMost(lastPage)
+        val entries = articleContentRepository.findPage(
+            page = contentPage,
+            size = CONTENT_PAGE_SIZE,
+            articleId = contentArticleIdFilter,
+            articleUrl = contentArticleUrlFilter,
+            publishedFrom = contentPublishedFromFilter,
+            publishedTo = contentPublishedToFilter,
+            createdFrom = contentCreatedFromFilter,
+            createdTo = contentCreatedToFilter,
+        )
+        populateContentArticleCache(entries)
+        contentGrid.setItems(entries)
+        contentTotalInfo.text = "$total cache entries"
+        contentPageInfo.text = "Page ${contentPage + 1} of ${lastPage + 1} · $total cache entries"
+        contentPrevious.isEnabled = contentPage > 0
+        contentNext.isEnabled = contentPage < lastPage
+    }
+
+    private fun resetContentPage() {
+        contentPage = 0
+        refreshContentGrid()
+    }
+
+    private fun changeContentPage(direction: Int) {
+        contentPage = (contentPage + direction).coerceAtLeast(0)
+        refreshContentGrid()
     }
 
     private fun populateContentArticleCache(entries: List<ArticleContent>) {
@@ -429,5 +435,6 @@ class ArticleContentCacheAdminView(
 
     private companion object {
         const val NO_MATCHING_ARTICLE_ID = -1L
+        const val CONTENT_PAGE_SIZE = 50
     }
 }

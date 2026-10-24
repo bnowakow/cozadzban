@@ -63,6 +63,7 @@ class FacebookPageSettingsView(
     private val articleLanguages = articleRepository.findDistinctLanguages()
     private val language = ComboBox<String>("Article language")
     private val configured = ComboBox<String>("Connected language")
+    private val configuredFlag = Span()
     private val enabled = Checkbox("Publish new articles automatically")
     private val timeZone = TextField("Page time zone")
     private val monthlyLinkLimit = IntegerField("Links per month")
@@ -76,6 +77,10 @@ class FacebookPageSettingsView(
     private val publicationProblems = VerticalLayout()
     private val commentProblems = VerticalLayout()
     private val engagementActivity = VerticalLayout()
+    private val engagementPageInfo = Span()
+    private val engagementPrevious = Button("Previous") { changeEngagementPage(-1) }
+    private val engagementNext = Button("Next") { changeEngagementPage(1) }
+    private var engagementPage = 0
     private val syncProblems = VerticalLayout()
 
     init {
@@ -104,19 +109,7 @@ class FacebookPageSettingsView(
         }
         language.setItems(articleLanguages)
         language.placeholder = "Select a language"
-        language.setRenderer(ComponentRenderer { code: String ->
-            HorizontalLayout().apply {
-                isPadding = false
-                defaultVerticalComponentAlignment = Alignment.CENTER
-                languageFlagCache.flagPath(code)?.let { path ->
-                    add(Image(path, "Flag for $code").apply {
-                        setWidth("1.5rem")
-                        setHeight("1rem")
-                    })
-                }
-                add(Span(code))
-            }
-        })
+        language.setRenderer(ComponentRenderer { code: String -> languageOption(code) })
         if (articleLanguages.isEmpty()) {
             language.helperText = "Add an article before connecting a Facebook Page."
         }
@@ -131,7 +124,11 @@ class FacebookPageSettingsView(
                 notify(ex.message ?: "Invalid language")
             }
         }
+        configured.setRenderer(ComponentRenderer { code: String -> languageOption(code) })
+        configuredFlag.isVisible = false
+        configured.setPrefixComponent(configuredFlag)
         configured.addValueChangeListener { selection ->
+            updateConnectedFlag(selection.value)
             service.all().firstOrNull { it.language == selection.value }?.let(::populate)
         }
         candidates.setItemLabelGenerator { id -> candidatePages[id]?.name ?: id }
@@ -150,8 +147,10 @@ class FacebookPageSettingsView(
         form.add(connectionCard, connectedSettingsCard)
         form.add(settingsCard("Publication problems", "Check uncertain results on the Facebook Page before retrying.").apply { add(publicationProblems) })
         form.add(settingsCard("Link comment problems", "Check uncertain comments on the Facebook post before retrying.").apply { add(commentProblems) })
-        form.add(settingsCard("Recent Facebook engagement", "Latest published posts and reaction checks.").apply {
-            add(Button("Refresh engagement") { refreshEngagementActivity() }, engagementActivity)
+        val engagementNavigation = HorizontalLayout(engagementPrevious, engagementPageInfo, engagementNext)
+        engagementNavigation.addClassName("czj-settings-actions")
+        form.add(settingsCard("Recent Facebook engagement", "Published posts and their latest reaction checks, newest first.").apply {
+            add(Button("Refresh engagement") { refreshEngagementActivity() }, engagementActivity, engagementNavigation)
         })
         form.add(settingsCard("Post update and deletion problems", "Review failed or uncertain changes before retrying.").apply { add(syncProblems) })
         listOf(publicationProblems, commentProblems, engagementActivity, syncProblems).forEach {
@@ -256,6 +255,30 @@ class FacebookPageSettingsView(
         if (pages.isEmpty()) pageLabel.text = "No Pages connected"
     }
 
+    private fun languageOption(code: String): HorizontalLayout = HorizontalLayout().apply {
+        isPadding = false
+        defaultVerticalComponentAlignment = Alignment.CENTER
+        languageFlagCache.flagPath(code)?.let { path ->
+            add(Image(path, "Flag for $code").apply {
+                setWidth("1.5rem")
+                setHeight("1rem")
+            })
+        }
+        add(Span(code))
+    }
+
+    private fun updateConnectedFlag(code: String?) {
+        configuredFlag.removeAll()
+        val path = languageFlagCache.flagPath(code)
+        configuredFlag.isVisible = path != null
+        if (path != null) {
+            configuredFlag.add(Image(path, "").apply {
+                setWidth("1.5rem")
+                setHeight("1rem")
+            })
+        }
+    }
+
     private fun populate(page: FacebookPageConnection) {
         pageLabel.text = "${page.pageName} (${page.pageId}) — ${if (page.enabled) "enabled" else "disabled"}"
         enabled.value = page.enabled
@@ -351,7 +374,14 @@ class FacebookPageSettingsView(
 
     private fun refreshEngagementActivity() {
         engagementActivity.removeAll()
-        val rows = engagement?.recentActivity() ?: return
+        val repository = engagement ?: return
+        val total = repository.publishedActivityCount()
+        val lastPage = if (total == 0L) 0 else ((total - 1) / ENGAGEMENT_PAGE_SIZE).toInt()
+        engagementPage = engagementPage.coerceAtMost(lastPage)
+        val rows = repository.recentActivity(ENGAGEMENT_PAGE_SIZE, engagementPage * ENGAGEMENT_PAGE_SIZE)
+        engagementPageInfo.text = "Page ${engagementPage + 1} of ${lastPage + 1} · $total posts"
+        engagementPrevious.isEnabled = engagementPage > 0
+        engagementNext.isEnabled = engagementPage < lastPage
         if (rows.isEmpty()) {
             engagementActivity.add(Span("No published Facebook posts yet."))
             return
@@ -372,6 +402,11 @@ class FacebookPageSettingsView(
             item.postUrl?.let { row.add(Anchor(it, "Facebook post")) }
             engagementActivity.add(row)
         }
+    }
+
+    private fun changeEngagementPage(direction: Int) {
+        engagementPage = (engagementPage + direction).coerceAtLeast(0)
+        refreshEngagementActivity()
     }
 
     private fun refreshSyncProblems() {
@@ -428,4 +463,7 @@ class FacebookPageSettingsView(
     private fun settingsCard(title: String, description: String): VerticalLayout = VerticalLayout(
         H3(title), Span(description).apply { addClassName("czj-settings-description") },
     ).apply { addClassName("czj-settings-card") }
+    private companion object {
+        const val ENGAGEMENT_PAGE_SIZE = 20
+    }
 }
