@@ -6,8 +6,11 @@ package pl.bnowakowski.cozadzban.article
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.DataNode
 import org.slf4j.LoggerFactory
+import org.springframework.http.CacheControl
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
+import org.springframework.security.core.context.SecurityContextHolder
+import org.springframework.security.web.csrf.CsrfToken
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.RestController
@@ -15,6 +18,8 @@ import org.springframework.web.context.request.RequestContextHolder
 import org.springframework.web.context.request.ServletRequestAttributes
 import pl.bnowakowski.cozadzban.facebookpublish.FacebookPublicationQueue
 import pl.bnowakowski.cozadzban.facebookpublish.FacebookArticleImageGenerationRepository
+import pl.bnowakowski.cozadzban.security.UiPrincipalMapper
+import pl.bnowakowski.cozadzban.user.Role
 import java.net.URI
 import java.time.Instant
 import java.time.ZoneOffset
@@ -27,14 +32,21 @@ class StoryPageController(
     private val facebookPublications: FacebookPublicationQueue? = null,
     private val viewCounter: StoryViewCounter? = null,
     private val articleImages: FacebookArticleImageGenerationRepository? = null,
+    private val uiPrincipalMapper: UiPrincipalMapper? = null,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
     @GetMapping("/stories/{id}", produces = [MediaType.TEXT_HTML_VALUE])
     fun story(@PathVariable id: Long): ResponseEntity<String> {
         val article = articles.findById(id).orElse(null) ?: return ResponseEntity.notFound().build()
-        val html = render(article, facebookPublications?.permalink(id))
         val request = (RequestContextHolder.getRequestAttributes() as? ServletRequestAttributes)?.request
+        val authentication = SecurityContextHolder.getContext().authentication
+        val signedIn = authentication != null && authentication.isAuthenticated && authentication.principal != "anonymousUser"
+        val principal = if (signedIn) uiPrincipalMapper?.resolve(authentication) else null
+        val csrf = request?.getAttribute(CsrfToken::class.java.name) as? CsrfToken
+            ?: request?.getAttribute("_csrf") as? CsrfToken
+        val html = render(article, facebookPublications?.permalink(id), signedIn, principal?.allowlisted == true,
+            principal?.role == Role.ADMIN, csrf)
         if (request != null && StoryViewEligibility.shouldCount(request)) {
             try {
                 viewCounter?.record(id)
@@ -42,11 +54,18 @@ class StoryPageController(
                 log.warn("Could not count story view for article {}: {}", id, ex.javaClass.simpleName)
             }
         }
-        return ResponseEntity.ok().contentType(MediaType.TEXT_HTML)
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).contentType(MediaType.TEXT_HTML)
             .body(html)
     }
 
-    private fun render(article: Article, facebookPostUrl: String?): String {
+    private fun render(
+        article: Article,
+        facebookPostUrl: String?,
+        signedIn: Boolean,
+        canAccessUserPages: Boolean,
+        isAdmin: Boolean,
+        csrf: CsrfToken?,
+    ): String {
         val language = article.language.trim().lowercase().takeIf { it.matches(Regex("[a-z]{2,3}(-[a-z]{2,3})?")) } ?: "en"
         val polish = language.startsWith("pl")
         val title = article.title?.trim()?.takeIf { it.isNotEmpty() } ?: article.url
@@ -94,6 +113,17 @@ class StoryPageController(
               var dark = saved === 'dark' ||
                 (saved !== 'light' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
               if (dark) document.documentElement.setAttribute('theme', 'dark');
+              window.cozadzbanToggleTheme = function() {
+                var next = document.documentElement.getAttribute('theme') === 'dark' ? 'light' : 'dark';
+                if (next === 'dark') {
+                  document.documentElement.setAttribute('theme', 'dark');
+                  document.body.setAttribute('theme', 'dark');
+                } else {
+                  document.documentElement.removeAttribute('theme');
+                  document.body.removeAttribute('theme');
+                }
+                try { localStorage.setItem('cozadzban-theme', next); } catch (ignored) {}
+              };
             })();
             """.trimIndent(),
         ))
@@ -102,9 +132,27 @@ class StoryPageController(
             :root{color-scheme:light;--page:#f3f4f6;--surface:#fff;--text:#202124;--border:#ddd;--muted:#666;--link:#a83d13;--icon-bg:#ff6b2a;--icon-text:#190b04}
             html[theme=dark]{color-scheme:dark;--page:#0f1114;--surface:#181c21;--text:#f2f4f7;--border:#313942;--muted:#aeb6c0;--link:#ff9a64}
             body{margin:0;background:var(--page);color:var(--text);font:16px/1.6 system-ui,sans-serif}
-            header{background:var(--surface);border-bottom:1px solid var(--border);padding:1rem max(1rem,calc((100vw - 44rem)/2))}
-            header a{color:inherit;font-weight:800;text-decoration:none}
-            main{box-sizing:border-box;max-width:44rem;margin:2rem auto;padding:2rem;background:var(--surface);border-radius:8px}
+            header{position:fixed;z-index:1000;top:0;left:0;right:0;box-sizing:border-box;height:66px;display:flex;align-items:center;justify-content:space-between;gap:1rem;background:var(--surface);border-bottom:1px solid var(--border);padding:0 1.5rem;box-shadow:0 2px 10px rgba(15,23,42,.08)}
+            .brand{display:inline-flex;align-items:center;gap:.75rem;min-width:0;color:inherit;font-size:1.25rem;font-weight:800;text-decoration:none;white-space:nowrap}
+            .brand img{display:block;width:46px;height:46px;flex:none;border-radius:50%;object-fit:cover;box-shadow:0 1px 4px rgba(0,0,0,.26)}
+            .top-actions{display:flex;align-items:center;gap:.75rem;flex:none}
+            .top-actions a,.top-actions button,.top-actions summary{box-sizing:border-box;border:0;border-radius:4px;background:transparent;color:var(--text);cursor:pointer;font:inherit;text-decoration:none}
+            .top-actions>a,.top-actions form button{padding:.4rem .65rem}
+            .top-actions .rss{display:inline-flex;align-items:center;gap:.3rem}
+            .top-actions svg{display:block;width:1rem;height:1rem;fill:currentColor}
+            .top-actions .auth{background:#ff6b2a;color:#190b04;font-weight:700}
+            .top-actions form{margin:0}
+            .top-menu{position:relative}
+            .top-menu summary{display:flex;align-items:center;justify-content:center;width:34px;height:34px;list-style:none}
+            .top-menu summary svg{width:1.25rem;height:1.25rem}
+            .top-menu summary::-webkit-details-marker{display:none}
+            .top-menu-items{position:absolute;top:calc(100% + .65rem);right:0;z-index:1001;display:flex;flex-direction:column;min-width:13rem;padding:.35rem;background:var(--surface);border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.2)}
+            .top-menu:not([open]) .top-menu-items{display:none}
+            .top-menu-items a,.top-menu-items button{display:block;width:100%;padding:.55rem .7rem;text-align:left;white-space:nowrap}
+            .top-menu-items a:hover,.top-menu-items button:hover{background:var(--page)}
+            .top-menu-items hr{width:100%;border:0;border-top:1px solid var(--border)}
+            .top-actions a:focus-visible,.top-actions button:focus-visible,.top-actions summary:focus-visible{outline:2px solid #ff6b2a;outline-offset:2px}
+            main{box-sizing:border-box;max-width:44rem;margin:calc(66px + 2rem) auto 2rem;padding:2rem;background:var(--surface);border-radius:8px}
             h1{font-size:clamp(1.7rem,5vw,2.5rem);line-height:1.2;margin:.75rem 0 1.5rem}
             img{display:block;max-width:100%;height:auto;border-radius:6px}
             .image-credit{color:var(--muted);font-size:.85rem;margin:.35rem 0 1rem}
@@ -115,11 +163,53 @@ class StoryPageController(
             .source-name{color:var(--text);font-weight:700}
             blockquote{border-left:4px solid #f36b32;margin:1.5rem 0;padding-left:1rem}
             main a{color:var(--link)}.original{display:inline-block;margin-top:1rem;font-weight:700}
-            @media(max-width:46rem){main{margin:1rem;padding:1.25rem}}
+            @media(max-width:46rem){main{margin:calc(66px + 1rem) 1rem 1rem;padding:1.25rem}}
+            @media(max-width:25rem){header{padding:0 1rem;gap:.5rem}.brand{gap:.4rem;font-size:1rem}.brand img{width:36px;height:36px}.top-actions{gap:.25rem}.top-actions>a,.top-actions form button{padding:.35rem}}
             """.trimIndent(),
         )
         val body = doc.body()
-        body.appendElement("header").appendElement("a").attr("href", "/").text("Co za dzban")
+        val header = body.appendElement("header")
+        val brand = header.appendElement("a").attr("class", "brand").attr("href", "/")
+        brand.appendElement("img").attr("src", "/cozadzban-logo.png")
+            .attr("alt", "").attr("width", "46").attr("height", "46")
+        brand.appendElement("span").text("Co za dzban")
+        val actions = header.appendElement("nav").attr("class", "top-actions").attr("aria-label", "Main navigation")
+        val rss = actions.appendElement("a").attr("class", "rss").attr("href", "/rss")
+            .attr("target", "_blank").attr("rel", "noopener noreferrer")
+        rss.appendElement("svg").attr("viewBox", "0 0 16 16").attr("aria-hidden", "true")
+            .appendElement("path").attr("d", "M4.4 13.8a2.2 2.2 0 1 1-4.4 0 2.2 2.2 0 0 1 4.4 0ZM0 5.4v3.1A7.5 7.5 0 0 1 7.5 16h3.1C10.6 10.1 5.9 5.4 0 5.4ZM0 0v3.2C7.1 3.2 12.8 8.9 12.8 16H16C16 7.2 8.8 0 0 0Z")
+        rss.appendElement("span").text("RSS")
+        if (signedIn && csrf != null) {
+            val form = actions.appendElement("form").attr("action", "/auth/logout").attr("method", "post")
+                .attr("onsubmit", "event.preventDefault();fetch(this.action,{method:'POST',credentials:'same-origin',body:new FormData(this)}).then(function(response){if(response.ok)location.href='/';else location.reload()}).catch(function(){location.reload()})")
+            form.appendElement("input").attr("type", "hidden").attr("name", csrf.parameterName).attr("value", csrf.token)
+            form.appendElement("button").attr("type", "submit").attr("class", "auth").text("Logout")
+        } else if (!signedIn) {
+            actions.appendElement("a").attr("class", "auth").attr("href", "/auth/login").text("Login")
+        }
+        val menu = actions.appendElement("details").attr("class", "top-menu")
+        menu.appendElement("summary").attr("aria-label", "Menu").attr("title", "Menu")
+            .appendElement("svg").attr("viewBox", "0 0 16 16").attr("aria-hidden", "true")
+            .appendElement("path").attr("d", "M0 1h16v3H0V1Zm0 5h16v3H0V6Zm0 5h16v3H0v-3Z")
+        val menuItems = menu.appendElement("div").attr("class", "top-menu-items")
+        menuItems.appendElement("a").attr("href", "/").text("Feed")
+        if (canAccessUserPages) {
+            menuItems.appendElement("a").attr("href", "/article-proposals").text("Article proposals")
+            menuItems.appendElement("a").attr("href", "/?addArticle=1").text("Add article")
+            menuItems.appendElement("a").attr("href", "/notification-settings").text("Notification settings")
+        }
+        menuItems.appendElement("button").attr("type", "button")
+            .attr("onclick", "cozadzbanToggleTheme()").text("Toggle dark mode")
+        menuItems.appendElement("a").attr("href", "/privacy-policy.html").text("Privacy Policy")
+        menuItems.appendElement("a").attr("href", "/user-data-deletion.html").text("User data deletion")
+        if (isAdmin) {
+            menuItems.appendElement("hr")
+            menuItems.appendElement("a").attr("href", "/admin").text("Manage users")
+            menuItems.appendElement("a").attr("href", "/admin/facebook-pages").text("Facebook Pages")
+            menuItems.appendElement("a").attr("href", "/admin/facebook-statistics").text("Story and Facebook statistics")
+            menuItems.appendElement("a").attr("href", "/admin/facebook-thumbnails").text("Article thumbnails")
+            menuItems.appendElement("a").attr("href", "/admin/article-content-cache").text("Article content cache")
+        }
         val main = body.appendElement("main")
         main.appendElement("a").attr("class", "back").attr("href", "/")
             .attr("onclick", "if(document.referrer && document.referrer !== location.href && document.referrer.startsWith(location.origin + '/') && history.length > 1){history.back();return false}")
