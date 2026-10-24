@@ -129,28 +129,30 @@ class StoryPageController(
         ))
         head.appendElement("style").appendText(
             """
-            :root{color-scheme:light;--page:#f3f4f6;--surface:#fff;--text:#202124;--border:#ddd;--muted:#666;--link:#a83d13;--icon-bg:#ff6b2a;--icon-text:#190b04}
+            :root{color-scheme:light;--page:#eef0f3;--surface:#fff;--text:#15171a;--border:#d4d9df;--muted:#626970;--link:#a83d13;--icon-bg:#ff6b2a;--icon-text:#190b04;--menu-hover:#e4e8ed;--menu-shadow:0 1px 2px rgba(15,23,42,.12),0 8px 24px rgba(15,23,42,.08);--site-font:-apple-system,BlinkMacSystemFont,Roboto,'Segoe UI',Helvetica,Arial,sans-serif}
             html[theme=dark]{color-scheme:dark;--page:#0f1114;--surface:#181c21;--text:#f2f4f7;--border:#313942;--muted:#aeb6c0;--link:#ff9a64}
-            body{margin:0;background:var(--page);color:var(--text);font:16px/1.6 system-ui,sans-serif}
-            header{position:fixed;z-index:1000;top:0;left:0;right:0;box-sizing:border-box;height:66px;display:flex;align-items:center;justify-content:space-between;gap:1rem;background:var(--surface);border-bottom:1px solid var(--border);padding:0 1.5rem;box-shadow:0 2px 10px rgba(15,23,42,.08)}
-            .brand{display:inline-flex;align-items:center;gap:.75rem;min-width:0;color:inherit;font-size:1.25rem;font-weight:800;text-decoration:none;white-space:nowrap}
+            html[theme=dark]{--menu-hover:#2a3037;--menu-shadow:0 1px 2px rgba(0,0,0,.35),0 10px 28px rgba(0,0,0,.3)}
+            body{margin:0;background:var(--page);color:var(--text);font:16px/1.625 var(--site-font);-webkit-font-smoothing:antialiased}
+            header{position:fixed;z-index:1000;top:0;left:0;right:0;box-sizing:border-box;height:66px;display:flex;align-items:center;justify-content:space-between;gap:1rem;background:var(--surface);border-bottom:1px solid var(--menu-hover);padding:0 1.5rem;box-shadow:0 2px 10px rgba(15,23,42,.08)}
+            html[theme=dark] header{box-shadow:0 2px 14px rgba(0,0,0,.32)}
+            .brand{display:inline-flex;align-items:center;gap:1rem;min-width:0;color:inherit;font-size:1.375rem;font-weight:800;text-decoration:none;white-space:nowrap}
             .brand img{display:block;width:46px;height:46px;flex:none;border-radius:50%;object-fit:cover;box-shadow:0 1px 4px rgba(0,0,0,.26)}
-            .top-actions{display:flex;align-items:center;gap:.75rem;flex:none}
-            .top-actions a,.top-actions button,.top-actions summary{box-sizing:border-box;border:0;border-radius:4px;background:transparent;color:var(--text);cursor:pointer;font:inherit;text-decoration:none}
-            .top-actions>a,.top-actions form button{padding:.4rem .65rem}
-            .top-actions .rss{display:inline-flex;align-items:center;gap:.3rem}
+            .top-actions{display:flex;align-items:center;gap:1rem;flex:none;padding-right:.25rem}
+            .top-actions a,.top-actions button,.top-actions summary{box-sizing:border-box;border:0;border-radius:4px;background:transparent;color:var(--text);cursor:pointer;font:500 1rem/1.25 var(--site-font);text-decoration:none}
+            .top-actions .rss{display:inline-flex;align-items:center;justify-content:center;gap:.35rem;height:1.875rem;min-width:3.75rem;margin:.25rem 0;padding:0 .625rem;font-size:.875rem}
             .top-actions svg{display:block;width:1rem;height:1rem;fill:currentColor}
-            .top-actions .auth{background:#ff6b2a;color:#190b04;font-weight:700}
+            .top-actions .auth{display:inline-flex;align-items:center;justify-content:center;height:2.25rem;min-width:4.5rem;margin:.25rem 0;padding:0 .75rem;background:#254b91;color:#fff}
             .top-actions form{margin:0}
             .top-menu{position:relative}
-            .top-menu summary{display:flex;align-items:center;justify-content:center;width:34px;height:34px;list-style:none}
+            .top-menu summary{display:flex;align-items:center;justify-content:center;width:34px;height:34px;margin:0 .125rem;list-style:none}
             .top-menu summary svg{width:1.25rem;height:1.25rem}
             .top-menu summary::-webkit-details-marker{display:none}
-            .top-menu-items{position:absolute;top:calc(100% + .65rem);right:0;z-index:1001;display:flex;flex-direction:column;min-width:13rem;padding:.35rem;background:var(--surface);border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.2)}
+            .top-menu-items{position:absolute;top:calc(100% + .65rem);right:0;z-index:1001;display:flex;flex-direction:column;min-width:13rem;padding:.35rem;background:var(--surface);border:1px solid var(--border);border-radius:8px;box-shadow:var(--menu-shadow)}
             .top-menu:not([open]) .top-menu-items{display:none}
             .top-menu-items a,.top-menu-items button{display:block;width:100%;padding:.55rem .7rem;text-align:left;white-space:nowrap}
-            .top-menu-items a:hover,.top-menu-items button:hover{background:var(--page)}
+            .top-menu-items a:hover,.top-menu-items button:hover{background:var(--menu-hover)}
             .top-menu-items hr{width:100%;border:0;border-top:1px solid var(--border)}
+            .top-menu-section{padding:.35rem .7rem;color:var(--muted);font-size:.875rem;font-weight:700}
             .top-actions a:focus-visible,.top-actions button:focus-visible,.top-actions summary:focus-visible{outline:2px solid #ff6b2a;outline-offset:2px}
             main{box-sizing:border-box;max-width:44rem;margin:calc(66px + 2rem) auto 2rem;padding:2rem;background:var(--surface);border-radius:8px}
             h1{font-size:clamp(1.7rem,5vw,2.5rem);line-height:1.2;margin:.75rem 0 1.5rem}
@@ -164,7 +166,7 @@ class StoryPageController(
             blockquote{border-left:4px solid #f36b32;margin:1.5rem 0;padding-left:1rem}
             main a{color:var(--link)}.story-action{display:inline-flex;align-items:center;gap:.45rem;font-weight:700}.story-action svg{width:1.1rem;height:1.1rem;flex:none;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}.facebook-icon{display:inline-flex;align-items:center;justify-content:center;width:1.1rem;height:1.1rem;flex:none;border-radius:50%;background:#1877f2;color:#fff;font:bold 1rem/1 Arial,sans-serif}.original{margin-top:1rem}
             @media(max-width:46rem){main{margin:calc(66px + 1rem) 1rem 1rem;padding:1.25rem}}
-            @media(max-width:25rem){header{padding:0 1rem;gap:.5rem}.brand{gap:.4rem;font-size:1rem}.brand img{width:36px;height:36px}.top-actions{gap:.25rem}.top-actions>a,.top-actions form button{padding:.35rem}}
+            @media(max-width:25rem){header{padding:0 1rem;gap:.5rem}.brand{gap:.4rem;font-size:1rem}.brand img{width:36px;height:36px}.top-actions{gap:.25rem;padding-right:0}.top-actions .rss{min-width:0;padding:0 .25rem}.top-actions .auth{min-width:0;padding:0 .5rem}}
             """.trimIndent(),
         )
         val body = doc.body()
@@ -204,6 +206,7 @@ class StoryPageController(
         menuItems.appendElement("a").attr("href", "/user-data-deletion.html").text("User data deletion")
         if (isAdmin) {
             menuItems.appendElement("hr")
+            menuItems.appendElement("span").attr("class", "top-menu-section").text("Admin")
             menuItems.appendElement("a").attr("href", "/admin").text("Manage users")
             menuItems.appendElement("a").attr("href", "/admin/facebook-pages").text("Facebook Pages")
             menuItems.appendElement("a").attr("href", "/admin/facebook-statistics").text("Story and Facebook statistics")
