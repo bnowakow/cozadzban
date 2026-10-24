@@ -41,7 +41,7 @@ object SiteHeader {
             .attr("href", "/").attr("router-ignore", "")
             .attr("title", "Go to main page").attr("aria-label", "Go to main page")
         brand.appendElement("img").attr("src", "/cozadzban-logo.png")
-            .attr("alt", "Co za dzban").attr("width", "46").attr("height", "46")
+            .attr("alt", "").attr("width", "46").attr("height", "46")
         brand.appendElement("span").text("Co za dzban")
 
         val actions = header.appendElement("nav").attr("class", "czj-site-actions")
