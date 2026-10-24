@@ -14,6 +14,7 @@ import com.vaadin.flow.component.dialog.Dialog
 import com.vaadin.flow.component.html.Anchor
 import com.vaadin.flow.component.html.Div
 import com.vaadin.flow.component.html.H1
+import com.vaadin.flow.component.Html
 import com.vaadin.flow.component.html.Image
 import com.vaadin.flow.component.html.Span
 import com.vaadin.flow.component.icon.VaadinIcon
@@ -39,6 +40,7 @@ import com.vaadin.flow.server.auth.AnonymousAllowed
 import org.springframework.security.access.AccessDeniedException
 import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.security.oauth2.core.OAuth2AuthenticatedPrincipal
+import org.springframework.security.web.csrf.CsrfToken
 import pl.bnowakowski.cozadzban.article.Article
 import pl.bnowakowski.cozadzban.article.ArticleContentRepository
 import pl.bnowakowski.cozadzban.article.ArticleInput
@@ -246,19 +248,25 @@ class ArticleListView(
         }
     }
 
-    private fun buildTopBar(): HorizontalLayout {
+    private fun buildTopBar(): Html {
         val activeUser = isAuthenticated && authenticatedUser?.status == AppUserStatus.ACTIVE
-        return buildCozadzbanTopBar(
-            currentPage = CozadzbanTopBarPage.FEED,
+        val request = VaadinServletRequest.getCurrent()?.httpServletRequest
+        val csrf = request?.getAttribute(CsrfToken::class.java.name) as? CsrfToken
+            ?: request?.getAttribute("_csrf") as? CsrfToken
+        UI.getCurrent().page.addStyleSheet("/cozadzban-header.css")
+        UI.getCurrent().page.addJavaScript("/cozadzban-header.js")
+        return Html(SiteHeader.html(SiteHeader.Options(
+            signedIn = isAuthenticated,
             canAccessUserPages = activeUser,
             isAdmin = activeUser && authenticatedUser?.role == Role.ADMIN,
-            authButton = buildAuthButton(),
-            onAddArticle = { openAddArticleDialog() },
-            facebookImportJobService = facebookImportJobService,
-            facebookImportProperties = facebookImportProperties,
-            onStartFacebookImport = { importType -> triggerFacebookImport(importType) },
-            onStopFacebookImport = { triggerFacebookImportTermination() },
-        )
+            currentPage = CozadzbanTopBarPage.FEED,
+            csrf = csrf,
+            importTypes = if (activeUser && authenticatedUser?.role == Role.ADMIN) {
+                SiteHeader.importTypes(facebookImportJobService, facebookImportProperties)
+            } else emptyList(),
+            importAvailable = activeUser && authenticatedUser?.role == Role.ADMIN,
+            importRunning = activeUser && authenticatedUser?.role == Role.ADMIN && facebookImportJobService.isImportRunning(),
+        )))
     }
 
     private fun buildFilterBar(): Div {
@@ -1200,20 +1208,6 @@ class ArticleListView(
         return "$scheme://$host/favicon.ico"
     }
 
-    private fun buildAuthButton(): Button {
-        return if (isAuthenticated) {
-            val button = Button("Logout")
-            button.addThemeVariants(ButtonVariant.LUMO_PRIMARY)
-            button.addClickListener { logoutAndRedirect() }
-            button
-        } else {
-            val button = Button("Login")
-            button.addThemeVariants(ButtonVariant.LUMO_PRIMARY)
-            button.addClickListener { ui.ifPresent { it.page.setLocation("/auth/login") } }
-            button
-        }
-    }
-
     private fun openAddArticleDialog() {
         val urlField = TextField("URL")
         urlField.isRequired = true
@@ -1750,12 +1744,6 @@ class ArticleListView(
         layout.width = "100%"
         notification.add(layout)
         notification.open()
-    }
-
-    private fun logoutAndRedirect() {
-        VaadinServletRequest.getCurrent().httpServletRequest.getSession(false)?.invalidate()
-        SecurityContextHolder.clearContext()
-        ui.ifPresent { it.page.setLocation("/") }
     }
 
     private fun refreshData() {

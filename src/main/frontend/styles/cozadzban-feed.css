@@ -1,5 +1,7 @@
 :root {
   color-scheme: light;
+  --aura-accent-color-light: #ff6b2a;
+  --aura-accent-color-dark: #ff6b2a;
   --czj-page-bg: #eef0f3;
   --czj-card-bg: #ffffff;
   --czj-border: #d4d9df;
@@ -173,9 +175,9 @@ vaadin-button {
 }
 
 vaadin-button[theme~="primary"] {
-  --vaadin-button-primary-background: #254b91;
-  --vaadin-button-primary-text-color: #ffffff;
-  color: #ffffff;
+  --vaadin-button-primary-background: #ff6b2a;
+  --vaadin-button-primary-text-color: #190b04;
+  color: #190b04;
 }
 
 vaadin-radio-button::part(radio) {
