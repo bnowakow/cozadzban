@@ -85,6 +85,7 @@ class SecurityConfig(
                 // Public REST read endpoints (BR-10)
                 auth.requestMatchers(HttpMethod.GET, "/api/articles", "/api/articles/**", "/rss", "/rss/**").permitAll()
                 auth.requestMatchers(HttpMethod.GET, "/stories/**").permitAll()
+                auth.requestMatchers(HttpMethod.GET, "/generated-images/**").permitAll()
 
                 // Protected article write endpoints: token must be valid and email allowlisted (BR-11, BR-13)
                 // POST and PATCH also accept the dedicated machine credential used by the Facebook importer.

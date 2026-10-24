@@ -4,12 +4,16 @@ package pl.bnowakowski.cozadzban.facebookpublish
 import pl.bnowakowski.cozadzban.article.Article
 
 object FacebookPostCaption {
-    fun forArticle(article: Article): String {
+    fun forArticle(article: Article, imageSource: String? = null): String {
         val fallback = if (article.language.startsWith("pl")) "Nowa historia" else "New story"
         val title = clean(article.title).takeIf { it.isNotBlank() } ?: fallback
         val lead = sequenceOf(article.lead, article.aiSummary, article.quote)
             .map(::clean).firstOrNull { it.isNotBlank() }?.take(550)
-        return listOfNotNull(title.take(230), lead).joinToString("\n\n")
+        val caption = listOfNotNull(title.take(230), lead).joinToString("\n\n")
+        return if (imageSource == "CODEX_GENERATED") {
+            caption + if (article.language.startsWith("pl")) "\n\nIlustracja wygenerowana przez AI."
+                else "\n\nAI-generated illustration."
+        } else caption
     }
 
     private fun clean(raw: String?): String = raw.orEmpty()

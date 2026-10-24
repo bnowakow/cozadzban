@@ -56,6 +56,7 @@ import pl.bnowakowski.cozadzban.facebookimport.FacebookImportProperties
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportRunStatus
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportTrigger
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportType
+import pl.bnowakowski.cozadzban.facebookpublish.FacebookArticleImageGenerationRepository
 import pl.bnowakowski.cozadzban.security.AllowlistAuthorizationManager
 import pl.bnowakowski.cozadzban.user.AppUser
 import pl.bnowakowski.cozadzban.user.AppUserRepository
@@ -90,6 +91,7 @@ class ArticleListView(
     private val buildProperties: AppBuildProperties,
     private val languageFlagCache: LanguageFlagCache,
     private val facebookImportProperties: FacebookImportProperties = FacebookImportProperties(),
+    private val articleImages: FacebookArticleImageGenerationRepository? = null,
 ) : VerticalLayout(), AfterNavigationObserver {
 
     private val feed = VirtualList<Article>()
@@ -939,11 +941,14 @@ class ArticleListView(
         card.element.style.set("box-shadow", "var(--czj-card-shadow)")
 
         val content = Div()
-        article.thumbnail?.trim()?.takeIf { it.isNotBlank() }?.let { thumbnail ->
+        val generatedImage = article.id?.let { articleImages?.status(it) == "GENERATED" } == true
+        val thumbnail = if (generatedImage) "/generated-images/${article.id}.png"
+            else article.thumbnail?.trim()?.takeIf { FacebookArticleImageGenerationRepository.hasUsableSourceThumbnail(it) }
+        thumbnail?.takeIf { it.isNotBlank() }?.let { imageUrl ->
             val imageLink = Anchor(article.url)
             imageLink.setTarget("_blank")
             imageLink.element.setAttribute("rel", "noopener noreferrer")
-            val image = Image(thumbnail, article.title ?: "")
+            val image = Image(imageUrl, article.title ?: "")
             image.width = "100%"
             image.element.style.set("display", "block")
             image.element.style.set("aspect-ratio", "1 / 1")
@@ -951,6 +956,14 @@ class ArticleListView(
             image.element.executeJs("this.addEventListener('error', () => this.style.display = 'none')")
             imageLink.add(image)
             content.add(imageLink)
+            if (generatedImage) {
+                val label = Span(if (article.language.startsWith("pl")) "Ilustracja wygenerowana przez AI" else "AI-generated illustration")
+                label.element.style.set("display", "block")
+                label.element.style.set("padding", ".35rem .75rem")
+                label.element.style.set("color", "var(--czj-muted)")
+                label.element.style.set("font-size", ".8rem")
+                content.add(label)
+            }
         }
 
         val body = Div()

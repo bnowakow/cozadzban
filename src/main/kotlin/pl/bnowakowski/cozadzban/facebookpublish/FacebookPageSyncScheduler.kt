@@ -38,7 +38,7 @@ class FacebookPageSyncScheduler(
                         val photoId = job.photoId ?: graph.photoId(job.postId, token).also {
                             repository.savePhotoId(job.publicationId, it)
                         }
-                        graph.updatePhotoCaption(photoId, token, FacebookPostCaption.forArticle(article))
+                        graph.updatePhotoCaption(photoId, token, FacebookPostCaption.forArticle(article, job.imageSource))
                     }
                     "DELETE" -> graph.deletePost(job.postId, token)
                     else -> error("Unsupported Facebook sync action")

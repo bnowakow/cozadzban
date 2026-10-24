@@ -19,6 +19,8 @@ class FacebookPublicationWorker(
     private val articles: ArticleRepository,
     private val pages: FacebookPageConnectionService,
     private val imageProvider: FacebookPostImageProvider,
+    private val imageJobs: FacebookArticleImageGenerationRepository,
+    private val imageGenerator: CodexArticleImageGenerator,
     private val publisher: FacebookPhotoPublisher,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -27,7 +29,7 @@ class FacebookPublicationWorker(
     fun publishPending() {
         queue.recoverInterruptedClaims()
         repeat(10) {
-            val job = queue.claim() ?: return
+            val job = queue.claim(imageGenerator.isEnabled()) ?: return
             publish(job)
         }
     }
@@ -45,16 +47,27 @@ class FacebookPublicationWorker(
             queue.markFailed(job.id, "Article or enabled Page connection is no longer available.")
             return
         }
-        var image = imageProvider.forArticle(article)
-        val caption = FacebookPostCaption.forArticle(article)
+        var image = try {
+            imageProvider.forArticle(article)
+        } catch (ex: Exception) {
+            queue.markFailed(job.id, "Could not select a Page image (${ex.javaClass.simpleName}).")
+            return
+        }
         try {
             val result = try {
-                publisher.publish(page.pageId, token, caption, image)
+                publisher.publish(page.pageId, token, FacebookPostCaption.forArticle(article, image.source), image)
             } catch (ex: RestClientResponseException) {
-                if (image !is FacebookPostImage.Thumbnail || ex.statusCode.value() != 400) throw ex
-                // An explicit HTTP 400 means Meta rejected the thumbnail request before publishing.
+                if (ex.statusCode.value() != 400) throw ex
+                if (image is FacebookPostImage.Thumbnail && imageGenerator.isEnabled()) {
+                    // The explicit rejection happened before Meta created a post. Retry with a generated image later.
+                    imageJobs.sourceThumbnailRejected(article.id!!)
+                    queue.deferForImage(job.id)
+                    return
+                }
+                if (image is FacebookPostImage.Generated) imageJobs.rejectGenerated(article.id!!)
+                if (image is FacebookPostImage.Placeholder) throw ex
                 image = imageProvider.placeholder(article.language)
-                publisher.publish(page.pageId, token, caption, image)
+                publisher.publish(page.pageId, token, FacebookPostCaption.forArticle(article, image.source), image)
             }
             val postId = result.postId
             if (postId == null) {

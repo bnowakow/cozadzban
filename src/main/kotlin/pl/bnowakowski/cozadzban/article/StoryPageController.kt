@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.context.request.RequestContextHolder
 import org.springframework.web.context.request.ServletRequestAttributes
 import pl.bnowakowski.cozadzban.facebookpublish.FacebookPublicationQueue
+import pl.bnowakowski.cozadzban.facebookpublish.FacebookArticleImageGenerationRepository
 import java.net.URI
 import java.time.Instant
 import java.time.ZoneOffset
@@ -25,6 +26,7 @@ class StoryPageController(
     private val articles: ArticleRepository,
     private val facebookPublications: FacebookPublicationQueue? = null,
     private val viewCounter: StoryViewCounter? = null,
+    private val articleImages: FacebookArticleImageGenerationRepository? = null,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -60,8 +62,11 @@ class StoryPageController(
         val favicon = article.favicon?.trim()?.takeIf { it.isNotEmpty() }
             ?: sourceUri?.takeIf { it.scheme in setOf("http", "https") && it.host != null }
                 ?.let { "${it.scheme}://${it.host}/favicon.ico" }
-        val thumbnail = article.thumbnail?.trim()?.takeIf { it.startsWith("https://") || it.startsWith("http://") }
-        val storyImage = thumbnail?.let { "/rss/image/${article.id}" }
+        val thumbnail = article.thumbnail?.trim()
+            ?.takeIf { FacebookArticleImageGenerationRepository.hasUsableSourceThumbnail(it) }
+        val generatedImage = article.id?.let { articleImages?.status(it) == "GENERATED" } == true
+        val storyImage = if (generatedImage) "/generated-images/${article.id}.png"
+            else thumbnail?.let { "/rss/image/${article.id}" }
         val doc = Document.createShell("")
         doc.outputSettings().prettyPrint(false)
         doc.selectFirst("html")!!.attr("lang", language)
@@ -102,6 +107,7 @@ class StoryPageController(
             main{box-sizing:border-box;max-width:44rem;margin:2rem auto;padding:2rem;background:var(--surface);border-radius:8px}
             h1{font-size:clamp(1.7rem,5vw,2.5rem);line-height:1.2;margin:.75rem 0 1.5rem}
             img{display:block;max-width:100%;height:auto;border-radius:6px}
+            .image-credit{color:var(--muted);font-size:.85rem;margin:.35rem 0 1rem}
             .back{display:inline-block;margin-bottom:1rem;text-decoration:none;font-weight:700}
             .story-meta{display:flex;align-items:center;gap:.55rem;color:var(--muted);font-size:.9rem}
             .source-icon{position:relative;display:inline-flex;align-items:center;justify-content:center;flex:none;width:1.35rem;height:1.35rem;overflow:hidden;border-radius:50%;background:var(--icon-bg);color:var(--icon-text);font-size:.75rem;font-weight:800}
@@ -130,6 +136,10 @@ class StoryPageController(
         storyImage?.let {
             main.appendElement("img").attr("src", it).attr("alt", title)
                 .attr("onerror", "this.onerror=null;this.src='/cozadzban-logo.png'")
+            if (generatedImage) {
+                main.appendElement("p").attr("class", "image-credit")
+                    .text(if (polish) "Ilustracja wygenerowana przez AI" else "AI-generated illustration")
+            }
         }
         article.lead?.trim()?.takeIf { it.isNotEmpty() }?.let { main.appendElement("p").text(it) }
         article.quote?.trim()?.takeIf { it.isNotEmpty() }?.let { main.appendElement("blockquote").text(it) }

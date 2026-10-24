@@ -16,6 +16,7 @@ import pl.bnowakowski.cozadzban.enrichment.EnrichmentService
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportType
 import pl.bnowakowski.cozadzban.facebookpublish.FacebookPublicationQueue
 import pl.bnowakowski.cozadzban.facebookpublish.FacebookPageSyncRepository
+import pl.bnowakowski.cozadzban.facebookpublish.FacebookArticleImageGenerationRepository
 import pl.bnowakowski.cozadzban.user.AppUserRepository
 import java.net.URI
 import java.time.Instant
@@ -29,6 +30,7 @@ class ArticleService(
     private val articleContentRepository: ArticleContentRepository,
     private val facebookPublicationQueue: FacebookPublicationQueue? = null,
     private val facebookPageSync: FacebookPageSyncRepository? = null,
+    private val facebookArticleImages: FacebookArticleImageGenerationRepository? = null,
 ) {
 
     @Transactional(readOnly = true)
@@ -146,6 +148,7 @@ class ArticleService(
             throw ArticleUrlConflictException(url)
         }
         preserveContent(article.id!!, article.url, contentForCache)
+        facebookArticleImages?.markMissingIfNeeded(article.id!!, article.thumbnail)
         facebookPublicationQueue?.enqueue(article.id, article.language)
         logFacebookPhotoPersistenceState("create", article, contentForCache)
         val persistedArticle = logFacebookPhotoReloadedPersistenceState("create", article, contentForCache)
@@ -213,6 +216,9 @@ class ArticleService(
             )
         )
         preserveContent(article.id!!, article.url, contentForCache)
+        if (existing.thumbnail != article.thumbnail) {
+            facebookArticleImages?.sourceThumbnailChanged(article.id!!, article.thumbnail)
+        }
         if (facebookCaptionChanged(existing, article)) {
             facebookPageSync?.queueUpdate(id, existing.thumbnail != article.thumbnail || existing.language != article.language)
         }
@@ -353,6 +359,10 @@ class ArticleService(
             }
         } else if (enrichmentForChangedUrl != null) {
             preserveContent(saved.id!!, saved.url, contentForChangedUrl)
+        }
+
+        if (existing.thumbnail != saved.thumbnail) {
+            facebookArticleImages?.sourceThumbnailChanged(saved.id!!, saved.thumbnail)
         }
 
         if (facebookCaptionChanged(existing, saved)) {

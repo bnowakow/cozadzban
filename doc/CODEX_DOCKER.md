@@ -5,12 +5,14 @@ find `codex` on `PATH`, and `CODEX_HOME` points to a private `codex-auth` Docker
 volume shared by the blue and green application containers. The volume survives
 container replacement and `docker compose down`; `down -v` removes it.
 
-This installation is for operator use and feasibility work. The hosted article
-publishing workflow does not call Codex. OpenAI says Codex app-server
-authentication is not permitted for commercial or hosted services, so device
-login here does not authorize a production web UI or automatic image-generation
-integration. See [article image generation plan](ARTICLE_IMAGE_GENERATION_PLAN.md)
-for the proposed supported provider path.
+This installation is for operator use and feasibility work. An experimental
+image-generation job exists for articles without a source thumbnail. It is
+disabled by code default; the deployment operator enabled it in the private
+`.env`. OpenAI says Codex app-server authentication is not permitted for
+commercial or hosted services, so device login here does not authorize enabling
+automatic image generation on the hosted site. See
+[article image generation plan](ARTICLE_IMAGE_GENERATION_PLAN.md) for the
+proposed supported provider path.
 
 ## Sign in
 

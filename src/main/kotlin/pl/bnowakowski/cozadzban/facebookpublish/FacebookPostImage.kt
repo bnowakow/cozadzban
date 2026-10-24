@@ -9,23 +9,27 @@ import java.awt.GradientPaint
 import java.awt.RenderingHints
 import java.awt.image.BufferedImage
 import java.io.ByteArrayOutputStream
-import java.net.URI
 import javax.imageio.ImageIO
 
 sealed interface FacebookPostImage {
     val source: String
     data class Thumbnail(val url: String) : FacebookPostImage { override val source = "THUMBNAIL" }
+    data class Generated(val png: ByteArray) : FacebookPostImage { override val source = "CODEX_GENERATED" }
     data class Placeholder(val png: ByteArray) : FacebookPostImage { override val source = "PLACEHOLDER" }
 }
 
-/** Replace this component when article-text-based image generation is available. */
 @Component
-class FacebookPostImageProvider {
+class FacebookPostImageProvider(
+    private val generator: CodexArticleImageGenerator,
+    private val imageJobs: FacebookArticleImageGenerationRepository,
+) {
     fun forArticle(article: Article): FacebookPostImage {
-        val uri = runCatching { URI(article.thumbnail?.trim().orEmpty()) }.getOrNull()
-        if (uri != null && uri.scheme?.lowercase() in setOf("http", "https") &&
-            !uri.host.isNullOrBlank() && uri.host !in setOf("localhost", "127.0.0.1")) {
-            return FacebookPostImage.Thumbnail(uri.toString())
+        val status = article.id?.let { imageJobs.status(it) }
+        if (status == "GENERATED") {
+            generator.cached(article.id!!)?.let { return FacebookPostImage.Generated(it) }
+        }
+        if (status == null && FacebookArticleImageGenerationRepository.hasUsableSourceThumbnail(article.thumbnail)) {
+            return FacebookPostImage.Thumbnail(article.thumbnail!!.trim())
         }
         return placeholder(article.language)
     }

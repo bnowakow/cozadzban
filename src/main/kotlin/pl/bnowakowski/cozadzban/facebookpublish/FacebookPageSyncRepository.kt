@@ -6,7 +6,8 @@ import org.springframework.stereotype.Repository
 import org.springframework.transaction.annotation.Transactional
 
 data class FacebookSyncJob(val id: Long, val publicationId: Long, val articleId: Long?, val pageId: String,
-                           val language: String, val postId: String, val photoId: String?, val action: String)
+                           val language: String, val postId: String, val photoId: String?, val action: String,
+                           val imageSource: String?)
 data class FacebookSyncProblem(val id: Long, val articleId: Long, val language: String, val action: String,
                                val status: String, val postId: String?, val lastError: String?)
 
@@ -85,11 +86,13 @@ class FacebookPageSyncRepository(private val jdbc: NamedParameterJdbcTemplate) {
            FROM candidate, facebook_page_publication publication
            WHERE sync.id = candidate.id AND publication.id = sync.publication_id
            RETURNING sync.id, sync.publication_id, publication.article_id, publication.page_id,
-                     publication.language, publication.post_id, publication.photo_id, sync.action""",
+                     publication.language, publication.post_id, publication.photo_id, sync.action,
+                     publication.image_source""",
         emptyMap<String, Any>(),
     ) { rs, _ -> FacebookSyncJob(rs.getLong("id"), rs.getLong("publication_id"),
         rs.getLong("article_id").takeUnless { rs.wasNull() }, rs.getString("page_id"),
-        rs.getString("language"), rs.getString("post_id"), rs.getString("photo_id"), rs.getString("action")) }.firstOrNull()
+        rs.getString("language"), rs.getString("post_id"), rs.getString("photo_id"), rs.getString("action"),
+        rs.getString("image_source")) }.firstOrNull()
 
     fun savePhotoId(publicationId: Long, photoId: String) {
         jdbc.update(

@@ -1,11 +1,10 @@
 # Article image generation — proposed feature
 
-Status: image generation planned. The operator-only Codex CLI installation in
-the Spring Boot image is implemented, but no article workflow invokes it.
-First use case: create an illustration for a
-new article when its thumbnail is missing or unusable for a Facebook Page photo
-post. The source thumbnail remains the first choice. This plan does not change
-current automatic Page publishing or the branded placeholder fallback.
+Status: experimental Codex CLI adapter, article image job, and public display
+implemented. The production provider, usage budget, and admin controls remain
+planned. New articles without a usable source thumbnail receive a
+`MISSING_THUMBNAIL` image status. The source thumbnail remains the first choice;
+the branded placeholder remains the failure fallback.
 
 ## Feasibility and provider choice
 
@@ -19,12 +18,35 @@ the web app process can read the volume and must be treated as trusted. These ar
 capabilities, **not** evidence that a hosted application's admin UI may reuse
 Codex's ChatGPT login to power production image generation.
 
-The CLI is now installed in the Spring Boot image, with its credential cache in
-the private `codex-auth` Docker volume. This lets an operator sign in from the
-container and lets a future Java process find the `codex` executable. It is a
-runtime prerequisite and operator proof of concept only. The hosted article
-workflow remains disconnected pending a permitted authentication and image
-generation route. See [Codex in Docker](CODEX_DOCKER.md).
+The CLI is installed in the Spring Boot image, with its credential cache in the
+private `codex-auth` Docker volume. A bounded Java adapter can ask `$imagegen`
+for an image from an article's title, lead, quote, summary, and cached
+text. A scheduler checks each minute and claims at most one missing-image
+article every ten minutes across application instances using a database pacing
+row. It retries up to three times, then releases the Facebook
+publication to use the branded placeholder. Publication waits while generation
+is pending. If Meta explicitly rejects a source thumbnail, publication is
+deferred and the article joins the same image queue. The adapter validates image
+size and dimensions, crops to 1200 × 630, and caches the PNG in the persistent
+data volume. Completed generated images are shown on the feed and story page
+through `/generated-images/{id}.png`, with visible AI illustration labels. The
+Facebook post caption carries the same disclosure. This is a proof of concept,
+not approval to use the ChatGPT login for this hosted workflow. See
+[Codex in Docker](CODEX_DOCKER.md).
+
+`APP_FACEBOOK_IMAGE_CODEX_ENABLED=false` is the code default. The deployment
+operator has enabled it in the private `.env`; a permitted provider and
+authentication route still needs confirmation. Migration V40 queues existing
+articles with missing or locally invalid source thumbnails without resetting
+any existing image status. `APP_FACEBOOK_IMAGE_CODEX_TIMEOUT_SECONDS` defaults to 180 seconds and
+`APP_FACEBOOK_IMAGE_CODEX_ASSET_DIR` defaults to `/app/data/facebook-generated`.
+The CLI call runs in a temporary directory with a reduced environment. It still
+shares the application container and Codex credential volume, so it does not
+provide the isolation intended for the later dedicated worker.
+Codex's image tool writes its initial file under `CODEX_HOME/generated_images`;
+the Java adapter accepts only a freshly created path inside that directory from
+Codex's final response. It performs the validation and copy itself because the
+CLI's shell sandbox could not copy the file in the first live attempt.
 
 The preferred admin-initiated ChatGPT OAuth flow is **not currently a suitable
 production dependency** for this hosted site:
@@ -58,12 +80,11 @@ Official sources checked 24 October 2026:
 
 ## Product behavior
 
-1. When an enabled language Page has a new article, keep its source thumbnail
-   as the first image choice. If the URL is absent or locally invalid and image
-   generation is enabled, enqueue one generation job for that article and
-   language. If Meta explicitly rejects the thumbnail before creating a post,
-   defer that publication and enqueue the same job. The article creation
-   transaction must not wait for OpenAI.
+1. When a new article lacks a usable source thumbnail, record
+   `MISSING_THUMBNAIL` in `facebook_article_image_generation` in the article
+   creation transaction. If Meta explicitly rejects a source thumbnail before
+   creating a post, defer publication and mark the same image status. Article
+   creation never waits for Codex.
 2. Build a bounded prompt from the article's title, lead, quote, and language.
    Request a clearly illustrative editorial image with no invented quotes,
    logos, text, identifiable real people, or claim of being a documentary photo.
@@ -75,25 +96,23 @@ Official sources checked 24 October 2026:
    article, provider, model, prompt version, status, attempts, timestamps,
    local asset path, and sanitized error. Do not store provider credentials or
    visitor data in the image record. Use a new Flyway migration when built.
-4. The Facebook publication worker waits for the generation result within a
-   configured deadline. On success it uploads the generated image. On timeout,
-   provider error, disconnection, or budget exhaustion it uses the existing
-   branded placeholder and continues publishing. Keep the existing uncertain
-   Meta-post reconciliation rules and one-post-per-article guarantee.
+4. The Facebook publication worker skips a pending article while image
+   generation is enabled and its status is missing or generating. On success it
+   uploads the generated image. After three failed attempts it uses the branded
+   placeholder. Keep the existing uncertain Meta-post reconciliation rules and
+   one-post-per-article guarantee.
 5. Show image provenance, preview, job state, retry, daily/monthly generation
    caps, and provider connection in an ADMIN-only UI. Start with automatic
    generation disabled until an admin enables it. A retry must not replace an
    already-published Facebook image without an explicit replacement workflow.
-6. The public story page may use the generated image only after the Facebook
-   use case is verified and the product decides whether generated illustrations
-   belong on story pages. The original article URL and source attribution stay
-   visible.
+6. The public feed and story page use a completed generated image with a visible
+   AI disclosure. The original article URL and source attribution stay visible.
 
 ## Delivery phases
 
 | Phase | Work | Completion check |
 | --- | --- | --- |
-| 0. Feasibility | Install the CLI in the Spring Boot image and verify its version. Operator then tests `codex login --device-auth` and `$imagegen` with `codex exec`. Separately verify Image API access, output format, latency, and billing. Confirm account eligibility and any OpenAI approval before reconsidering hosted OAuth. | One generated sample, measured resource use, and a recorded provider decision. No production tokens or posts. |
+| 0. Feasibility | Install the CLI in the Spring Boot image and verify its version. An opt-in adapter is present, but operator must still test `$imagegen` output, latency, and resource use. Separately verify Image API access and billing. Confirm account eligibility and any OpenAI approval before reconsidering hosted OAuth. | One generated sample, measured resource use, and a recorded provider decision. No production tokens or posts. |
 | 1. Provider and admin connection | Add an `ArticleImageGenerator` interface, OpenAI Image API adapter, encrypted key storage, ADMIN connect/rotate/disconnect controls, server-side validation, and usage caps. | No token reaches browser JavaScript or logs; disconnected state preserves existing publishing. |
 | 2. Durable generation | Add Flyway job/asset tables, bounded prompts, one concurrent generation on this server, timeout/retry policy, local asset validation, and an ADMIN preview/status view. | A missing-thumbnail article produces one valid asset or a recorded failure; retries are idempotent. |
 | 3. Facebook integration | Delay the publication job for the bounded image window, then use source thumbnail, generated asset, or branded placeholder in that order. Record image provenance on publication. | A new article still creates at most one public post; provider outages fall back without losing the article. |

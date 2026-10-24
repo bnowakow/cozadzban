@@ -35,16 +35,31 @@ class FacebookPublicationQueue(private val jdbc: NamedParameterJdbcTemplate) {
 
     /** Claim one job atomically across application instances. A crash after this point needs reconciliation. */
     @Transactional
-    fun claim(): FacebookPublicationJob? = jdbc.query(
+    fun claim(waitForImages: Boolean = false): FacebookPublicationJob? = jdbc.query(
         """WITH candidate AS (
-               SELECT id FROM facebook_page_publication WHERE status = 'PENDING'
+               SELECT publication.id FROM facebook_page_publication publication
+               WHERE publication.status = 'PENDING'
+                 AND (:waitForImages = false OR NOT EXISTS (
+                     SELECT 1 FROM facebook_article_image_generation image
+                     WHERE image.article_id = publication.article_id_snapshot
+                       AND image.status IN ('MISSING_THUMBNAIL', 'GENERATING')
+                 ))
                ORDER BY created_at, id FOR UPDATE SKIP LOCKED LIMIT 1
            )
            UPDATE facebook_page_publication p SET status = 'PUBLISHING', attempt_count = attempt_count + 1,
                updated_at = now() FROM candidate WHERE p.id = candidate.id
            RETURNING p.id, p.article_id_snapshot, p.language, p.page_id, p.status, p.post_id, p.last_error, p.created_at""",
-        emptyMap<String, Any>(), mapper,
+        mapOf("waitForImages" to waitForImages), mapper,
     ).firstOrNull()
+
+    /** A source URL failed before Meta created a post; wait for image generation. */
+    fun deferForImage(id: Long) {
+        jdbc.update(
+            """UPDATE facebook_page_publication SET status = 'PENDING', updated_at = now()
+               WHERE id = :id AND status = 'PUBLISHING'""",
+            mapOf("id" to id),
+        )
+    }
 
     fun markPublished(id: Long, postId: String, permalink: String, imageSource: String, photoId: String?) {
         jdbc.update(

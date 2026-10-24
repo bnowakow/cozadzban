@@ -25,6 +25,9 @@ class FacebookPhotoPublisher(private val properties: FacebookPageProperties) {
             part("published", "true")
             when (image) {
                 is FacebookPostImage.Thumbnail -> part("url", image.url)
+                is FacebookPostImage.Generated -> part("source", object : ByteArrayResource(image.png) {
+                    override fun getFilename() = "co-za-dzban-illustration.png"
+                }).contentType(MediaType.IMAGE_PNG)
                 is FacebookPostImage.Placeholder -> part("source", object : ByteArrayResource(image.png) {
                     override fun getFilename() = "co-za-dzban.png"
                 }).contentType(MediaType.IMAGE_PNG)
