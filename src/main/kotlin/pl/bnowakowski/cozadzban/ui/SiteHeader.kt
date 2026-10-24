@@ -16,7 +16,6 @@ object SiteHeader {
         val signedIn: Boolean,
         val canAccessUserPages: Boolean,
         val isAdmin: Boolean,
-        val currentPage: CozadzbanTopBarPage? = null,
         val csrf: CsrfToken? = null,
         val importTypes: List<FacebookImportType> = emptyList(),
         val importAvailable: Boolean = false,
@@ -70,14 +69,10 @@ object SiteHeader {
         icon(trigger, "menu")
         val items = menu.appendElement("div").attr("class", "czj-site-menu-items")
         if (options.canAccessUserPages) {
-            if (options.currentPage != CozadzbanTopBarPage.FEED) link(items, "/", "Feed", "home")
-            if (options.currentPage != CozadzbanTopBarPage.ARTICLE_PROPOSALS) {
-                link(items, "/article-proposals", "Article proposals", "list")
-            }
+            link(items, "/", "Feed", "home")
+            link(items, "/article-proposals", "Article proposals", "list")
             link(items, "/?addArticle=1", "Add article", "plus")
-            if (options.currentPage != CozadzbanTopBarPage.NOTIFICATION_SETTINGS) {
-                link(items, "/notification-settings", "Notification settings", "bell")
-            }
+            link(items, "/notification-settings", "Notification settings", "bell")
         }
         button(items, "Toggle dark mode", "adjust", "theme")
         link(items, "/privacy-policy.html", "Privacy Policy", "lock")
@@ -85,21 +80,11 @@ object SiteHeader {
         if (options.isAdmin) {
             items.appendElement("hr")
             items.appendElement("span").attr("class", "czj-site-menu-section").text("Admin")
-            if (options.currentPage != CozadzbanTopBarPage.MANAGE_USERS) {
-                link(items, "/admin", "Manage users", "users")
-            }
-            if (options.currentPage != CozadzbanTopBarPage.FACEBOOK_PAGES) {
-                link(items, "/admin/facebook-pages", "Facebook Pages", "globe")
-            }
-            if (options.currentPage != CozadzbanTopBarPage.FACEBOOK_STATISTICS) {
-                link(items, "/admin/facebook-statistics", "Story and Facebook statistics", "chart")
-            }
-            if (options.currentPage != CozadzbanTopBarPage.FACEBOOK_THUMBNAILS) {
-                link(items, "/admin/facebook-thumbnails", "Article thumbnails", "picture")
-            }
-            if (options.currentPage != CozadzbanTopBarPage.ARTICLE_CONTENT_CACHE) {
-                link(items, "/admin/article-content-cache", "Article content cache", "database")
-            }
+            link(items, "/admin", "Manage users", "users")
+            link(items, "/admin/facebook-pages", "Facebook Pages", "globe")
+            link(items, "/admin/facebook-statistics", "Story and Facebook statistics", "chart")
+            link(items, "/admin/facebook-thumbnails", "Article thumbnails", "picture")
+            link(items, "/admin/article-content-cache", "Article content cache", "database")
             if (options.importAvailable) {
                 if (options.importTypes.isEmpty()) {
                     button(items, "Import Facebook unavailable", "download", null).attr("disabled", "")

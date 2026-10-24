@@ -259,7 +259,6 @@ class ArticleListView(
             signedIn = isAuthenticated,
             canAccessUserPages = activeUser,
             isAdmin = activeUser && authenticatedUser?.role == Role.ADMIN,
-            currentPage = CozadzbanTopBarPage.FEED,
             csrf = csrf,
             importTypes = if (activeUser && authenticatedUser?.role == Role.ADMIN) {
                 SiteHeader.importTypes(facebookImportJobService, facebookImportProperties)
