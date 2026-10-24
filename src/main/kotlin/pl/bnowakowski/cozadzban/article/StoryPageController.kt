@@ -162,7 +162,7 @@ class StoryPageController(
             .source-icon img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:50%}
             .source-name{color:var(--text);font-weight:700}
             blockquote{border-left:4px solid #f36b32;margin:1.5rem 0;padding-left:1rem}
-            main a{color:var(--link)}.original{display:inline-block;margin-top:1rem;font-weight:700}
+            main a{color:var(--link)}.story-action{display:inline-flex;align-items:center;gap:.45rem;font-weight:700}.story-action svg{width:1.1rem;height:1.1rem;flex:none;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}.facebook-icon{display:inline-flex;align-items:center;justify-content:center;width:1.1rem;height:1.1rem;flex:none;border-radius:50%;background:#1877f2;color:#fff;font:bold 1rem/1 Arial,sans-serif}.original{margin-top:1rem}
             @media(max-width:46rem){main{margin:calc(66px + 1rem) 1rem 1rem;padding:1.25rem}}
             @media(max-width:25rem){header{padding:0 1rem;gap:.5rem}.brand{gap:.4rem;font-size:1rem}.brand img{width:36px;height:36px}.top-actions{gap:.25rem}.top-actions>a,.top-actions form button{padding:.35rem}}
             """.trimIndent(),
@@ -234,11 +234,16 @@ class StoryPageController(
         article.lead?.trim()?.takeIf { it.isNotEmpty() }?.let { main.appendElement("p").text(it) }
         article.quote?.trim()?.takeIf { it.isNotEmpty() }?.let { main.appendElement("blockquote").text(it) }
         article.aiSummary?.trim()?.takeIf { it.isNotEmpty() }?.let { main.appendElement("p").text(it) }
-        main.appendElement("a").attr("class", "original").attr("href", article.url)
-            .attr("rel", "noopener noreferrer").text(if (polish) "Czytaj oryginalną publikację" else "Read the original story")
+        val original = main.appendElement("a").attr("class", "story-action original").attr("href", article.url)
+            .attr("rel", "noopener noreferrer")
+        val externalIcon = original.appendElement("svg").attr("viewBox", "0 0 24 24").attr("aria-hidden", "true")
+        externalIcon.appendElement("path").attr("d", "M15 3h6v6M10 14 21 3M21 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6")
+        original.appendElement("span").text(if (polish) "Czytaj oryginalną publikację" else "Read the original story")
         facebookPostUrl?.takeIf { it.startsWith("https://www.facebook.com/") }?.let { url ->
-            main.appendElement("p").appendElement("a").attr("href", url)
-                .attr("rel", "noopener noreferrer").text(if (polish) "Skomentuj na Facebooku" else "Comment on Facebook")
+            val facebook = main.appendElement("p").appendElement("a").attr("class", "story-action").attr("href", url)
+                .attr("rel", "noopener noreferrer")
+            facebook.appendElement("span").attr("class", "facebook-icon").attr("aria-hidden", "true").text("f")
+            facebook.appendElement("span").text(if (polish) "Skomentuj na Facebooku" else "Comment on Facebook")
         }
         return "<!doctype html>\n${doc.outerHtml()}"
     }
