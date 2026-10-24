@@ -7,8 +7,8 @@ x-springboot-base: &springboot-base
   restart: unless-stopped
   cpus: '0.75'
   cpu_shares: 256
-  mem_limit: 768m
-  memswap_limit: 768m
+  mem_limit: 1536m
+  memswap_limit: 1536m
   pids_limit: 128
   depends_on:
     postgres:
@@ -16,7 +16,7 @@ x-springboot-base: &springboot-base
     zipkin:
       condition: service_healthy
   environment:
-    - 'JAVA_TOOL_OPTIONS=-XX:MaxRAMPercentage=75 -XX:InitialRAMPercentage=25'
+    - 'JAVA_TOOL_OPTIONS=-Xmx576m -Xms192m'
     - 'SPRING_PROFILES_ACTIVE=prod'
     - 'APP_LOG_LEVEL=${APP_LOG_LEVEL:-INFO}'
     - 'JDBC_DATABASE_URL=jdbc:postgresql://postgres:5432/${POSTGRES_DB}'
