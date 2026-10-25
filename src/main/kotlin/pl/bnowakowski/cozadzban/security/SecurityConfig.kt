@@ -68,6 +68,10 @@ class SecurityConfig(
                 auth.requestMatchers("/facebook-pages/oauth/**").access { authentication, _ ->
                     AuthorizationDecision(allowlist.checkAdminSession(authentication.get()))
                 }
+                // Browser import controls use an admin session and retain CSRF protection.
+                auth.requestMatchers("/admin/facebook-import/**").access { authentication, _ ->
+                    AuthorizationDecision(allowlist.checkAdminSession(authentication.get()))
+                }
 
                 // /actuator/health and probe subpaths are always public (load balancer / k8s probes)
                 auth.requestMatchers("/actuator/health", "/actuator/health/**").permitAll()

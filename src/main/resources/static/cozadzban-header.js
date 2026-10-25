@@ -27,13 +27,22 @@
       return;
     }
     var paths = {
-      'import-apify': '/api/admin/facebook-import/run/apify',
-      'import-selenium': '/api/admin/facebook-import/run/selenium',
-      'stop-import': '/api/admin/facebook-import/terminate'
+      'import-apify': '/admin/facebook-import/run/apify',
+      'import-selenium': '/admin/facebook-import/run/selenium',
+      'stop-import': '/admin/facebook-import/terminate'
     };
     if (!paths[name]) return;
     action.disabled = true;
-    fetch(paths[name], { method: 'POST', credentials: 'same-origin' }).then(function (response) {
+    var csrf = document.querySelector('meta[name="_csrf"]');
+    var csrfHeader = document.querySelector('meta[name="_csrf_header"]');
+    if (!csrf || !csrfHeader) {
+      action.disabled = false;
+      alert('Please reload the page and try again.');
+      return;
+    }
+    var headers = {};
+    headers[csrfHeader.content] = csrf.content;
+    fetch(paths[name], { method: 'POST', credentials: 'same-origin', headers: headers }).then(function (response) {
       if (!response.ok) throw new Error('Facebook import request failed (' + response.status + ')');
       location.reload();
     }).catch(function (error) {

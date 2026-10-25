@@ -14,7 +14,9 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.http.MediaType
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.security.oauth2.jwt.JwtDecoder
+import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt
+import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.oauth2Login
 import org.springframework.test.context.TestPropertySource
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.test.web.servlet.MockMvc
@@ -95,6 +97,46 @@ class FacebookImportControllerTest {
                 it.claim("email", userEmail)
                 it.claim("email_verified", true)
             })
+        }.andExpect {
+            status { isForbidden() }
+        }
+    }
+
+    @Test
+    fun `browser Apify run accepts admin session with CSRF token`() {
+        whenever(facebookImportJobService.startImport(FacebookImportType.APIFY)).thenReturn("run-1")
+
+        mockMvc.post("/admin/facebook-import/run/apify") {
+            with(oauth2Login().attributes { it["email"] = adminEmail })
+            with(csrf())
+        }.andExpect {
+            status { isAccepted() }
+        }
+    }
+
+    @Test
+    fun `browser Apify run rejects admin session without CSRF token`() {
+        mockMvc.post("/admin/facebook-import/run/apify") {
+            with(oauth2Login().attributes { it["email"] = adminEmail })
+        }.andExpect {
+            status { isForbidden() }
+        }
+    }
+
+    @Test
+    fun `browser Apify run rejects non-admin session`() {
+        mockMvc.post("/admin/facebook-import/run/apify") {
+            with(oauth2Login().attributes { it["email"] = userEmail })
+            with(csrf())
+        }.andExpect {
+            status { isForbidden() }
+        }
+    }
+
+    @Test
+    fun `API Apify run still rejects admin session`() {
+        mockMvc.post("/api/admin/facebook-import/run/apify") {
+            with(oauth2Login().attributes { it["email"] = adminEmail })
         }.andExpect {
             status { isForbidden() }
         }

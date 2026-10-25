@@ -289,6 +289,9 @@ Phases 4 and 5 are independent and can be developed in parallel.
     `POST /api/admin/facebook-import/run/selenium`, keep `/run` as a Selenium
     compatibility alias, and expose `POST /api/admin/facebook-import/terminate`;
     return `202` on accepted start/terminate and `409` for busy/not-running.
+    Browser menu actions use the corresponding `/admin/facebook-import/**` routes
+    with an admin OAuth session and CSRF token; `/api/admin/facebook-import/**`
+    remains bearer-token-only.
 60. **`ArticleListView` admin action** — add admin-only **Import Facebook Selenium**
     button next to "Add Article" when the Selenium importer is enabled.
 60a. **Facebook proposal inbox** — add `facebook_import_run` and

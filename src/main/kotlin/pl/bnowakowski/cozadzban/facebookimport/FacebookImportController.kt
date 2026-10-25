@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 
 @RestController
-@RequestMapping("/api/admin/facebook-import")
+@RequestMapping(path = ["/api/admin/facebook-import", "/admin/facebook-import"])
 class FacebookImportController(
     private val facebookImportJobService: FacebookImportJobService,
 ) {
