@@ -12,6 +12,9 @@ import pl.bnowakowski.cozadzban.facebookimport.FacebookImportType
 
 /** The feed and server-rendered story use this same header markup and stylesheet. */
 object SiteHeader {
+    // Static assets are cached for an hour. Change this URL when header.js changes.
+    const val SCRIPT_URL = "/cozadzban-header.js?v=20261025-admin-import"
+
     data class Options(
         val signedIn: Boolean,
         val canAccessUserPages: Boolean,

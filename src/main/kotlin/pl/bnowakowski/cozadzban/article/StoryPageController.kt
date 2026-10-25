@@ -122,7 +122,7 @@ class StoryPageController(
             """.trimIndent(),
         ))
         head.appendElement("link").attr("rel", "stylesheet").attr("href", "/cozadzban-header.css")
-        head.appendElement("script").attr("src", "/cozadzban-header.js").attr("defer", "")
+        head.appendElement("script").attr("src", SiteHeader.SCRIPT_URL).attr("defer", "")
         head.appendElement("style").appendText(
             """
             :root{color-scheme:light;--page:#eef0f3;--surface:#fff;--text:#15171a;--muted:#626970;--link:#a83d13;--icon-bg:#ff6b2a;--icon-text:#190b04;--site-font:'Instrument Sans',system-ui,ui-sans-serif,sans-serif}

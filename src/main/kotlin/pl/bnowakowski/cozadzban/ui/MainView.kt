@@ -254,7 +254,7 @@ class ArticleListView(
         val csrf = request?.getAttribute(CsrfToken::class.java.name) as? CsrfToken
             ?: request?.getAttribute("_csrf") as? CsrfToken
         UI.getCurrent().page.addStyleSheet("/cozadzban-header.css")
-        UI.getCurrent().page.addJavaScript("/cozadzban-header.js")
+        UI.getCurrent().page.addJavaScript(SiteHeader.SCRIPT_URL)
         return Html(SiteHeader.html(SiteHeader.Options(
             signedIn = isAuthenticated,
             canAccessUserPages = activeUser,
