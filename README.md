@@ -277,6 +277,10 @@ readiness to recover without counting new failures. It skips checks while `docke
 the deployment lock.
 Events are recorded in `logs/app-health-check.log`; successful cron checks are silent. A restart
 does not resolve the cause of a process or thread limit being reached.
+The watchdog saves a limited pre-restart snapshot and JVM thread dump under
+`logs/app-health-diagnostics/`, retaining snapshots for seven days. It permits at most two restart
+attempts per hour and sends outage, restart-limit, and recovery notifications through the host's
+`mail` command when `APP_HEALTH_ALERT_EMAIL` or cron's `MAILTO` is set.
 
 ### Other useful targets
 
