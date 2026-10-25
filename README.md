@@ -267,6 +267,17 @@ blue/green Spring Boot service, waits for `/actuator/health`, reloads the Compos
 the healthy service, and then stops the old Spring Boot service. Use
 `make docker-upgrade-no-cache` only when you intentionally need a completely fresh image build.
 
+The deployment host can check the active Spring Boot service once per minute without adding a
+monitoring container. Install the cron job with `make install-app-health-cron`, or include it with
+the other managed jobs using `make install-all-crons`. Run `make app-health-check` for an immediate
+check. The watchdog records three consecutive failed readiness checks before considering a
+restart, checks the app directly to distinguish proxy and dependency failures, and waits at least
+15 minutes between restarts. After a restart command finishes, it allows three minutes for
+readiness to recover without counting new failures. It skips checks while `docker-upgrade` holds
+the deployment lock.
+Events are recorded in `logs/app-health-check.log`; successful cron checks are silent. A restart
+does not resolve the cause of a process or thread limit being reached.
+
 ### Other useful targets
 
 ```sh

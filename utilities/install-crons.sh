@@ -3,17 +3,19 @@ set -euo pipefail
 
 mode=${1:-all}
 case "$mode" in
-  postgres|codex|all) ;;
-  *) echo "Usage: $0 {postgres|codex|all}" >&2; exit 2 ;;
+  postgres|codex|app-health|all) ;;
+  *) echo "Usage: $0 {postgres|codex|app-health|all}" >&2; exit 2 ;;
 esac
 
 repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
 make_bin=${CRON_MAKE:-$(command -v make)}
 pg_schedule=${CRON_SCHEDULE:-0 2 * * *}
 codex_schedule=${CODEX_AUTH_CRON_SCHEDULE:-15 3 * * *}
+app_health_schedule=${APP_HEALTH_CRON_SCHEDULE:-* * * * *}
 pg_marker=cozadzban-docker-pg-backup
 pg_legacy_marker=cozazjeb-docker-pg-backup
 codex_marker=cozadzban-codex-auth-check
+app_health_marker=cozadzban-app-health-check
 
 if current=$(crontab -l 2>&1); then
   :
@@ -40,6 +42,11 @@ if [[ -n "$current" ]]; then
         continue
       fi
     fi
+    if [[ "$mode" == app-health || "$mode" == all ]]; then
+      if [[ "$line" == *"# $app_health_marker" ]]; then
+        continue
+      fi
+    fi
     printf '%s\n' "$line" >>"$cron_file"
   done <<<"$current"
 fi
@@ -60,10 +67,18 @@ if [[ "$mode" == codex || "$mode" == all ]]; then
     "$codex_marker" >>"$cron_file"
 fi
 
+if [[ "$mode" == app-health || "$mode" == all ]]; then
+  mkdir -p "$repo_root/logs"
+  printf '%s cd %q && APP_HEALTH_QUIET=1 %q --no-print-directory -s app-health-check >> %q 2>&1 # %s\n' \
+    "$app_health_schedule" "$repo_root" "$make_bin" \
+    "$repo_root/logs/app-health-check.log" "$app_health_marker" >>"$cron_file"
+fi
+
 crontab "$cron_file"
 
 case "$mode" in
   postgres) echo "Installed PostgreSQL backup cron at $pg_schedule" ;;
   codex) echo "Installed Codex authorization cron at $codex_schedule" ;;
-  all) echo "Installed PostgreSQL backup ($pg_schedule) and Codex authorization ($codex_schedule) crons" ;;
+  app-health) echo "Installed app health cron at $app_health_schedule" ;;
+  all) echo "Installed PostgreSQL backup ($pg_schedule), Codex authorization ($codex_schedule), and app health ($app_health_schedule) crons" ;;
 esac

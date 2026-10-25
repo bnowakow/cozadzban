@@ -1,5 +1,5 @@
 
-.PHONY: help docker-up docker-down docker-data-permissions docker-upgrade-log-owner docker-pg-nuke docker-pg-backup install-pg-backup-cron ensure-pg-backup-cron install-codex-auth-cron install-all-crons codex-auth-check build run run-local run-prod test clean docker-logs docker-spring-shell docker-pg-shell docker-upgrade docker-upgrade-no-cache sync-env-files bump-patch bump-minor codex-commit install-git-hooks install-codex-skills codex-skill-prompts codex-docker-login codex-docker-status codex-docker-logout
+.PHONY: help docker-up docker-down docker-data-permissions docker-upgrade-log-owner docker-pg-nuke docker-pg-backup install-pg-backup-cron ensure-pg-backup-cron install-codex-auth-cron install-app-health-cron install-all-crons codex-auth-check app-health-check build run run-local run-prod test clean docker-logs docker-spring-shell docker-pg-shell docker-upgrade docker-upgrade-no-cache sync-env-files bump-patch bump-minor codex-commit install-git-hooks install-codex-skills codex-skill-prompts codex-docker-login codex-docker-status codex-docker-logout
 
 -include .env
 
@@ -20,6 +20,7 @@ help:
 	@printf "    %-31s %s\n" "codex-docker-status" "Check Codex sign-in in the Spring Boot container"
 	@printf "    %-31s %s\n" "codex-docker-logout" "Sign out of Codex in the Spring Boot container"
 	@printf "    %-31s %s\n" "codex-auth-check" "Check cached login and make a small live Codex request"
+	@printf "    %-31s %s\n" "app-health-check" "Check the active app and restart it after repeated failures"
 	@printf "    %-31s %s\n" "sync-env-files" "Sync server and worker env files, then verify byte-for-byte"
 	@printf "\n"
 	@printf "  \033[1;94m%s\033[0m\n" "PostgreSQL in Docker"
@@ -28,7 +29,8 @@ help:
 	@printf "    %-31s %s\n" "install-pg-backup-cron" "Install daily 02:00 PostgreSQL backup cron job"
 	@printf "    %-31s %s\n" "ensure-pg-backup-cron" "Install daily PostgreSQL backup cron job only when missing"
 	@printf "    %-31s %s\n" "install-codex-auth-cron" "Install daily Codex authorization check at 03:15"
-	@printf "    %-31s %s\n" "install-all-crons" "Install all managed daily cron jobs"
+	@printf "    %-31s %s\n" "install-app-health-cron" "Install app health check every minute"
+	@printf "    %-31s %s\n" "install-all-crons" "Install all managed cron jobs"
 	@printf "    %-31s %s\n" "docker-pg-shell" "Open PostgreSQL shell inside docker container"
 	@printf "\n"
 	@printf "  \033[1;94m%s\033[0m\n" "Application"
@@ -72,6 +74,7 @@ COZADZBAN_TEST_TIMEOUT_MINUTES ?=
 COZADZBAN_DOCKER_INFO_TIMEOUT_SECONDS ?=
 CRON_SCHEDULE ?= 0 2 * * *
 CODEX_AUTH_CRON_SCHEDULE ?= 15 3 * * *
+APP_HEALTH_CRON_SCHEDULE ?= * * * * *
 CRON_MAKE ?= $(shell command -v make 2>/dev/null || echo make)
 PG_BACKUP_CRON_MARKER ?= cozadzban-docker-pg-backup
 PG_BACKUP_CRON_LEGACY_MARKER ?= cozazjeb-docker-pg-backup
@@ -124,6 +127,9 @@ codex-docker-logout:
 codex-auth-check:
 	@bash utilities/check-codex-docker-auth.sh
 
+app-health-check:
+	@APP_PORT='$(APP_PORT)' bash utilities/check-app-health.sh
+
 # Recreate PostgreSQL container with a fresh data directory
 docker-pg-nuke:
 	$(MAKE) docker-down
@@ -158,8 +164,11 @@ install-pg-backup-cron: docker-data-permissions
 install-codex-auth-cron:
 	@CODEX_AUTH_CRON_SCHEDULE='$(CODEX_AUTH_CRON_SCHEDULE)' CRON_MAKE='$(CRON_MAKE)' bash utilities/install-crons.sh codex
 
+install-app-health-cron:
+	@APP_HEALTH_CRON_SCHEDULE='$(APP_HEALTH_CRON_SCHEDULE)' CRON_MAKE='$(CRON_MAKE)' bash utilities/install-crons.sh app-health
+
 install-all-crons: docker-data-permissions
-	@CRON_SCHEDULE='$(CRON_SCHEDULE)' CODEX_AUTH_CRON_SCHEDULE='$(CODEX_AUTH_CRON_SCHEDULE)' CRON_MAKE='$(CRON_MAKE)' bash utilities/install-crons.sh all
+	@CRON_SCHEDULE='$(CRON_SCHEDULE)' CODEX_AUTH_CRON_SCHEDULE='$(CODEX_AUTH_CRON_SCHEDULE)' APP_HEALTH_CRON_SCHEDULE='$(APP_HEALTH_CRON_SCHEDULE)' CRON_MAKE='$(CRON_MAKE)' bash utilities/install-crons.sh all
 
 # Install the daily PostgreSQL backup cron job only when no managed backup job exists.
 ensure-pg-backup-cron:

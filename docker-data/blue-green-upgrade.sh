@@ -7,6 +7,11 @@ health_timeout_seconds="${HEALTH_TIMEOUT_SECONDS:-180}"
 health_sleep_seconds="${HEALTH_SLEEP_SECONDS:-1}"
 drain_seconds="${DRAIN_SECONDS:-3}"
 no_cache="${NO_CACHE:-false}"
+health_lock_file="${APP_HEALTH_LOCK_FILE:-logs/app-health.lock}"
+
+mkdir -p "$(dirname "$health_lock_file")"
+exec 9>"$health_lock_file"
+flock -x 9
 
 mkdir -p "$(dirname "$upstream_file")"
 if [ ! -f "$upstream_file" ]; then
