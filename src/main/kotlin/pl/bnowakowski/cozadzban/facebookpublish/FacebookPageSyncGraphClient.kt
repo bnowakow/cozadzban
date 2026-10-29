@@ -24,13 +24,13 @@ class FacebookPageSyncGraphClient(private val properties: FacebookPageProperties
             ?: error("The Page post has no editable photo object")
     }
 
-    fun updatePhotoCaption(photoId: String, token: String, caption: String) {
-        val body = LinkedMultiValueMap<String, String>().apply { add("caption", caption) }
-        val response = client.post().uri("/${properties.graphVersion}/$photoId")
+    fun updatePostMessage(postId: String, token: String, caption: String) {
+        val body = LinkedMultiValueMap<String, String>().apply { add("message", caption) }
+        val response = client.post().uri("/${properties.graphVersion}/$postId")
             .headers { it.setBearerAuth(token) }
             .contentType(MediaType.APPLICATION_FORM_URLENCODED).body(body)
-            .retrieve().body(String::class.java) ?: error("Meta returned an empty photo update response")
-        require(json.readTree(response).path("success").asBoolean(false)) { "Meta did not confirm the photo update" }
+            .retrieve().body(String::class.java) ?: error("Meta returned an empty post update response")
+        require(json.readTree(response).path("success").asBoolean(false)) { "Meta did not confirm the post update" }
     }
 
     fun deletePost(postId: String, token: String) {

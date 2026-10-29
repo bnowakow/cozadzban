@@ -220,7 +220,7 @@ class ArticleService(
             facebookArticleImages?.sourceThumbnailChanged(article.id!!, article.thumbnail)
         }
         if (facebookCaptionChanged(existing, article)) {
-            facebookPageSync?.queueUpdate(id, existing.thumbnail != article.thumbnail || existing.language != article.language)
+            facebookPageSync?.queueUpdate(id, existing.thumbnail != article.thumbnail, existing.language != article.language)
         }
         logFacebookPhotoPersistenceState("replace", article, contentForCache)
         val persistedArticle = logFacebookPhotoReloadedPersistenceState("replace", article, contentForCache)
@@ -366,7 +366,7 @@ class ArticleService(
         }
 
         if (facebookCaptionChanged(existing, saved)) {
-            facebookPageSync?.queueUpdate(id, existing.thumbnail != saved.thumbnail || existing.language != saved.language)
+            facebookPageSync?.queueUpdate(id, existing.thumbnail != saved.thumbnail, existing.language != saved.language)
         }
 
         logFacebookPhotoPersistenceState("patch", saved, contentPatchForTitle ?: contentForChangedUrl)
@@ -626,7 +626,7 @@ class ArticleService(
             val title = titleForSave(article.url, article.title, article.lead, contentForCache)
             if (title != article.title) {
                 articleRepository.save(article.copy(title = title))
-                facebookPageSync?.queueUpdate(article.id, false)
+                facebookPageSync?.queueUpdate(article.id, false, false)
                 finalTitle = title
                 titleUpdated = true
             }

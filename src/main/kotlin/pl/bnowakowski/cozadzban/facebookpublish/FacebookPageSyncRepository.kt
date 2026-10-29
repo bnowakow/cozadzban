@@ -13,10 +13,11 @@ data class FacebookSyncProblem(val id: Long, val articleId: Long, val language: 
 
 @Repository
 class FacebookPageSyncRepository(private val jdbc: NamedParameterJdbcTemplate) {
-    fun queueUpdate(articleId: Long, replacementRequired: Boolean) {
+    fun queueUpdate(articleId: Long, thumbnailChanged: Boolean, languageChanged: Boolean) {
         jdbc.update(
             """INSERT INTO facebook_page_sync(publication_id, action, status, replacement_required)
-               SELECT id, 'UPDATE', 'PENDING', :replacementRequired
+               SELECT id, 'UPDATE', 'PENDING',
+                      :languageChanged OR (:thumbnailChanged AND COALESCE(image_source = 'THUMBNAIL', false))
                FROM facebook_page_publication WHERE article_id = :articleId
                  AND status IN ('PUBLISHING', 'PUBLISHED', 'NEEDS_RECONCILIATION')
                  AND NOT EXISTS (SELECT 1 FROM facebook_page_sync deletion
@@ -28,7 +29,8 @@ class FacebookPageSyncRepository(private val jdbc: NamedParameterJdbcTemplate) {
                    dirty = facebook_page_sync.dirty OR facebook_page_sync.status IN ('ATTEMPTING', 'NEEDS_RECONCILIATION'),
                    status = CASE WHEN facebook_page_sync.status IN ('ATTEMPTING', 'NEEDS_RECONCILIATION')
                                  THEN facebook_page_sync.status ELSE 'PENDING' END""",
-            mapOf("articleId" to articleId, "replacementRequired" to replacementRequired),
+            mapOf("articleId" to articleId, "thumbnailChanged" to thumbnailChanged,
+                "languageChanged" to languageChanged),
         )
     }
 

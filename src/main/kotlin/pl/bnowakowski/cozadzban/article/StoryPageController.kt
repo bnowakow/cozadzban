@@ -139,6 +139,7 @@ class StoryPageController(
             .source-name{color:var(--text);font-weight:700}
             blockquote{border-left:4px solid #f36b32;margin:1.5rem 0;padding-left:1rem}
             main a{color:var(--link)}.story-action{display:inline-flex;align-items:center;gap:.45rem;font-weight:700}.story-action svg{width:1.1rem;height:1.1rem;flex:none;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}.facebook-icon{display:inline-flex;align-items:center;justify-content:center;width:1.1rem;height:1.1rem;flex:none;border-radius:50%;background:#1877f2;color:#fff;font:bold 1rem/1 Arial,sans-serif}.original{margin-top:1rem}
+            .story-admin-actions{display:flex;gap:.75rem;margin:1rem 0;flex-wrap:wrap}.story-admin-action{padding:.45rem .8rem;border:1px solid var(--muted);border-radius:6px;text-decoration:none;font-weight:700}.story-admin-action:hover{background:var(--page)}
             @media(max-width:46rem){main{margin:calc(66px + 1rem) 1rem 1rem;padding:1.25rem}}
             """.trimIndent(),
         )
@@ -165,6 +166,13 @@ class StoryPageController(
         meta.appendElement("time")
             .attr("datetime", date.toString()).text(dateLabel)
         main.appendElement("h1").text(title)
+        if (isAdmin && article.id != null) {
+            val actions = main.appendElement("div").attr("class", "story-admin-actions")
+            actions.appendElement("a").attr("class", "story-admin-action")
+                .attr("href", "/?editArticle=${article.id}").text("Edit article")
+            actions.appendElement("a").attr("class", "story-admin-action")
+                .attr("href", "/?deleteArticle=${article.id}").text("Delete article")
+        }
         storyImage?.let {
             main.appendElement("img").attr("src", it).attr("alt", title)
                 .attr("onerror", "this.onerror=null;this.src='/cozadzban-logo.png'")

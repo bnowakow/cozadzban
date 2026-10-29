@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package pl.bnowakowski.cozadzban.facebookpublish
 
+import com.fasterxml.jackson.databind.ObjectMapper
 import org.slf4j.LoggerFactory
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
@@ -15,6 +16,7 @@ class FacebookPageSyncScheduler(
     private val graph: FacebookPageSyncGraphClient,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
+    private val json = ObjectMapper()
 
     @Scheduled(initialDelay = 45_000, fixedDelay = 60_000)
     fun synchronize() {
@@ -35,22 +37,36 @@ class FacebookPageSyncScheduler(
                             repository.fail(job.id, false, "The article was deleted before its post could be updated.")
                             return@repeat
                         }
-                        val photoId = job.photoId ?: graph.photoId(job.postId, token).also {
-                            repository.savePhotoId(job.publicationId, it)
-                        }
-                        graph.updatePhotoCaption(photoId, token, FacebookPostCaption.forArticle(article, job.imageSource))
+                        graph.updatePostMessage(job.postId, token, FacebookPostCaption.forArticle(article, job.imageSource))
                     }
                     "DELETE" -> graph.deletePost(job.postId, token)
                     else -> error("Unsupported Facebook sync action")
                 }
                 repository.confirm(job.id, job.action)
             } catch (ex: RestClientResponseException) {
+                val detail = metaError(ex)
                 repository.fail(job.id, !ex.statusCode.is4xxClientError || ex.statusCode.value() == 429,
-                    "Meta HTTP ${ex.statusCode.value()}")
+                    detail)
+                log.warn("Facebook Page sync Meta error for post {}: {}", job.postId, detail)
             } catch (ex: Exception) {
                 repository.fail(job.id, true, ex.javaClass.simpleName)
                 log.warn("Facebook Page sync outcome needs review for post {}: {}", job.postId, ex.javaClass.simpleName)
             }
         }
+    }
+
+    private fun metaError(ex: RestClientResponseException): String {
+        val error = runCatching { json.readTree(ex.responseBodyAsString).path("error") }.getOrNull()
+        val code = error?.path("code")?.takeIf { it.isNumber }?.asInt()?.toString()
+        val subcode = error?.path("error_subcode")?.takeIf { it.isNumber }?.asInt()?.toString()
+        val message = error?.path("message")?.asText("")
+            ?.replace(Regex("(?i)access_token=[^&\\s]+"), "access_token=[redacted]")
+            ?.take(180)
+        return listOfNotNull(
+            "Meta HTTP ${ex.statusCode.value()}",
+            code?.let { "code $it" },
+            subcode?.let { "subcode $it" },
+            message?.takeIf { it.isNotBlank() },
+        ).joinToString(": ").take(300)
     }
 }

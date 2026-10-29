@@ -32,6 +32,7 @@ enum class CozadzbanTopBarPage {
     FACEBOOK_STATISTICS,
     FACEBOOK_THUMBNAILS,
     ARTICLE_CONTENT_CACHE,
+    DEBUG_TOOLS,
 }
 
 private const val TOP_BAR_MENU_BUTTON_SIZE = "34px"
@@ -262,6 +263,11 @@ private fun Component.buildSharedMenu(
         if (currentPage != CozadzbanTopBarPage.ARTICLE_CONTENT_CACHE) {
             subMenu.addIconItem("Article content cache", VaadinIcon.DATABASE) {
                 ui.ifPresent { it.navigate("admin/article-content-cache") }
+            }
+        }
+        if (currentPage != CozadzbanTopBarPage.DEBUG_TOOLS) {
+            subMenu.addIconItem("Debug tools", VaadinIcon.COG) {
+                ui.ifPresent { it.navigate("admin/debug-tools") }
             }
         }
         if (facebookImportJobService != null) {

@@ -90,6 +90,7 @@ object SiteHeader {
             link(items, "/admin/facebook-statistics", "Story and Facebook statistics", "chart")
             link(items, "/admin/facebook-thumbnails", "Article thumbnails", "picture")
             link(items, "/admin/article-content-cache", "Article content cache", "database")
+            link(items, "/admin/debug-tools", "Debug tools", "tools")
             if (options.importAvailable) {
                 if (options.importTypes.isEmpty()) {
                     button(items, "Import Facebook unavailable", "download", null).attr("disabled", "")
@@ -139,6 +140,7 @@ object SiteHeader {
             "chart" -> "M1 14h14v1H1zM2 8h3v5H2zm4-6h3v11H6zm4 4h3v7h-3z"
             "picture" -> "M1 2h14v12H1zm2 2v8h10V4zm2 1a2 2 0 1 0 0 4 2 2 0 0 0 0-4Zm-1 6 3-3 2 2 2-2 2 3z"
             "database" -> "M8 1c4 0 7 1 7 3v8c0 2-3 3-7 3s-7-1-7-3V4c0-2 3-3 7-3Zm0 2C5 3 3 3.6 3 4s2 1 5 1 5-.6 5-1-2-1-5-1Zm-5 4v2c0 .4 2 1 5 1s5-.6 5-1V7c-1.3.7-3 1-5 1S4.3 7.7 3 7Zm0 5c0 .4 2 1 5 1s5-.6 5-1v-1c-1.3.7-3 1-5 1s-3.7-.3-5-1z"
+            "tools" -> "M10 1a4 4 0 0 0-4 5L1 11l4 4 5-5a4 4 0 0 0 5-5l-3 3-3-3 3-3a4 4 0 0 0-2-1Z"
             "download" -> "M7 1h2v8l3-3 1 1-5 5-5-5 1-1 3 3zM1 13h14v2H1z"
             "stop" -> "M2 2h12v12H2z"
             else -> return

@@ -104,6 +104,7 @@ class ArticleListView(
     private var stopFacebookImportButton: Button? = null
     private val shownFacebookImportFailureRunIds = mutableSetOf<String>()
     private var handledAddArticleNavigationRequest = false
+    private var handledStoryActionNavigationRequest = false
     private var activeAddArticleDialog: Dialog? = null
 
     // Filter state — captured by dataProvider lambdas via `this`
@@ -237,14 +238,33 @@ class ArticleListView(
             .getSingleParameter("addArticle")
             .filter { it == "1" || it.equals("true", ignoreCase = true) }
             .isPresent
-        if (!shouldOpenAddArticle || handledAddArticleNavigationRequest) {
+        if (shouldOpenAddArticle && !handledAddArticleNavigationRequest) {
+            handledAddArticleNavigationRequest = true
+            openAddArticleDialog()
+            ui.ifPresent { currentUi ->
+                currentUi.page.executeJs("window.history.replaceState({}, '', '/');")
+            }
             return
         }
 
-        handledAddArticleNavigationRequest = true
-        openAddArticleDialog()
+        if (handledStoryActionNavigationRequest || !isAuthenticated ||
+            authenticatedUser?.status != AppUserStatus.ACTIVE || authenticatedUser?.role != Role.ADMIN
+        ) return
+
+        val editId = event.location.queryParameters.getSingleParameter("editArticle").orElse(null)?.toLongOrNull()
+        val deleteId = event.location.queryParameters.getSingleParameter("deleteArticle").orElse(null)?.toLongOrNull()
+        val articleId = editId ?: deleteId ?: return
+        handledStoryActionNavigationRequest = true
         ui.ifPresent { currentUi ->
             currentUi.page.executeJs("window.history.replaceState({}, '', '/');")
+        }
+        val article = articleRepository.findById(articleId).orElse(null)
+        if (article == null) {
+            showError("Article $articleId was not found")
+        } else if (editId != null) {
+            openEditArticleDialog(article)
+        } else {
+            confirmDeleteArticle(article)
         }
     }
 
