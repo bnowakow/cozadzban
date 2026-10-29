@@ -275,7 +275,7 @@ paths:
       security: []
       responses:
         '200':
-          description: Sitemap XML with story lastmod from publishedAt or createdAt
+          description: Sitemap XML listing public pages and stories with an XSLT view for browsers; lastmod is omitted because article edits are not timestamped
           content:
             application/xml:
               schema:

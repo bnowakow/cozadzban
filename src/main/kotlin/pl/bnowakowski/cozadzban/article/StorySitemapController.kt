@@ -13,7 +13,8 @@ class StorySitemapController(private val articles: ArticleRepository) {
     @GetMapping("/sitemap.xml", produces = [MediaType.APPLICATION_XML_VALUE])
     fun sitemap(): ResponseEntity<String> {
         val xml = buildString {
-            append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>")
+            append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
+            append("<?xml-stylesheet type=\"text/xsl\" href=\"/sitemap.xsl\"?>\n")
             append("<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">")
             listOf(
                 "https://cozadzban.pl/",
@@ -25,9 +26,7 @@ class StorySitemapController(private val articles: ArticleRepository) {
                 .forEach { url -> append("<url><loc>${url.replace("&", "&amp;")}</loc></url>") }
             articles.findForRss(null).forEach { article ->
                 article.id?.let { id ->
-                    append("<url><loc>https://cozadzban.pl/stories/$id</loc>")
-                    (article.publishedAt ?: article.createdAt)?.let { append("<lastmod>$it</lastmod>") }
-                    append("</url>")
+                    append("<url><loc>https://cozadzban.pl/stories/$id</loc></url>")
                 }
             }
             append("</urlset>")
