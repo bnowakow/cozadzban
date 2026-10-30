@@ -973,8 +973,15 @@ class ArticleListView(
 
         val content = Div()
         val generatedImage = article.id?.let { articleImages?.status(it) == "GENERATED" } == true
-        val thumbnail = if (generatedImage) "/generated-images/${article.id}.png"
-            else article.thumbnail?.trim()?.takeIf { FacebookArticleImageGenerationRepository.hasUsableSourceThumbnail(it) }
+        val sourceThumbnail = article.thumbnail?.trim()
+            ?.takeIf { FacebookArticleImageGenerationRepository.hasUsableSourceThumbnail(it) }
+        val thumbnail = when {
+            generatedImage -> "/generated-images/${article.id}.png"
+            sourceThumbnail == null -> null
+            runCatching { URI(sourceThumbnail).host?.lowercase() }.getOrNull() == "lookaside.fbsbx.com" ->
+                article.id?.let { "/rss/image/$it" } ?: sourceThumbnail
+            else -> sourceThumbnail
+        }
         thumbnail?.takeIf { it.isNotBlank() }?.let { imageUrl ->
             val imageLink = Anchor(article.publisherUrl ?: article.url)
             imageLink.setTarget("_blank")

@@ -658,7 +658,7 @@ class ArticleListViewTest {
     }
 
     @Test
-    fun `article card hides thumbnail image when browser reports load error`() {
+    fun `article card serves source thumbnail through local image proxy`() {
         stubArticles()
         val article = Article(
             id = 40L,
@@ -685,9 +685,9 @@ class ArticleListViewTest {
         val card = method.invoke(view, article) as Component
 
         val image = findComponents(card, Image::class.java)
-            .single { it.src == article.thumbnail }
+            .single { it.src == "/rss/image/40" }
 
-        assertEquals(article.thumbnail, image.src)
+        assertEquals("/rss/image/40", image.src)
     }
 
     @Test
