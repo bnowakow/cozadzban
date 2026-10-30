@@ -4,6 +4,7 @@
 package pl.bnowakowski.cozadzban.analytics
 
 import org.jsoup.Jsoup
+import com.fasterxml.jackson.databind.ObjectMapper
 import org.jsoup.nodes.DataNode
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -129,7 +130,29 @@ class AnalyticsIndexHtmlRequestListenerTest {
             assertEquals(4, doc.select("nav a").size)
             assertTrue(doc.select("#czj-initial-home script").isEmpty())
             assertFalse(doc.body().html().contains("987654"))
+            val data = ObjectMapper().readTree(doc.selectFirst("script[type='application/ld+json']")!!.data())
+            val collection = data["@graph"][1]
+            assertEquals("CollectionPage", collection["@type"].asText())
+            val items = collection["mainEntity"]["itemListElement"]
+            assertEquals(1, items.size())
+            assertEquals("https://cozadzban.pl/stories/42", items[0]["url"].asText())
+            assertEquals("Historia <pilna>", items[0]["name"].asText())
         }
+    }
+
+    @Test
+    fun `UI theme is preloaded without blocking initial content and supports no JavaScript`() {
+        val doc = Jsoup.parse("<head><link rel='stylesheet' href='aura/aura.css?v=1' data-file-path='aura/aura.css'></head>")
+        val method = AnalyticsIndexHtmlRequestListener::class.java.getDeclaredMethod(
+            "deferUiStylesheet", org.jsoup.nodes.Document::class.java,
+        )
+        method.isAccessible = true
+        method.invoke(AnalyticsIndexHtmlRequestListener(AnalyticsProperties()), doc)
+        val preload = doc.selectFirst("link[rel=preload]")!!
+        assertEquals("style", preload.attr("as"))
+        assertEquals("aura/aura.css?v=1", preload.attr("href"))
+        assertTrue(preload.attr("onload").contains("this.rel='stylesheet'"))
+        assertTrue(doc.selectFirst("noscript")!!.html().contains("rel=\"stylesheet\""))
     }
 
     @Test

@@ -10,6 +10,8 @@ import jakarta.servlet.http.HttpServletResponse
 import org.slf4j.LoggerFactory
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
+import org.springframework.context.ApplicationContext
+import org.springframework.security.web.access.intercept.AuthorizationFilter
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.http.ProblemDetail
@@ -35,6 +37,7 @@ class SecurityConfig(
     private val uiRoleAuthoritiesMapper: UiRoleAuthoritiesMapper,
     private val machineToMachineAuthenticationFilter: MachineToMachineAuthenticationFilter,
     private val appUserRepository: AppUserRepository,
+    private val applicationContext: ApplicationContext,
 ) {
 
     @Bean
@@ -161,6 +164,7 @@ class SecurityConfig(
         http.addFilterBefore(machineToMachineAuthenticationFilter, BearerTokenAuthenticationFilter::class.java)
         // Register only inside Spring Security, after session/bearer authentication is resolved.
         http.addFilterAfter(UiSessionAuthorizationFilter(appUserRepository), BearerTokenAuthenticationFilter::class.java)
+        http.addFilterBefore(PublicPageNotFoundFilter(applicationContext), AuthorizationFilter::class.java)
         return http.build()
     }
 

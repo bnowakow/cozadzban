@@ -10,6 +10,7 @@ import org.jsoup.nodes.DataNode
 import org.jsoup.nodes.Document
 import org.springframework.stereotype.Component
 import pl.bnowakowski.cozadzban.article.ArticleRepository
+import pl.bnowakowski.cozadzban.ui.SearchStructuredData
 import java.net.URI
 
 /**
@@ -39,12 +40,24 @@ class AnalyticsIndexHtmlRequestListener(
             injectSearchMetadata(doc, language)
             if (response.vaadinRequest.pathInfo.orEmpty().trim('/').isEmpty()) {
                 injectHomeContent(doc, language)
+                deferUiStylesheet(doc)
             }
             injectVaadinDevToolsBootstrap(doc)
             injectThemeBootstrap(doc)
             injectConsentBannerStyles(doc)
             injectConsentBannerHtml(doc)
             injectAnalyticsScript(doc)
+        }
+    }
+
+    private fun deferUiStylesheet(doc: Document) {
+        // The initial story list has its own critical CSS. Fetch Aura immediately,
+        // without making that list wait for the interactive UI's theme to load.
+        doc.select("link[rel=stylesheet][data-file-path='aura/aura.css']").forEach { stylesheet ->
+            val fallback = stylesheet.clone()
+            stylesheet.attr("rel", "preload").attr("as", "style")
+                .attr("onload", "this.onload=null;this.rel='stylesheet'")
+            doc.head().appendElement("noscript").appendChild(fallback)
         }
     }
 
@@ -124,6 +137,22 @@ class AnalyticsIndexHtmlRequestListener(
         ).forEach { (href, label) ->
             navigation.appendElement("a").attr("href", href).text(label)
         }
+        val canonical = doc.selectFirst("link[rel=canonical]")?.attr("href") ?: "https://cozadzban.pl/"
+        SearchStructuredData.append(doc, mapOf(
+            "@context" to "https://schema.org",
+            "@graph" to listOf(
+                mapOf("@type" to "WebSite", "@id" to "https://cozadzban.pl/#website",
+                    "url" to "https://cozadzban.pl/", "name" to "Co za dzban"),
+                mapOf("@type" to "CollectionPage", "@id" to "$canonical#page", "url" to canonical,
+                    "name" to main.selectFirst("h1")!!.text(), "inLanguage" to (language ?: "en"),
+                    "isPartOf" to mapOf("@id" to "https://cozadzban.pl/#website"),
+                    "mainEntity" to mapOf("@type" to "ItemList", "itemListElement" to
+                        list.select("li h3 a").mapIndexed { index, link ->
+                            mapOf("@type" to "ListItem", "position" to index + 1,
+                                "url" to "https://cozadzban.pl${link.attr("href")}", "name" to link.text())
+                        })),
+            ),
+        ))
         doc.head().appendElement("style").attr("id", "czj-initial-home-style").appendText(
             """
             #czj-initial-home{box-sizing:border-box;max-width:42rem;margin:calc(66px + 1.35rem) auto 2rem;padding:1.5rem;background:var(--lumo-base-color,#fff);color:var(--lumo-body-text-color,#15171a);font:16px/1.6 system-ui,sans-serif;border-radius:8px}

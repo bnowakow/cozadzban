@@ -1,6 +1,7 @@
 package pl.bnowakowski.cozadzban.article
 
 import org.jsoup.Jsoup
+import com.fasterxml.jackson.databind.ObjectMapper
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -32,12 +33,35 @@ class StoryPageControllerTest {
         assertTrue(html.contains("Wiadomość &lt;pilna&gt;"))
         assertFalse(doc.body().outerHtml().contains("<pilna>"))
         assertEquals("https://example.com/story", doc.selectFirst("a.original")?.attr("href"))
+        val data = ObjectMapper().readTree(doc.selectFirst("script[type='application/ld+json']")!!.data())
+        assertEquals("https://cozadzban.pl/stories/42", data["url"].asText())
+        assertEquals("https://example.com/story", data["about"]["url"].asText())
+        assertEquals("Wiadomość <pilna>", data["name"].asText())
+        assertFalse(data.has("author"))
     }
 
     @Test
     fun `returns 404 for a missing story`() {
         whenever(articles.findById(404)).thenReturn(Optional.empty())
-        assertEquals(404, controller.story(404).statusCode.value())
+        val response = controller.story(404)
+        assertEquals(404, response.statusCode.value())
+        val doc = Jsoup.parse(response.body.orEmpty())
+        assertEquals("Page not found", doc.selectFirst("h1")!!.text())
+        assertEquals("noindex", doc.selectFirst("meta[name=robots]")!!.attr("content"))
+        assertTrue(doc.select("a[href='/']").isNotEmpty())
+    }
+
+    @Test
+    fun `structured data cannot terminate the script element or invent a publication date`() {
+        whenever(articles.findById(42)).thenReturn(Optional.of(article().copy(
+            title = "Title </script><script>alert(1)</script>", publishedAt = null, createdAt = null,
+        )))
+        val doc = Jsoup.parse(controller.story(42).body.orEmpty())
+        val script = doc.selectFirst("script[type='application/ld+json']")!!
+        val data = ObjectMapper().readTree(script.data())
+        assertEquals("Title </script><script>alert(1)</script>", data["name"].asText())
+        assertFalse(data.has("datePublished"))
+        assertTrue(doc.select("script").none { it.data() == "alert(1)" })
     }
 
     private fun article() = Article(

@@ -222,6 +222,9 @@ PostgreSQL is exposed on
 `http://localhost:${APP_PORT:-8086}`. Spring Boot containers are only reachable on the Compose
 network; host nginx should proxy to `127.0.0.1:${APP_PORT:-8086}`.
 
+For public URL redirects, www TLS troubleshooting, and SEO scan verification, see
+[SEO deployment checks](doc/seo-deployment.md).
+
 The active Spring Boot container runs with the `prod` Spring profile and connects to PostgreSQL
 through the Compose network using:
 

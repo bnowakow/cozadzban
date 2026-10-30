@@ -22,6 +22,8 @@ import pl.bnowakowski.cozadzban.facebookimport.FacebookImportJobService
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportProperties
 import pl.bnowakowski.cozadzban.security.UiPrincipalMapper
 import pl.bnowakowski.cozadzban.ui.SiteHeader
+import pl.bnowakowski.cozadzban.ui.SearchStructuredData
+import pl.bnowakowski.cozadzban.ui.PublicNotFoundPage
 import pl.bnowakowski.cozadzban.user.Role
 import java.net.URI
 import java.time.Instant
@@ -43,7 +45,8 @@ class StoryPageController(
 
     @GetMapping("/stories/{id}", produces = [MediaType.TEXT_HTML_VALUE])
     fun story(@PathVariable id: Long): ResponseEntity<String> {
-        val article = articles.findById(id).orElse(null) ?: return ResponseEntity.notFound().build()
+        val article = articles.findById(id).orElse(null) ?: return ResponseEntity.status(404)
+            .contentType(MediaType.TEXT_HTML).body(PublicNotFoundPage.html())
         val request = (RequestContextHolder.getRequestAttributes() as? ServletRequestAttributes)?.request
         val authentication = SecurityContextHolder.getContext().authentication
         val signedIn = authentication != null && authentication.isAuthenticated && authentication.principal != "anonymousUser"
@@ -111,6 +114,18 @@ class StoryPageController(
         storyImage?.let {
             head.appendElement("meta").attr("property", "og:image").attr("content", "https://cozadzban.pl$it")
         }
+        SearchStructuredData.append(doc, buildMap {
+            put("@context", "https://schema.org")
+            put("@type", "WebPage")
+            put("url", canonical)
+            put("name", title)
+            put("description", description)
+            put("inLanguage", language)
+            put("isPartOf", mapOf("@type" to "WebSite", "url" to "https://cozadzban.pl/", "name" to "Co za dzban"))
+            put("about", mapOf("@type" to "Article", "url" to sourceLink, "headline" to title))
+            (article.publishedAt ?: article.createdAt)?.let { put("datePublished", it.toString()) }
+            storyImage?.let { put("primaryImageOfPage", "https://cozadzban.pl$it") }
+        })
         head.appendElement("script").appendChild(DataNode(
             """
             (function() {

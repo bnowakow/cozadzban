@@ -62,6 +62,23 @@ class UiSessionAuthorizationTest {
         whenever(users.findByEmail(admin.email)).thenReturn(admin)
     }
 
+    @Test
+    fun `unknown public pages have a helpful 404 rather than an authentication challenge`() {
+        mvc.get("/missing-seo-test-page") { header("Accept", "text/html") }
+            .andExpect {
+                status { isNotFound() }
+                content { contentTypeCompatibleWith("text/html") }
+                content { string(org.hamcrest.Matchers.containsString("Page not found")) }
+                header { doesNotExist("WWW-Authenticate") }
+            }
+    }
+
+    @Test
+    fun `unknown protected API paths retain authorization semantics`() {
+        mvc.get("/api/missing-seo-test-page") { header("Accept", "text/html") }
+            .andExpect { status { isUnauthorized() } }
+    }
+
     @ParameterizedTest
     @ValueSource(strings = ["/admin", "/admin/article-content-cache", "/admin/facebook-pages", "/"])
     fun `demoted admin cannot dispatch events from an existing view`(route: String) {
