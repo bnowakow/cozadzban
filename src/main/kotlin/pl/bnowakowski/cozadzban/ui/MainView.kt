@@ -14,6 +14,7 @@ import com.vaadin.flow.component.dialog.Dialog
 import com.vaadin.flow.component.html.Anchor
 import com.vaadin.flow.component.html.Div
 import com.vaadin.flow.component.html.H1
+import com.vaadin.flow.component.html.H2
 import com.vaadin.flow.component.Html
 import com.vaadin.flow.component.html.Image
 import com.vaadin.flow.component.html.Span
@@ -206,6 +207,8 @@ class ArticleListView(
         configureFacebookImportHistoryPanel()
         configureFacebookImportProgressPanel()
         val filterBar = buildFilterBar()
+        val homeHeading = H1("Co za dzban")
+        homeHeading.addClassName("czj-home-heading")
 
         feed.setRenderer(ComponentRenderer { article -> buildArticleCard(article) })
         feed.setDataProvider(dataProvider)
@@ -219,7 +222,8 @@ class ArticleListView(
         refreshFacebookImportHistoryPanel()
         refreshFacebookImportProgressPanel(showFailureDialog = false)
         configureFacebookImportProgressPolling()
-        feedShell.add(articleProposalReviewPanel, facebookImportHistoryPanel, facebookImportProgressPanel, filterBar, feed)
+        feedShell.add(articleProposalReviewPanel, facebookImportHistoryPanel, facebookImportProgressPanel,
+            homeHeading, filterBar, feed)
         feedShell.expand(feed)
 
         val versionBadge = buildVersionBadge()
@@ -1113,10 +1117,11 @@ class ArticleListView(
         ).filter { it.isNotBlank() }.toSet()
     }
 
-    private fun buildArticleTitle(text: String): Div {
-        val title = Div()
+    private fun buildArticleTitle(text: String): H2 {
+        val title = H2()
         title.addClassName("czj-article-title")
         title.text = text
+        title.element.style.set("margin", "0")
         title.element.style.set("font-size", "1.45rem")
         title.element.style.set("font-weight", "800")
         title.element.style.set("line-height", "1.28")

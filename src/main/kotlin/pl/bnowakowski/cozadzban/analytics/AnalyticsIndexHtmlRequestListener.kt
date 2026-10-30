@@ -8,6 +8,7 @@ import com.vaadin.flow.server.VaadinServiceInitListener
 import org.jsoup.nodes.DataNode
 import org.jsoup.nodes.Document
 import org.springframework.stereotype.Component
+import pl.bnowakowski.cozadzban.article.ArticleRepository
 
 /**
  * Vaadin [VaadinServiceInitListener] that:
@@ -23,12 +24,17 @@ import org.springframework.stereotype.Component
 @Component
 class AnalyticsIndexHtmlRequestListener(
     private val analytics: AnalyticsProperties,
+    private val articles: ArticleRepository? = null,
 ) : VaadinServiceInitListener {
 
     override fun serviceInit(event: ServiceInitEvent) {
         event.addIndexHtmlRequestListener { response ->
             val doc: Document = response.document
-            injectSearchMetadata(doc, response.vaadinRequest.getParameter("lang"))
+            val language = response.vaadinRequest.getParameter("lang")
+            injectSearchMetadata(doc, language)
+            if (response.vaadinRequest.pathInfo.orEmpty().trim('/').isEmpty()) {
+                injectHomeContent(doc, language)
+            }
             injectVaadinDevToolsBootstrap(doc)
             injectThemeBootstrap(doc)
             injectConsentBannerStyles(doc)
@@ -60,10 +66,58 @@ class AnalyticsIndexHtmlRequestListener(
             doc.head().appendElement("link").attr("rel", "alternate")
                 .attr("hreflang", lang).attr("href", "https://cozadzban.pl/?lang=$lang")
         }
+        doc.head().appendElement("link").attr("rel", "alternate")
+            .attr("hreflang", "x-default").attr("href", "https://cozadzban.pl/")
         doc.head().appendElement("meta").attr("property", "og:title").attr("content", title)
         doc.head().appendElement("meta").attr("property", "og:description").attr("content", description)
         doc.head().appendElement("meta").attr("property", "og:url").attr("content", url)
         doc.head().appendElement("meta").attr("property", "og:locale").attr("content", if (polish) "pl_PL" else "en_US")
+    }
+
+    /** Visible until Vaadin renders; also gives non-JavaScript readers a useful homepage. */
+    private fun injectHomeContent(doc: Document, requestedLanguage: String?) {
+        val outlet = doc.selectFirst("#outlet") ?: return
+        val language = requestedLanguage?.lowercase()?.takeIf { it == "pl" || it == "en" }
+        val polish = language == "pl"
+        val main = outlet.appendElement("main").attr("id", "czj-initial-home")
+        main.appendElement("h1").text("Co za dzban")
+        main.appendElement("p").text(if (polish) {
+            "Wiadomości i historie z różnych źródeł. Czytaj streszczenia i przejdź do oryginalnych publikacji."
+        } else {
+            "News and stories from different sources. Read summaries and follow links to the original publications."
+        })
+        main.appendElement("h2").text(if (polish) "Najnowsze historie" else "Recent stories")
+        val list = main.appendElement("ul")
+        articles?.findPage(0, 16, "publishedAt", "desc", language)
+            ?.asSequence()
+            ?.filter { it.id != null && !it.title.isNullOrBlank() }
+            ?.take(12)
+            ?.forEach { article ->
+                list.appendElement("li").appendElement("a")
+                    .attr("href", "/stories/${article.id}")
+                    .text(article.title!!.trim())
+            }
+        val navigation = main.appendElement("nav")
+            .attr("aria-label", if (polish) "Więcej na stronie" else "More on this site")
+        listOf(
+            "/sitemap.xml" to (if (polish) "Mapa strony" else "Sitemap"),
+            "/rss" to "RSS",
+            "/privacy-policy.html" to (if (polish) "Polityka prywatności" else "Privacy policy"),
+            "/user-data-deletion.html" to (if (polish) "Usuwanie danych" else "User data deletion"),
+        ).forEach { (href, label) ->
+            navigation.appendElement("a").attr("href", href).text(label)
+        }
+        doc.head().appendElement("style").attr("id", "czj-initial-home-style").appendText(
+            """
+            #czj-initial-home{box-sizing:border-box;max-width:42rem;margin:calc(66px + 1.35rem) auto 2rem;padding:1.5rem;background:var(--lumo-base-color,#fff);color:var(--lumo-body-text-color,#15171a);font:16px/1.6 system-ui,sans-serif;border-radius:8px}
+            #czj-initial-home h1{margin:0 0 .5rem;font-size:clamp(1.75rem,5vw,2.25rem);line-height:1.2}
+            #czj-initial-home h2{margin:1.5rem 0 .5rem;font-size:1.3rem}
+            #czj-initial-home ul{padding-left:1.35rem}#czj-initial-home li{margin:.45rem 0}
+            #czj-initial-home a{color:var(--lumo-primary-text-color,#a83d13)}
+            #czj-initial-home nav{display:flex;flex-wrap:wrap;gap:.5rem 1rem;margin-top:1.5rem}
+            @media(max-width:46rem){#czj-initial-home{margin:calc(66px + 1rem) 1rem 1rem}}
+            """.trimIndent(),
+        )
     }
 
     private fun injectVaadinDevToolsBootstrap(doc: Document) {

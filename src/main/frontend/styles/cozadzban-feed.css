@@ -837,6 +837,16 @@ vaadin-button.czj-filter-chip-active {
   row-gap: 1rem !important;
 }
 
+.czj-home-heading {
+  box-sizing: border-box;
+  color: var(--lumo-header-text-color);
+  font-size: clamp(1.75rem, 5vw, 2.25rem);
+  line-height: 1.2;
+  margin: 0 0 1rem;
+  padding: 0 0.25rem;
+  width: 100%;
+}
+
 .czj-date-filter-button {
   min-width: 7.5rem;
 }

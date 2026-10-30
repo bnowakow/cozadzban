@@ -63,7 +63,8 @@ class AnalyticsIndexHtmlRequestListenerTest {
         assertTrue(polish.selectFirst("meta[name=description]")!!.attr("content").contains("wiadomości"))
         assertTrue(english.selectFirst("meta[name=description]")!!.attr("content").contains("news"))
         assertEquals("https://cozadzban.pl/?lang=pl", polish.selectFirst("link[rel=canonical]")?.attr("href"))
-        assertEquals(2, polish.select("link[hreflang]").size)
+        assertEquals(3, polish.select("link[hreflang]").size)
+        assertEquals("https://cozadzban.pl/", polish.selectFirst("link[hreflang=x-default]")?.attr("href"))
     }
 
     private fun injectAnalyticsScript(listener: AnalyticsIndexHtmlRequestListener, doc: org.jsoup.nodes.Document) {
