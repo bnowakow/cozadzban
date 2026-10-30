@@ -5,10 +5,12 @@ package pl.bnowakowski.cozadzban.analytics
 
 import com.vaadin.flow.server.ServiceInitEvent
 import com.vaadin.flow.server.VaadinServiceInitListener
+import com.vaadin.flow.server.VaadinServletRequest
 import org.jsoup.nodes.DataNode
 import org.jsoup.nodes.Document
 import org.springframework.stereotype.Component
 import pl.bnowakowski.cozadzban.article.ArticleRepository
+import java.net.URI
 
 /**
  * Vaadin [VaadinServiceInitListener] that:
@@ -30,6 +32,9 @@ class AnalyticsIndexHtmlRequestListener(
     override fun serviceInit(event: ServiceInitEvent) {
         event.addIndexHtmlRequestListener { response ->
             val doc: Document = response.document
+            (response.vaadinRequest as? VaadinServletRequest)?.httpServletRequest?.let { request ->
+                makeBaseHrefAbsolute(doc, request.requestURL.toString())
+            }
             val language = response.vaadinRequest.getParameter("lang")
             injectSearchMetadata(doc, language)
             if (response.vaadinRequest.pathInfo.orEmpty().trim('/').isEmpty()) {
@@ -40,6 +45,14 @@ class AnalyticsIndexHtmlRequestListener(
             injectConsentBannerStyles(doc)
             injectConsentBannerHtml(doc)
             injectAnalyticsScript(doc)
+        }
+    }
+
+    private fun makeBaseHrefAbsolute(doc: Document, requestUrl: String) {
+        // Vaadin generates a route-relative base before invoking this listener.
+        // Resolve it against this request so assets also work on localhost and nested routes.
+        doc.selectFirst("base[href]")?.let { base ->
+            base.attr("href", URI(requestUrl).resolve(base.attr("href")).toString())
         }
     }
 
@@ -76,11 +89,11 @@ class AnalyticsIndexHtmlRequestListener(
 
     /** Visible until Vaadin renders; also gives non-JavaScript readers a useful homepage. */
     private fun injectHomeContent(doc: Document, requestedLanguage: String?) {
-        val outlet = doc.selectFirst("#outlet") ?: return
+        val outlet = doc.selectFirst("#outlet") ?: doc.body().appendElement("div").attr("id", "outlet")
         val language = requestedLanguage?.lowercase()?.takeIf { it == "pl" || it == "en" }
         val polish = language == "pl"
         val main = outlet.appendElement("main").attr("id", "czj-initial-home")
-        main.appendElement("h1").text("Co za dzban")
+        main.appendElement("h1").text(if (polish) "Co za dzban — wiadomości i historie" else "Co za dzban — news and stories")
         main.appendElement("p").text(if (polish) {
             "Wiadomości i historie z różnych źródeł. Czytaj streszczenia i przejdź do oryginalnych publikacji."
         } else {
@@ -93,9 +106,13 @@ class AnalyticsIndexHtmlRequestListener(
             ?.filter { it.id != null && !it.title.isNullOrBlank() }
             ?.take(12)
             ?.forEach { article ->
-                list.appendElement("li").appendElement("a")
+                val item = list.appendElement("li")
+                item.appendElement("h3").appendElement("a")
                     .attr("href", "/stories/${article.id}")
                     .text(article.title!!.trim())
+                article.lead?.trim()?.takeIf { it.isNotEmpty() }?.let { lead ->
+                    item.appendElement("p").text(lead)
+                }
             }
         val navigation = main.appendElement("nav")
             .attr("aria-label", if (polish) "Więcej na stronie" else "More on this site")
@@ -113,6 +130,8 @@ class AnalyticsIndexHtmlRequestListener(
             #czj-initial-home h1{margin:0 0 .5rem;font-size:clamp(1.75rem,5vw,2.25rem);line-height:1.2}
             #czj-initial-home h2{margin:1.5rem 0 .5rem;font-size:1.3rem}
             #czj-initial-home ul{padding-left:1.35rem}#czj-initial-home li{margin:.45rem 0}
+            #czj-initial-home h3{margin:1rem 0 .25rem;font-size:1.1rem;line-height:1.4}
+            #czj-initial-home li p{margin:.25rem 0 1rem;overflow-wrap:anywhere}
             #czj-initial-home a{color:var(--lumo-primary-text-color,#a83d13)}
             #czj-initial-home nav{display:flex;flex-wrap:wrap;gap:.5rem 1rem;margin-top:1.5rem}
             @media(max-width:46rem){#czj-initial-home{margin:calc(66px + 1rem) 1rem 1rem}}
