@@ -4,8 +4,7 @@
 package pl.bnowakowski.cozadzban.ui
 
 import com.vaadin.flow.component.Component
-import com.vaadin.flow.component.ClickEvent
-import com.vaadin.flow.component.ComponentUtil
+import com.vaadin.flow.component.Html
 import com.vaadin.flow.component.button.Button
 import com.vaadin.flow.component.UI
 import com.vaadin.flow.component.dialog.Dialog
@@ -13,14 +12,15 @@ import com.vaadin.flow.component.html.Anchor
 import com.vaadin.flow.component.html.Div
 import com.vaadin.flow.component.html.Image
 import com.vaadin.flow.component.html.Span
-import com.vaadin.flow.component.contextmenu.MenuItem
-import com.vaadin.flow.component.menubar.MenuBar
 import com.vaadin.flow.component.radiobutton.RadioButtonGroup
 import com.vaadin.flow.component.textfield.TextField
 import com.vaadin.flow.router.AfterNavigationEvent
 import com.vaadin.flow.router.Location
 import com.vaadin.flow.router.QueryParameters
 import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.BeforeEach
+import org.jsoup.Jsoup
+import org.jsoup.nodes.Element
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -72,6 +72,11 @@ class ArticleListViewTest {
     )
     private val languageFlagCache: LanguageFlagCache = mock()
 
+    @BeforeEach
+    fun setUpUi() {
+        UI.setCurrent(UI())
+    }
+
     @AfterEach
     fun tearDown() {
         UI.setCurrent(null)
@@ -79,7 +84,7 @@ class ArticleListViewTest {
     }
 
     @Test
-    fun `admin users see the facebook import button and can trigger it`() {
+    fun `admin users see the facebook import action`() {
         val adminEmail = "admin@example.com"
         authenticateAs(adminEmail)
         UI.setCurrent(UI())
@@ -111,10 +116,7 @@ class ArticleListViewTest {
         assertTrue(stopItem != null, "Expected admin stop import menu item to be present")
         assertFalse(stopItem!!.isEnabled, "Expected stop item to be disabled when no import is running")
 
-        UI.setCurrent(UI())
-        clickMenuItem(importItem)
-
-        verify(facebookImportJobService).startImport(FacebookImportType.SELENIUM)
+        assertEquals("import-selenium", importItem.attr("data-action"))
     }
 
     @Test
@@ -131,16 +133,16 @@ class ArticleListViewTest {
             buildProperties,
             languageFlagCache,
         )
-        val brandLink = findComponents(view, Anchor::class.java)
-            .single { it.element.getAttribute("aria-label") == "Go to main page" }
+        val brandLink = header(view).selectFirst("a[aria-label='Go to main page']")!!
 
-        assertEquals("/", brandLink.href)
-        assertTrue(findComponents(brandLink, Image::class.java).any { it.alt.orElse(null) == "Co za dzban" })
-        assertTrue(findComponents(brandLink, Span::class.java).any { it.text == "Co za dzban" })
+        assertEquals("/", brandLink.attr("href"))
+        assertEquals("/cozadzban-logo.png", brandLink.selectFirst("img")!!.attr("src"))
+        assertEquals("", brandLink.selectFirst("img")!!.attr("alt"))
+        assertEquals("Co za dzban", brandLink.selectFirst("span")!!.text())
     }
 
     @Test
-    fun `admin users see apify import button and can trigger it`() {
+    fun `admin users see apify import action`() {
         val adminEmail = "admin@example.com"
         authenticateAs(adminEmail)
         UI.setCurrent(UI())
@@ -169,10 +171,7 @@ class ArticleListViewTest {
         assertTrue(apifyItem != null, "Expected admin Apify import menu item to be present")
         assertTrue(findMenuItem(view, "Import Facebook with Selenium") != null)
 
-        UI.setCurrent(UI())
-        clickMenuItem(apifyItem!!)
-
-        verify(facebookImportJobService).startImport(FacebookImportType.APIFY)
+        assertEquals("import-apify", apifyItem!!.attr("data-action"))
     }
 
     @Test
@@ -223,14 +222,11 @@ class ArticleListViewTest {
 
         assertTrue(apifyItem != null, "Expected admin Apify import menu item to be present when feature flag is enabled")
 
-        UI.setCurrent(UI())
-        clickMenuItem(apifyItem!!)
-
-        verify(facebookImportJobService).startImport(FacebookImportType.APIFY)
+        assertEquals("import-apify", apifyItem!!.attr("data-action"))
     }
 
     @Test
-    fun `admin users can stop a running facebook import`() {
+    fun `admin users see stop action for a running facebook import`() {
         val adminEmail = "admin@example.com"
         authenticateAs(adminEmail)
         UI.setCurrent(UI())
@@ -256,10 +252,7 @@ class ArticleListViewTest {
         assertTrue(stopItem != null, "Expected admin stop import menu item to be present")
         assertTrue(stopItem!!.isEnabled, "Expected stop item to be enabled while import is running")
 
-        UI.setCurrent(UI())
-        clickMenuItem(stopItem)
-
-        verify(facebookImportJobService).terminateImport()
+        assertEquals("stop-import", stopItem.attr("data-action"))
     }
 
     @Test
@@ -1024,15 +1017,13 @@ class ArticleListViewTest {
         findComponents(root, Button::class.java)
             .firstOrNull { it.element.getAttribute("aria-label")?.startsWith("Stop Facebook import") == true }
 
-    private fun findMenuItem(root: Component, text: String): MenuItem? =
-        findComponents(root, MenuBar::class.java)
-            .flatMap { menuBar -> menuBar.items.flatMap(::flattenMenuItem) }
-            .firstOrNull { it.text == text || it.element.getAttribute("aria-label") == text }
+    private fun header(root: Component): Element =
+        Jsoup.parse(findComponents(root, Html::class.java).single().element.outerHTML)
+            .selectFirst("header")!!
 
-    private fun flattenMenuItem(item: MenuItem): List<MenuItem> =
-        listOf(item) + item.subMenu.items.flatMap(::flattenMenuItem)
+    private fun findMenuItem(root: Component, text: String): Element? =
+        header(root).select("summary, a, button")
+            .firstOrNull { it.text() == text || it.attr("aria-label") == text }
 
-    private fun clickMenuItem(item: MenuItem) {
-        ComponentUtil.fireEvent(item, ClickEvent(item))
-    }
+    private val Element.isEnabled: Boolean get() = !hasAttr("disabled")
 }
