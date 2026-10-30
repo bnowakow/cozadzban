@@ -27,6 +27,7 @@ import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
 import pl.bnowakowski.cozadzban.NO_DATABASE_AUTOCONFIGURATION
+import pl.bnowakowski.cozadzban.article.ArticleContentRepository
 import pl.bnowakowski.cozadzban.article.ArticleRepository
 import pl.bnowakowski.cozadzban.article.ArticleService
 import pl.bnowakowski.cozadzban.user.AppUser
@@ -49,6 +50,7 @@ class UiSessionAuthorizationTest {
     @MockitoBean private lateinit var jdbc: NamedParameterJdbcTemplate
     @MockitoBean private lateinit var users: AppUserRepository
     @MockitoBean private lateinit var articles: ArticleRepository
+    @MockitoBean private lateinit var articleContentRepository: ArticleContentRepository
     @MockitoBean private lateinit var articleService: ArticleService
     @MockitoBean private lateinit var userService: AppUserService
 

@@ -53,6 +53,7 @@ class ArticleControllerTest {
     @MockitoBean private lateinit var namedParameterJdbcTemplate: NamedParameterJdbcTemplate
     @MockitoBean private lateinit var appUserRepository: AppUserRepository
     @MockitoBean private lateinit var articleRepository: ArticleRepository
+    @MockitoBean private lateinit var articleContentRepository: ArticleContentRepository
     @MockitoBean private lateinit var articleService: ArticleService
 
     private val userEmail = "user@test.com"

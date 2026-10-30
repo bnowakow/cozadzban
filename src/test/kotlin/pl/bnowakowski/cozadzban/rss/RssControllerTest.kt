@@ -18,6 +18,7 @@ import org.springframework.test.context.TestPropertySource
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
 import pl.bnowakowski.cozadzban.NO_DATABASE_AUTOCONFIGURATION
+import pl.bnowakowski.cozadzban.article.ArticleContentRepository
 import pl.bnowakowski.cozadzban.analytics.RssEndpointAnalyticsTracker
 import pl.bnowakowski.cozadzban.article.Article
 import pl.bnowakowski.cozadzban.article.ArticleRepository
@@ -47,6 +48,7 @@ class RssControllerTest {
     @MockitoBean private lateinit var namedParameterJdbcTemplate: NamedParameterJdbcTemplate
     @MockitoBean private lateinit var appUserRepository: AppUserRepository
     @MockitoBean private lateinit var articleRepository: ArticleRepository
+    @MockitoBean private lateinit var articleContentRepository: ArticleContentRepository
     @MockitoBean private lateinit var articleService: ArticleService
     @MockitoBean private lateinit var rssEndpointAnalyticsTracker: RssEndpointAnalyticsTracker
 
