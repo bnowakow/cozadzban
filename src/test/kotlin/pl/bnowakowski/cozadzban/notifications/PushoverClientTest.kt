@@ -92,7 +92,7 @@ class PushoverClientTest {
                 client.validateUser("bad-user", emptyList())
             }
 
-            assertTrue(ex.message?.contains("""{"error":"bad request"}""") == true)
+            assertTrue(ex.message?.contains("""{"error":"bad request"}""") == true, ex.message)
         }
     }
 
