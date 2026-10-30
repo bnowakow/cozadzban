@@ -77,7 +77,7 @@ class MetaSourceImageCache(
     private fun recoveryUrls(article: Article, original: String): List<String> {
         val source = runCatching { URI(article.url) }.getOrNull() ?: return emptyList()
         if (isInstagramPageUrl(source)) {
-            val html = runCatching { client.get().uri(article.url).retrieve().body(String::class.java) }
+            val html = runCatching { client.get().uri(source).retrieve().body(String::class.java) }
                 .getOrNull() ?: return emptyList()
             val preview = Jsoup.parse(html, article.url).selectFirst("meta[property=og:image]")
                 ?.attr("content")?.takeIf(::isMetaImageUrl)
@@ -94,7 +94,7 @@ class MetaSourceImageCache(
 
         val pluginUrl = "https://www.facebook.com/plugins/post.php?href=" +
             URLEncoder.encode(article.url, Charsets.UTF_8) + "&show_text=true&width=500"
-        val html = runCatching { client.get().uri(pluginUrl).retrieve().body(String::class.java) }.getOrNull()
+        val html = runCatching { client.get().uri(URI.create(pluginUrl)).retrieve().body(String::class.java) }.getOrNull()
             ?: return emptyList()
         val images = Jsoup.parse(html, pluginUrl).select("img.scaledImageFitWidth[src], img.scaledImage[src]")
             .map { it.absUrl("src") }
@@ -114,7 +114,7 @@ class MetaSourceImageCache(
     }
 
     private fun download(url: String): SavedMetaImage? = try {
-        client.get().uri(url).exchange { _, response ->
+        client.get().uri(URI.create(url)).exchange { _, response ->
             if (!response.statusCode.is2xxSuccessful) return@exchange null
             val bytes = response.body.readNBytes(MAX_IMAGE_BYTES + 1)
             if (bytes.isEmpty() || bytes.size > MAX_IMAGE_BYTES) return@exchange null
