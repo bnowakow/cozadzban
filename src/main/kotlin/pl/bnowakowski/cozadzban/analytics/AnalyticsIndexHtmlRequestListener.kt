@@ -118,6 +118,24 @@ class AnalyticsIndexHtmlRequestListener(
             @media(max-width:46rem){#czj-initial-home{margin:calc(66px + 1rem) 1rem 1rem}}
             """.trimIndent(),
         )
+        doc.body().appendElement("script").attr("id", "czj-initial-home-cleanup").appendChild(DataNode(
+            """
+            (function() {
+                var outlet = document.getElementById('outlet');
+                var initial = document.getElementById('czj-initial-home');
+                if (!outlet || !initial) return;
+                function removeAfterRender() {
+                    if (Array.from(outlet.children).some(function(child) { return child !== initial; })) {
+                        initial.remove();
+                        observer.disconnect();
+                    }
+                }
+                var observer = new MutationObserver(removeAfterRender);
+                observer.observe(outlet, { childList: true });
+                removeAfterRender();
+            })();
+            """.trimIndent(),
+        ))
     }
 
     private fun injectVaadinDevToolsBootstrap(doc: Document) {
