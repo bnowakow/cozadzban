@@ -82,7 +82,7 @@ class RssController(
 
         append("<item>")
         append("<title>${xmlEscape(title)}</title>")
-        append("<link>${xmlEscape(article.url)}</link>")
+        append("<link>${xmlEscape(article.publisherUrl ?: article.url)}</link>")
         append("<description>${xmlEscape(description)}</description>")
         article.thumbnail
             ?.trim()

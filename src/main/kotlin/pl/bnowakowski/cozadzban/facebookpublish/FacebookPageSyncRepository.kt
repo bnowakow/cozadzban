@@ -7,12 +7,36 @@ import org.springframework.transaction.annotation.Transactional
 
 data class FacebookSyncJob(val id: Long, val publicationId: Long, val articleId: Long?, val pageId: String,
                            val language: String, val postId: String, val photoId: String?, val action: String,
-                           val imageSource: String?)
+                           val imageSource: String?, val replacementRequired: Boolean)
 data class FacebookSyncProblem(val id: Long, val articleId: Long, val language: String, val action: String,
                                val status: String, val postId: String?, val lastError: String?)
 
 @Repository
 class FacebookPageSyncRepository(private val jdbc: NamedParameterJdbcTemplate) {
+    /** Queue a post attachment update when a fresh story illustration is ready. */
+    fun markImageReplacementRequired(articleId: Long) {
+        jdbc.update(
+            """INSERT INTO facebook_page_sync(publication_id, action, status, replacement_required, last_error)
+               SELECT publication.id, 'UPDATE', 'PENDING', true, NULL
+               FROM facebook_page_publication publication
+               WHERE publication.article_id = :articleId AND publication.status = 'PUBLISHED'
+                 AND NOT EXISTS (SELECT 1 FROM facebook_page_sync deletion
+                                 WHERE deletion.publication_id = publication.id
+                                   AND deletion.action = 'DELETE' AND deletion.status <> 'CANCELLED')
+               ON CONFLICT (publication_id, action) DO UPDATE
+               SET replacement_required = true,
+                   dirty = facebook_page_sync.dirty OR facebook_page_sync.status = 'ATTEMPTING',
+                   status = CASE WHEN facebook_page_sync.status IN
+                                     ('ATTEMPTING', 'NEEDS_RECONCILIATION')
+                                 THEN facebook_page_sync.status ELSE 'PENDING' END,
+                   last_error = CASE WHEN facebook_page_sync.status IN
+                                         ('ATTEMPTING', 'NEEDS_RECONCILIATION')
+                                     THEN facebook_page_sync.last_error ELSE NULL END,
+                   updated_at = now()""",
+            mapOf("articleId" to articleId),
+        )
+    }
+
     fun queueUpdate(articleId: Long, thumbnailChanged: Boolean, languageChanged: Boolean) {
         jdbc.update(
             """INSERT INTO facebook_page_sync(publication_id, action, status, replacement_required)
@@ -89,12 +113,12 @@ class FacebookPageSyncRepository(private val jdbc: NamedParameterJdbcTemplate) {
            WHERE sync.id = candidate.id AND publication.id = sync.publication_id
            RETURNING sync.id, sync.publication_id, publication.article_id, publication.page_id,
                      publication.language, publication.post_id, publication.photo_id, sync.action,
-                     publication.image_source""",
+                     publication.image_source, sync.replacement_required""",
         emptyMap<String, Any>(),
     ) { rs, _ -> FacebookSyncJob(rs.getLong("id"), rs.getLong("publication_id"),
         rs.getLong("article_id").takeUnless { rs.wasNull() }, rs.getString("page_id"),
         rs.getString("language"), rs.getString("post_id"), rs.getString("photo_id"), rs.getString("action"),
-        rs.getString("image_source")) }.firstOrNull()
+        rs.getString("image_source"), rs.getBoolean("replacement_required")) }.firstOrNull()
 
     fun savePhotoId(publicationId: Long, photoId: String) {
         jdbc.update(
@@ -105,20 +129,33 @@ class FacebookPageSyncRepository(private val jdbc: NamedParameterJdbcTemplate) {
     }
 
     @Transactional
-    fun confirm(id: Long, action: String): Boolean {
+    fun confirm(id: Long, action: String, replacedPhotoId: String? = null): Boolean {
         val updated = jdbc.update(
             """UPDATE facebook_page_sync SET
                  status = CASE WHEN action = 'UPDATE' AND dirty THEN 'PENDING'
-                               WHEN action = 'UPDATE' AND replacement_required THEN 'REPLACEMENT_REQUIRED'
+                               WHEN action = 'UPDATE' AND replacement_required AND :replacedPhotoId IS NULL
+                                 THEN 'REPLACEMENT_REQUIRED'
                                ELSE 'CONFIRMED' END,
-                 dirty = false, completed_at = now(),
+                 dirty = false,
+                 replacement_required = CASE WHEN :replacedPhotoId IS NOT NULL THEN false
+                                              ELSE replacement_required END,
+                 completed_at = now(),
                  last_error = CASE WHEN action = 'UPDATE' AND replacement_required AND NOT dirty
+                                       AND :replacedPhotoId IS NULL
                                    THEN 'The image or Page language changed; manual post replacement is required.'
                                    ELSE NULL END,
                  updated_at = now()
                WHERE id = :id AND status = 'ATTEMPTING' AND action = :action""",
-            mapOf("id" to id, "action" to action),
+            mapOf("id" to id, "action" to action, "replacedPhotoId" to replacedPhotoId),
         ) == 1
+        if (updated && replacedPhotoId != null) {
+            jdbc.update(
+                """UPDATE facebook_page_publication SET photo_id = :photoId,
+                         image_source = 'CODEX_GENERATED', updated_at = now()
+                   WHERE id = (SELECT publication_id FROM facebook_page_sync WHERE id = :id)""",
+                mapOf("id" to id, "photoId" to replacedPhotoId),
+            )
+        }
         if (updated && action == "DELETE") {
             jdbc.update(
                 """UPDATE facebook_page_publication SET status = 'DELETED', updated_at = now()
@@ -134,6 +171,12 @@ class FacebookPageSyncRepository(private val jdbc: NamedParameterJdbcTemplate) {
            WHERE id = :id AND status = 'ATTEMPTING'""",
         mapOf("id" to id, "status" to if (uncertain) "NEEDS_RECONCILIATION" else "FAILED",
             "error" to error.take(300)),
+    ) == 1
+
+    fun manualReplacementRequired(id: Long, error: String): Boolean = jdbc.update(
+        """UPDATE facebook_page_sync SET status = 'REPLACEMENT_REQUIRED', last_error = :error,
+                  updated_at = now() WHERE id = :id AND status = 'ATTEMPTING'""",
+        mapOf("id" to id, "error" to error.take(300)),
     ) == 1
 
     fun recoverInterrupted(): Int = jdbc.update(

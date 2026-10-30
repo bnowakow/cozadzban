@@ -26,4 +26,5 @@ data class Article(
     val sourceFacebookProposalId: Long? = null,
     val publishedAt: Instant? = null,
     @ReadOnlyProperty val createdAt: Instant? = null,
+    val publisherUrl: String? = null,
 )

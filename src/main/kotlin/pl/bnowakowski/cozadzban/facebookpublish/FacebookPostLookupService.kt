@@ -15,10 +15,11 @@ data class FacebookPostArticleMatch(
     val articleId: Long,
     val title: String?,
     val articleUrl: String,
+    val publisherUrl: String?,
 ) {
     val storyUrl: String get() = "/stories/$articleId"
     val originalArticleUrl: String?
-        get() = articleUrl.takeUnless {
+        get() = publisherUrl ?: articleUrl.takeUnless {
             val host = runCatching { URI(it).host?.lowercase() }.getOrNull()
             host == "facebook.com" || host?.endsWith(".facebook.com") == true
         }
@@ -42,7 +43,7 @@ class FacebookPostLookupService(private val jdbc: NamedParameterJdbcTemplate) {
 
     private fun findByImportedPost(identifier: String): FacebookPostArticleMatch? = jdbc.query(
         """
-            SELECT a.id, a.title, a.url
+            SELECT a.id, a.title, a.url, a.publisher_url
               FROM article a
               LEFT JOIN facebook_article_proposal proposal ON proposal.id = a.source_facebook_proposal_id
              WHERE a.url LIKE :identifier
@@ -51,12 +52,13 @@ class FacebookPostLookupService(private val jdbc: NamedParameterJdbcTemplate) {
              ORDER BY a.id DESC LIMIT 1
         """.trimIndent(),
         mapOf("identifier" to "%$identifier%"),
-    ) { rs, _ -> FacebookPostArticleMatch(rs.getLong("id"), rs.getString("title"), rs.getString("url")) }
+    ) { rs, _ -> FacebookPostArticleMatch(rs.getLong("id"), rs.getString("title"), rs.getString("url"),
+        rs.getString("publisher_url")) }
         .firstOrNull()
 
     private fun findByPublishedPost(postId: String): FacebookPostArticleMatch? = jdbc.query(
         """
-            SELECT a.id, a.title, a.url
+            SELECT a.id, a.title, a.url, a.publisher_url
               FROM facebook_page_publication publication
               JOIN article a ON a.id = publication.article_id_snapshot
              WHERE split_part(publication.post_id, '_', 2) = :postId
@@ -64,7 +66,8 @@ class FacebookPostLookupService(private val jdbc: NamedParameterJdbcTemplate) {
              ORDER BY publication.published_at DESC NULLS LAST LIMIT 1
         """.trimIndent(),
         mapOf("postId" to postId, "postIdPattern" to "%$postId%"),
-    ) { rs, _ -> FacebookPostArticleMatch(rs.getLong("id"), rs.getString("title"), rs.getString("url")) }
+    ) { rs, _ -> FacebookPostArticleMatch(rs.getLong("id"), rs.getString("title"), rs.getString("url"),
+        rs.getString("publisher_url")) }
         .firstOrNull()
 
     private fun resolveNumericPostId(canonicalUrl: String): String? {

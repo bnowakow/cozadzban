@@ -213,12 +213,11 @@ class ArticleService(
                 favicon = enrichment.favicon,
                 lead = enrichment.lead,
                 publishedAt = publishedAt,
+                publisherUrl = if (url == existing.url) existing.publisherUrl else null,
             )
         )
         preserveContent(article.id!!, article.url, contentForCache)
-        if (existing.thumbnail != article.thumbnail) {
-            facebookArticleImages?.sourceThumbnailChanged(article.id!!, article.thumbnail)
-        }
+        facebookArticleImages?.requestRegeneration(article.id!!)
         if (facebookCaptionChanged(existing, article)) {
             facebookPageSync?.queueUpdate(id, existing.thumbnail != article.thumbnail, existing.language != article.language)
         }
@@ -234,6 +233,9 @@ class ArticleService(
         val urlPresent = patch.containsKey("url")
         val languagePresent = patch.containsKey("language")
         val quotePresent = patch.containsKey("quote")
+        val titlePresent = patch.containsKey("title")
+        val leadPresent = patch.containsKey("lead")
+        val publisherUrlPresent = patch.containsKey("publisherUrl")
         val publishedAtPresent = patch.containsKey("publishedAt")
         val contentPresent = patch.containsKey("content")
 
@@ -255,6 +257,27 @@ class ArticleService(
             if (lang.isBlank()) throw IllegalArgumentException("language must not be blank")
             normalizeLanguage(lang)
         } else existing.language
+
+        val patchedTitle = if (titlePresent) {
+            val value = patch["title"]
+            require(value == null || value is String) { "title must be a string or null" }
+            (value as? String)?.trim()?.takeIf { it.isNotBlank() }
+        } else null
+        require(patchedTitle == null || patchedTitle.length <= 500) { "title must be at most 500 characters" }
+        val patchedLead = if (leadPresent) {
+            val value = patch["lead"]
+            require(value == null || value is String) { "lead must be a string or null" }
+            (value as? String)?.trim()?.takeIf { it.isNotBlank() }
+        } else null
+        require(patchedLead == null || patchedLead.length <= 2000) { "lead must be at most 2000 characters" }
+        val patchedPublisherUrl = if (publisherUrlPresent) {
+            val value = patch["publisherUrl"]
+            require(value == null || value is String) { "publisherUrl must be a string or null" }
+            (value as? String)?.trim()?.takeIf { it.isNotBlank() }?.let {
+                require(it.length <= 2048) { "publisherUrl must be at most 2048 characters" }
+                canonicalizeUrl(it)
+            }
+        } else null
 
         val newQuote = when {
             quotePresent -> {
@@ -286,6 +309,7 @@ class ArticleService(
         }
 
         val urlChanged = urlPresent && newUrl != existing.url
+        val contentBeforePatch = if (contentPresent) getContent(id) else null
         val enrichmentForChangedUrl = if (urlChanged) {
             if (articleRepository.existsByUrl(newUrl)) {
                 logFacebookPhotoDuplicateUrlConflict("patch", newUrl, patch["url"] as? String, articleRepository.findByUrl(newUrl))
@@ -342,11 +366,13 @@ class ArticleService(
                 url = newUrl,
                 language = newLanguage,
                 quote = newQuote,
-                title = newTitle,
+                title = if (titlePresent) patchedTitle else newTitle,
                 thumbnail = newThumbnail,
                 favicon = newFavicon,
-                lead = newLead,
+                lead = if (leadPresent) patchedLead else newLead,
                 publishedAt = newPublishedAt,
+                publisherUrl = if (publisherUrlPresent) patchedPublisherUrl
+                    else if (urlChanged) null else existing.publisherUrl,
             )
         )
 
@@ -361,8 +387,10 @@ class ArticleService(
             preserveContent(saved.id!!, saved.url, contentForChangedUrl)
         }
 
-        if (existing.thumbnail != saved.thumbnail) {
-            facebookArticleImages?.sourceThumbnailChanged(saved.id!!, saved.thumbnail)
+        if (urlChanged || facebookCaptionChanged(existing, saved) ||
+            (contentPresent && contentBeforePatch != getContent(id))
+        ) {
+            facebookArticleImages?.requestRegeneration(saved.id!!)
         }
 
         if (facebookCaptionChanged(existing, saved)) {
@@ -619,6 +647,7 @@ class ArticleService(
             .trim()
 
     private fun preserveContentAndFacebookPostTitle(article: Article, contentForCache: String) {
+        val previousContent = getContent(article.id!!)
         preserveContent(article.id!!, article.url, contentForCache)
         var finalTitle = article.title
         var titleUpdated = false
@@ -630,6 +659,9 @@ class ArticleService(
                 finalTitle = title
                 titleUpdated = true
             }
+        }
+        if (titleUpdated || previousContent != getContent(article.id!!)) {
+            facebookArticleImages?.requestRegeneration(article.id!!)
         }
         logFacebookPhotoContentReplacementState(article, contentForCache, finalTitle, titleUpdated)
     }

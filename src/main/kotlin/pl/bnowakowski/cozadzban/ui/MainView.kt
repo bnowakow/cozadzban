@@ -972,7 +972,7 @@ class ArticleListView(
         val thumbnail = if (generatedImage) "/generated-images/${article.id}.png"
             else article.thumbnail?.trim()?.takeIf { FacebookArticleImageGenerationRepository.hasUsableSourceThumbnail(it) }
         thumbnail?.takeIf { it.isNotBlank() }?.let { imageUrl ->
-            val imageLink = Anchor(article.url)
+            val imageLink = Anchor(article.publisherUrl ?: article.url)
             imageLink.setTarget("_blank")
             imageLink.element.setAttribute("rel", "noopener noreferrer")
             val image = Image(imageUrl, article.title ?: "")
@@ -1000,7 +1000,7 @@ class ArticleListView(
         body.element.style.set("gap", "1.2rem")
         body.element.style.set("padding", "1.35rem 1.55rem 1.6rem")
         body.add(buildArticleMeta(article))
-        val articleLink = Anchor(article.url)
+        val articleLink = Anchor(article.publisherUrl ?: article.url)
         articleLink.setTarget("_blank")
         articleLink.element.setAttribute("rel", "noopener noreferrer")
         articleLink.element.style.set("display", "flex")
@@ -1026,7 +1026,7 @@ class ArticleListView(
         val row = HorizontalLayout(buildSourceIcon(article))
         row.addClassName("czj-article-meta")
 
-        val source = Span(sourceName(article.url))
+        val source = Span(sourceName(article.publisherUrl ?: article.url))
         source.element.style.set("font-size", "var(--lumo-font-size-m)")
         source.element.style.set("font-weight", "700")
 
@@ -1061,10 +1061,12 @@ class ArticleListView(
         val wrapper = Div()
         wrapper.addClassName("czj-source-icon")
 
-        val fallback = Span(sourceName(article.url).firstOrNull()?.uppercaseChar()?.toString() ?: "?")
+        val sourceUrl = article.publisherUrl ?: article.url
+        val fallback = Span(sourceName(sourceUrl).firstOrNull()?.uppercaseChar()?.toString() ?: "?")
         fallback.addClassName("czj-source-icon-fallback")
 
-        val faviconUrl = article.favicon?.takeIf { it.isNotBlank() } ?: fallbackFavicon(article.url)
+        val faviconUrl = article.favicon?.takeIf { it.isNotBlank() && article.publisherUrl == null }
+            ?: fallbackFavicon(sourceUrl)
         val favicon = Image(faviconUrl, "")
         favicon.addClassName("czj-source-favicon")
         favicon.element.executeJs("this.addEventListener('error', () => this.style.display = 'none')")
@@ -1625,6 +1627,19 @@ class ArticleListView(
     }
 
     private fun openEditArticleDialog(article: Article) {
+        val titleField = TextField("Title")
+        titleField.width = "100%"
+        titleField.value = article.title ?: ""
+
+        val leadField = TextArea("Lead")
+        leadField.width = "100%"
+        leadField.minHeight = "7rem"
+        leadField.value = article.lead ?: ""
+
+        val publisherUrlField = TextField("Verified publisher article URL (optional)")
+        publisherUrlField.width = "100%"
+        publisherUrlField.value = article.publisherUrl ?: ""
+
         val languageField = TextField("Language (BCP-47)")
         languageField.width = "100%"
         languageField.value = article.language
@@ -1680,6 +1695,9 @@ class ArticleListView(
 
         submitButton.addClickListener {
             val language = languageField.value?.trim().orEmpty()
+            val title = titleField.value?.trim()?.ifBlank { null }
+            val lead = leadField.value?.trim()?.ifBlank { null }
+            val publisherUrl = publisherUrlField.value?.trim()?.ifBlank { null }
             val quote = quoteField.value?.trim()?.ifBlank { null }
             // publishedAt key always present: null clears, value sets
             val publishedAt = publishedAtPicker.value?.toInstant(ZoneOffset.UTC)
@@ -1691,6 +1709,9 @@ class ArticleListView(
             try {
                 val patch: Map<String, Any?> = mapOf(
                     "language" to language,
+                    "title" to title,
+                    "lead" to lead,
+                    "publisherUrl" to publisherUrl,
                     "quote" to quote,
                     "publishedAt" to publishedAt?.toString(),
                     "content" to content,
@@ -1698,6 +1719,7 @@ class ArticleListView(
                 logFacebookPhotoUiPatchAttempt(article, patch)
                 val updated = articleService.patch(article.id!!, patch)
                 logFacebookPhotoUiPatchResult(updated, patch)
+                cacheDerivedTitleIds.remove(article.id)
                 refreshData()
                 dialog.close()
                 showSuccess("Article updated")
@@ -1714,7 +1736,8 @@ class ArticleListView(
         actions.defaultVerticalComponentAlignment = Alignment.END
         actions.addClassName("czj-edit-article-actions")
 
-        val fields = VerticalLayout(languageField, quoteField, publishedAtControls, contentField, actions)
+        val fields = VerticalLayout(titleField, leadField, publisherUrlField, languageField,
+            quoteField, publishedAtControls, contentField, actions)
         fields.addClassNames("czj-dialog-content", "czj-edit-article-content")
         contentField.addClassName("czj-cache-content-field")
         dialog.add(fields)

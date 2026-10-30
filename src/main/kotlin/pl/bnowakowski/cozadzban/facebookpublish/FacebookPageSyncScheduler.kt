@@ -14,6 +14,8 @@ class FacebookPageSyncScheduler(
     private val pages: FacebookPageConnectionService,
     private val articles: ArticleRepository,
     private val graph: FacebookPageSyncGraphClient,
+    private val images: FacebookArticleImageGenerationRepository,
+    private val generator: CodexArticleImageGenerator,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val json = ObjectMapper()
@@ -30,6 +32,7 @@ class FacebookPageSyncScheduler(
                 return@repeat
             }
             try {
+                var replacedPhotoId: String? = null
                 when (job.action) {
                     "UPDATE" -> {
                         val article = job.articleId?.let { articles.findById(it).orElse(null) }
@@ -38,11 +41,31 @@ class FacebookPageSyncScheduler(
                             return@repeat
                         }
                         graph.updatePostMessage(job.postId, token, FacebookPostCaption.forArticle(article, job.imageSource))
+                        if (job.replacementRequired) {
+                            val png = article.id?.takeIf { images.status(it) == "GENERATED" }
+                                ?.let { generator.cached(it) }
+                            if (png == null) {
+                                repository.manualReplacementRequired(job.id,
+                                    "A new generated illustration is not available for the Facebook photo.")
+                                return@repeat
+                            }
+                            replacedPhotoId = try {
+                                graph.replacePostPhoto(job.pageId, job.postId, token, png)
+                            } catch (ex: RestClientResponseException) {
+                                if (ex.statusCode.is4xxClientError && ex.statusCode.value() != 429) {
+                                    val detail = metaError(ex)
+                                    repository.manualReplacementRequired(job.id, detail)
+                                    log.warn("Facebook Page image update rejected for post {}: {}", job.postId, detail)
+                                    return@repeat
+                                }
+                                throw ex
+                            }
+                        }
                     }
                     "DELETE" -> graph.deletePost(job.postId, token)
                     else -> error("Unsupported Facebook sync action")
                 }
-                repository.confirm(job.id, job.action)
+                repository.confirm(job.id, job.action, replacedPhotoId)
             } catch (ex: RestClientResponseException) {
                 val detail = metaError(ex)
                 repository.fail(job.id, !ex.statusCode.is4xxClientError || ex.statusCode.value() == 429,

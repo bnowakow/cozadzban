@@ -17,6 +17,7 @@ class FacebookArticleImageGenerationScheduler(
     private val articles: ArticleRepository,
     private val contents: ArticleContentRepository,
     private val generator: CodexArticleImageGenerator,
+    private val pageSync: FacebookPageSyncRepository,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val manualExecutor = Executors.newSingleThreadExecutor { task ->
@@ -63,8 +64,13 @@ class FacebookArticleImageGenerationScheduler(
             val content = contents.findById(job.articleId).orElse(null)
             when (val result = generator.generate(article, content)) {
                 is ArticleImageGenerationResult.Generated -> {
-                    if (jobs.complete(job.articleId)) {
-                        log.info("Generated Facebook illustration for article {}", job.articleId)
+                    when (jobs.complete(job.articleId)) {
+                        "GENERATED" -> {
+                            pageSync.markImageReplacementRequired(job.articleId)
+                            log.info("Generated Facebook illustration for article {}", job.articleId)
+                        }
+                        "MISSING_THUMBNAIL" -> log.info(
+                            "Article {} changed during image generation; queued another illustration", job.articleId)
                     }
                 }
                 is ArticleImageGenerationResult.Failed -> {

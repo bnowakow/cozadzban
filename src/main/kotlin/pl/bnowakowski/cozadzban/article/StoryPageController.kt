@@ -81,9 +81,10 @@ class StoryPageController(
         val canonical = "https://cozadzban.pl/stories/${article.id}"
         val date = article.publishedAt ?: article.createdAt ?: Instant.EPOCH
         val dateLabel = DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneOffset.UTC).format(date)
-        val sourceUri = runCatching { URI(article.url) }.getOrNull()
-        val sourceName = sourceUri?.host?.removePrefix("www.")?.ifBlank { null } ?: article.url
-        val favicon = article.favicon?.trim()?.takeIf { it.isNotEmpty() }
+        val sourceLink = article.publisherUrl ?: article.url
+        val sourceUri = runCatching { URI(sourceLink) }.getOrNull()
+        val sourceName = sourceUri?.host?.removePrefix("www.")?.ifBlank { null } ?: sourceLink
+        val favicon = article.favicon?.trim()?.takeIf { it.isNotEmpty() && article.publisherUrl == null }
             ?: sourceUri?.takeIf { it.scheme in setOf("http", "https") && it.host != null }
                 ?.let { "${it.scheme}://${it.host}/favicon.ico" }
         val thumbnail = article.thumbnail?.trim()
@@ -184,7 +185,7 @@ class StoryPageController(
         article.lead?.trim()?.takeIf { it.isNotEmpty() }?.let { main.appendElement("p").text(it) }
         article.quote?.trim()?.takeIf { it.isNotEmpty() }?.let { main.appendElement("blockquote").text(it) }
         article.aiSummary?.trim()?.takeIf { it.isNotEmpty() }?.let { main.appendElement("p").text(it) }
-        val original = main.appendElement("a").attr("class", "story-action original").attr("href", article.url)
+        val original = main.appendElement("a").attr("class", "story-action original").attr("href", sourceLink)
             .attr("rel", "noopener noreferrer")
         val externalIcon = original.appendElement("svg").attr("viewBox", "0 0 24 24").attr("aria-hidden", "true")
         externalIcon.appendElement("path").attr("d", "M15 3h6v6M10 14 21 3M21 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6")

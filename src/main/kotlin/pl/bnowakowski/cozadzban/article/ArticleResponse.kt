@@ -29,6 +29,7 @@ data class ArticleResponse(
     val publishedAt: Instant?,
     val createdAt: Instant?,
     val createdBy: CreatedByInfo?,
+    val publisherUrl: String? = null,
 ) {
     companion object {
         fun from(article: Article, creator: AppUser?): ArticleResponse = ArticleResponse(
@@ -44,6 +45,7 @@ data class ArticleResponse(
             publishedAt = article.publishedAt,
             createdAt = article.createdAt,
             createdBy = creator?.id?.let { CreatedByInfo(it, creator.email) },
+            publisherUrl = article.publisherUrl,
         )
     }
 }
