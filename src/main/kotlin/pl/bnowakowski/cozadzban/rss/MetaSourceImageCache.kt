@@ -50,7 +50,7 @@ class MetaSourceImageCache(
         val key = hash(url)
         read(key)?.let { return it }
 
-        val candidates = sequenceOf(url) + recoveryUrls(article, url).asSequence()
+        val candidates = sequenceOf(url) + recoveryUrls(article, url)
         for (candidate in candidates.distinct()) {
             val image = download(candidate) ?: continue
             save(key, image)
@@ -74,43 +74,59 @@ class MetaSourceImageCache(
         }
     }
 
-    private fun recoveryUrls(article: Article, original: String): List<String> {
-        val source = runCatching { URI(article.url) }.getOrNull() ?: return emptyList()
+    private fun recoveryUrls(article: Article, original: String): Sequence<String> = sequence {
+        val source = runCatching { URI(article.url) }.getOrNull() ?: return@sequence
         if (isInstagramPageUrl(source)) {
-            val html = runCatching { client.get().uri(source).retrieve().body(String::class.java) }
-                .getOrNull() ?: return emptyList()
-            val preview = Jsoup.parse(html, article.url).selectFirst("meta[property=og:image]")
-                ?.attr("content")?.takeIf(::isMetaImageUrl)
-            return listOfNotNull(preview)
+            val preview = previewImage(source)
+            if (preview != null) yield(preview)
+            return@sequence
         }
-        if (!isFacebookPageUrl(source)) return emptyList()
+        if (!isFacebookPageUrl(source)) return@sequence
         val photoId = source.rawQuery.orEmpty().split('&')
             .firstOrNull { it.substringBefore('=') == "fbid" }
             ?.substringAfter('=', "")
             ?.takeIf { it.matches(Regex("[0-9]{5,25}")) }
-        if (photoId != null && source.path.orEmpty().trimEnd('/') in setOf("/photo", "/photo.php")) {
-            return listOf("https://lookaside.fbsbx.com/lookaside/crawler/media/?media_id=$photoId")
+        val path = source.path.orEmpty()
+        if (photoId != null && path.trimEnd('/') in setOf("/photo", "/photo.php")) {
+            yield("https://lookaside.fbsbx.com/lookaside/crawler/media/?media_id=$photoId")
+            val preview = previewImage(source)
+            if (preview != null) yield(preview)
+            return@sequence
+        }
+        if (path.startsWith("/reel/") || "/videos/" in path) {
+            val preview = previewImage(source)
+            if (preview != null) yield(preview)
+            return@sequence
         }
 
         val pluginUrl = "https://www.facebook.com/plugins/post.php?href=" +
             URLEncoder.encode(article.url, Charsets.UTF_8) + "&show_text=true&width=500"
         val html = runCatching { client.get().uri(URI.create(pluginUrl)).retrieve().body(String::class.java) }.getOrNull()
-            ?: return emptyList()
-        val images = Jsoup.parse(html, pluginUrl).select("img.scaledImageFitWidth[src], img.scaledImage[src]")
-            .map { it.absUrl("src") }
+        val images = html?.let { Jsoup.parse(it, pluginUrl).select("img.scaledImageFitWidth[src], img.scaledImage[src]")
+            .map { image -> image.absUrl("src") }
             .filter(::isMetaImageUrl)
             .distinct()
-        if (images.isEmpty()) return emptyList()
+        }.orEmpty()
         val originalFilename = runCatching { URI(original).path.substringAfterLast('/') }.getOrNull()
         val matching = images.filter { candidate ->
             originalFilename?.takeIf { it.isNotBlank() } ==
                 runCatching { URI(candidate).path.substringAfterLast('/') }.getOrNull()
         }
-        return when {
+        val selected = when {
             matching.isNotEmpty() -> matching
             images.size == 1 -> images
             else -> emptyList()
         }
+        yieldAll(selected)
+        val preview = previewImage(source)
+        if (preview != null) yield(preview)
+    }
+
+    private fun previewImage(page: URI): String? {
+        val html = runCatching { client.get().uri(page).retrieve().body(String::class.java) }.getOrNull()
+            ?: return null
+        return Jsoup.parse(html, page.toString()).selectFirst("meta[property=og:image]")
+            ?.attr("content")?.takeIf(::isMetaImageUrl)
     }
 
     private fun download(url: String): SavedMetaImage? = try {
