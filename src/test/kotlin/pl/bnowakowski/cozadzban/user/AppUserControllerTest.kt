@@ -23,6 +23,7 @@ import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.patch
 import org.springframework.test.web.servlet.post
 import pl.bnowakowski.cozadzban.NO_DATABASE_AUTOCONFIGURATION
+import pl.bnowakowski.cozadzban.article.ArticleContentRepository
 import pl.bnowakowski.cozadzban.article.ArticleRepository
 import pl.bnowakowski.cozadzban.article.ArticleService
 import java.time.Instant
@@ -44,6 +45,7 @@ class AppUserControllerTest {
     @MockitoBean private lateinit var namedParameterJdbcTemplate: NamedParameterJdbcTemplate
     @MockitoBean private lateinit var appUserRepository: AppUserRepository
     @MockitoBean private lateinit var articleRepository: ArticleRepository
+    @MockitoBean private lateinit var articleContentRepository: ArticleContentRepository
     @MockitoBean private lateinit var articleService: ArticleService
     @MockitoBean private lateinit var appUserService: AppUserService
 
