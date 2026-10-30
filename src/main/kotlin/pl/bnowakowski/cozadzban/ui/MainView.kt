@@ -975,10 +975,13 @@ class ArticleListView(
         val generatedImage = article.id?.let { articleImages?.status(it) == "GENERATED" } == true
         val sourceThumbnail = article.thumbnail?.trim()
             ?.takeIf { FacebookArticleImageGenerationRepository.hasUsableSourceThumbnail(it) }
+        val sourceHost = sourceThumbnail?.let { runCatching { URI(it).host?.lowercase() }.getOrNull() }
         val thumbnail = when {
             generatedImage -> "/generated-images/${article.id}.png"
             sourceThumbnail == null -> null
-            runCatching { URI(sourceThumbnail).host?.lowercase() }.getOrNull() == "lookaside.fbsbx.com" ->
+            sourceHost == "lookaside.fbsbx.com" || sourceHost == "fbcdn.net" ||
+                sourceHost?.endsWith(".fbcdn.net") == true || sourceHost == "cdninstagram.com" ||
+                sourceHost?.endsWith(".cdninstagram.com") == true ->
                 article.id?.let { "/rss/image/$it" } ?: sourceThumbnail
             else -> sourceThumbnail
         }

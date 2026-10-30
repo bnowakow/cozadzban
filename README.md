@@ -254,7 +254,10 @@ same paths on `http://localhost:${APP_PORT:-8086}`.
 
 Docker runtime data and lightweight deployment assets are stored below `docker-data/`. The Spring
 Boot container mounts `./docker-data/data` as `/app/data`, which keeps generated assets such as
-downloaded favicons outside the image and available across container rebuilds.
+downloaded favicons outside the image and available across container rebuilds. Facebook and
+Instagram source thumbnails are saved under `docker-data/data/meta-source-images` when first
+requested and backfilled in small batches. Set `APP_META_SOURCE_IMAGE_CACHE_DIR` to change that
+directory.
 
 For server upgrades, prefer:
 

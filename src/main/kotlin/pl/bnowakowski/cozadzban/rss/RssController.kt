@@ -29,6 +29,7 @@ import java.util.Locale
 class RssController(
     private val articleRepository: ArticleRepository,
     private val rssEndpointAnalyticsTracker: RssEndpointAnalyticsTracker,
+    private val metaImages: MetaSourceImageCache,
     restClientBuilder: RestClient.Builder,
     @Value("\${app.build.timestamp:}") buildTimestampRaw: String,
 ) {
@@ -104,6 +105,15 @@ class RssController(
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Article $id not found") }
         val thumbnail = article.thumbnail?.trim()?.takeIf { it.isNotBlank() }
             ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "Article $id has no thumbnail")
+
+        if (metaImages.supports(thumbnail)) {
+            val image = metaImages.loadOrFetch(article)
+                ?: return ResponseEntity.status(HttpStatus.BAD_GATEWAY).build()
+            return ResponseEntity.ok()
+                .contentType(image.contentType)
+                .cacheControl(CacheControl.maxAge(6, TimeUnit.HOURS).cachePublic())
+                .body(image.bytes)
+        }
 
         val response = try {
             imageRestClient.get()
