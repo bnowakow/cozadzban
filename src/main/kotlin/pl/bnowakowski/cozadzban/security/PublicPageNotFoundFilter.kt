@@ -49,7 +49,8 @@ class PublicPageNotFoundFilter(private val context: ApplicationContext) : OncePe
     private companion object {
         // Authentication, APIs and framework traffic retain their existing security/error semantics.
         val RESERVED = listOf("/api", "/admin", "/auth", "/oauth2", "/login", "/logout", "/error",
-            "/actuator", "/VAADIN", "/vaadin", "/v3", "/swagger-ui", "/rss", "/stories",
+            "/actuator", "/VAADIN", "/vaadin", "/aura", "/lumo", "/themes", "/frontend", "/webjars",
+            "/v3", "/swagger-ui", "/rss", "/stories",
             "/generated-images", "/favicons", "/flags", "/.well-known")
     }
 }
