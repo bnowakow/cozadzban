@@ -161,8 +161,9 @@ can't be reached, the import runs without the check.
 An hourly check also forecasts when the credit will run out at this cycle's spend rate so far
 (used amount divided by elapsed days, counting at least one day). It sends **Apify credits
 running low notifications** when exhaustion is predicted within 3 days, and again within 1
-day, unless the cycle resets first. Each alert goes out once per billing cycle. The import
-panel shows the predicted date next to the remaining credit. Turn the check off with
+day, unless the cycle resets first. Each alert goes out once per billing cycle. Next to the
+remaining credit, the import panel shows how long until it runs out and until the cycle
+resets, for example "runs out in 5 days, resets in 3 weeks and 5 days". Turn the check off with
 `APP_FACEBOOK_IMPORT_APIFY_LOW_CREDIT_ALERTS_ENABLED=false`.
 
 Minimum configuration:

@@ -830,12 +830,12 @@ class ArticleListView(
     /** Remaining Apify usage this billing cycle, e.g. "$2.79 of $5.00, resets after 2026-11-26". */
     private fun apifyCreditText(): String {
         val usage = apifyUsage?.current() ?: return "unavailable"
+        val now = Instant.now()
         fun usd(value: java.math.BigDecimal) = "${'$'}" + value.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString()
-        val resets = usage.cycleEndAt?.let {
-            ", resets after " + java.time.format.DateTimeFormatter.ISO_LOCAL_DATE.format(it.atOffset(java.time.ZoneOffset.UTC))
-        }.orEmpty()
-        val runsOut = pl.bnowakowski.cozadzban.facebookimport.ApifyCreditForecast.predict(usage, Instant.now())?.let {
-            ", runs out around " + java.time.format.DateTimeFormatter.ISO_LOCAL_DATE.format(it.predictedExhaustionAt.atOffset(java.time.ZoneOffset.UTC))
+        // Apify reports the cycle end as the last millisecond of the cycle; it resets right after.
+        val resets = usage.cycleEndAt?.let { ", resets " + RelativeFutureTime.format(it.plusMillis(1), now) }.orEmpty()
+        val runsOut = pl.bnowakowski.cozadzban.facebookimport.ApifyCreditForecast.predict(usage, now)?.let {
+            ", runs out " + RelativeFutureTime.format(it.predictedExhaustionAt, now)
         }.orEmpty()
         return "${usd(usage.remainingUsd)} of ${usd(usage.limitUsd)}$runsOut$resets"
     }
