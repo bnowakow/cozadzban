@@ -6,9 +6,8 @@ package pl.bnowakowski.cozadzban.notifications
 import org.slf4j.LoggerFactory
 import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Service
+import pl.bnowakowski.cozadzban.ui.WarsawTime
 import java.math.RoundingMode
-import java.time.ZoneOffset
-import java.time.format.DateTimeFormatter
 import pl.bnowakowski.cozadzban.facebookimport.ApifyCreditsLowEvent
 import pl.bnowakowski.cozadzban.facebookimport.FacebookApifyCreditsExhaustedEvent
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportLoginRequiredEvent
@@ -91,9 +90,8 @@ class NotificationDeliveryService(
     fun onApifyCreditsExhausted(event: FacebookApifyCreditsExhaustedEvent) {
         if (!properties.pushoverConfigured) return
         val remaining = event.remainingUsd?.let { "$" + it.setScale(2, RoundingMode.HALF_UP).toPlainString() + " left" }
-        val resets = event.cycleEndAt?.let {
-            "resets after " + DateTimeFormatter.ISO_LOCAL_DATE.format(it.atOffset(ZoneOffset.UTC))
-        }
+        // Apify reports the cycle end as its last millisecond; the reset is right after, shown in Warsaw time.
+        val resets = event.cycleEndAt?.let { "resets " + WarsawTime.dateTime(it.plusMillis(1)) }
         val balance = listOfNotNull(remaining, resets).joinToString(", ").takeIf { it.isNotBlank() }
         val message = "Facebook Apify import ${event.importRunId} failed: Apify credits are exhausted" +
             (balance?.let { " ($it)" } ?: "") + "."
@@ -112,7 +110,7 @@ class NotificationDeliveryService(
     fun onApifyCreditsLow(event: ApifyCreditsLowEvent) {
         if (!properties.pushoverConfigured) return
         fun usd(value: java.math.BigDecimal) = "$" + value.setScale(2, RoundingMode.HALF_UP).toPlainString()
-        fun date(value: java.time.Instant) = DateTimeFormatter.ISO_LOCAL_DATE.format(value.atOffset(ZoneOffset.UTC))
+        fun date(value: java.time.Instant) = WarsawTime.date(value)
         val wholeDays = Math.round(event.daysLeft).toInt()
         val within = when {
             event.daysLeft < 1.0 -> "within a day"
@@ -121,7 +119,7 @@ class NotificationDeliveryService(
         }
         val message = "Apify credits are predicted to run out $within (around ${date(event.predictedExhaustionAt)}): " +
             "${usd(event.remainingUsd)} of ${usd(event.limitUsd)} left, about ${usd(event.dailyUsageUsd)} used per day." +
-            (event.cycleEndAt?.let { " The cycle resets after ${date(it)}." } ?: "")
+            (event.cycleEndAt?.let { " The cycle resets ${WarsawTime.dateTime(it.plusMillis(1))}." } ?: "")
         repository.findPushoverRecipientsForApifyCreditsLow().forEach { recipient ->
             deliver(
                 recipient,

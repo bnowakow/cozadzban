@@ -37,7 +37,8 @@ class CodexUsageLimitTest {
         val limited = CodexArticleImageGenerator.usageLimit(realOutput, now)!!
 
         assertEquals(Instant.parse("2026-11-04T06:37:00Z"), limited.retryAt)
-        assertEquals("Codex usage limit reached; retrying after 2026-11-04T06:37:00Z.", limited.reason)
+        // 06:37 UTC on 4 November is 07:37 in Warsaw (CET, UTC+1).
+        assertEquals("Codex usage limit reached; retrying after 2026-11-04 07:37.", limited.reason)
     }
 
     @Test

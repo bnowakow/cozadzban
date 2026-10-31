@@ -161,7 +161,7 @@ class ClaudeSvgArticleImageGenerator(
                 ?.takeIf { it.isAfter(now) }
                 ?: now.plusSeconds(3600)
             return ArticleImageGenerationResult.UsageLimited(
-                "Claude usage limit reached; retrying after ${retryAt.truncatedTo(java.time.temporal.ChronoUnit.MINUTES)}.",
+                "Claude usage limit reached; retrying after ${pl.bnowakowski.cozadzban.ui.WarsawTime.dateTime(retryAt)}.",
                 retryAt,
             )
         }

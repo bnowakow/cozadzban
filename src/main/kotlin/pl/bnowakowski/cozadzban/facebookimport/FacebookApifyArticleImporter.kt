@@ -274,7 +274,7 @@ class FacebookApifyArticleImporter(
     private fun usageSuffix(usage: ApifyAccountUsage?): String =
         usage?.let {
             " Used ${usd(it.usedUsd)} of ${usd(it.limitUsd)} this cycle" +
-                (it.cycleEndAt?.let { end -> "; resets after ${DateTimeFormatter.ISO_LOCAL_DATE.format(end.atOffset(ZoneOffset.UTC))}" } ?: "") +
+                (it.cycleEndAt?.let { end -> "; resets ${pl.bnowakowski.cozadzban.ui.WarsawTime.dateTime(end.plusMillis(1))}" } ?: "") +
                 "."
         } ?: ""
 

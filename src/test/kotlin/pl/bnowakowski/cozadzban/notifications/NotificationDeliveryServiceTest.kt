@@ -227,7 +227,7 @@ class NotificationDeliveryServiceTest {
         assertEquals("Apify credits exhausted", captor.firstValue.title)
         assertEquals(
             "Facebook Apify import facebook-apify-import-1 failed: Apify credits are exhausted " +
-                "(\$0.05 left, resets after 2026-11-26).",
+                "(\$0.05 left, resets 2026-11-27 01:00).",
             captor.firstValue.message,
         )
         assertEquals("https://console.apify.com/billing", captor.firstValue.url)
@@ -269,7 +269,7 @@ class NotificationDeliveryServiceTest {
         assertEquals("Apify credits running low", captor.firstValue.title)
         assertEquals(
             "Apify credits are predicted to run out in about 3 days (around 2026-11-05): " +
-                "\$1.30 of \$5.00 left, about \$0.50 used per day. The cycle resets after 2026-11-26.",
+                "\$1.30 of \$5.00 left, about \$0.50 used per day. The cycle resets 2026-11-27 01:00.",
             captor.firstValue.message,
         )
     }

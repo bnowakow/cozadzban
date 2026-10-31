@@ -346,7 +346,7 @@ class CodexArticleImageGenerator(
                 }.getOrNull()
             }?.takeIf { it.isAfter(now) } ?: now.plusSeconds(3600)
             val reason = "Codex usage limit reached; retrying after " +
-                java.time.format.DateTimeFormatter.ISO_INSTANT.format(retryAt.truncatedTo(java.time.temporal.ChronoUnit.MINUTES)) + "."
+                pl.bnowakowski.cozadzban.ui.WarsawTime.dateTime(retryAt) + "."
             return ArticleImageGenerationResult.UsageLimited(reason, retryAt)
         }
 

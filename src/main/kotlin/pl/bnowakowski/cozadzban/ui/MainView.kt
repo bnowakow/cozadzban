@@ -2108,7 +2108,6 @@ class ArticleListView(
         private const val FACEBOOK_IMPORT_APPROVAL_POLL_INTERVAL_MS = 1_000
         private const val FACEBOOK_IMPORT_STATUS_POLL_INTERVAL_MS = 7_000
 
-        private fun formatInstant(instant: Instant): String = WarsawTime.dateTime(instant)
         private fun formatStatusInstant(instant: Instant): String = WarsawTime.dateTimeSeconds(instant)
         private fun formatDate(instant: Instant): String = WarsawTime.date(instant)
     }
