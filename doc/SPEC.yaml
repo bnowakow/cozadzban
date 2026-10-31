@@ -1698,6 +1698,15 @@ x-planned-features:
   articleImageGeneration:
     status: experimental_implemented
     plan: doc/ARTICLE_IMAGE_GENERATION_PLAN.md
+    publicationWait: >
+      With image generation enabled, a Facebook Page publication waits while its image job
+      is MISSING_THUMBNAIL, GENERATING or FAILED, up to APP_FACEBOOK_IMAGE_PUBLICATION_WAIT_MAX
+      (default 24h) after the publication was created. After that it posts with the branded
+      placeholder.
+    codexUsageLimit: >
+      A Codex "usage limit … try again at <time>" error, read from Codex's ERROR output lines
+      only, returns the job to MISSING_THUMBNAIL without using an attempt. It also holds the
+      shared generation pace until that time (UTC plus one minute, or one hour when unreadable).
     websiteCopy: >
       The PNG original is kept for Facebook and og:image. The feed and story pages
       show a JPEG copy (quality 0.82, about ten times smaller) through

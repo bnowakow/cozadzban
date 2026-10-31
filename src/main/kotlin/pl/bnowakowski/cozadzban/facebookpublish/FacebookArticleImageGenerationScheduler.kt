@@ -73,6 +73,10 @@ class FacebookArticleImageGenerationScheduler(
                             "Article {} changed during image generation; queued another illustration", job.articleId)
                     }
                 }
+                is ArticleImageGenerationResult.UsageLimited -> {
+                    jobs.pauseForUsageLimit(job.articleId, result.retryAt, result.reason)
+                    log.warn("Facebook illustration paused for article {} ({})", job.articleId, result.reason)
+                }
                 is ArticleImageGenerationResult.Failed -> {
                     if (result.retryable) jobs.fail(job.articleId, MAX_ATTEMPTS, result.reason)
                     else jobs.failPermanent(job.articleId, result.reason)

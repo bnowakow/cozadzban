@@ -22,6 +22,9 @@ import javax.imageio.ImageWriteParam
 sealed interface ArticleImageGenerationResult {
     data class Generated(val png: ByteArray) : ArticleImageGenerationResult
     data class Failed(val reason: String, val retryable: Boolean = true) : ArticleImageGenerationResult
+
+    /** Codex reported its usage limit; retry after [retryAt] without counting this as a failed attempt. */
+    data class UsageLimited(val reason: String, val retryAt: Instant) : ArticleImageGenerationResult
 }
 
 /** Experimental operator-controlled adapter. The generated file is data, never a Codex response parsed as a path. */
@@ -88,6 +91,12 @@ class CodexArticleImageGenerator(
     }.onFailure { log.warn("Could not prepare web image for article {} ({})", articleId, it.javaClass.simpleName) }
         .getOrNull()
 
+    private fun readTail(path: Path): String = runCatching {
+        if (!Files.isRegularFile(path)) return@runCatching ""
+        val bytes = Files.readAllBytes(path)
+        String(bytes, maxOf(0, bytes.size - MAX_OUTPUT_BYTES), minOf(bytes.size, MAX_OUTPUT_BYTES), Charsets.UTF_8)
+    }.getOrDefault("")
+
     private fun pngPath(articleId: Long): Path = Path.of(assetDir).resolve("article-$articleId.png")
 
     private fun webPath(articleId: Long): Path = Path.of(assetDir).resolve("article-$articleId.jpg")
@@ -107,6 +116,7 @@ class CodexArticleImageGenerator(
             val directory = Files.createTempDirectory("codex-facebook-image-")
             workdir = directory
             val finalMessage = directory.resolve("codex-result.txt")
+            val output = directory.resolve("codex-output.log")
             val process = ProcessBuilder(
                 "codex", "exec", "--ephemeral", "--skip-git-repo-check",
                 "--ignore-user-config", "--sandbox", "workspace-write", "-C", directory.toString(),
@@ -122,8 +132,9 @@ class CodexArticleImageGenerator(
             environment["CODEX_HOME"] = codexHome
             environment["PATH"] = path
             environment["LANG"] = "C.UTF-8"
-            process.redirectOutput(ProcessBuilder.Redirect.DISCARD)
-            process.redirectError(ProcessBuilder.Redirect.DISCARD)
+            // Keep Codex's console output to classify failures; it is deleted with the work directory.
+            process.redirectErrorStream(true)
+            process.redirectOutput(output.toFile())
 
             val startedAt = Instant.now()
             val child = process.start()
@@ -134,8 +145,14 @@ class CodexArticleImageGenerator(
                     return ArticleImageGenerationResult.Failed("Codex image generation timed out.")
                 }
                 if (child.exitValue() != 0) {
+                    val outputText = readTail(output)
+                    usageLimit(outputText, Instant.now())?.let { limited ->
+                        log.warn("Codex usage limit reached for article {}; retrying after {}", article.id, limited.retryAt)
+                        return limited
+                    }
                     log.warn("Codex image generation failed for article {} (exit {})", article.id, child.exitValue())
-                    return ArticleImageGenerationResult.Failed("Codex exited with code ${child.exitValue()}.")
+                    val detail = lastErrorLine(outputText)?.let { ": $it" } ?: "."
+                    return ArticleImageGenerationResult.Failed("Codex exited with code ${child.exitValue()}$detail")
                 }
             } finally {
                 if (child.isAlive) {
@@ -146,6 +163,10 @@ class CodexArticleImageGenerator(
             val generatedFile = findGeneratedFile(finalMessage, Path.of(codexHome), startedAt)
                 ?: findFreshGeneratedFile(Path.of(codexHome), startedAt)
             if (generatedFile == null) {
+                usageLimit(readTail(output), Instant.now())?.let { limited ->
+                    log.warn("Codex usage limit reached for article {}; retrying after {}", articleId, limited.retryAt)
+                    return limited
+                }
                 log.warn("Codex completed without an image for article {}", articleId)
                 return ArticleImageGenerationResult.Failed("Codex completed without generating an image.")
             }
@@ -289,8 +310,45 @@ class CodexArticleImageGenerator(
         return output.toByteArray()
     }
 
-    private companion object {
+    internal companion object {
         const val MAX_IMAGE_BYTES = 10_000_000L
+        const val MAX_OUTPUT_BYTES = 64 * 1024
+        private val USAGE_LIMIT = Regex("""(?i)hit your usage limit|usage limit (?:reached|exceeded)""")
+        private val RETRY_AT = Regex(
+            """(?i)try again at ([A-Za-z]{3,9})\.? (\d{1,2})(?:st|nd|rd|th)?,? (\d{4}),? (\d{1,2}):(\d{2})\s*([AP]M)""",
+        )
+        private val MONTHS = listOf("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
+
+        /**
+         * Detects Codex's usage-limit error, e.g. "You've hit your usage limit. ... try again at
+         * Nov 4th, 2026 6:36 AM." The time has no zone; the container runs in UTC, so it is read as
+         * UTC with a minute of margin. Without a readable time, retry in an hour.
+         */
+        internal fun usageLimit(output: String, now: Instant): ArticleImageGenerationResult.UsageLimited? {
+            // Only Codex's own error lines count: the echoed prompt contains untrusted article text.
+            val errors = errorLines(output).joinToString("\n")
+            if (!USAGE_LIMIT.containsMatchIn(errors)) return null
+            val retryAt = RETRY_AT.find(errors)?.let { match ->
+                runCatching {
+                    val (monthName, day, year, hour, minute, meridiem) = match.destructured
+                    val month = MONTHS.indexOf(monthName.take(3).lowercase()) + 1
+                    require(month > 0)
+                    val hour24 = hour.toInt() % 12 + if (meridiem.equals("PM", ignoreCase = true)) 12 else 0
+                    java.time.LocalDateTime.of(year.toInt(), month, day.toInt(), hour24, minute.toInt())
+                        .toInstant(java.time.ZoneOffset.UTC).plusSeconds(60)
+                }.getOrNull()
+            }?.takeIf { it.isAfter(now) } ?: now.plusSeconds(3600)
+            val reason = "Codex usage limit reached; retrying after " +
+                java.time.format.DateTimeFormatter.ISO_INSTANT.format(retryAt.truncatedTo(java.time.temporal.ChronoUnit.MINUTES)) + "."
+            return ArticleImageGenerationResult.UsageLimited(reason, retryAt)
+        }
+
+        /** The last "ERROR:" line of Codex's output, shortened for the admin status page. */
+        internal fun lastErrorLine(output: String): String? =
+            errorLines(output).lastOrNull()?.removePrefix("ERROR:")?.trim()?.take(120)
+
+        private fun errorLines(output: String): List<String> =
+            output.lineSequence().map { it.trim() }.filter { it.startsWith("ERROR:") }.toList()
         const val WEB_JPEG_QUALITY = 0.82f
     }
 }

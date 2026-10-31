@@ -261,6 +261,26 @@ class FacebookArticleImageGenerationRepository(private val jdbc: NamedParameterJ
         )
     }
 
+    /**
+     * Codex usage limit: return the job to the queue without using up this attempt, and hold
+     * automatic generation for every article until [retryAt], so queued jobs don't each fail.
+     */
+    @Transactional
+    fun pauseForUsageLimit(articleId: Long, retryAt: Instant, reason: String) {
+        jdbc.update(
+            """UPDATE facebook_article_image_generation
+               SET status = 'MISSING_THUMBNAIL', attempt_count = GREATEST(attempt_count - 1, 0),
+                   next_attempt_at = :retryAt, last_error = :reason, updated_at = now()
+               WHERE article_id = :articleId AND status = 'GENERATING'""",
+            mapOf("articleId" to articleId, "retryAt" to utcTimestamp(retryAt), "reason" to reason.take(200)),
+        )
+        jdbc.update(
+            """UPDATE facebook_article_image_generation_pace
+               SET next_claim_at = GREATEST(next_claim_at, :retryAt) WHERE id = 1""",
+            mapOf("retryAt" to utcTimestamp(retryAt)),
+        )
+    }
+
     fun failPermanent(articleId: Long, reason: String) {
         jdbc.update(
             """UPDATE facebook_article_image_generation

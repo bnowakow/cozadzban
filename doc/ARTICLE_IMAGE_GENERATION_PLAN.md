@@ -23,9 +23,19 @@ private `codex-auth` Docker volume. A bounded Java adapter can ask `$imagegen`
 for an image from an article's title, lead, quote, summary, and cached
 text. A scheduler checks each minute and claims at most one missing-image
 article every ten minutes across application instances using a database pacing
-row. It retries up to three times, then releases the Facebook
-publication to use the branded placeholder. Publication waits while generation
-is pending. If Meta explicitly rejects a source thumbnail, publication is
+row. It retries up to three times, then marks the job `FAILED`. The Facebook
+publication waits while the image job is pending, generating, or failed, so an
+admin can still retry a failed job with `Generate now`. After
+`APP_FACEBOOK_IMAGE_PUBLICATION_WAIT_MAX` (default 24 hours) from the
+publication's creation, it posts with the branded placeholder anyway.
+
+Codex's console output is kept for the run. When an `ERROR:` line reports the
+ChatGPT usage limit ("You've hit your usage limit … try again at Nov 4th, 2026
+6:36 AM"), the job returns to the queue without using an attempt. Automatic
+generation for all articles then pauses until the reported time, read as UTC
+plus one minute, or for one hour if no time can be read. Without that, every
+queued article would burn its three attempts against the limit. Other exit
+failures record Codex's last `ERROR:` line in the job's error. If Meta explicitly rejects a source thumbnail, publication is
 deferred and the article joins the same image queue. The adapter validates image
 size and dimensions, crops to 1200 × 630, and caches the PNG in the persistent
 data volume. Completed generated images are shown on the feed and story page

@@ -4,7 +4,11 @@ package pl.bnowakowski.cozadzban.facebookpublish
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Repository
 import org.springframework.transaction.annotation.Transactional
+import java.time.Duration
 import java.time.Instant
+
+/** How long a Page post waits for its generated illustration before using the placeholder. */
+internal val DEFAULT_IMAGE_WAIT: Duration = Duration.ofHours(24)
 
 data class FacebookPublicationJob(
     val id: Long,
@@ -35,21 +39,29 @@ class FacebookPublicationQueue(private val jdbc: NamedParameterJdbcTemplate) {
 
     /** Claim one job atomically across application instances. A crash after this point needs reconciliation. */
     @Transactional
-    fun claim(waitForImages: Boolean = false): FacebookPublicationJob? = jdbc.query(
+    /**
+     * Claims the oldest pending publication. With [waitForImages], a post whose illustration is still
+     * pending or has failed is held back, so it can go out with a generated image (failed jobs can be
+     * retried from the admin thumbnails page). After [imageWaitMax] from its creation it is
+     * published anyway, and the image provider falls back to the branded placeholder.
+     */
+    fun claim(waitForImages: Boolean = false, imageWaitMax: Duration = DEFAULT_IMAGE_WAIT): FacebookPublicationJob? = jdbc.query(
         """WITH candidate AS (
                SELECT publication.id FROM facebook_page_publication publication
                WHERE publication.status = 'PENDING'
-                 AND (:waitForImages = false OR NOT EXISTS (
+                 AND (:waitForImages = false
+                      OR publication.created_at <= now() - :waitSeconds * interval '1 second'
+                      OR NOT EXISTS (
                      SELECT 1 FROM facebook_article_image_generation image
                      WHERE image.article_id = publication.article_id_snapshot
-                       AND image.status IN ('MISSING_THUMBNAIL', 'GENERATING')
+                       AND image.status IN ('MISSING_THUMBNAIL', 'GENERATING', 'FAILED')
                  ))
                ORDER BY created_at, id FOR UPDATE SKIP LOCKED LIMIT 1
            )
            UPDATE facebook_page_publication p SET status = 'PUBLISHING', attempt_count = attempt_count + 1,
                updated_at = now() FROM candidate WHERE p.id = candidate.id
            RETURNING p.id, p.article_id_snapshot, p.language, p.page_id, p.status, p.post_id, p.last_error, p.created_at""",
-        mapOf("waitForImages" to waitForImages), mapper,
+        mapOf("waitForImages" to waitForImages, "waitSeconds" to imageWaitMax.seconds.coerceAtLeast(0)), mapper,
     ).firstOrNull()
 
     /** A source URL failed before Meta created a post; wait for image generation. */

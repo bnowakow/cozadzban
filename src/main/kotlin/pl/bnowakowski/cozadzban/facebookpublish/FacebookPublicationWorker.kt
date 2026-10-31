@@ -2,12 +2,14 @@
 package pl.bnowakowski.cozadzban.facebookpublish
 
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.annotation.Configuration
 import org.springframework.scheduling.annotation.EnableScheduling
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
 import org.springframework.web.client.RestClientResponseException
 import pl.bnowakowski.cozadzban.article.ArticleRepository
+import java.time.Duration
 
 @Configuration
 @EnableScheduling
@@ -22,6 +24,7 @@ class FacebookPublicationWorker(
     private val imageJobs: FacebookArticleImageGenerationRepository,
     private val imageGenerator: CodexArticleImageGenerator,
     private val publisher: FacebookPhotoPublisher,
+    @Value("\${app.facebook-image.publication-wait-max:24h}") private val imageWaitMax: Duration = DEFAULT_IMAGE_WAIT,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -29,7 +32,7 @@ class FacebookPublicationWorker(
     fun publishPending() {
         queue.recoverInterruptedClaims()
         repeat(10) {
-            val job = queue.claim(imageGenerator.isEnabled()) ?: return
+            val job = queue.claim(imageGenerator.isEnabled(), imageWaitMax) ?: return
             publish(job)
         }
     }

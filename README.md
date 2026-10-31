@@ -65,6 +65,7 @@ Key settings:
 | `APP_FACEBOOK_PAGE_ENCRYPTION_KEY` | Stable 16-, 24-, or 32-byte AES key (base64 or hex) for stored Page tokens | _(required to connect a Page)_ |
 | `APP_FACEBOOK_PAGE_GRAPH_VERSION` | Meta Graph API version used for Page calls | `v26.0` |
 | `APP_FACEBOOK_IMAGE_CODEX_ENABLED` | Enables the experimental generated-image fallback for missing or rejected source thumbnails | `false` |
+| `APP_FACEBOOK_IMAGE_PUBLICATION_WAIT_MAX` | How long a Facebook Page post waits for its generated illustration (pending or failed) before posting with the branded placeholder | `24h` |
 | `APP_FACEBOOK_IMPORT_APIFY_SCHEDULE_INTERVAL` | Minimum time between enabled Apify imports; the worker template schedules one automatic run per 24 hours | `24h` |
 | `APP_FACEBOOK_IMPORT_APIFY_COST_SUMMARY_DAYS` | Lookback window for the admin Apify cost total and automatic-run average | `30` |
 | `APP_FACEBOOK_IMPORT_APIFY_LOW_CREDIT_ALERTS_ENABLED` | Hourly forecast of when Apify credit runs out, with alerts 3 days and 1 day before (needs the Apify API token) | `true` |
