@@ -1,5 +1,5 @@
 
-.PHONY: help docker-up docker-down docker-data-permissions docker-upgrade-log-owner docker-pg-nuke docker-pg-backup install-pg-backup-cron ensure-pg-backup-cron install-codex-auth-cron install-app-health-cron install-all-crons codex-auth-check app-health-check build run run-local run-prod test clean docker-logs docker-spring-shell docker-pg-shell docker-upgrade docker-upgrade-no-cache sync-env-files bump-patch bump-minor codex-commit install-git-hooks install-codex-skills codex-skill-prompts codex-docker-login codex-docker-status codex-docker-logout
+.PHONY: help docker-up docker-down docker-data-permissions docker-upgrade-log-owner docker-pg-nuke docker-pg-backup install-pg-backup-cron ensure-pg-backup-cron install-codex-auth-cron install-app-health-cron install-all-crons codex-auth-check app-health-check build run run-local run-prod test clean docker-logs docker-spring-shell docker-pg-shell docker-upgrade docker-upgrade-no-cache sync-env-files bump-patch bump-minor codex-commit claude-commit install-git-hooks install-codex-skills install-claude-skills codex-skill-prompts claude-skill-prompts codex-docker-login codex-docker-status codex-docker-logout
 
 -include .env
 
@@ -47,9 +47,12 @@ help:
 	@printf "\n"
 	@printf "  \033[1;94m%s\033[0m\n" "Repository"
 	@printf "    %-31s %s\n" "codex-commit" "Bump version if needed, stage, commit with Codex, and optionally push"
+	@printf "    %-31s %s\n" "claude-commit" "Bump version if needed, stage, commit with Claude, and optionally push"
 	@printf "    %-31s %s\n" "install-git-hooks" "Configure repository git hooks"
 	@printf "    %-31s %s\n" "install-codex-skills" "Install all project Codex skills into CODEX_HOME"
+	@printf "    %-31s %s\n" "install-claude-skills" "Install all project skills into Claude Code's CLAUDE_CONFIG_DIR"
 	@printf "    %-31s %s\n" "codex-skill-prompts" "Show sample prompts for project Codex skills"
+	@printf "    %-31s %s\n" "claude-skill-prompts" "Show slash commands and sample prompts for project Claude skills"
 	@printf "\n"
 
 # Active Spring profile used by the generic run target.
@@ -61,6 +64,7 @@ LOCAL_UID ?= $(shell id -u)
 LOCAL_GID ?= $(shell id -g)
 APP_BUILD_COMMIT ?= $(shell git rev-parse --short=8 HEAD 2>/dev/null || echo unknown)
 CODEX_HOME ?= $(HOME)/.codex
+CLAUDE_CONFIG_DIR ?= $(HOME)/.claude
 SDKMAN_JAVA_HOME ?= $(HOME)/.sdkman/candidates/java/current
 ifneq ($(wildcard $(SDKMAN_JAVA_HOME)/bin/java),)
 JAVA_HOME ?= $(SDKMAN_JAVA_HOME)
@@ -225,6 +229,25 @@ install-codex-skills:
 	fi
 	@echo "✓ Codex skills installed to $(CODEX_HOME)/skills"
 
+# Install the same repository-provided skills into Claude Code's skills directory.
+# Claude Code names skills by directory, so the SKIL_ prefix is dropped.
+install-claude-skills:
+	@mkdir -p "$(CLAUDE_CONFIG_DIR)/skills"
+	@count=0; \
+	for skill in doc/codex-skills/SKIL_*; do \
+		if [ -d "$$skill" ]; then \
+			name=$$(basename "$$skill" | sed 's/^SKIL_//'); \
+			rm -rf "$(CLAUDE_CONFIG_DIR)/skills/$$name"; \
+			cp -R "$$skill" "$(CLAUDE_CONFIG_DIR)/skills/$$name"; \
+			count=$$((count + 1)); \
+		fi; \
+	done; \
+	if [ "$$count" -eq 0 ]; then \
+		echo "No skills found in doc/codex-skills/SKIL_*"; \
+		exit 1; \
+	fi
+	@echo "✓ Claude skills installed to $(CLAUDE_CONFIG_DIR)/skills"
+
 # Show sample prompts for repository-provided Codex skills.
 codex-skill-prompts:
 	@printf "Codex skill sample prompts\n\n"
@@ -247,6 +270,34 @@ codex-skill-prompts:
 	done; \
 	if [ "$$count" -eq 0 ]; then \
 		echo "No Codex skills found in doc/codex-skills/SKIL_*"; \
+		exit 1; \
+	fi; \
+	if [ "$$missing" -gt 0 ]; then \
+		exit 1; \
+	fi
+
+# Show slash commands and sample prompts for the skills installed by install-claude-skills.
+claude-skill-prompts:
+	@printf "Claude skill sample prompts\n\n"
+	@count=0; \
+	missing=0; \
+	for skill in doc/codex-skills/SKIL_*; do \
+		if [ -d "$$skill" ]; then \
+			name=$$(basename "$$skill" | sed 's/^SKIL_//'); \
+			prompt="$$skill/prompt.txt"; \
+			printf '\033[1;94m/%s\033[0m\n' "$$name"; \
+			if [ -f "$$prompt" ]; then \
+				sed 's/^/  /' "$$prompt"; \
+			else \
+				echo "  Missing $$prompt"; \
+				missing=$$((missing + 1)); \
+			fi; \
+			printf '\n'; \
+			count=$$((count + 1)); \
+		fi; \
+	done; \
+	if [ "$$count" -eq 0 ]; then \
+		echo "No skills found in doc/codex-skills/SKIL_*"; \
 		exit 1; \
 	fi; \
 	if [ "$$missing" -gt 0 ]; then \
@@ -291,6 +342,10 @@ bump-minor:
 # Stage all changes, ask Codex for a commit message, commit, and optionally push.
 codex-commit:
 	utilities/codex-commit.sh
+
+# Same flow as codex-commit, with Claude Code writing the message and resolving pull conflicts.
+claude-commit:
+	utilities/claude-commit.sh
 
 # Follow docker-compose logs
 docker-logs:

@@ -1,6 +1,7 @@
 # Utilities
 
 - [Codex commit](#codex-commit) — stage changes, ask Codex for a commit message, commit, and optionally push.
+- [Claude commit](#claude-commit) — the same flow with Claude Code instead of Codex.
 - [Facebook feed auto-scroll](#facebook-feed-auto-scroll) — browser console snippet that scrolls Facebook to load more posts.
 - [Seed sample articles](#seed-sample-articles) — bulk-POST sample URLs to the local API for UI / perf testing.
 
@@ -21,6 +22,20 @@ If the upstream branch has new commits, the script can run `git pull --rebase --
 `git` must be on `PATH`. The script uses `codex` from `PATH` when available, honors `CODEX_BIN` as an explicit override, and on macOS also falls back to the bundled CLI inside either `Codex.app` or `ChatGPT.app` under `/Applications` or `~/Applications`. `dialog` or `whiptail` is optional for full-screen terminal prompts; without one, or when the current process has no usable TTY/TERM for curses, prompts fall back to plain terminal input with a diagnostic.
 
 Both `Contents/Resources/codex` and `Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex` bundle layouts are supported. When there are changes to commit, CLI availability is checked before syncing upstream, bumping the version, or staging files.
+
+## Claude commit
+
+`claude-commit.sh` runs the same flow as `codex-commit.sh` (it sets `COMMIT_AGENT=claude` and calls that script), but asks Claude Code for the commit message and for pull-conflict resolution:
+
+```bash
+./utilities/claude-commit.sh   # or: make claude-commit
+```
+
+Claude runs non-interactively with `claude -p`. For the commit message it may only read files and run read-only git commands (`status`, `diff`, `log`, `show`, `ls-files`). For conflict resolution it may also edit files (`--permission-mode acceptEdits`). In both modes `git commit`, `push`, `reset`, `rebase`, `checkout`, `restore` and `stash` are denied, so the script keeps control of the rebase.
+
+### Requirements
+
+The script uses `claude` from `PATH` when available, honors `CLAUDE_BIN` as an explicit override, and also checks `~/.local/bin/claude`, `~/.claude/local/claude`, `/opt/homebrew/bin/claude` and `/usr/local/bin/claude`. Claude Code must already be signed in (run `claude` once interactively). The other requirements are the same as for [Codex commit](#codex-commit).
 
 ## Facebook feed auto-scroll
 

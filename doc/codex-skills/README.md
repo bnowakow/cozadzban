@@ -1,16 +1,13 @@
-# Codex Skills
+# Codex and Claude Skills
 
-Repository-provided Codex skills live in `doc/codex-skills/SKIL_*` and can be installed with:
+Repository-provided skills live in `doc/codex-skills/SKIL_*`. The same `SKILL.md` files work for both Codex and Claude Code.
 
-```sh
-make install-codex-skills
-```
-
-Show all sample prompts with:
-
-```sh
-make codex-skill-prompts
-```
+| | Codex | Claude Code |
+| --- | --- | --- |
+| Install | `make install-codex-skills` | `make install-claude-skills` |
+| Installed to | `$CODEX_HOME/skills/SKIL_<name>` (default `~/.codex`) | `$CLAUDE_CONFIG_DIR/skills/<name>` (default `~/.claude`) |
+| Show sample prompts | `make codex-skill-prompts` | `make claude-skill-prompts` |
+| Invoke | Use the sample prompt | `/<name>` or the sample prompt |
 
 ## Available Skills
 

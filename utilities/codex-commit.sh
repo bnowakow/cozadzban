@@ -14,15 +14,28 @@ trap cleanup EXIT
 
 ui_fallback_explained=0
 
-codex_command=()
+# COMMIT_AGENT selects the CLI that writes commit messages and resolves pull
+# conflicts: "codex" (default) or "claude". utilities/claude-commit.sh sets it.
+commit_agent=${COMMIT_AGENT:-codex}
+case "$commit_agent" in
+	codex) agent_label=Codex ;;
+	claude) agent_label=Claude ;;
+	*)
+		echo "Unsupported COMMIT_AGENT '$commit_agent'; use codex or claude." >&2
+		exit 1
+		;;
+esac
+script_name="${commit_agent}-commit"
+
+agent_command=()
 resolve_codex_command() {
 	if [ -n "${CODEX_BIN:-}" ] && [ -x "${CODEX_BIN}" ]; then
-		codex_command=("${CODEX_BIN}")
+		agent_command=("${CODEX_BIN}")
 		return 0
 	fi
 
 	if command -v codex >/dev/null 2>&1; then
-		codex_command=(codex)
+		agent_command=(codex)
 		return 0
 	fi
 
@@ -37,12 +50,82 @@ resolve_codex_command() {
 		"/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex" \
 		"$HOME/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex"; do
 		if [ -x "$candidate" ]; then
-			codex_command=("$candidate")
+			agent_command=("$candidate")
 			return 0
 		fi
 	done
 
 	return 1
+}
+
+resolve_claude_command() {
+	if [ -n "${CLAUDE_BIN:-}" ] && [ -x "${CLAUDE_BIN}" ]; then
+		agent_command=("${CLAUDE_BIN}")
+		return 0
+	fi
+
+	if command -v claude >/dev/null 2>&1; then
+		agent_command=(claude)
+		return 0
+	fi
+
+	local candidate
+	for candidate in \
+		"$HOME/.local/bin/claude" \
+		"$HOME/.claude/local/claude" \
+		"/opt/homebrew/bin/claude" \
+		"/usr/local/bin/claude"; do
+		if [ -x "$candidate" ]; then
+			agent_command=("$candidate")
+			return 0
+		fi
+	done
+
+	return 1
+}
+
+resolve_agent_command() {
+	case "$commit_agent" in
+		codex) resolve_codex_command ;;
+		claude) resolve_claude_command ;;
+	esac
+}
+
+agent_install_hint() {
+	case "$commit_agent" in
+		codex) printf "Install the Codex CLI, set CODEX_BIN, or add Codex.app/ChatGPT.app's bundled CLI to PATH." ;;
+		claude) printf 'Install Claude Code (https://claude.com/claude-code), set CLAUDE_BIN, or add claude to PATH.' ;;
+	esac
+}
+
+# Run the agent non-interactively. $1 is "read-only" or "workspace-write",
+# $2 is the file that receives the final message, $3 is the prompt.
+run_agent() {
+	local mode=$1
+	local output_file=$2
+	local prompt=$3
+
+	if [ "$commit_agent" = codex ]; then
+		"${agent_command[@]}" exec \
+			-C "$repo_root" \
+			--sandbox "$mode" \
+			--output-last-message "$output_file" \
+			"$prompt"
+		return
+	fi
+
+	local read_tools="Read,Grep,Glob,Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git ls-files:*)"
+	local denied_tools="Bash(git commit:*),Bash(git push:*),Bash(git reset:*),Bash(git rebase:*),Bash(git checkout:*),Bash(git restore:*),Bash(git stash:*)"
+	local claude_args=(-p --output-format text --disallowedTools "$denied_tools")
+
+	if [ "$mode" = workspace-write ]; then
+		claude_args+=(--permission-mode acceptEdits --allowedTools "$read_tools,Edit,Write")
+	else
+		claude_args+=(--permission-mode default --allowedTools "$read_tools")
+	fi
+
+	# --allowedTools/--disallowedTools take variadic values, so the prompt goes on stdin.
+	(cd "$repo_root" && printf '%s\n' "$prompt" | "${agent_command[@]}" "${claude_args[@]}") >"$output_file"
 }
 
 terminal_ui_unavailable_reason() {
@@ -279,28 +362,25 @@ view_last_commit_diff() {
 	fi
 }
 
-resolve_pull_conflict_with_codex() {
+resolve_pull_conflict_with_agent() {
 	local conflict_output
 
-	conflict_output=$(mktemp "${TMPDIR:-/tmp}/cozadzban-codex-conflict.XXXXXX")
+	conflict_output=$(mktemp "${TMPDIR:-/tmp}/cozadzban-${commit_agent}-conflict.XXXXXX")
 	tmp_files+=("$conflict_output")
 
-	printf '\nGit pull produced conflicts. Attempting to resolve them with Codex...\n'
+	printf '\nGit pull produced conflicts. Attempting to resolve them with %s...\n' "$agent_label"
 	printf 'Conflicted files:\n'
 	git diff --name-only --diff-filter=U | sed 's/^/  - /'
 
-	if ! "${codex_command[@]}" exec \
-		-C "$repo_root" \
-		--sandbox workspace-write \
-		--output-last-message "$conflict_output" \
+	if ! run_agent workspace-write "$conflict_output" \
 		'Git is currently stopped on a pull conflict, either during a rebase or while applying an autostash after the rebase. Inspect the conflicted files, resolve the conflict markers in the working tree, preserve the intended behavior from both sides where possible, and do not commit, push, reset, abort, or continue the rebase. After editing, report whether all conflict markers and unmerged paths are resolved.'; then
-		echo "Codex failed while attempting to resolve the pull conflict."
+		echo "$agent_label failed while attempting to resolve the pull conflict."
 		cat "$conflict_output" >&2
 		return 1
 	fi
 
 	if has_unmerged_paths; then
-		echo "Codex was not able to resolve all git conflicts."
+		echo "$agent_label was not able to resolve all git conflicts."
 		printf 'Still conflicted:\n'
 		git diff --name-only --diff-filter=U | sed 's/^/  - /'
 		cat "$conflict_output" >&2
@@ -310,35 +390,35 @@ resolve_pull_conflict_with_codex() {
 	if git diff --check; then
 		git add --all
 	else
-		echo "Codex edits still contain conflict markers or whitespace errors."
+		echo "$agent_label edits still contain conflict markers or whitespace errors."
 		return 1
 	fi
 
 	if ! rebase_in_progress; then
-		echo "Codex resolved the git conflict."
+		echo "$agent_label resolved the git conflict."
 		return 0
 	fi
 
 	if GIT_EDITOR=true git rebase --continue; then
-		echo "Codex resolved the git conflict and the rebase continued successfully."
+		echo "$agent_label resolved the git conflict and the rebase continued successfully."
 		return 0
 	fi
 
-	echo "Codex resolved the files, but git rebase --continue failed."
+	echo "$agent_label resolved the files, but git rebase --continue failed."
 	return 1
 }
 
 pull_rebase_upstream() {
 	if ! git pull --rebase --autostash; then
 		if has_unmerged_paths; then
-			if ! resolve_codex_command; then
-				echo "git pull produced conflicts, but codex command was not found." >&2
-				echo "Install the Codex CLI or resolve the conflicts manually before rerunning codex-commit." >&2
+			if ! resolve_agent_command; then
+				echo "git pull produced conflicts, but the $commit_agent command was not found." >&2
+				echo "$(agent_install_hint) Or resolve the conflicts manually before rerunning $script_name." >&2
 				exit 1
 			fi
 
-			resolve_pull_conflict_with_codex || {
-				echo "Aborting codex-commit because the git conflict was not resolved."
+			resolve_pull_conflict_with_agent || {
+				echo "Aborting $script_name because the git conflict was not resolved."
 				exit 1
 			}
 		else
@@ -496,8 +576,8 @@ if ! has_worktree_changes; then
 	exit 0
 fi
 
-if ! resolve_codex_command; then
-	echo "codex command not found. Install the Codex CLI, set CODEX_BIN, or add Codex.app/ChatGPT.app's bundled CLI to PATH." >&2
+if ! resolve_agent_command; then
+	echo "$commit_agent command not found. $(agent_install_hint)" >&2
 	exit 1
 fi
 
@@ -534,19 +614,16 @@ if git diff --cached --quiet; then
 	exit 0
 fi
 
-codex_output=$(mktemp "${TMPDIR:-/tmp}/cozadzban-codex-commit.XXXXXX")
-tmp_files+=("$codex_output")
+agent_output=$(mktemp "${TMPDIR:-/tmp}/cozadzban-${commit_agent}-commit.XXXXXX")
+tmp_files+=("$agent_output")
 
-"${codex_command[@]}" exec \
-	-C "$repo_root" \
-	--sandbox read-only \
-	--output-last-message "$codex_output" \
+run_agent read-only "$agent_output" \
 	'Use the repository-provided suggest-commit-message skill at doc/codex-skills/SKIL_suggest-commit-message/SKILL.md to propose a concise commit message for the currently staged changes. Return the final answer in the documented response shape, with the recommended commit message as the first fenced code block.' >/dev/null
 
-commit_message=$(extract_commit_message "$codex_output")
+commit_message=$(extract_commit_message "$agent_output")
 if [ -z "$commit_message" ]; then
-	echo "Could not parse a commit message from Codex output:" >&2
-	cat "$codex_output" >&2
+	echo "Could not parse a commit message from $agent_label output:" >&2
+	cat "$agent_output" >&2
 	exit 1
 fi
 

@@ -305,16 +305,18 @@ make docker-down   # Stop and remove containers
 ### Additional docs
 
 - [Project documentation](doc/README.md) - specs, implementation plan, manual testing guides, and dev aids.
-- [Codex skills](doc/codex-skills/README.md) - repository-provided Codex skills and prompts.
+- [Codex and Claude skills](doc/codex-skills/README.md) - repository-provided skills and prompts for Codex and Claude Code.
 - [Utilities](utilities/README.md) - helper scripts for imports, local data, and manual browser tasks.
 
 ### Docker image
 
 The repository includes a multi-stage `Dockerfile`:
 
+- Codex CLI stage: Node 22 image, installs the pinned `@openai/codex@0.164.0` CLI under `/opt/codex`
 - builder stage: Java 21 JDK image, runs `./gradlew bootJar --no-daemon`
 - builder stage cache mounts: Gradle caches, Gradle wrapper, Vaadin tooling, and npm cache
-- runtime stage: Java 21 JRE image, copies the executable Spring Boot jar as `/app/app.jar`
+- runtime stage: Java 21 JRE image, copies the executable Spring Boot jar as `/app/app.jar`, plus the
+  Node runtime and Codex CLI on `PATH`, with `CODEX_HOME=/home/spring/.codex` (see [Codex in Docker](doc/CODEX_DOCKER.md))
 - runtime user: non-root `spring`
 - exposed port: `8080`
 
@@ -343,8 +345,10 @@ WordPress and MySQL containers:
 
 These three services total `1.40` CPUs and `2304m` memory with one app instance,
 or `2.15` CPUs and `3840m` during blue/green overlap. The nginx reverse proxy has
-no explicit CPU or memory limit, so these totals exclude it. `memswap_limit` is set equal
-to `mem_limit` for each service to avoid heavy swap pressure on the host. The Spring Boot
+no explicit CPU or memory limit, so these totals exclude it. The on-demand `codex-auth-check`
+container (Compose `ops` profile, used by `make codex-auth-check`) is limited to `256m` memory
+and 32 processes and is also excluded. `memswap_limit` is set equal to `mem_limit` for the three
+services above to avoid heavy swap pressure on the host. The Spring Boot
 container also sets `JAVA_TOOL_OPTIONS` so the JVM heap stays inside the container memory limit.
 
 ## Production

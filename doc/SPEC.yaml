@@ -99,8 +99,10 @@ x-architecture:
     - name: Observability
       technology: Micrometer + Brave (Zipkin tracing) + Actuator
       description: >
-        Distributed tracing via Brave/Zipkin. Actuator endpoints exposed for
-        health, metrics and info.
+        Distributed tracing via Brave/Zipkin. Actuator exposes health, metrics,
+        info and env. /actuator/health and its probe subpaths are public;
+        info, metrics and env require an authenticated, allowlisted session or
+        bearer token. Health details are shown only when authorized.
     - name: Web security defaults
       technology: Spring Security + CORS
       description: >

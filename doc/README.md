@@ -42,5 +42,5 @@ Project documentation, specs, and developer aids.
 - **[dev-test-data.sql](dev-test-data.sql)** — sample articles with long titles for UI
   evaluation. Load with `psql -h localhost -U cozadzban -d cozadzban -f doc/dev-test-data.sql`
   after at least one `app_user` row exists.
-- **[codex-skills/](codex-skills/README.md)** — repository-provided Codex skills installable via
-  `make install-codex-skills`.
+- **[codex-skills/](codex-skills/README.md)** — repository-provided skills for Codex and Claude Code,
+  installable via `make install-codex-skills` or `make install-claude-skills`.
