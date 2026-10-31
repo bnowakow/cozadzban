@@ -91,4 +91,19 @@ class NotificationPreferenceRepositoryTest {
         assertTrue(sql.firstValue.contains("au.status = 'ACTIVE'"))
         assertTrue(sql.firstValue.contains("au.role = 'ADMIN'"))
     }
+
+    @Test
+    fun `apify credits low recipient query is scoped to active admins`() {
+        val jdbc: NamedParameterJdbcTemplate = mock()
+        whenever(jdbc.query(any<String>(), any<Map<String, Any>>(), any<RowMapper<NotificationRecipient>>()))
+            .thenReturn(emptyList())
+
+        NotificationPreferenceRepository(jdbc).findPushoverRecipientsForApifyCreditsLow()
+
+        val sql = argumentCaptor<String>()
+        org.mockito.kotlin.verify(jdbc).query(sql.capture(), any<Map<String, Any>>(), any<RowMapper<NotificationRecipient>>())
+        assertTrue(sql.firstValue.contains("np.apify_credits_low_enabled = true"))
+        assertTrue(sql.firstValue.contains("au.status = 'ACTIVE'"))
+        assertTrue(sql.firstValue.contains("au.role = 'ADMIN'"))
+    }
 }

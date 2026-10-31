@@ -48,6 +48,7 @@ class NotificationSettingsViewTest {
         assertTrue(checkboxes.any { it.label == "Facebook auto-approved article notifications" })
         assertFalse(checkboxes.single { it.label == "Facebook login required notifications" }.isVisible)
         assertFalse(checkboxes.single { it.label == "Apify credits exhausted notifications" }.isVisible)
+        assertFalse(checkboxes.single { it.label!!.startsWith("Apify credits running low") }.isVisible)
     }
 
     @Test
@@ -63,6 +64,7 @@ class NotificationSettingsViewTest {
         val checkboxes = findComponents(view, Checkbox::class.java)
         assertTrue(checkboxes.single { it.label == "Facebook login required notifications" }.isVisible)
         assertTrue(checkboxes.single { it.label == "Apify credits exhausted notifications" }.isVisible)
+        assertTrue(checkboxes.single { it.label!!.startsWith("Apify credits running low") }.isVisible)
     }
 
     @Test

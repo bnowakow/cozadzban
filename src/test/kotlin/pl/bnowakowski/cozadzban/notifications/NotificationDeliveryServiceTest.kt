@@ -10,6 +10,7 @@ import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
+import pl.bnowakowski.cozadzban.facebookimport.ApifyCreditsLowEvent
 import pl.bnowakowski.cozadzban.facebookimport.FacebookApifyCreditsExhaustedEvent
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportLoginRequiredEvent
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportLoginTimedOutEvent
@@ -244,6 +245,54 @@ class NotificationDeliveryServiceTest {
         val captor = argumentCaptor<PushoverMessage>()
         verify(pushoverClient).send(captor.capture())
         assertEquals("Facebook Apify import run-2 failed: Apify credits are exhausted.", captor.firstValue.message)
+    }
+
+    @Test
+    fun `apify credits low sends the forecast to opted-in admins`() {
+        whenever(repository.findPushoverRecipientsForApifyCreditsLow()).thenReturn(listOf(recipient(role = Role.ADMIN)))
+        whenever(encryptor.decrypt("encrypted")).thenReturn("user-key")
+
+        service.onApifyCreditsLow(
+            ApifyCreditsLowEvent(
+                daysBefore = 3,
+                daysLeft = 2.6,
+                predictedExhaustionAt = java.time.Instant.parse("2026-11-05T08:00:00Z"),
+                remainingUsd = java.math.BigDecimal("1.30"),
+                limitUsd = java.math.BigDecimal("5"),
+                dailyUsageUsd = java.math.BigDecimal("0.5012"),
+                cycleEndAt = java.time.Instant.parse("2026-11-26T23:59:59.999Z"),
+            ),
+        )
+
+        val captor = argumentCaptor<PushoverMessage>()
+        verify(pushoverClient).send(captor.capture())
+        assertEquals("Apify credits running low", captor.firstValue.title)
+        assertEquals(
+            "Apify credits are predicted to run out in about 3 days (around 2026-11-05): " +
+                "\$1.30 of \$5.00 left, about \$0.50 used per day. The cycle resets after 2026-11-26.",
+            captor.firstValue.message,
+        )
+    }
+
+    @Test
+    fun `apify credits low under a day says within a day`() {
+        whenever(repository.findPushoverRecipientsForApifyCreditsLow()).thenReturn(listOf(recipient(role = Role.ADMIN)))
+        whenever(encryptor.decrypt("encrypted")).thenReturn("user-key")
+
+        service.onApifyCreditsLow(
+            ApifyCreditsLowEvent(
+                1, 0.4, java.time.Instant.parse("2026-11-05T08:00:00Z"),
+                java.math.BigDecimal("0.20"), java.math.BigDecimal("5"), java.math.BigDecimal("0.50"), null,
+            ),
+        )
+
+        val captor = argumentCaptor<PushoverMessage>()
+        verify(pushoverClient).send(captor.capture())
+        assertEquals(
+            "Apify credits are predicted to run out within a day (around 2026-11-05): " +
+                "\$0.20 of \$5.00 left, about \$0.50 used per day.",
+            captor.firstValue.message,
+        )
     }
 
     private fun recipient(role: Role): NotificationRecipient =
