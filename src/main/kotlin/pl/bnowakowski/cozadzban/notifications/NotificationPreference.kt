@@ -22,6 +22,7 @@ data class NotificationPreference(
     val createdAt: Instant?,
     val updatedAt: Instant?,
     val apifyCreditsExhaustedEnabled: Boolean = false,
+    val apifyCreditsLowEnabled: Boolean = false,
 )
 
 data class NotificationRecipient(
@@ -39,6 +40,7 @@ data class NotificationPreferenceInput(
     val facebookProposalsSubmittedEnabled: Boolean,
     val facebookProposalsAutoApprovedEnabled: Boolean,
     val apifyCreditsExhaustedEnabled: Boolean = false,
+    val apifyCreditsLowEnabled: Boolean = false,
 )
 
 data class NotificationPreferenceSummary(
@@ -50,6 +52,7 @@ data class NotificationPreferenceSummary(
     val facebookProposalsAutoApprovedEnabled: Boolean,
     val availablePushoverDevices: List<String> = emptyList(),
     val apifyCreditsExhaustedEnabled: Boolean = false,
+    val apifyCreditsLowEnabled: Boolean = false,
 )
 
 internal object PushoverDevices {

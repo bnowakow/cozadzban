@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service
 import java.math.RoundingMode
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
+import pl.bnowakowski.cozadzban.facebookimport.ApifyCreditsLowEvent
 import pl.bnowakowski.cozadzban.facebookimport.FacebookApifyCreditsExhaustedEvent
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportLoginRequiredEvent
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportLoginTimedOutEvent
@@ -100,6 +101,31 @@ class NotificationDeliveryService(
             deliver(
                 recipient,
                 title = "Apify credits exhausted",
+                message = message,
+                url = "https://console.apify.com/billing",
+                urlTitle = "Open Apify billing",
+            )
+        }
+    }
+
+    @EventListener
+    fun onApifyCreditsLow(event: ApifyCreditsLowEvent) {
+        if (!properties.pushoverConfigured) return
+        fun usd(value: java.math.BigDecimal) = "$" + value.setScale(2, RoundingMode.HALF_UP).toPlainString()
+        fun date(value: java.time.Instant) = DateTimeFormatter.ISO_LOCAL_DATE.format(value.atOffset(ZoneOffset.UTC))
+        val wholeDays = Math.round(event.daysLeft).toInt()
+        val within = when {
+            event.daysLeft < 1.0 -> "within a day"
+            wholeDays == 1 -> "in about 1 day"
+            else -> "in about $wholeDays days"
+        }
+        val message = "Apify credits are predicted to run out $within (around ${date(event.predictedExhaustionAt)}): " +
+            "${usd(event.remainingUsd)} of ${usd(event.limitUsd)} left, about ${usd(event.dailyUsageUsd)} used per day." +
+            (event.cycleEndAt?.let { " The cycle resets after ${date(it)}." } ?: "")
+        repository.findPushoverRecipientsForApifyCreditsLow().forEach { recipient ->
+            deliver(
+                recipient,
+                title = "Apify credits running low",
                 message = message,
                 url = "https://console.apify.com/billing",
                 urlTitle = "Open Apify billing",

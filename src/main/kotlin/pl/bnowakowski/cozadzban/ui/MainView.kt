@@ -834,7 +834,10 @@ class ArticleListView(
         val resets = usage.cycleEndAt?.let {
             ", resets after " + java.time.format.DateTimeFormatter.ISO_LOCAL_DATE.format(it.atOffset(java.time.ZoneOffset.UTC))
         }.orEmpty()
-        return "${usd(usage.remainingUsd)} of ${usd(usage.limitUsd)}$resets"
+        val runsOut = pl.bnowakowski.cozadzban.facebookimport.ApifyCreditForecast.predict(usage, Instant.now())?.let {
+            ", runs out around " + java.time.format.DateTimeFormatter.ISO_LOCAL_DATE.format(it.predictedExhaustionAt.atOffset(java.time.ZoneOffset.UTC))
+        }.orEmpty()
+        return "${usd(usage.remainingUsd)} of ${usd(usage.limitUsd)}$runsOut$resets"
     }
 
     private fun facebookImportMetric(labelText: String, valueText: String): Div {

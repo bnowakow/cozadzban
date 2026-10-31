@@ -88,6 +88,18 @@ data class FacebookApifyCreditsExhaustedEvent(
     val occurredAt: Instant = Instant.now(),
 )
 
+/** Published when Apify credit is predicted to run out within [daysBefore] days, once per cycle and threshold. */
+data class ApifyCreditsLowEvent(
+    val daysBefore: Int,
+    val daysLeft: Double,
+    val predictedExhaustionAt: Instant,
+    val remainingUsd: BigDecimal,
+    val limitUsd: BigDecimal,
+    val dailyUsageUsd: BigDecimal,
+    val cycleEndAt: Instant?,
+    val occurredAt: Instant = Instant.now(),
+)
+
 data class FacebookImportRunCompletedEvent(
     val importRunId: String,
     val status: FacebookImportRunStatus,

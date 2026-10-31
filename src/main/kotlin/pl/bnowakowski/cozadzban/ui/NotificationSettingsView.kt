@@ -56,6 +56,7 @@ class NotificationSettingsView(
     private val proposalNotifications = Checkbox("Article proposal review notifications")
     private val autoApprovedNotifications = Checkbox("Facebook auto-approved article notifications")
     private val loginRequiredNotifications = Checkbox("Facebook login required notifications")
+    private val apifyCreditsLowNotifications = Checkbox("Apify credits running low notifications (3 days and 1 day before)")
     private val apifyCreditsNotifications = Checkbox("Apify credits exhausted notifications")
     private val status = Span()
 
@@ -82,6 +83,8 @@ class NotificationSettingsView(
         loginRequiredNotifications.isVisible = currentUser.role == Role.ADMIN
         apifyCreditsNotifications.value = summary.apifyCreditsExhaustedEnabled
         apifyCreditsNotifications.isVisible = currentUser.role == Role.ADMIN
+        apifyCreditsLowNotifications.value = summary.apifyCreditsLowEnabled
+        apifyCreditsLowNotifications.isVisible = currentUser.role == Role.ADMIN
         status.text = if (summary.pushoverConfigured) "Pushover configured" else "Pushover not configured"
         status.addClassName("czj-admin-muted")
 
@@ -118,6 +121,7 @@ class NotificationSettingsView(
             proposalNotifications,
             autoApprovedNotifications,
             loginRequiredNotifications,
+            apifyCreditsLowNotifications,
             apifyCreditsNotifications,
         )
         notificationTypes.addClassName("czj-settings-options")
@@ -182,6 +186,7 @@ class NotificationSettingsView(
                     facebookProposalsSubmittedEnabled = proposalNotifications.value,
                     facebookProposalsAutoApprovedEnabled = autoApprovedNotifications.value,
                     apifyCreditsExhaustedEnabled = apifyCreditsNotifications.value,
+                    apifyCreditsLowEnabled = apifyCreditsLowNotifications.value,
                 ),
             )
             pushoverUserKey.clear()
