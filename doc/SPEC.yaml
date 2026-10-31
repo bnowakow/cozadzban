@@ -830,7 +830,7 @@ x-database:
         lifecycle/history. Flyway owns the BATCH_JOB_*, BATCH_STEP_*, and
         BATCH_*_SEQ objects; Spring Batch schema initialization remains disabled.
     - name: notification_preference
-      migration: V20__notification_preferences_and_login_required.sql, V21__notification_preference_pushover_devices.sql, V33__notification_preference_auto_approved.sql, V43__notification_preference_apify_credits_exhausted.sql
+      migration: V20__notification_preferences_and_login_required.sql, V21__notification_preference_pushover_devices.sql, V33__notification_preference_auto_approved.sql, V43__notification_preference_apify_credits_exhausted.sql, V44__apify_credit_low_alerts.sql
       description: Stores encrypted per-user notification settings for Pushover.
       columns:
         - name: app_user_id
@@ -872,6 +872,36 @@ x-database:
           migration: V43__notification_preference_apify_credits_exhausted.sql
           constraints: "NOT NULL DEFAULT false"
           description: ADMIN-only opt-in for Apify credits exhausted notifications.
+        - name: apify_credits_low_enabled
+          type: BOOLEAN
+          migration: V44__apify_credit_low_alerts.sql
+          constraints: "NOT NULL DEFAULT false"
+          description: ADMIN-only opt-in for Apify credits running low forecast notifications.
+    - name: apify_credit_alert
+      migration: V44__apify_credit_low_alerts.sql
+      description: >
+        One row per Apify credit forecast alert claimed in a billing cycle. The primary key
+        makes the 3-day and 1-day alerts fire at most once per cycle, also when blue and green
+        containers both run the hourly forecast check.
+      columns:
+        - name: cycle_start_at
+          type: TIMESTAMPTZ
+          constraints: "NOT NULL, PRIMARY KEY (cycle_start_at, days_before)"
+        - name: days_before
+          type: INTEGER
+          constraints: "NOT NULL CHECK (days_before > 0)"
+        - name: predicted_exhaustion_at
+          type: TIMESTAMPTZ
+          constraints: "NOT NULL"
+        - name: remaining_usd
+          type: NUMERIC(12,4)
+          constraints: "NOT NULL CHECK (remaining_usd >= 0)"
+        - name: daily_usage_usd
+          type: NUMERIC(12,4)
+          constraints: "NOT NULL CHECK (daily_usage_usd > 0)"
+        - name: claimed_at
+          type: TIMESTAMPTZ
+          constraints: "NOT NULL DEFAULT now()"
 # ──────────────────────────────────────────────────────────────
 # BUSINESS RULES  (x-business-rules)
 # ──────────────────────────────────────────────────────────────
@@ -1291,7 +1321,14 @@ x-business-rules:
       Apify credits exhausted notifications go to opted-in ACTIVE ADMIN users when a run
       completion reports apifyCreditsExhausted=true, for any trigger. The message includes the
       remaining Apify usage and the billing cycle end when known, and links to the Apify
-      billing page.
+      billing page. An hourly server check (APP_FACEBOOK_IMPORT_APIFY_LOW_CREDIT_ALERTS_ENABLED,
+      default true, needs the Apify API token) forecasts when the cycle's credit runs out from
+      the spend rate so far: used USD divided by elapsed cycle days, counting at least one
+      day. It publishes ApifyCreditsLowEvent when exhaustion is predicted within 3 days, and
+      again within 1 day, before the cycle resets. Each alert fires once per cycle, recorded in
+      apify_credit_alert. If the first check already finds under a day left, only the 1-day
+      alert is sent. Opted-in ACTIVE ADMIN users get the Apify credits running low
+      notification with the predicted date, remaining and daily usage.
       Notification delivery failures are logged and must never block or fail an
       import run.
   - id: BR-51
@@ -1641,6 +1678,7 @@ x-runtime-configuration:
       - APP_FACEBOOK_IMPORT_APIFY_SCHEDULE_ENABLED
       - APP_FACEBOOK_IMPORT_APIFY_SCHEDULE_INTERVAL
       - APP_FACEBOOK_IMPORT_APIFY_COST_SUMMARY_DAYS
+      - APP_FACEBOOK_IMPORT_APIFY_LOW_CREDIT_ALERTS_ENABLED
       - APP_FACEBOOK_IMPORT_APIFY_CONNECT_TIMEOUT
       - APP_FACEBOOK_IMPORT_APIFY_READ_TIMEOUT
     schedulingSemantics: enabled import types run sequentially

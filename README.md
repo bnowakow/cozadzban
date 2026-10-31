@@ -67,6 +67,7 @@ Key settings:
 | `APP_FACEBOOK_IMAGE_CODEX_ENABLED` | Enables the experimental generated-image fallback for missing or rejected source thumbnails | `false` |
 | `APP_FACEBOOK_IMPORT_APIFY_SCHEDULE_INTERVAL` | Minimum time between enabled Apify imports; the worker template schedules one automatic run per 24 hours | `24h` |
 | `APP_FACEBOOK_IMPORT_APIFY_COST_SUMMARY_DAYS` | Lookback window for the admin Apify cost total and automatic-run average | `30` |
+| `APP_FACEBOOK_IMPORT_APIFY_LOW_CREDIT_ALERTS_ENABLED` | Hourly forecast of when Apify credit runs out, with alerts 3 days and 1 day before (needs the Apify API token) | `true` |
 
 > `.env`, `.env.server`, and `.env.worker` are gitignored and must never be committed.
 
@@ -156,6 +157,13 @@ ADMIN users can enable **Apify credits exhausted notifications** in Notification
 to get a Pushover alert with the remaining balance and the cycle reset date. The Apify
 import panel shows **Apify credit left**, cached for five minutes. If Apify's usage endpoint
 can't be reached, the import runs without the check.
+
+An hourly check also forecasts when the credit will run out at this cycle's spend rate so far
+(used amount divided by elapsed days, counting at least one day). It sends **Apify credits
+running low notifications** when exhaustion is predicted within 3 days, and again within 1
+day, unless the cycle resets first. Each alert goes out once per billing cycle. The import
+panel shows the predicted date next to the remaining credit. Turn the check off with
+`APP_FACEBOOK_IMPORT_APIFY_LOW_CREDIT_ALERTS_ENABLED=false`.
 
 Minimum configuration:
 
