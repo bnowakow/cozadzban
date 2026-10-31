@@ -72,8 +72,6 @@ import java.net.URI
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDateTime
-import java.time.ZoneOffset
-import java.time.format.DateTimeFormatter
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ExecutionException
 
@@ -384,8 +382,8 @@ class ArticleListView(
         publishedDateButton.addClickListener { dateFields.isVisible = !dateFields.isVisible }
 
         val applyDatesButton = Button("Apply") {
-            publishedFromFilter = publishedFromPicker.value?.toInstant(ZoneOffset.UTC)
-            publishedToFilter = publishedToPicker.value?.toInstant(ZoneOffset.UTC)
+            publishedFromFilter = WarsawTime.fromPicker(publishedFromPicker.value)
+            publishedToFilter = WarsawTime.fromPicker(publishedToPicker.value)
             refreshData()
         }
         applyDatesButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_PRIMARY)
@@ -1332,7 +1330,7 @@ class ArticleListView(
             val url = urlField.value?.trim().orEmpty()
             val language = languageField.value?.trim().orEmpty()
             val quote = quoteField.value?.trim()?.ifBlank { null }
-            val publishedAt = publishedAtPicker.value?.toInstant(ZoneOffset.UTC)
+            val publishedAt = WarsawTime.fromPicker(publishedAtPicker.value)
 
             if (url.isBlank()) { showError("URL is required"); return@addClickListener }
             if (!url.matches(Regex("^https?://.+"))) { showError("URL must start with http:// or https://"); return@addClickListener }
@@ -1689,7 +1687,7 @@ class ArticleListView(
 
         val publishedAtPicker = DateTimePicker("Published at (optional — clear to remove)")
         publishedAtPicker.width = "22rem"
-        publishedAtPicker.value = article.publishedAt?.atOffset(ZoneOffset.UTC)?.toLocalDateTime()
+        publishedAtPicker.value = WarsawTime.toPicker(article.publishedAt)
 
         val refreshPublishedAtButton = Button("Refresh published date")
         refreshPublishedAtButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY)
@@ -1720,7 +1718,7 @@ class ArticleListView(
             refreshPublishedAtButton.isEnabled = false
             try {
                 val updated = articleService.refreshPublishedAt(article.id!!)
-                publishedAtPicker.value = updated.publishedAt?.atOffset(ZoneOffset.UTC)?.toLocalDateTime()
+                publishedAtPicker.value = WarsawTime.toPicker(updated.publishedAt)
                 refreshData()
                 showSuccess("Published date refreshed")
             } catch (ex: Exception) {
@@ -1737,7 +1735,7 @@ class ArticleListView(
             val publisherUrl = publisherUrlField.value?.trim()?.ifBlank { null }
             val quote = quoteField.value?.trim()?.ifBlank { null }
             // publishedAt key always present: null clears, value sets
-            val publishedAt = publishedAtPicker.value?.toInstant(ZoneOffset.UTC)
+            val publishedAt = WarsawTime.fromPicker(publishedAtPicker.value)
             val content = contentField.value?.trim()
 
             if (language.isBlank()) { showError("Language is required"); return@addClickListener }
@@ -2109,13 +2107,9 @@ class ArticleListView(
         private const val MIN_FRONTEND_LEAD_WORD_BOUNDARY_CHARS = 900
         private const val FACEBOOK_IMPORT_APPROVAL_POLL_INTERVAL_MS = 1_000
         private const val FACEBOOK_IMPORT_STATUS_POLL_INTERVAL_MS = 7_000
-        private val DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneOffset.UTC)
-        private val STATUS_DATE_FORMATTER =
-            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss 'UTC'").withZone(ZoneOffset.UTC)
-        private val SHORT_DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneOffset.UTC)
 
-        private fun formatInstant(instant: Instant): String = DATE_FORMATTER.format(instant)
-        private fun formatStatusInstant(instant: Instant): String = STATUS_DATE_FORMATTER.format(instant)
-        private fun formatDate(instant: Instant): String = SHORT_DATE_FORMATTER.format(instant)
+        private fun formatInstant(instant: Instant): String = WarsawTime.dateTime(instant)
+        private fun formatStatusInstant(instant: Instant): String = WarsawTime.dateTimeSeconds(instant)
+        private fun formatDate(instant: Instant): String = WarsawTime.date(instant)
     }
 }

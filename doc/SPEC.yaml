@@ -1016,6 +1016,10 @@ x-business-rules:
       All persisted timestamps are UTC.
       JSON date-time fields use ISO-8601 UTC.
       RSS pubDate uses RFC-822 UTC.
+      Every time shown to people in the UI (Vaadin views and the server-rendered story page)
+      uses Europe/Warsaw local time (CET/CEST), whatever the browser's time zone. Date-time
+      pickers read and show Warsaw wall-clock time and convert to UTC instants. Machine-readable
+      values (time datetime attributes, structured data, sitemap, RSS) stay UTC.
   - id: BR-16
     name: CORS and CSRF defaults
     description: >

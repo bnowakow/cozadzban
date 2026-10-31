@@ -106,11 +106,11 @@ class FacebookThumbnailStatusView(
         grid.addComponentColumn { row -> thumbnail(row) }.setHeader("Thumbnail").setAutoWidth(true)
         grid.addColumn(FacebookArticleImageStatusRow::attemptCount).setHeader("Attempts").setAutoWidth(true)
         grid.addColumn { row ->
-            if (row.status == "MISSING_THUMBNAIL") row.nextAttemptAt?.toString()?.take(16) ?: "—" else "—"
+            if (row.status == "MISSING_THUMBNAIL") row.nextAttemptAt?.let(WarsawTime::dateTime) ?: "—" else "—"
         }
-            .setHeader("Next attempt (UTC)").setAutoWidth(true)
-        grid.addColumn { it.updatedAt?.toString()?.take(16) ?: "—" }
-            .setHeader("Updated (UTC)").setAutoWidth(true)
+            .setHeader("Next attempt").setAutoWidth(true)
+        grid.addColumn { it.updatedAt?.let(WarsawTime::dateTime) ?: "—" }
+            .setHeader("Updated").setAutoWidth(true)
         grid.addColumn { it.lastError ?: "—" }.setHeader("Last error").setFlexGrow(1)
         grid.addComponentColumn { row ->
             Button("Generate now") { generateNow(row.articleId) }.apply {
@@ -135,8 +135,8 @@ class FacebookThumbnailStatusView(
             .setHeader("Language").setAutoWidth(true)
         queueGrid.addColumn(FacebookArticleImageQueueRow::attemptCount)
             .setHeader("Attempts").setAutoWidth(true)
-        queueGrid.addColumn { it.nextAttemptAt.toString().take(16) }
-            .setHeader("Eligible from (UTC)").setAutoWidth(true)
+        queueGrid.addColumn { WarsawTime.dateTime(it.nextAttemptAt) }
+            .setHeader("Eligible from").setAutoWidth(true)
         queueGrid.addColumn { it.lastError ?: "—" }
             .setHeader("Last error").setFlexGrow(1)
         queueGrid.addComponentColumn { row ->

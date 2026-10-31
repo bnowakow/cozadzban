@@ -218,7 +218,7 @@ class AdminView(
         usersGrid.addColumn(AppUser::status)
             .setHeader("Status")
             .setAutoWidth(true)
-        usersGrid.addColumn { it.createdAt?.toString().orEmpty() }
+        usersGrid.addColumn { it.createdAt?.let(WarsawTime::dateTime).orEmpty() }
             .setHeader("Created At")
             .setAutoWidth(true)
 

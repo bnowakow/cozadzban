@@ -46,6 +46,10 @@ Run the suite on a development machine instead when one is available.
 - Persistence uses Spring Data JDBC (not JPA/Hibernate) — no `ddl-auto` settings.
 - URL enrichment is synchronous and atomic: if the fetch fails, no DB write occurs (BR-01–03).
 - All persisted timestamps are UTC (BR-15).
+- Times shown in the UI always use Europe/Warsaw: format and convert through `ui/WarsawTime`
+  (also for DateTimePicker values), never `ZoneOffset.UTC`, `Instant.toString()` or the
+  server/browser default zone. Machine-readable output (APIs, RSS, sitemap, datetime attributes)
+  stays UTC.
 - RSS MUST never expose creator/user data (BR-07).
 
 ## Performance work

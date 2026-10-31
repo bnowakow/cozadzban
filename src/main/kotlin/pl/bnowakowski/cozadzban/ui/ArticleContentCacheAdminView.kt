@@ -35,7 +35,6 @@ import pl.bnowakowski.cozadzban.article.ArticleService
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportJobService
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportProperties
 import java.time.Instant
-import java.time.ZoneOffset
 
 @Route("admin/article-content-cache")
 @PageTitle("Article content cache")
@@ -161,10 +160,10 @@ class ArticleContentCacheAdminView(
         }
             .setHeader("Article URL")
             .setFlexGrow(1)
-        contentGrid.addColumn { entry -> contentArticleCache[entry.articleId]?.publishedAt?.toString() ?: "-" }
+        contentGrid.addColumn { entry -> contentArticleCache[entry.articleId]?.publishedAt?.let(WarsawTime::dateTime) ?: "-" }
             .setHeader("Published at")
             .setAutoWidth(true)
-        contentGrid.addColumn { entry -> contentArticleCache[entry.articleId]?.createdAt?.toString() ?: "-" }
+        contentGrid.addColumn { entry -> contentArticleCache[entry.articleId]?.createdAt?.let(WarsawTime::dateTime) ?: "-" }
             .setHeader("Article created")
             .setAutoWidth(true)
         contentGrid.addColumn { "${it.content.length} chars" }
@@ -173,7 +172,7 @@ class ArticleContentCacheAdminView(
         contentGrid.addColumn { if (it.truncated) "Yes" else "No" }
             .setHeader("Truncated")
             .setAutoWidth(true)
-        contentGrid.addColumn { it.capturedAt?.toString() ?: "-" }
+        contentGrid.addColumn { it.capturedAt?.let(WarsawTime::dateTime) ?: "-" }
             .setHeader("Captured at")
             .setAutoWidth(true)
         contentGrid.addComponentColumn { entry -> contentActionButtons(entry) }
@@ -202,25 +201,25 @@ class ArticleContentCacheAdminView(
 
         val publishedFromPicker = DateTimePicker("Published from")
         publishedFromPicker.addValueChangeListener { event ->
-            contentPublishedFromFilter = event.value?.toInstant(ZoneOffset.UTC)
+            contentPublishedFromFilter = WarsawTime.fromPicker(event.value)
             resetContentPage()
         }
 
         val publishedToPicker = DateTimePicker("Published to")
         publishedToPicker.addValueChangeListener { event ->
-            contentPublishedToFilter = event.value?.toInstant(ZoneOffset.UTC)
+            contentPublishedToFilter = WarsawTime.fromPicker(event.value)
             resetContentPage()
         }
 
         val createdFromPicker = DateTimePicker("Created from")
         createdFromPicker.addValueChangeListener { event ->
-            contentCreatedFromFilter = event.value?.toInstant(ZoneOffset.UTC)
+            contentCreatedFromFilter = WarsawTime.fromPicker(event.value)
             resetContentPage()
         }
 
         val createdToPicker = DateTimePicker("Created to")
         createdToPicker.addValueChangeListener { event ->
-            contentCreatedToFilter = event.value?.toInstant(ZoneOffset.UTC)
+            contentCreatedToFilter = WarsawTime.fromPicker(event.value)
             resetContentPage()
         }
 

@@ -323,7 +323,8 @@ class ArticleListViewTest {
         assertTrue(spans.contains("Phase"))
         assertTrue(spans.contains("8 of 8"))
         assertTrue(spans.contains("Last updated"))
-        assertTrue(spans.contains("2026-05-24 10:15:30 UTC"))
+        // 10:15:30 UTC is 12:15:30 in Warsaw (CEST, UTC+2).
+        assertTrue(spans.contains("2026-05-24 12:15:30"))
     }
 
     @Test

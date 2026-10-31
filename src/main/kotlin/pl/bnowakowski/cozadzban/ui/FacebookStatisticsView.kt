@@ -90,7 +90,7 @@ class FacebookStatisticsView(
         grid.addColumn(FacebookArticleStatistics::storyViews).setHeader("Views total").setAutoWidth(true)
         grid.addColumn(FacebookArticleStatistics::storyViews7Days).setHeader("Views 7 days").setAutoWidth(true)
         grid.addColumn { it.reactionCount?.toString() ?: "—" }.setHeader("FB reactions").setAutoWidth(true)
-        grid.addColumn { it.reactionMeasuredAt?.toString()?.take(16) ?: "—" }.setHeader("Reactions measured (UTC)").setAutoWidth(true)
+        grid.addColumn { it.reactionMeasuredAt?.let(WarsawTime::dateTime) ?: "—" }.setHeader("Reactions measured").setAutoWidth(true)
         grid.addColumn { it.publicationStatus ?: "No Page post" }.setHeader("Post status").setAutoWidth(true)
         grid.addColumn { it.linkCommentStatus ?: "—" }.setHeader("Link comment").setAutoWidth(true)
         grid.addComponentColumn { row ->

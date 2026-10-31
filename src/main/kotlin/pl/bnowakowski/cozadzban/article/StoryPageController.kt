@@ -28,8 +28,6 @@ import pl.bnowakowski.cozadzban.ui.PublicNotFoundPage
 import pl.bnowakowski.cozadzban.user.Role
 import java.net.URI
 import java.time.Instant
-import java.time.ZoneOffset
-import java.time.format.DateTimeFormatter
 
 /** A server-rendered public page so a story is useful to readers and crawlers on the first request. */
 @RestController
@@ -85,7 +83,7 @@ class StoryPageController(
             ?: if (polish) "Historia w serwisie Co za dzban." else "A story on Co za dzban."
         val canonical = "https://cozadzban.pl/stories/${article.id}"
         val date = article.publishedAt ?: article.createdAt ?: Instant.EPOCH
-        val dateLabel = DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneOffset.UTC).format(date)
+        val dateLabel = pl.bnowakowski.cozadzban.ui.WarsawTime.date(date)
         val sourceLink = article.publisherUrl ?: article.url
         val sourceUri = runCatching { URI(sourceLink) }.getOrNull()
         val sourceName = sourceUri?.host?.removePrefix("www.")?.ifBlank { null } ?: sourceLink

@@ -39,7 +39,6 @@ import pl.bnowakowski.cozadzban.user.AppUserRepository
 import pl.bnowakowski.cozadzban.user.AppUserStatus
 import pl.bnowakowski.cozadzban.user.Role
 import java.time.Instant
-import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.concurrent.CompletableFuture
 
@@ -59,7 +58,7 @@ class FacebookArticleProposalView(
     private val facebookImportProperties: FacebookImportProperties = FacebookImportProperties(),
 ) : VerticalLayout() {
     private val submittedAtFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
-        .withZone(ZoneOffset.UTC)
+        .withZone(WarsawTime.ZONE)
 
     private val proposalsGrid = VerticalLayout()
     private val statusFilter = Select<FacebookArticleProposalStatusFilter>()
