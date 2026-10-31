@@ -41,6 +41,7 @@ class NotificationPreferenceService(
             facebookLoginRequiredEnabled = input.facebookLoginRequiredEnabled && user.role == Role.ADMIN,
             facebookProposalsSubmittedEnabled = input.facebookProposalsSubmittedEnabled,
             facebookProposalsAutoApprovedEnabled = input.facebookProposalsAutoApprovedEnabled,
+            apifyCreditsExhaustedEnabled = input.apifyCreditsExhaustedEnabled && user.role == Role.ADMIN,
         )
         return saved.toSummary(validation.devices)
     }
@@ -81,6 +82,7 @@ class NotificationPreferenceService(
             facebookProposalsSubmittedEnabled = this?.facebookProposalsSubmittedEnabled == true,
             facebookProposalsAutoApprovedEnabled = this?.facebookProposalsAutoApprovedEnabled == true,
             availablePushoverDevices = availablePushoverDevices,
+            apifyCreditsExhaustedEnabled = this?.apifyCreditsExhaustedEnabled == true,
         )
 
     private fun ensureActive(user: AppUser) {

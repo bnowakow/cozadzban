@@ -57,6 +57,7 @@ import pl.bnowakowski.cozadzban.facebookimport.FacebookImportJobService
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportProgressSnapshot
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportProperties
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportRunStatus
+import pl.bnowakowski.cozadzban.facebookimport.ApifyAccountUsageClient
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportTrigger
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportType
 import pl.bnowakowski.cozadzban.facebookpublish.CodexArticleImageGenerator
@@ -97,6 +98,7 @@ class ArticleListView(
     private val facebookImportProperties: FacebookImportProperties = FacebookImportProperties(),
     private val articleImages: FacebookArticleImageGenerationRepository? = null,
     private val generatedImages: CodexArticleImageGenerator? = null,
+    private val apifyUsage: ApifyAccountUsageClient? = null,
 ) : VerticalLayout(), AfterNavigationObserver {
 
     private val feed = VirtualList<Article>()
@@ -526,6 +528,7 @@ class ArticleListView(
                     if (costs.automaticRunCount == 0) "awaiting data" else
                         "${'$'}${costs.automaticCostUsd.divide(java.math.BigDecimal(costs.automaticRunCount), 3, java.math.RoundingMode.HALF_UP)} / run",
                 ),
+                facebookImportMetric("Apify credit left", apifyCreditText()),
             )
         }
 
@@ -822,6 +825,16 @@ class ArticleListView(
         content.defaultHorizontalComponentAlignment = Alignment.START
         dialog.add(content)
         dialog.open()
+    }
+
+    /** Remaining Apify usage this billing cycle, e.g. "$2.79 of $5.00, resets after 2026-11-26". */
+    private fun apifyCreditText(): String {
+        val usage = apifyUsage?.current() ?: return "unavailable"
+        fun usd(value: java.math.BigDecimal) = "${'$'}" + value.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString()
+        val resets = usage.cycleEndAt?.let {
+            ", resets after " + java.time.format.DateTimeFormatter.ISO_LOCAL_DATE.format(it.atOffset(java.time.ZoneOffset.UTC))
+        }.orEmpty()
+        return "${usd(usage.remainingUsd)} of ${usd(usage.limitUsd)}$resets"
     }
 
     private fun facebookImportMetric(labelText: String, valueText: String): Div {

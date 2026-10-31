@@ -130,6 +130,10 @@ data class FacebookImportRunCompletionRequest(
     val logs: String? = null,
     val apifyActorRunId: String? = null,
     val apifyCostUsd: BigDecimal? = null,
+    /** True when the run failed because the Apify account has no usage left this cycle. */
+    val apifyCreditsExhausted: Boolean = false,
+    val apifyRemainingUsd: BigDecimal? = null,
+    val apifyUsageCycleEndAt: Instant? = null,
 )
 
 data class FacebookImportLoginRequiredRequest(

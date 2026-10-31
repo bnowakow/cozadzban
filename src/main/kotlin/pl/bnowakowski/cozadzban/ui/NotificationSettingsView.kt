@@ -56,6 +56,7 @@ class NotificationSettingsView(
     private val proposalNotifications = Checkbox("Article proposal review notifications")
     private val autoApprovedNotifications = Checkbox("Facebook auto-approved article notifications")
     private val loginRequiredNotifications = Checkbox("Facebook login required notifications")
+    private val apifyCreditsNotifications = Checkbox("Apify credits exhausted notifications")
     private val status = Span()
 
     init {
@@ -79,6 +80,8 @@ class NotificationSettingsView(
         autoApprovedNotifications.value = summary.facebookProposalsAutoApprovedEnabled
         loginRequiredNotifications.value = summary.facebookLoginRequiredEnabled
         loginRequiredNotifications.isVisible = currentUser.role == Role.ADMIN
+        apifyCreditsNotifications.value = summary.apifyCreditsExhaustedEnabled
+        apifyCreditsNotifications.isVisible = currentUser.role == Role.ADMIN
         status.text = if (summary.pushoverConfigured) "Pushover configured" else "Pushover not configured"
         status.addClassName("czj-admin-muted")
 
@@ -115,6 +118,7 @@ class NotificationSettingsView(
             proposalNotifications,
             autoApprovedNotifications,
             loginRequiredNotifications,
+            apifyCreditsNotifications,
         )
         notificationTypes.addClassName("czj-settings-options")
         val eventsCard = VerticalLayout(
@@ -177,6 +181,7 @@ class NotificationSettingsView(
                     facebookLoginRequiredEnabled = loginRequiredNotifications.value,
                     facebookProposalsSubmittedEnabled = proposalNotifications.value,
                     facebookProposalsAutoApprovedEnabled = autoApprovedNotifications.value,
+                    apifyCreditsExhaustedEnabled = apifyCreditsNotifications.value,
                 ),
             )
             pushoverUserKey.clear()

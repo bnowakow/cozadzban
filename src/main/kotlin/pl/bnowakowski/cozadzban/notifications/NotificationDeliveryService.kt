@@ -6,6 +6,10 @@ package pl.bnowakowski.cozadzban.notifications
 import org.slf4j.LoggerFactory
 import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Service
+import java.math.RoundingMode
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+import pl.bnowakowski.cozadzban.facebookimport.FacebookApifyCreditsExhaustedEvent
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportLoginRequiredEvent
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportLoginTimedOutEvent
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportRunCompletedEvent
@@ -79,6 +83,27 @@ class NotificationDeliveryService(
                     urlTitle = "Open article proposals",
                 )
             }
+        }
+    }
+
+    @EventListener
+    fun onApifyCreditsExhausted(event: FacebookApifyCreditsExhaustedEvent) {
+        if (!properties.pushoverConfigured) return
+        val remaining = event.remainingUsd?.let { "$" + it.setScale(2, RoundingMode.HALF_UP).toPlainString() + " left" }
+        val resets = event.cycleEndAt?.let {
+            "resets after " + DateTimeFormatter.ISO_LOCAL_DATE.format(it.atOffset(ZoneOffset.UTC))
+        }
+        val balance = listOfNotNull(remaining, resets).joinToString(", ").takeIf { it.isNotBlank() }
+        val message = "Facebook Apify import ${event.importRunId} failed: Apify credits are exhausted" +
+            (balance?.let { " ($it)" } ?: "") + "."
+        repository.findPushoverRecipientsForApifyCreditsExhausted().forEach { recipient ->
+            deliver(
+                recipient,
+                title = "Apify credits exhausted",
+                message = message,
+                url = "https://console.apify.com/billing",
+                urlTitle = "Open Apify billing",
+            )
         }
     }
 

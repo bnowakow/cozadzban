@@ -9,6 +9,8 @@ import ch.qos.logback.core.read.ListAppender
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.sun.net.httpserver.HttpServer
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.argumentCaptor
@@ -18,6 +20,7 @@ import org.mockito.kotlin.verify
 import org.slf4j.LoggerFactory
 import java.math.BigDecimal
 import java.net.InetSocketAddress
+import java.time.Instant
 
 class FacebookApifyArticleImporterTest {
 
@@ -69,6 +72,110 @@ class FacebookApifyArticleImporterTest {
                 ),
                 requests,
             )
+        } finally {
+            server.stop(0)
+        }
+    }
+
+    @Test
+    fun `does not start an Apify run when the remaining credit cannot cover one`() {
+        val requests = mutableListOf<String>()
+        withApify(requests, limitsUsedUsd = "4.95") { baseUrl ->
+            val proposalClient: FacebookImportProposalClient = mock()
+            val importer = importerWithUsage(baseUrl, proposalClient)
+
+            val failure = assertThrows(ApifyCreditsExhaustedException::class.java) {
+                importer.runImport("import-credits", FacebookImportTrigger.SCHEDULED)
+            }
+
+            assertTrue(failure.message!!.contains("\$0.05 left"), failure.message)
+            assertEquals(listOf("GET /v2/users/me/limits"), requests, "no actor run may be started")
+            val completion = argumentCaptor<FacebookImportRunCompletionRequest>()
+            verify(proposalClient).completeRun(eq("import-credits"), completion.capture())
+            assertEquals(FacebookImportRunStatus.FAILED, completion.firstValue.status)
+            assertTrue(completion.firstValue.apifyCreditsExhausted)
+            assertEquals(0, BigDecimal("0.05").compareTo(completion.firstValue.apifyRemainingUsd))
+            assertEquals(Instant.parse("2026-11-26T23:59:59.999Z"), completion.firstValue.apifyUsageCycleEndAt)
+            assertTrue(completion.firstValue.statusDetail!!.contains("Apify credits are exhausted"))
+        }
+    }
+
+    @Test
+    fun `an Apify payment error when starting the run is reported as exhausted credits`() {
+        val requests = mutableListOf<String>()
+        withApify(
+            requests,
+            limitsUsedUsd = "2.00",
+            startStatus = 402,
+            startBody = """{"error":{"type":"not-enough-usage-to-run-paid-actor","message":"Not enough usage"}}""",
+        ) { baseUrl ->
+            val proposalClient: FacebookImportProposalClient = mock()
+
+            assertThrows(ApifyCreditsExhaustedException::class.java) {
+                importerWithUsage(baseUrl, proposalClient).runImport("import-402", FacebookImportTrigger.MANUAL)
+            }
+
+            val completion = argumentCaptor<FacebookImportRunCompletionRequest>()
+            verify(proposalClient).completeRun(eq("import-402"), completion.capture())
+            assertTrue(completion.firstValue.apifyCreditsExhausted)
+            assertTrue(completion.firstValue.statusDetail!!.contains("not-enough-usage-to-run-paid-actor"))
+        }
+    }
+
+    @Test
+    fun `other Apify errors are not reported as exhausted credits`() {
+        val requests = mutableListOf<String>()
+        withApify(
+            requests,
+            limitsUsedUsd = "2.00",
+            startStatus = 400,
+            startBody = """{"error":{"type":"invalid-input","message":"Bad input"}}""",
+        ) { baseUrl ->
+            val proposalClient: FacebookImportProposalClient = mock()
+
+            assertThrows(Exception::class.java) {
+                importerWithUsage(baseUrl, proposalClient).runImport("import-400", FacebookImportTrigger.MANUAL)
+            }
+
+            val completion = argumentCaptor<FacebookImportRunCompletionRequest>()
+            verify(proposalClient).completeRun(eq("import-400"), completion.capture())
+            assertEquals(FacebookImportRunStatus.FAILED, completion.firstValue.status)
+            assertFalse(completion.firstValue.apifyCreditsExhausted)
+        }
+    }
+
+    private fun importerWithUsage(baseUrl: String, proposalClient: FacebookImportProposalClient): FacebookApifyArticleImporter {
+        val properties = FacebookImportProperties(
+            apify = FacebookImportProperties.Apify(enabled = true, apiToken = "token", baseUrl = baseUrl),
+        )
+        return FacebookApifyArticleImporter(properties, proposalClient, ApifyAccountUsageClient(properties))
+    }
+
+    private fun withApify(
+        requests: MutableList<String>,
+        limitsUsedUsd: String,
+        startStatus: Int = 201,
+        startBody: String = """{"data":{"id":"actor-run-1","status":"SUCCEEDED","defaultDatasetId":"dataset-1"}}""",
+        block: (String) -> Unit,
+    ) {
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/") { exchange ->
+            requests += "${exchange.requestMethod} ${exchange.requestURI.path}"
+            val (status, body) = when (exchange.requestURI.path) {
+                "/v2/users/me/limits" -> 200 to """{"data":{
+                    "monthlyUsageCycle":{"startAt":"2026-10-27T00:00:00.000Z","endAt":"2026-11-26T23:59:59.999Z"},
+                    "limits":{"maxMonthlyUsageUsd":5},"current":{"monthlyUsageUsd":$limitsUsedUsd}}}"""
+                "/v2/acts/apify~facebook-posts-scraper/runs" -> startStatus to startBody
+                else -> 404 to """{"error":{"type":"record-not-found"}}"""
+            }
+            val bytes = body.toByteArray()
+            exchange.responseHeaders.add("Content-Type", "application/json")
+            exchange.sendResponseHeaders(status, bytes.size.toLong())
+            exchange.responseBody.use { it.write(bytes) }
+        }
+        server.start()
+        try {
+            block("http://127.0.0.1:${server.address.port}")
         } finally {
             server.stop(0)
         }

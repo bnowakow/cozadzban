@@ -13,6 +13,7 @@ import org.springframework.http.MediaType
 import org.springframework.http.client.JdkClientHttpRequestFactory
 import org.springframework.stereotype.Component
 import org.springframework.web.client.RestClient
+import org.springframework.web.client.RestClientResponseException
 import org.springframework.web.client.body
 import pl.bnowakowski.cozadzban.article.ArticleService
 import java.net.URI
@@ -20,6 +21,7 @@ import java.net.URLEncoder
 import java.net.http.HttpClient
 import java.math.BigDecimal
 import java.nio.charset.StandardCharsets
+import java.math.RoundingMode
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
@@ -30,6 +32,7 @@ import java.util.concurrent.atomic.AtomicLong
 class FacebookApifyArticleImporter(
     private val properties: FacebookImportProperties,
     private val proposalClient: FacebookImportProposalClient,
+    private val accountUsage: ApifyAccountUsageClient? = null,
 ) : FacebookImportRunner {
     override val importType: FacebookImportType = FacebookImportType.APIFY
 
@@ -95,6 +98,10 @@ class FacebookApifyArticleImporter(
         } catch (ex: Exception) {
             completionStatus = FacebookImportRunStatus.FAILED
             summary.failed += 1
+            if (ex is ApifyCreditsExhaustedException) {
+                summary.creditsExhausted = true
+                summary.usage = ex.usage ?: summary.usage
+            }
             completionDetail = "Facebook Apify import failed: ${failureMessage(ex)}"
             completionLogs = summary.logsWith(completionDetail)
             logger.warn("Facebook Apify import {} failed", importRunId, ex)
@@ -159,18 +166,34 @@ class FacebookApifyArticleImporter(
     }
 
     private fun fetchApifyItems(summary: ApifyImportSummary): List<JsonNode> {
+        ensureCreditsAvailable(summary)
         val client = apifyClient()
-        var run = client
-            .post()
-            .uri(startActorUri())
-            .contentType(MediaType.APPLICATION_JSON)
-            .accept(MediaType.APPLICATION_JSON)
-            .header(HttpHeaders.AUTHORIZATION, "Bearer ${properties.apify.apiToken}")
-            .body(apifyInput())
-            .retrieve()
-            .body<String>()
-            ?.let { objectMapper.readTree(it).path("data") }
-            ?: throw IllegalStateException("Apify did not return an actor run")
+        var run = try {
+            client
+                .post()
+                .uri(startActorUri())
+                .contentType(MediaType.APPLICATION_JSON)
+                .accept(MediaType.APPLICATION_JSON)
+                .header(HttpHeaders.AUTHORIZATION, "Bearer ${properties.apify.apiToken}")
+                .body(apifyInput())
+                .retrieve()
+                .body<String>()
+                ?.let { objectMapper.readTree(it).path("data") }
+                ?: throw IllegalStateException("Apify did not return an actor run")
+        } catch (ex: RestClientResponseException) {
+            val errorType = apifyErrorType(ex.responseBodyAsString)
+            if (ex.statusCode.value() == 402 || errorType in CREDIT_ERROR_TYPES) {
+                val usage = accountUsage?.fresh()
+                throw ApifyCreditsExhaustedException(
+                    "Apify refused to start the run (HTTP ${ex.statusCode.value()}" +
+                        "${errorType?.let { ", $it" } ?: ""}): ${apifyErrorMessage(ex.responseBodyAsString) ?: "usage limit reached"}." +
+                        usageSuffix(usage),
+                    usage,
+                    ex,
+                )
+            }
+            throw ex
+        }
         val actorRunId = run.path("id").asText().takeIf { it.isNotBlank() }
             ?: throw IllegalStateException("Apify did not return an actor run ID")
         summary.apifyActorRunId = actorRunId
@@ -194,7 +217,16 @@ class FacebookApifyArticleImporter(
         if (summary.apifyCostUsd == null) logger.warn("Apify actor run {} did not report a cost", actorRunId)
         logger.info("Facebook Apify actor run {} status={} costUsd={}", actorRunId, settledRun.path("status").asText(), summary.apifyCostUsd)
         if (settledRun.path("status").asText() != "SUCCEEDED") {
-            throw IllegalStateException("Apify actor run $actorRunId ended with status ${settledRun.path("status").asText()}")
+            val status = settledRun.path("status").asText()
+            val statusMessage = settledRun.path("statusMessage").asText("").takeIf { it.isNotBlank() }
+            val reason = "Apify actor run $actorRunId ended with status $status" +
+                (statusMessage?.let { ": $it" } ?: "")
+            // A run cut off by the usage limit looks like any other failure; check the balance to tell.
+            val usage = accountUsage?.fresh()
+            if (usage != null && usage.remainingUsd < requiredCreditUsd()) {
+                throw ApifyCreditsExhaustedException("$reason. Apify credits are exhausted.${usageSuffix(usage)}", usage)
+            }
+            throw IllegalStateException(reason)
         }
         val datasetId = settledRun.path("defaultDatasetId").asText().takeIf { it.isNotBlank() }
             ?: throw IllegalStateException("Apify actor run $actorRunId did not return a dataset ID")
@@ -211,6 +243,42 @@ class FacebookApifyArticleImporter(
             else -> emptyList()
         }
     }
+
+    /** Fails fast, before Apify charges anything, when the cycle's remaining credit can't cover a run. */
+    private fun ensureCreditsAvailable(summary: ApifyImportSummary) {
+        val usage = accountUsage?.fresh() ?: return
+        summary.usage = usage
+        val required = requiredCreditUsd()
+        if (usage.remainingUsd < required) {
+            throw ApifyCreditsExhaustedException(
+                "Apify credits are exhausted: ${usd(usage.remainingUsd)} left, a run needs up to ${usd(required)}." +
+                    usageSuffix(usage),
+                usage,
+            )
+        }
+        logger.info("Apify credit left {} of {} this cycle", usd(usage.remainingUsd), usd(usage.limitUsd))
+    }
+
+    /** Credit a run may need: the configured cost cap, or the estimate if that is higher. */
+    private fun requiredCreditUsd(): BigDecimal =
+        BigDecimal.valueOf(maxOf(properties.apify.maxCostUsd, estimatedMaxCostUsd()))
+
+    private fun apifyErrorType(body: String?): String? =
+        runCatching { objectMapper.readTree(body.orEmpty()).path("error").path("type").asText("") }
+            .getOrNull()?.takeIf { it.isNotBlank() }
+
+    private fun apifyErrorMessage(body: String?): String? =
+        runCatching { objectMapper.readTree(body.orEmpty()).path("error").path("message").asText("") }
+            .getOrNull()?.takeIf { it.isNotBlank() }
+
+    private fun usageSuffix(usage: ApifyAccountUsage?): String =
+        usage?.let {
+            " Used ${usd(it.usedUsd)} of ${usd(it.limitUsd)} this cycle" +
+                (it.cycleEndAt?.let { end -> "; resets after ${DateTimeFormatter.ISO_LOCAL_DATE.format(end.atOffset(ZoneOffset.UTC))}" } ?: "") +
+                "."
+        } ?: ""
+
+    private fun usd(value: BigDecimal): String = "$" + value.setScale(2, RoundingMode.HALF_UP).toPlainString()
 
     private fun apifyInput(): Map<String, Any> =
         mapOf(
@@ -350,6 +418,9 @@ class FacebookApifyArticleImporter(
                     logs = logs,
                     apifyActorRunId = summary.apifyActorRunId,
                     apifyCostUsd = summary.apifyCostUsd,
+                    apifyCreditsExhausted = summary.creditsExhausted,
+                    apifyRemainingUsd = summary.usage?.remainingUsd,
+                    apifyUsageCycleEndAt = summary.usage?.cycleEndAt,
                 ),
             )
         }.onFailure { ex ->
@@ -447,6 +518,8 @@ class FacebookApifyArticleImporter(
         var failed: Int = 0,
         var apifyActorRunId: String? = null,
         var apifyCostUsd: BigDecimal? = null,
+        var creditsExhausted: Boolean = false,
+        var usage: ApifyAccountUsage? = null,
         private val logs: MutableList<String> = mutableListOf(),
     ) {
         fun recordWorkerLogs(value: String) {
@@ -459,6 +532,17 @@ class FacebookApifyArticleImporter(
 
     private companion object {
         val TERMINAL_ACTOR_STATUSES = setOf("SUCCEEDED", "FAILED", "TIMED-OUT", "ABORTED")
+
+        /** Apify run-start error types that mean the account cannot pay for the run. */
+        val CREDIT_ERROR_TYPES = setOf(
+            "not-enough-usage-to-run-paid-actor",
+            "monthly-usage-limit-too-low",
+            "limit-reached",
+            "failed-to-charge-user",
+            "no-payment-method-available",
+            "apify-plan-required-to-use-paid-actor",
+            "x402-payment-required",
+        )
         const val PRICE_PER_RESULT_USD = 0.002
         val RUN_ID_FORMATTER: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'")
         val ANCHOR_HREF_REGEX: Regex = Regex("""<a\b[^>]*\bhref\s*=\s*[\"']([^\"']+)[\"']""", RegexOption.IGNORE_CASE)
@@ -467,3 +551,10 @@ class FacebookApifyArticleImporter(
         val FACEBOOK_POST_PATH_REGEX: Regex = Regex("""/[^/]+/posts/[^/]+/?""")
     }
 }
+
+/** The Apify account has no usage left this billing cycle for another run. */
+class ApifyCreditsExhaustedException(
+    message: String,
+    val usage: ApifyAccountUsage?,
+    cause: Throwable? = null,
+) : RuntimeException(message, cause)

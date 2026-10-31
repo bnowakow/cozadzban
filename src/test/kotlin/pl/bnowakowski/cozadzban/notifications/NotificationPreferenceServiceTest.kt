@@ -33,6 +33,7 @@ class NotificationPreferenceServiceTest {
                 facebookLoginRequiredEnabled = eq(false),
                 facebookProposalsSubmittedEnabled = eq(true),
                 facebookProposalsAutoApprovedEnabled = eq(true),
+                apifyCreditsExhaustedEnabled = eq(false),
             ),
         ).thenReturn(preference(login = false, proposals = true, autoApproved = true))
         whenever(pushoverClient.validateUser("user-key", emptyList()))
@@ -46,10 +47,12 @@ class NotificationPreferenceServiceTest {
                 facebookLoginRequiredEnabled = true,
                 facebookProposalsSubmittedEnabled = true,
                 facebookProposalsAutoApprovedEnabled = true,
+                apifyCreditsExhaustedEnabled = true,
             ),
         )
 
         assertFalse(summary.facebookLoginRequiredEnabled)
+        assertFalse(summary.apifyCreditsExhaustedEnabled)
         assertTrue(summary.facebookProposalsSubmittedEnabled)
         assertTrue(summary.facebookProposalsAutoApprovedEnabled)
         verify(pushoverClient).validateUser("user-key", emptyList())
@@ -59,8 +62,8 @@ class NotificationPreferenceServiceTest {
     fun `admin can enable both notification types`() {
         whenever(repository.findByUserId(1L)).thenReturn(null)
         whenever(encryptor.encrypt("admin-key")).thenReturn("encrypted")
-        whenever(repository.upsert(any(), any(), any(), any(), any(), any(), any()))
-            .thenReturn(preference(login = true, proposals = true, autoApproved = true))
+        whenever(repository.upsert(any(), any(), any(), any(), any(), any(), any(), eq(true)))
+            .thenReturn(preference(login = true, proposals = true, autoApproved = true, apifyCredits = true))
         whenever(pushoverClient.validateUser("admin-key", listOf("iphone", "mac")))
             .thenReturn(PushoverUserValidation(listOf("iphone", "mac")))
 
@@ -72,10 +75,12 @@ class NotificationPreferenceServiceTest {
                 facebookLoginRequiredEnabled = true,
                 facebookProposalsSubmittedEnabled = true,
                 facebookProposalsAutoApprovedEnabled = true,
+                apifyCreditsExhaustedEnabled = true,
             ),
         )
 
         assertTrue(summary.facebookLoginRequiredEnabled)
+        assertTrue(summary.apifyCreditsExhaustedEnabled)
         assertTrue(summary.facebookProposalsSubmittedEnabled)
         assertTrue(summary.facebookProposalsAutoApprovedEnabled)
         verify(pushoverClient).validateUser("admin-key", listOf("iphone", "mac"))
@@ -93,7 +98,12 @@ class NotificationPreferenceServiceTest {
         verify(pushoverClient).availableDevices("saved-key")
     }
 
-    private fun preference(login: Boolean, proposals: Boolean, autoApproved: Boolean): NotificationPreference =
+    private fun preference(
+        login: Boolean,
+        proposals: Boolean,
+        autoApproved: Boolean,
+        apifyCredits: Boolean = false,
+    ): NotificationPreference =
         NotificationPreference(
             appUserId = 1L,
             provider = NotificationProvider.PUSHOVER,
@@ -105,5 +115,6 @@ class NotificationPreferenceServiceTest {
             facebookProposalsAutoApprovedEnabled = autoApproved,
             createdAt = null,
             updatedAt = null,
+            apifyCreditsExhaustedEnabled = apifyCredits,
         )
 }

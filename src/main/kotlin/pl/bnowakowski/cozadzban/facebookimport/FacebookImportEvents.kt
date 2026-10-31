@@ -5,6 +5,7 @@ package pl.bnowakowski.cozadzban.facebookimport
 
 import com.fasterxml.jackson.annotation.JsonCreator
 import com.fasterxml.jackson.annotation.JsonValue
+import java.math.BigDecimal
 import java.time.Instant
 
 enum class FacebookImportTrigger {
@@ -74,6 +75,16 @@ data class FacebookProposalBatchSubmittedEvent(
     val passCount: Int,
     val submitted: Int,
     val skippedExisting: Int,
+    val occurredAt: Instant = Instant.now(),
+)
+
+/** Published on the server when an Apify import reports that the account's credits are used up. */
+data class FacebookApifyCreditsExhaustedEvent(
+    val importRunId: String,
+    val trigger: FacebookImportTrigger,
+    val remainingUsd: BigDecimal?,
+    val cycleEndAt: Instant?,
+    val detail: String?,
     val occurredAt: Instant = Instant.now(),
 )
 

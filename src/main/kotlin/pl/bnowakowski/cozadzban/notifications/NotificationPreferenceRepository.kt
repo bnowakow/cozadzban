@@ -19,7 +19,7 @@ class NotificationPreferenceRepository(
                 SELECT app_user_id, provider, pushover_user_key_encrypted, pushover_user_key_suffix,
                        pushover_devices, facebook_login_required_enabled,
                        facebook_proposals_submitted_enabled, facebook_proposals_auto_approved_enabled,
-                       created_at, updated_at
+                       apify_credits_exhausted_enabled, created_at, updated_at
                   FROM notification_preference
                  WHERE app_user_id = :appUserId
             """.trimIndent(),
@@ -35,18 +35,21 @@ class NotificationPreferenceRepository(
         facebookLoginRequiredEnabled: Boolean,
         facebookProposalsSubmittedEnabled: Boolean,
         facebookProposalsAutoApprovedEnabled: Boolean,
+        apifyCreditsExhaustedEnabled: Boolean = false,
     ): NotificationPreference =
         jdbc.query(
             """
                 INSERT INTO notification_preference(
                     app_user_id, provider, pushover_user_key_encrypted, pushover_user_key_suffix,
                     pushover_devices, facebook_login_required_enabled,
-                    facebook_proposals_submitted_enabled, facebook_proposals_auto_approved_enabled
+                    facebook_proposals_submitted_enabled, facebook_proposals_auto_approved_enabled,
+                    apify_credits_exhausted_enabled
                 )
                 VALUES (
                     :appUserId, 'PUSHOVER', :pushoverUserKeyEncrypted, :pushoverUserKeySuffix,
                     :pushoverDevices, :facebookLoginRequiredEnabled,
-                    :facebookProposalsSubmittedEnabled, :facebookProposalsAutoApprovedEnabled
+                    :facebookProposalsSubmittedEnabled, :facebookProposalsAutoApprovedEnabled,
+                    :apifyCreditsExhaustedEnabled
                 )
                 ON CONFLICT (app_user_id) DO UPDATE
                    SET pushover_user_key_encrypted = :pushoverUserKeyEncrypted,
@@ -55,11 +58,12 @@ class NotificationPreferenceRepository(
                        facebook_login_required_enabled = :facebookLoginRequiredEnabled,
                        facebook_proposals_submitted_enabled = :facebookProposalsSubmittedEnabled,
                        facebook_proposals_auto_approved_enabled = :facebookProposalsAutoApprovedEnabled,
+                       apify_credits_exhausted_enabled = :apifyCreditsExhaustedEnabled,
                        updated_at = now()
                 RETURNING app_user_id, provider, pushover_user_key_encrypted, pushover_user_key_suffix,
                           pushover_devices, facebook_login_required_enabled,
                           facebook_proposals_submitted_enabled, facebook_proposals_auto_approved_enabled,
-                          created_at, updated_at
+                          apify_credits_exhausted_enabled, created_at, updated_at
             """.trimIndent(),
             MapSqlParameterSource()
                 .addValue("appUserId", appUserId)
@@ -68,7 +72,8 @@ class NotificationPreferenceRepository(
                 .addValue("pushoverDevices", PushoverDevices.format(pushoverDevices))
                 .addValue("facebookLoginRequiredEnabled", facebookLoginRequiredEnabled)
                 .addValue("facebookProposalsSubmittedEnabled", facebookProposalsSubmittedEnabled)
-                .addValue("facebookProposalsAutoApprovedEnabled", facebookProposalsAutoApprovedEnabled),
+                .addValue("facebookProposalsAutoApprovedEnabled", facebookProposalsAutoApprovedEnabled)
+                .addValue("apifyCreditsExhaustedEnabled", apifyCreditsExhaustedEnabled),
             PREFERENCE_ROW_MAPPER,
         ).single()
 
@@ -118,6 +123,22 @@ class NotificationPreferenceRepository(
             RECIPIENT_ROW_MAPPER,
         )
 
+    fun findPushoverRecipientsForApifyCreditsExhausted(): List<NotificationRecipient> =
+        jdbc.query(
+            """
+                SELECT np.app_user_id, au.email, au.role, np.pushover_user_key_encrypted,
+                       np.pushover_devices
+                  FROM notification_preference np
+                  JOIN app_user au ON au.id = np.app_user_id
+                 WHERE np.provider = 'PUSHOVER'
+                   AND np.apify_credits_exhausted_enabled = true
+                   AND au.status = 'ACTIVE'
+                   AND au.role = 'ADMIN'
+            """.trimIndent(),
+            emptyMap<String, Any>(),
+            RECIPIENT_ROW_MAPPER,
+        )
+
     companion object {
         private val PREFERENCE_ROW_MAPPER = RowMapper<NotificationPreference> { rs, _ ->
             NotificationPreference(
@@ -131,6 +152,7 @@ class NotificationPreferenceRepository(
                 facebookProposalsAutoApprovedEnabled = rs.getBoolean("facebook_proposals_auto_approved_enabled"),
                 createdAt = rs.getTimestamp("created_at")?.toInstant(),
                 updatedAt = rs.getTimestamp("updated_at")?.toInstant(),
+                apifyCreditsExhaustedEnabled = rs.getBoolean("apify_credits_exhausted_enabled"),
             )
         }
 

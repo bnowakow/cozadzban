@@ -271,6 +271,33 @@ class FacebookArticleProposalServiceTest {
     }
 
     @Test
+    fun `completeRun publishes a credits exhausted event when Apify ran out of credit`() {
+        val publisher: ApplicationEventPublisher = mock()
+
+        proposalService(publisher).completeRun(
+            "run-credits",
+            FacebookImportRunCompletionRequest(
+                status = FacebookImportRunStatus.FAILED,
+                importType = FacebookImportType.APIFY,
+                trigger = FacebookImportTrigger.SCHEDULED,
+                failedCount = 1,
+                statusDetail = "Facebook Apify import failed: Apify credits are exhausted",
+                apifyCreditsExhausted = true,
+                apifyRemainingUsd = java.math.BigDecimal("0.05"),
+                apifyUsageCycleEndAt = Instant.parse("2026-11-26T23:59:59.999Z"),
+            ),
+        )
+
+        val events = argumentCaptor<Any>()
+        verify(publisher, org.mockito.kotlin.times(2)).publishEvent(events.capture())
+        val event = events.allValues.filterIsInstance<FacebookApifyCreditsExhaustedEvent>().single()
+        assertEquals("run-credits", event.importRunId)
+        assertEquals(FacebookImportTrigger.SCHEDULED, event.trigger)
+        assertEquals(java.math.BigDecimal("0.05"), event.remainingUsd)
+        assertEquals(Instant.parse("2026-11-26T23:59:59.999Z"), event.cycleEndAt)
+    }
+
+    @Test
     fun `terminateTimedOutRun marks a single running import terminated`() {
         val timedOutAt = Instant.parse("2026-05-24T11:00:00Z")
         whenever(runRepository.terminateTimedOutRunningRun(any(), any(), any())).thenReturn(true)

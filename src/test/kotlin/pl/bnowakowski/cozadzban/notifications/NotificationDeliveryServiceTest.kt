@@ -10,6 +10,7 @@ import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
+import pl.bnowakowski.cozadzban.facebookimport.FacebookApifyCreditsExhaustedEvent
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportLoginRequiredEvent
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportLoginTimedOutEvent
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportRunCompletedEvent
@@ -203,6 +204,46 @@ class NotificationDeliveryServiceTest {
         verify(repository, never()).findPushoverRecipientsForProposalSummary()
         verify(repository, never()).findPushoverRecipientsForAutoApprovedProposals()
         verify(pushoverClient, never()).send(org.mockito.kotlin.any())
+    }
+
+    @Test
+    fun `apify credits exhausted sends the balance and reset date to opted-in admins`() {
+        whenever(repository.findPushoverRecipientsForApifyCreditsExhausted()).thenReturn(listOf(recipient(role = Role.ADMIN)))
+        whenever(encryptor.decrypt("encrypted")).thenReturn("user-key")
+
+        service.onApifyCreditsExhausted(
+            FacebookApifyCreditsExhaustedEvent(
+                importRunId = "facebook-apify-import-1",
+                trigger = FacebookImportTrigger.SCHEDULED,
+                remainingUsd = java.math.BigDecimal("0.049"),
+                cycleEndAt = java.time.Instant.parse("2026-11-26T23:59:59.999Z"),
+                detail = null,
+            ),
+        )
+
+        val captor = argumentCaptor<PushoverMessage>()
+        verify(pushoverClient).send(captor.capture())
+        assertEquals("Apify credits exhausted", captor.firstValue.title)
+        assertEquals(
+            "Facebook Apify import facebook-apify-import-1 failed: Apify credits are exhausted " +
+                "(\$0.05 left, resets after 2026-11-26).",
+            captor.firstValue.message,
+        )
+        assertEquals("https://console.apify.com/billing", captor.firstValue.url)
+    }
+
+    @Test
+    fun `apify credits exhausted without a balance still notifies`() {
+        whenever(repository.findPushoverRecipientsForApifyCreditsExhausted()).thenReturn(listOf(recipient(role = Role.ADMIN)))
+        whenever(encryptor.decrypt("encrypted")).thenReturn("user-key")
+
+        service.onApifyCreditsExhausted(
+            FacebookApifyCreditsExhaustedEvent("run-2", FacebookImportTrigger.MANUAL, null, null, null),
+        )
+
+        val captor = argumentCaptor<PushoverMessage>()
+        verify(pushoverClient).send(captor.capture())
+        assertEquals("Facebook Apify import run-2 failed: Apify credits are exhausted.", captor.firstValue.message)
     }
 
     private fun recipient(role: Role): NotificationRecipient =

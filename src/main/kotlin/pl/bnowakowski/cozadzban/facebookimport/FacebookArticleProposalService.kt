@@ -254,6 +254,17 @@ class FacebookArticleProposalService(
                 failedCount = request.failedCount,
             ),
         )
+        if (request.apifyCreditsExhausted) {
+            eventPublisher?.publishEvent(
+                FacebookApifyCreditsExhaustedEvent(
+                    importRunId = importRunId,
+                    trigger = request.trigger,
+                    remainingUsd = request.apifyRemainingUsd,
+                    cycleEndAt = request.apifyUsageCycleEndAt,
+                    detail = request.statusDetail,
+                ),
+            )
+        }
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)

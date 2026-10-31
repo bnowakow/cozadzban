@@ -1517,6 +1517,23 @@ components:
           type: number
           nullable: true
           description: Actual Apify actor run cost in USD when available.
+        apifyCreditsExhausted:
+          type: boolean
+          default: false
+          description: >
+            True when an Apify run failed because the account has no usage left this
+            billing cycle: the pre-run balance check, an Apify payment error type when
+            starting the run, or a failed run with the balance below the run budget. The
+            server then publishes the Apify credits exhausted notification.
+        apifyRemainingUsd:
+          type: number
+          nullable: true
+          description: Apify usage left this billing cycle in USD, from GET /v2/users/me/limits.
+        apifyUsageCycleEndAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: End of the current Apify billing cycle (UTC).
 
     FacebookImportStartupCleanupRequest:
       type: object

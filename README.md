@@ -147,6 +147,16 @@ The app can run a Selenium import for posts on
 `APP_FACEBOOK_IMPORT_SCHEDULE_RUN_ON_STARTUP=true` enables a worker-startup run.
 Apify has separate enablement and scheduling settings in the env templates.
 
+Before each Apify run, the importer reads the account's remaining usage for the current
+billing cycle (`GET /v2/users/me/limits`). If what's left is below the run budget,
+the larger of `APP_FACEBOOK_IMPORT_APIFY_MAX_COST_USD` and the results-based estimate, it
+fails the import without starting an actor run. Apify payment error types when starting a
+run, and failed runs that leave the balance below that budget, are reported the same way.
+ADMIN users can enable **Apify credits exhausted notifications** in Notification settings
+to get a Pushover alert with the remaining balance and the cycle reset date. The Apify
+import panel shows **Apify credit left**, cached for five minutes. If Apify's usage endpoint
+can't be reached, the import runs without the check.
+
 Minimum configuration:
 
 ```sh

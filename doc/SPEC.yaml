@@ -830,7 +830,7 @@ x-database:
         lifecycle/history. Flyway owns the BATCH_JOB_*, BATCH_STEP_*, and
         BATCH_*_SEQ objects; Spring Batch schema initialization remains disabled.
     - name: notification_preference
-      migration: V20__notification_preferences_and_login_required.sql, V21__notification_preference_pushover_devices.sql, V33__notification_preference_auto_approved.sql
+      migration: V20__notification_preferences_and_login_required.sql, V21__notification_preference_pushover_devices.sql, V33__notification_preference_auto_approved.sql, V43__notification_preference_apify_credits_exhausted.sql
       description: Stores encrypted per-user notification settings for Pushover.
       columns:
         - name: app_user_id
@@ -867,6 +867,11 @@ x-database:
           type: BOOLEAN
           migration: V33__notification_preference_auto_approved.sql
           constraints: "NOT NULL DEFAULT false"
+        - name: apify_credits_exhausted_enabled
+          type: BOOLEAN
+          migration: V43__notification_preference_apify_credits_exhausted.sql
+          constraints: "NOT NULL DEFAULT false"
+          description: ADMIN-only opt-in for Apify credits exhausted notifications.
 # ──────────────────────────────────────────────────────────────
 # BUSINESS RULES  (x-business-rules)
 # ──────────────────────────────────────────────────────────────
@@ -1283,6 +1288,10 @@ x-business-rules:
       SCHEDULED interval import. FacebookImportRunCompletedEvent notifies ACTIVE
       users who enabled review notifications when max(submittedCount - autoApprovedCount, 0) > 0.
       Separate auto-approval notifications go to opted-in ACTIVE users when autoApprovedCount > 0.
+      Apify credits exhausted notifications go to opted-in ACTIVE ADMIN users when a run
+      completion reports apifyCreditsExhausted=true, for any trigger. The message includes the
+      remaining Apify usage and the billing cycle end when known, and links to the Apify
+      billing page.
       Notification delivery failures are logged and must never block or fail an
       import run.
   - id: BR-51
@@ -3147,6 +3156,23 @@ components:
           type: number
           nullable: true
           description: Actual Apify actor run cost in USD when available.
+        apifyCreditsExhausted:
+          type: boolean
+          default: false
+          description: >
+            True when an Apify run failed because the account has no usage left this
+            billing cycle: the pre-run balance check, an Apify payment error type when
+            starting the run, or a failed run with the balance below the run budget. The
+            server then publishes the Apify credits exhausted notification.
+        apifyRemainingUsd:
+          type: number
+          nullable: true
+          description: Apify usage left this billing cycle in USD, from GET /v2/users/me/limits.
+        apifyUsageCycleEndAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: End of the current Apify billing cycle (UTC).
 
     FacebookImportStartupCleanupRequest:
       type: object
