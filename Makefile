@@ -1,5 +1,5 @@
 
-.PHONY: help docker-up docker-down docker-data-permissions docker-upgrade-log-owner docker-pg-nuke docker-pg-backup install-pg-backup-cron ensure-pg-backup-cron install-codex-auth-cron install-app-health-cron install-all-crons codex-auth-check app-health-check build run run-local run-prod test clean docker-logs docker-spring-shell docker-pg-shell docker-upgrade docker-upgrade-no-cache sync-env-files bump-patch bump-minor codex-commit claude-commit install-git-hooks install-codex-skills install-claude-skills codex-skill-prompts claude-skill-prompts codex-docker-login codex-docker-status codex-docker-logout
+.PHONY: help docker-up docker-down docker-data-permissions docker-upgrade-log-owner docker-pg-nuke docker-pg-backup install-pg-backup-cron ensure-pg-backup-cron install-codex-auth-cron install-app-health-cron install-all-crons codex-auth-check app-health-check performance-report build run run-local run-prod test clean docker-logs docker-spring-shell docker-pg-shell docker-upgrade docker-upgrade-no-cache sync-env-files bump-patch bump-minor codex-commit claude-commit install-git-hooks install-codex-skills install-claude-skills codex-skill-prompts claude-skill-prompts codex-docker-login codex-docker-status codex-docker-logout
 
 -include .env
 
@@ -21,6 +21,7 @@ help:
 	@printf "    %-31s %s\n" "codex-docker-logout" "Sign out of Codex in the Spring Boot container"
 	@printf "    %-31s %s\n" "codex-auth-check" "Check cached login and make a small live Codex request"
 	@printf "    %-31s %s\n" "app-health-check" "Check the active app and restart it after repeated failures"
+	@printf "    %-31s %s\n" "performance-report" "Measure front-page performance and save a report in logs/"
 	@printf "    %-31s %s\n" "sync-env-files" "Sync server and worker env files, then verify byte-for-byte"
 	@printf "\n"
 	@printf "  \033[1;94m%s\033[0m\n" "PostgreSQL in Docker"
@@ -133,6 +134,10 @@ codex-auth-check:
 
 app-health-check:
 	@APP_PORT='$(APP_PORT)' bash utilities/check-app-health.sh
+
+# Repeatable front-page measurements; see doc/PAGE_PERFORMANCE.md for options and baselines.
+performance-report:
+	@APP_PORT='$(APP_PORT)' bash utilities/page-performance-report.sh
 
 # Recreate PostgreSQL container with a fresh data directory
 docker-pg-nuke:

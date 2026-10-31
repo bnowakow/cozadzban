@@ -300,6 +300,7 @@ make build         # Build without tests
 make test          # Run all tests
 make docker-logs   # Follow Docker logs
 make docker-down   # Stop and remove containers
+make performance-report  # Measure front-page performance (see doc/PAGE_PERFORMANCE.md)
 ```
 
 ### Additional docs

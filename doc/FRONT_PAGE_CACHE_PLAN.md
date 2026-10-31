@@ -3,7 +3,8 @@
 Status: **planned, not implemented**. The design below was agreed on 31 October
 2026. It is deferred because measurement showed that the first-load cost was
 image size, not database queries. The image fixes shipped first (see
-[Article image generation](ARTICLE_IMAGE_GENERATION_PLAN.md)).
+[Article image generation](ARTICLE_IMAGE_GENERATION_PLAN.md)). For before/after numbers
+and how to measure again, see [Page performance](PAGE_PERFORMANCE.md).
 
 ## Measurements (31 October 2026)
 

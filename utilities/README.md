@@ -2,6 +2,7 @@
 
 - [Codex commit](#codex-commit) — stage changes, ask Codex for a commit message, commit, and optionally push.
 - [Claude commit](#claude-commit) — the same flow with Claude Code instead of Codex.
+- [Page performance report](#page-performance-report) — repeatable front-page measurements saved to `logs/performance-reports/`.
 - [Facebook feed auto-scroll](#facebook-feed-auto-scroll) — browser console snippet that scrolls Facebook to load more posts.
 - [Seed sample articles](#seed-sample-articles) — bulk-POST sample URLs to the local API for UI / perf testing.
 
@@ -36,6 +37,15 @@ Claude runs non-interactively with `claude -p`. For the commit message it may on
 ### Requirements
 
 The script uses `claude` from `PATH` when available, honors `CLAUDE_BIN` as an explicit override, and also checks `~/.local/bin/claude`, `~/.claude/local/claude`, `/opt/homebrew/bin/claude` and `/usr/local/bin/claude`. Claude Code must already be signed in (run `claude` once interactively). The other requirements are the same as for [Codex commit](#codex-commit).
+
+## Page performance report
+
+`page-performance-report.sh` (or `make performance-report`) measures the front page on the
+deployment server. It reports Zipkin request timings, database query times, server response
+times, first-page image sizes and download times, and caching headers. Each run is saved under
+`logs/performance-reports/`. Options, baselines and how to compare reports are in
+[doc/PAGE_PERFORMANCE.md](../doc/PAGE_PERFORMANCE.md). It needs `docker compose`, `curl`,
+`python3`, and access to `.env` for the PostgreSQL credentials.
 
 ## Facebook feed auto-scroll
 

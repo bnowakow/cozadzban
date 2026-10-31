@@ -26,6 +26,8 @@ Project documentation, specs, and developer aids.
 - **[ARTICLE_IMAGE_GENERATION_PLAN.md](ARTICLE_IMAGE_GENERATION_PLAN.md)** —
   experimental generated-image fallback, remaining production provider choices,
   Docker/Codex feasibility, and delivery phases.
+- **[PAGE_PERFORMANCE.md](PAGE_PERFORMANCE.md)** — before/after page-load measurements, the
+  October 2026 image and caching changes, and how to compare with `make performance-report`.
 - **[FRONT_PAGE_CACHE_PLAN.md](FRONT_PAGE_CACHE_PLAN.md)** — measured first-load costs and the
   agreed, not yet implemented, front-page and story-page cache design.
 - **[CODEX_DOCKER.md](CODEX_DOCKER.md)** — Codex CLI installation and device
