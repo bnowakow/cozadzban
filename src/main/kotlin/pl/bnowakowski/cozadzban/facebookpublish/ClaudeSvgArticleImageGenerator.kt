@@ -10,6 +10,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
 import java.util.concurrent.TimeUnit
+import pl.bnowakowski.cozadzban.ui.WarsawTime
 
 /**
  * Fallback illustrator for when Codex cannot produce an image. Claude has no image generation, so
@@ -72,7 +73,7 @@ class ClaudeSvgArticleImageGenerator(
             val errors = readBounded(stderr)
             if (child.exitValue() != 0) {
                 usageLimit("$errors\n$response", Instant.now())?.let { limited ->
-                    log.warn("Claude usage limit reached for article {}; retrying after {}", articleId, limited.retryAt)
+                    log.warn("Claude usage limit reached for article {}; retrying after {}", articleId, WarsawTime.forLog(limited.retryAt))
                     return limited
                 }
                 log.warn("Claude illustration failed for article {} (exit {})", articleId, child.exitValue())

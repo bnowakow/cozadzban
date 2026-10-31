@@ -55,6 +55,7 @@ import org.springframework.http.client.JdkClientHttpRequestFactory
 import org.springframework.web.client.RestClient
 import org.springframework.web.client.RestClientException
 import org.springframework.web.client.RestClientResponseException
+import pl.bnowakowski.cozadzban.ui.WarsawTime
 
 @Component
 class FacebookProfileArticleImporter(
@@ -2598,7 +2599,7 @@ class FacebookProfileArticleImporter(
                     valueDiagnostic(article.title),
                     valueDiagnostic(article.thumbnail),
                     valueDiagnostic(article.lead),
-                    article.publishedAt,
+                    WarsawTime.forLog(article.publishedAt),
                 )
             }
             return ArticleResponse.from(article, null)
@@ -2776,7 +2777,7 @@ class FacebookProfileArticleImporter(
             valueDiagnostic(article.title),
             valueDiagnostic(article.thumbnail),
             valueDiagnostic(article.lead),
-            article.publishedAt,
+            WarsawTime.forLog(article.publishedAt),
             valueDiagnostic(candidate.text),
             isFacebookPostUrl(candidate.url),
         )
@@ -2801,7 +2802,7 @@ class FacebookProfileArticleImporter(
     private fun articleResponseDiagnostic(article: ArticleResponse): String =
         "id=${article.id},url='${article.url}',title=${valueDiagnostic(article.title)}," +
             "thumbnail=${valueDiagnostic(article.thumbnail)},lead=${valueDiagnostic(article.lead)}," +
-            "publishedAt=${article.publishedAt}"
+            "publishedAt=${WarsawTime.forLog(article.publishedAt)}"
 
     private fun elapsedMs(startedAt: Long): Long =
         (System.nanoTime() - startedAt) / 1_000_000

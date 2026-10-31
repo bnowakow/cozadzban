@@ -24,6 +24,11 @@ object WarsawTime {
     fun dateTimeSeconds(instant: Instant): String = DATE_TIME_SECONDS.format(instant)
     fun date(instant: Instant): String = DATE.format(instant)
 
+    private val LOG = DateTimeFormatter.ISO_OFFSET_DATE_TIME.withZone(ZONE)
+
+    /** An exact, readable timestamp for log lines, e.g. 2026-10-19T12:00:00+02:00, or "null". */
+    fun forLog(instant: Instant?): String = instant?.let(LOG::format) ?: "null"
+
     /** Value for a DateTimePicker, which has no zone: the instant as Warsaw wall-clock time. */
     fun toPicker(instant: Instant?): LocalDateTime? = instant?.atZone(ZONE)?.toLocalDateTime()
 

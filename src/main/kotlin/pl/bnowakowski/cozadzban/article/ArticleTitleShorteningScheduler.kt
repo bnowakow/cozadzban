@@ -6,6 +6,7 @@ import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
 import java.time.Duration
 import java.time.Instant
+import pl.bnowakowski.cozadzban.ui.WarsawTime
 
 /**
  * Shortens over-long titles, newest first, a few per minute. New articles are picked up on the next
@@ -50,7 +51,7 @@ class ArticleTitleShorteningScheduler(
                 is TitleShorteningResult.UsageLimited -> {
                     jobs.pause(job, result.retryAt, result.reason)
                     pausedUntil = result.retryAt
-                    log.warn("Title shortening paused until {} ({})", result.retryAt, result.reason)
+                    log.warn("Title shortening paused until {} ({})", WarsawTime.forLog(result.retryAt), result.reason)
                     return false
                 }
                 is TitleShorteningResult.Failed -> {

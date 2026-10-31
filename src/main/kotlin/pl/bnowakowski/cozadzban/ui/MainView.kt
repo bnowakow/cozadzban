@@ -1885,7 +1885,7 @@ class ArticleListView(
             facebookUrlKind(url),
             language,
             valueDiagnostic(quote),
-            publishedAt,
+            WarsawTime.forLog(publishedAt),
             creatorDiagnostic(creator),
             currentRequestDiagnostic(),
         )
@@ -1905,7 +1905,7 @@ class ArticleListView(
             valueDiagnostic(article.title),
             valueDiagnostic(article.thumbnail),
             valueDiagnostic(article.lead),
-            article.publishedAt,
+            WarsawTime.forLog(article.publishedAt),
             article.title == "Facebook photo" && article.thumbnail == null && article.lead == null && article.publishedAt == null,
         )
     }
@@ -1980,7 +1980,7 @@ class ArticleListView(
             valueDiagnostic(article.title),
             valueDiagnostic(article.thumbnail),
             valueDiagnostic(article.lead),
-            article.publishedAt,
+            WarsawTime.forLog(article.publishedAt),
             valueDiagnostic(patch["content"] as? String),
         )
     }
@@ -2025,7 +2025,7 @@ class ArticleListView(
     private fun facebookRowDiagnostic(article: Article): String =
         "id=${article.id},kind=${facebookUrlKind(article.url)},url='${article.url}',title=${valueDiagnostic(article.title)}," +
             "thumbnail=${valueDiagnostic(article.thumbnail)},lead=${valueDiagnostic(article.lead)}," +
-            "publishedAt=${article.publishedAt},contentCache=${valueDiagnostic(article.id?.let { articleService.getContent(it) })}," +
+            "publishedAt=${WarsawTime.forLog(article.publishedAt)},contentCache=${valueDiagnostic(article.id?.let { articleService.getContent(it) })}," +
             "problemReason=${facebookProblemReason(article)}"
 
     private fun isProblemFacebookRow(article: Article): Boolean =

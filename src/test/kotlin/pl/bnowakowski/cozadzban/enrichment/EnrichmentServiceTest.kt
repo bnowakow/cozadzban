@@ -72,7 +72,7 @@ class EnrichmentServiceTest {
             "66K likes, 3,923 comments - kacper.nowicki_ on April 9, 2026: \"Patrick Who?\".",
             result.lead,
         )
-        assertEquals(Instant.parse("2026-04-09T00:00:00Z"), result.publishedAt)
+        assertEquals(Instant.parse("2026-04-08T22:00:00Z") /* 2026-04-09 00:00 Warsaw (CEST) */, result.publishedAt)
     }
 
     @Test
@@ -142,7 +142,7 @@ class EnrichmentServiceTest {
         withServer(html) { url ->
             val result = EnrichmentService(RestClient.builder()).enrich(url)
 
-            assertEquals(Instant.parse("2005-11-28T00:00:00Z"), result.publishedAt)
+            assertEquals(Instant.parse("2005-11-27T23:00:00Z") /* 2005-11-28 00:00 Warsaw (CET) */, result.publishedAt)
         }
     }
 
@@ -165,7 +165,7 @@ class EnrichmentServiceTest {
         withServer(html, "/serwisdonaldpl/videos/2380672702377664/") { url ->
             val result = EnrichmentService(RestClient.builder()).enrich(url)
 
-            assertEquals(Instant.parse("2005-11-28T00:00:00Z"), result.publishedAt)
+            assertEquals(Instant.parse("2005-11-27T23:00:00Z") /* 2005-11-28 00:00 Warsaw (CET) */, result.publishedAt)
         }
     }
 
@@ -1046,7 +1046,7 @@ class EnrichmentServiceTest {
 
         assertNotNull(result)
         assertEquals("OpenAI Trial Starts With Two Very Different Tales of a Company’s Early Years", result?.title)
-        assertEquals(Instant.parse("2026-04-28T00:00:00Z"), result?.publishedAt)
+        assertEquals(Instant.parse("2026-04-27T22:00:00Z") /* 2026-04-28 00:00 Warsaw (CEST) */, result?.publishedAt)
         assertEquals(thumbnail, result?.thumbnail)
         assertEquals(summary, result?.lead)
         assertEquals(summary, result?.plainText)

@@ -17,6 +17,7 @@ import java.math.RoundingMode
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
+import pl.bnowakowski.cozadzban.ui.WarsawTime
 
 /** When the Apify usage of the current billing cycle is predicted to run out at the current spending rate. */
 data class ApifyCreditForecast(
@@ -109,7 +110,7 @@ class ApifyCreditForecastScheduler(
         if (claimed) {
             logger.info(
                 "Apify credits predicted to run out at {} ({} days, {} USD/day); sending {}-day alert",
-                forecast.predictedExhaustionAt, "%.1f".format(forecast.daysLeft), forecast.dailyUsageUsd, daysBefore,
+                WarsawTime.forLog(forecast.predictedExhaustionAt), "%.1f".format(forecast.daysLeft), forecast.dailyUsageUsd, daysBefore,
             )
             eventPublisher.publishEvent(
                 ApifyCreditsLowEvent(

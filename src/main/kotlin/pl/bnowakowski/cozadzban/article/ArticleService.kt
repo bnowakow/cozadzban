@@ -20,6 +20,7 @@ import pl.bnowakowski.cozadzban.facebookpublish.FacebookArticleImageGenerationRe
 import pl.bnowakowski.cozadzban.user.AppUserRepository
 import java.net.URI
 import java.time.Instant
+import pl.bnowakowski.cozadzban.ui.WarsawTime
 
 @Service
 @Transactional
@@ -98,7 +99,7 @@ class ArticleService(
             operation = "create",
             url = url,
             detail = "inputUrl='${input.url}',creatorId=$creatorId,language='$language'," +
-                "quote=${valueDiagnostic(sanitizedInput.quote)},inputPublishedAt=${input.publishedAt}," +
+                "quote=${valueDiagnostic(sanitizedInput.quote)},inputPublishedAt=${WarsawTime.forLog(input.publishedAt)}," +
                 "contentInputSupported=false",
         )
         if (articleRepository.existsByUrl(url)) {
@@ -182,7 +183,7 @@ class ArticleService(
             operation = "replace",
             url = url,
             detail = "articleId=$id,inputUrl='${input.url}',existingUrl='${existing.url}',language='$language'," +
-                "quote=${valueDiagnostic(sanitizedInput.quote)},inputPublishedAt=${input.publishedAt}",
+                "quote=${valueDiagnostic(sanitizedInput.quote)},inputPublishedAt=${WarsawTime.forLog(input.publishedAt)}",
         )
         if (url != existing.url && articleRepository.existsByUrl(url)) {
             logFacebookPhotoDuplicateUrlConflict("replace", url, input.url, articleRepository.findByUrl(url))
@@ -523,7 +524,7 @@ class ArticleService(
     private fun enrichmentDiagnostic(enrichment: EnrichmentResult): String =
         "title=${valueDiagnostic(enrichment.title)},thumbnail=${valueDiagnostic(enrichment.thumbnail)}," +
             "lead=${valueDiagnostic(enrichment.lead)},favicon=${valueDiagnostic(enrichment.favicon)}," +
-            "publishedAt=${enrichment.publishedAt},plainText=${valueDiagnostic(enrichment.plainText)}"
+            "publishedAt=${WarsawTime.forLog(enrichment.publishedAt)},plainText=${valueDiagnostic(enrichment.plainText)}"
 
     private fun elapsedMs(startedAt: Long): Long =
         (System.nanoTime() - startedAt) / 1_000_000
@@ -787,7 +788,7 @@ class ArticleService(
             valueDiagnostic(contentForCache),
             valueDiagnostic(titleForSave),
             valueDiagnostic(enrichment.thumbnail),
-            enrichment.publishedAt,
+            WarsawTime.forLog(enrichment.publishedAt),
             publishedAtForSave,
         )
     }
@@ -821,8 +822,8 @@ class ArticleService(
             valueDiagnostic(enrichment.lead),
             valueDiagnostic(enrichment.plainText),
             valueDiagnostic(enrichment.thumbnail),
-            enrichment.publishedAt,
-            inputPublishedAt,
+            WarsawTime.forLog(enrichment.publishedAt),
+            WarsawTime.forLog(inputPublishedAt),
             valueDiagnostic(titleForSave),
             publishedAtForSave,
         )
@@ -855,8 +856,8 @@ class ArticleService(
             valueDiagnostic(contentPatchForTitle),
             valueDiagnostic(newTitle),
             valueDiagnostic(newThumbnail),
-            existing.publishedAt,
-            newPublishedAt,
+            WarsawTime.forLog(existing.publishedAt),
+            WarsawTime.forLog(newPublishedAt),
         )
     }
 
@@ -919,7 +920,7 @@ class ArticleService(
             valueDiagnostic(article.title),
             valueDiagnostic(article.thumbnail),
             valueDiagnostic(article.lead),
-            article.publishedAt,
+            WarsawTime.forLog(article.publishedAt),
             valueDiagnostic(requestedContent),
             contentCacheDiagnostic(article.id),
             operation == "create" && isGenericFacebookTitle(article.title) && requestedContent.isNullOrBlank(),
@@ -951,8 +952,8 @@ class ArticleService(
             reloadedArticle?.let { articleDiagnostic(it) } ?: "absent",
             valueDiagnostic(requestedContent),
             contentCacheDiagnostic(saveReturnedArticle.id),
-            saveReturnedArticle.createdAt,
-            reloadedArticle?.createdAt,
+            WarsawTime.forLog(saveReturnedArticle.createdAt),
+            WarsawTime.forLog(reloadedArticle?.createdAt),
         )
 
         return reloadedArticle ?: saveReturnedArticle
@@ -985,13 +986,13 @@ class ArticleService(
             facebookUrlKind(article.url),
             article.id,
             reasons.joinToString(","),
-            input.publishedAt,
+            WarsawTime.forLog(input.publishedAt),
             valueDiagnostic(input.quote),
             valueDiagnostic(enrichment.title),
             valueDiagnostic(enrichment.lead),
             valueDiagnostic(enrichment.plainText),
             valueDiagnostic(enrichment.thumbnail),
-            enrichment.publishedAt,
+            WarsawTime.forLog(enrichment.publishedAt),
             facebookPhotoTitleSource(input.url, enrichment, requestedContent, titleForSave),
             facebookPhotoCacheSource(article.url, enrichment, requestedContent),
             facebookPhotoThumbnailSource(enrichment),
@@ -1040,7 +1041,7 @@ class ArticleService(
     private fun articleDiagnostic(article: Article): String =
         "id=${article.id},url='${article.url}',title=${valueDiagnostic(article.title)}," +
             "thumbnail=${valueDiagnostic(article.thumbnail)},lead=${valueDiagnostic(article.lead)}," +
-            "publishedAt=${article.publishedAt},createdAt=${article.createdAt},createdByUserId=${article.createdByUserId}"
+            "publishedAt=${WarsawTime.forLog(article.publishedAt)},createdAt=${WarsawTime.forLog(article.createdAt)},createdByUserId=${article.createdByUserId}"
 
     private fun facebookPhotoTitleSource(
         url: String,
@@ -1190,7 +1191,7 @@ class ArticleService(
 
         return articleContentRepository.findById(articleId)
             .map {
-                "present(len=${it.content.length},truncated=${it.truncated},capturedAt=${it.capturedAt}," +
+                "present(len=${it.content.length},truncated=${it.truncated},capturedAt=${WarsawTime.forLog(it.capturedAt)}," +
                     "excerpt='${it.content.replace(LOG_WHITESPACE_PATTERN, " ").trim().take(MAX_LOGGED_VALUE_CHARS)}')"
             }
             .orElse("absent")

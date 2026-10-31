@@ -16,7 +16,10 @@ x-springboot-base: &springboot-base
     zipkin:
       condition: service_healthy
   environment:
-    - 'JAVA_TOOL_OPTIONS=-Xmx576m -Xms192m'
+    # Container clock and tools in Warsaw time; the JVM default stays UTC so JDBC sessions and
+    # child processes keep their behaviour. App logs are formatted in Warsaw time by logback.
+    - 'TZ=Europe/Warsaw'
+    - 'JAVA_TOOL_OPTIONS=-Xmx576m -Xms192m -Duser.timezone=UTC'
     - 'SPRING_PROFILES_ACTIVE=prod'
     - 'APP_LOG_LEVEL=${APP_LOG_LEVEL:-INFO}'
     - 'JDBC_DATABASE_URL=jdbc:postgresql://postgres:5432/${POSTGRES_DB}'
@@ -151,6 +154,8 @@ services:
   reverse-proxy:
     image: nginx:1.27-alpine
     restart: unless-stopped
+    environment:
+      - 'TZ=Europe/Warsaw'
     ports:
       - '127.0.0.1:${APP_PORT:-8086}:80'
     volumes:
@@ -171,7 +176,11 @@ services:
     mem_limit: 512m
     memswap_limit: 512m
     pids_limit: 128
+    # Server logs and the default session zone (psql, pg_dump) in Warsaw time. The app's JDBC
+    # sessions set their own zone (UTC) and are not affected.
+    command: ['postgres', '-c', 'timezone=Europe/Warsaw', '-c', 'log_timezone=Europe/Warsaw']
     environment:
+      - 'TZ=Europe/Warsaw'
       - 'POSTGRES_DB=${POSTGRES_DB}'
       - 'POSTGRES_PASSWORD=${POSTGRES_PASSWORD}'
       - 'POSTGRES_USER=${POSTGRES_USER}'
@@ -187,6 +196,8 @@ services:
   zipkin:
     image: 'openzipkin/zipkin:latest'
     restart: unless-stopped
+    environment:
+      - 'TZ=Europe/Warsaw'
     cpus: '0.15'
     cpu_shares: 64
     mem_limit: 256m

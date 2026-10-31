@@ -18,6 +18,7 @@ import java.util.concurrent.TimeUnit
 import javax.imageio.IIOImage
 import javax.imageio.ImageIO
 import javax.imageio.ImageWriteParam
+import pl.bnowakowski.cozadzban.ui.WarsawTime
 
 sealed interface ArticleImageGenerationResult {
     data class Generated(val png: ByteArray) : ArticleImageGenerationResult
@@ -163,7 +164,7 @@ class CodexArticleImageGenerator(
                 if (child.exitValue() != 0) {
                     val outputText = readTail(output)
                     usageLimit(outputText, Instant.now())?.let { limited ->
-                        log.warn("Codex usage limit reached for article {}; retrying after {}", article.id, limited.retryAt)
+                        log.warn("Codex usage limit reached for article {}; retrying after {}", article.id, WarsawTime.forLog(limited.retryAt))
                         return limited
                     }
                     log.warn("Codex image generation failed for article {} (exit {})", article.id, child.exitValue())
@@ -180,7 +181,7 @@ class CodexArticleImageGenerator(
                 ?: findFreshGeneratedFile(Path.of(codexHome), startedAt)
             if (generatedFile == null) {
                 usageLimit(readTail(output), Instant.now())?.let { limited ->
-                    log.warn("Codex usage limit reached for article {}; retrying after {}", articleId, limited.retryAt)
+                    log.warn("Codex usage limit reached for article {}; retrying after {}", articleId, WarsawTime.forLog(limited.retryAt))
                     return limited
                 }
                 log.warn("Codex completed without an image for article {}", articleId)

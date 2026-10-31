@@ -1023,9 +1023,14 @@ x-business-rules:
       stored status and error texts, statistics day boundaries (story views per Warsaw day),
       import run IDs and artifact file names, application logs, and operator scripts. IDs, file
       names and logs include the UTC offset (e.g. +0100) so they stay unambiguous across clock
-      changes. Date-time pickers read and show Warsaw wall-clock time and convert to UTC
-      instants. Persisted timestamps and machine-readable values (APIs, time datetime
-      attributes, structured data, sitemap, RSS) stay UTC.
+      changes. Timestamps inside log messages are written as ISO-8601 Warsaw time with offset.
+      Date-time pickers read and show Warsaw wall-clock time and convert to UTC instants.
+      Date-only publication dates from source pages are stored as Warsaw midnight. The
+      nginx, PostgreSQL (server logs and default session zone) and Zipkin containers run in
+      Europe/Warsaw; the Spring Boot container's clock is Warsaw, but its JVM default zone stays
+      UTC (-Duser.timezone=UTC), so JDBC sessions and CLI child processes are unchanged.
+      Persisted timestamps and machine-readable values (APIs, time datetime attributes,
+      structured data, sitemap, RSS) stay UTC.
   - id: BR-16
     name: CORS and CSRF defaults
     description: >

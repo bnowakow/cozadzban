@@ -50,8 +50,11 @@ Run the suite on a development machine instead when one is available.
   texts, statistics days, import run IDs and file names, app logs and operator scripts. In Kotlin,
   format and convert through `ui/WarsawTime` (also for DateTimePicker values), never
   `ZoneOffset.UTC`, `Instant.toString()` or the default zone; in shell use
-  `TZ=Europe/Warsaw date ...%z`. IDs, file names and logs carry the UTC offset. Persisted
-  timestamps and machine-readable output (APIs, RSS, sitemap, datetime attributes) stay UTC.
+  `TZ=Europe/Warsaw date ...%z`. IDs, file names and logs carry the UTC offset. Pass timestamps
+  to log calls through `WarsawTime.forLog(...)`, and read date-only source dates as Warsaw
+  midnight. Containers run with `TZ=Europe/Warsaw`, but keep the app JVM's default zone UTC
+  (`-Duser.timezone=UTC`). Persisted timestamps and machine-readable output (APIs, RSS, sitemap,
+  datetime attributes) stay UTC.
 - RSS MUST never expose creator/user data (BR-07).
 
 ## Performance work

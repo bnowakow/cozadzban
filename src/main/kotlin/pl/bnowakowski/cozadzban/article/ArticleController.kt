@@ -24,6 +24,7 @@ import pl.bnowakowski.cozadzban.user.AppUser
 import pl.bnowakowski.cozadzban.user.AppUserRepository
 import java.time.Instant
 import java.net.URI
+import pl.bnowakowski.cozadzban.ui.WarsawTime
 
 @RestController
 @RequestMapping("/api/articles")
@@ -140,7 +141,7 @@ class ArticleController(
             facebookUrlKind(input.url),
             input.language,
             valueDiagnostic(input.quote),
-            input.publishedAt,
+            WarsawTime.forLog(input.publishedAt),
             authenticationDiagnostic(authentication),
         )
     }
@@ -159,7 +160,7 @@ class ArticleController(
             valueDiagnostic(article.title),
             valueDiagnostic(article.thumbnail),
             valueDiagnostic(article.lead),
-            article.publishedAt,
+            WarsawTime.forLog(article.publishedAt),
         )
     }
 
@@ -191,7 +192,7 @@ class ArticleController(
             valueDiagnostic(article.title),
             valueDiagnostic(article.thumbnail),
             valueDiagnostic(article.lead),
-            article.publishedAt,
+            WarsawTime.forLog(article.publishedAt),
             valueDiagnostic(patch["content"] as? String),
         )
     }

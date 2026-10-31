@@ -30,10 +30,10 @@ import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
 import java.time.OffsetDateTime
-import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import java.util.concurrent.TimeUnit
+import pl.bnowakowski.cozadzban.ui.WarsawTime
 
 /**
  * Fetches and extracts article metadata from a URL.
@@ -1740,7 +1740,7 @@ class EnrichmentService(
             "canonical=${validation.canonical.normalizedForLog()}",
             "facebookPostText=${valueDiagnostic(validation.facebookPostText)}",
             "thumbnail=${valueDiagnostic(validation.thumbnail)}",
-            "publishedAt=${validation.publishedAt}",
+            "publishedAt=${WarsawTime.forLog(validation.publishedAt)}",
             "publishedAtSignals=${validation.publishedAtSignals}",
             "imageCandidates=${validation.imageCandidates}",
             "mainPhotoImageCandidates=${validation.mainPhotoImageCandidates}",
@@ -2549,7 +2549,7 @@ class EnrichmentService(
         return parseDateTimeInstant(value)
             ?: runCatching {
                 LocalDate.parse(value.trim(), NYT_PUBLICATION_DATE_FORMATTER)
-                    .atStartOfDay(ZoneOffset.UTC)
+                    .atStartOfDay(pl.bnowakowski.cozadzban.ui.WarsawTime.ZONE)
                     .toInstant()
             }.getOrNull()
     }
@@ -2799,7 +2799,7 @@ class EnrichmentService(
             val year = match.groupValues[3].toIntOrNull() ?: continue
 
             try {
-                return LocalDate.of(year, month, day).atStartOfDay(ZoneOffset.UTC).toInstant()
+                return LocalDate.of(year, month, day).atStartOfDay(pl.bnowakowski.cozadzban.ui.WarsawTime.ZONE).toInstant()
             } catch (_: Exception) {
                 // Keep scanning; visible page text can contain unrelated malformed dates.
             }
@@ -2836,7 +2836,7 @@ class EnrichmentService(
         val year = match.groupValues[3].toIntOrNull() ?: return null
 
         return try {
-            LocalDate.of(year, month, day).atStartOfDay(ZoneOffset.UTC).toInstant()
+            LocalDate.of(year, month, day).atStartOfDay(pl.bnowakowski.cozadzban.ui.WarsawTime.ZONE).toInstant()
         } catch (_: Exception) {
             null
         }
@@ -3347,7 +3347,7 @@ class EnrichmentService(
 
     private fun enrichmentResultDiagnostic(result: EnrichmentResult): String =
         "title=${valueDiagnostic(result.title)},thumbnail=${valueDiagnostic(result.thumbnail)}," +
-            "lead=${valueDiagnostic(result.lead)},publishedAt=${result.publishedAt},plainText=${valueDiagnostic(result.plainText)}"
+            "lead=${valueDiagnostic(result.lead)},publishedAt=${WarsawTime.forLog(result.publishedAt)},plainText=${valueDiagnostic(result.plainText)}"
 
     private fun facebookPostMissingFields(result: EnrichmentResult): String =
         listOfNotNull(
@@ -3863,7 +3863,7 @@ private fun parseDateTimeInstant(value: String?): Instant? {
     val normalizedOffset = COMPACT_TIMEZONE_OFFSET_PATTERN.replace(trimmed, "$1:$2")
     return runCatching { Instant.parse(normalizedOffset) }.getOrNull()
         ?: runCatching { OffsetDateTime.parse(normalizedOffset).toInstant() }.getOrNull()
-        ?: runCatching { LocalDate.parse(trimmed).atStartOfDay(ZoneOffset.UTC).toInstant() }.getOrNull()
+        ?: runCatching { LocalDate.parse(trimmed).atStartOfDay(pl.bnowakowski.cozadzban.ui.WarsawTime.ZONE).toInstant() }.getOrNull()
 }
 
 private fun cleanReaderMarkdownLine(value: String): String =
