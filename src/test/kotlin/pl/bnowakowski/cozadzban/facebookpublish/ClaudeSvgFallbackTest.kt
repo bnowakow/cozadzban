@@ -87,6 +87,8 @@ class ClaudeSvgFallbackTest {
             ClaudeSvgArticleImageGenerator.usageLimit("Claude AI usage limit reached|1793458800", now)!!.retryAt,
         )
         assertEquals(now.plusSeconds(3600), ClaudeSvgArticleImageGenerator.usageLimit("You've hit your limit · resets 3pm", now)!!.retryAt)
+        assertNotNull(ClaudeSvgArticleImageGenerator.usageLimit("You've hit your session limit · resets 1pm (UTC)", now))
+        assertNotNull(ClaudeSvgArticleImageGenerator.usageLimit("5-hour limit reached ∙ resets 3pm", now))
         assertNull(ClaudeSvgArticleImageGenerator.usageLimit("Error: network unreachable", now))
     }
 
@@ -104,13 +106,14 @@ class ClaudeSvgFallbackTest {
     }
 
     @Test
-    fun `a Codex usage limit still pauses when Claude also fails, and the earlier reset wins when both are limited`() {
+    fun `a Claude failure while Codex is limited is a normal attempt, and the earlier reset wins when both are limited`() {
         val codexReset = Instant.parse("2026-11-04T06:37:00Z")
         val f = fixture()
         whenever(f.codex.generate(any(), anyOrNull())).thenReturn(ArticleImageGenerationResult.UsageLimited("Codex limit.", codexReset))
-        whenever(f.claude.generate(any(), anyOrNull())).thenReturn(ArticleImageGenerationResult.Failed("Claude SVG rejected."))
+        whenever(f.claude.generate(any(), anyOrNull())).thenReturn(ArticleImageGenerationResult.Failed("Claude exited with code 1."))
         f.scheduler.generateOne()
-        verify(f.jobs).pauseForUsageLimit(538, codexReset, "Codex limit.")
+        verify(f.jobs).fail(538, 3, "Codex limit. Claude: Claude exited with code 1.")
+        verify(f.jobs, never()).pauseForUsageLimit(any(), any(), any())
 
         val claudeReset = Instant.parse("2026-11-01T12:00:00Z")
         val g = fixture()

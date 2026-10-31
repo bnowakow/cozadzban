@@ -40,15 +40,21 @@ class FacebookPageSyncScheduler(
                             repository.fail(job.id, false, "The article was deleted before its post could be updated.")
                             return@repeat
                         }
-                        graph.updatePostMessage(job.postId, token, FacebookPostCaption.forArticle(article, job.imageSource))
-                        if (job.replacementRequired) {
-                            val png = article.id?.takeIf { images.status(it) == "GENERATED" }
-                                ?.let { generator.cached(it) }
-                            if (png == null) {
-                                repository.manualReplacementRequired(job.id,
-                                    "A new generated illustration is not available for the Facebook photo.")
-                                return@repeat
-                            }
+                        // Look up the new illustration first, so the caption can carry the AI disclosure
+                        // for the photo it is about to show (the stored source is still the old one).
+                        val png = if (job.replacementRequired) {
+                            article.id?.takeIf { images.status(it) == "GENERATED" }?.let { generator.cached(it) }
+                        } else null
+                        if (job.replacementRequired && png == null) {
+                            // Still apply the text edit; the photo needs a manual decision.
+                            graph.updatePostMessage(job.postId, token, FacebookPostCaption.forArticle(article, job.imageSource))
+                            repository.manualReplacementRequired(job.id,
+                                "A new generated illustration is not available for the Facebook photo.")
+                            return@repeat
+                        }
+                        val captionSource = if (png != null) "CODEX_GENERATED" else job.imageSource
+                        graph.updatePostMessage(job.postId, token, FacebookPostCaption.forArticle(article, captionSource))
+                        if (png != null) {
                             replacedPhotoId = try {
                                 graph.replacePostPhoto(job.pageId, job.postId, token, png)
                             } catch (ex: RestClientResponseException) {

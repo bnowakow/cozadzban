@@ -139,7 +139,9 @@ class ClaudeSvgArticleImageGenerator(
 
     internal companion object {
         const val MAX_OUTPUT_BYTES = 512 * 1024
-        private val LIMIT = Regex("""(?i)usage limit|hit your limit|limit reached|rate limit""")
+        private val LIMIT = Regex(
+            """(?i)usage limit|hit your (?:[a-z-]+ )?limit|limit reached|rate limit|limit[^\n]{0,80}\bresets?\b""",
+        )
         private val RESET_EPOCH = Regex("""limit reached\|(\d{10})""", RegexOption.IGNORE_CASE)
 
         /** Print mode with every tool disabled, no MCP servers, no slash commands and no saved session. */

@@ -1339,6 +1339,21 @@ x-business-rules:
       AES-GCM using APP_NOTIFICATIONS_ENCRYPTION_KEY, and never returned in full
       to the UI. The UI may display only whether a key is configured and a
       non-secret suffix. Notification preferences belong to ACTIVE logged-in users.
+  - id: BR-52
+    name: Over-long title shortening
+    description: >
+      Article titles longer than APP_ARTICLE_TITLE_SHORTENING_MAX_LENGTH (default 150
+      characters), usually a whole Facebook post, are rewritten into a headline of at most
+      110 characters in the article language. A background job checks every minute, newest
+      first, up to 5 articles per run, so new and existing articles are both covered. It uses
+      the same Codex CLI and login as image generation and falls back to Claude Code when
+      Codex fails or is usage limited; a usage limit on both pauses the job until the earlier
+      reset without spending attempts. Each title gets at most 3 attempts. The article title
+      is replaced only if it has not changed meanwhile. The original title is kept in
+      article_title_shortening, and if an import later restores that same long title, the
+      stored short title is put back without another model call. Enabled by
+      APP_ARTICLE_TITLE_SHORTENING_ENABLED (default true) when Codex or Claude image
+      generation is enabled.
 # ──────────────────────────────────────────────────────────────
 # VAADIN UI SPEC  (x-vaadin-ui)
 # ──────────────────────────────────────────────────────────────

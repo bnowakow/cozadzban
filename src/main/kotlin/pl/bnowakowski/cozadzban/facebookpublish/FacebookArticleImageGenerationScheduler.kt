@@ -92,9 +92,10 @@ class FacebookArticleImageGenerationScheduler(
     }
 
     /**
-     * Codex first; when it can't deliver, Claude draws an SVG fallback. A Codex usage limit still
-     * pauses the queue if Claude also fails, so the job keeps its attempts. When both are usage
-     * limited, the earlier reset wins.
+     * Codex first; when it can't deliver, Claude draws an SVG fallback. The whole queue pauses only
+     * when both are usage limited (until the earlier reset), or when Codex is limited and Claude is
+     * off. Any other Claude failure counts as a normal attempt, so other articles can still get
+     * Claude images while Codex waits for its reset.
      */
     private fun generateWithFallback(
         article: pl.bnowakowski.cozadzban.article.Article,
@@ -117,7 +118,11 @@ class FacebookArticleImageGenerationScheduler(
                     "${codex.reason} ${claudeResult.reason}".take(200),
                     minOf(codex.retryAt, claudeResult.retryAt),
                 )
-            codex is ArticleImageGenerationResult.UsageLimited -> codex
+            codex is ArticleImageGenerationResult.UsageLimited && claudeResult is ArticleImageGenerationResult.Failed ->
+                ArticleImageGenerationResult.Failed(
+                    "${codex.reason} Claude: ${claudeResult.reason}".take(200),
+                    retryable = claudeResult.retryable,
+                )
             codex is ArticleImageGenerationResult.Failed ->
                 codex.copy(reason = "${codex.reason} Claude: ${describe(claudeResult)}".take(200))
             else -> codex
