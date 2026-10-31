@@ -375,8 +375,9 @@ proxy at `127.0.0.1:${APP_PORT:-8086}`. Register
 and set `SESSION_COOKIE_SECURE=true` for HTTPS deployments. Forwarded headers
 must preserve the public HTTPS scheme through the proxy chain.
 
-The host HTTPS proxy gzips responses; the Compose nginx does not compress. The
-Compose nginx serves `/VAADIN/build/*` with `Cache-Control: public,
+The Compose nginx gzips text responses (HTML, CSS, JavaScript, JSON, XML, RSS,
+SVG), so compression doesn't depend on the host HTTPS proxy. The host proxy passes
+already-compressed responses through unchanged. The Compose nginx also serves `/VAADIN/build/*` with `Cache-Control: public,
 max-age=31536000, immutable`, because every file there has a content hash in its
 name. Successful responses get that header; errors don't. After editing
 `docker-data/nginx/default.conf`, run `docker compose restart reverse-proxy`
