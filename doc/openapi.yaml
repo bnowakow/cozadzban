@@ -1371,6 +1371,7 @@ components:
           type: string
           enum: [API, APIFY, SELENIUM]
           default: SELENIUM
+          description: APIFY is accepted as an alias for API (case-insensitive); responses always report API.
         trigger:
           type: string
           enum: [MANUAL, WORKER_STARTUP, SCHEDULED]
@@ -1427,6 +1428,7 @@ components:
           type: string
           enum: [API, APIFY, SELENIUM]
           default: SELENIUM
+          description: APIFY is accepted as an alias for API (case-insensitive); responses always report API.
         trigger:
           type: string
           enum: [MANUAL, WORKER_STARTUP, SCHEDULED]
@@ -1513,6 +1515,7 @@ components:
           type: string
           enum: [API, APIFY, SELENIUM]
           default: SELENIUM
+          description: APIFY is accepted as an alias for API (case-insensitive); responses always report API.
         trigger:
           type: string
           enum: [MANUAL, WORKER_STARTUP, SCHEDULED]
@@ -1571,8 +1574,9 @@ components:
       properties:
         importType:
           type: string
-          enum: [API, APIFY, SELENIUM]
+          enum: [API, SELENIUM]
           default: SELENIUM
+          description: Apify runs are reported as API.
         importRunId:
           type: string
         status:

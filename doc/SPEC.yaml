@@ -1194,7 +1194,10 @@ x-business-rules:
       the source site's favicon from article.url metadata or origin /favicon.ico,
       and update only the article.favicon column. The backfill MUST be
       best-effort and MUST NOT block article reads when an individual favicon
-      cannot be fetched.
+      cannot be fetched. It runs once per startup on a background thread,
+      processes at most APP_FAVICON_BACKFILL_MAX_ARTICLES candidates (default
+      500; 0 disables processing), and is skipped entirely when
+      APP_FAVICON_BACKFILL_ENABLED=false (default true).
   - id: BR-43
     name: Analytics consent
     description: >
@@ -2984,6 +2987,7 @@ components:
           type: string
           enum: [API, APIFY, SELENIUM]
           default: SELENIUM
+          description: APIFY is accepted as an alias for API (case-insensitive); responses always report API.
         trigger:
           type: string
           enum: [MANUAL, WORKER_STARTUP, SCHEDULED]
@@ -3040,6 +3044,7 @@ components:
           type: string
           enum: [API, APIFY, SELENIUM]
           default: SELENIUM
+          description: APIFY is accepted as an alias for API (case-insensitive); responses always report API.
         trigger:
           type: string
           enum: [MANUAL, WORKER_STARTUP, SCHEDULED]
@@ -3126,6 +3131,7 @@ components:
           type: string
           enum: [API, APIFY, SELENIUM]
           default: SELENIUM
+          description: APIFY is accepted as an alias for API (case-insensitive); responses always report API.
         trigger:
           type: string
           enum: [MANUAL, WORKER_STARTUP, SCHEDULED]
@@ -3184,8 +3190,9 @@ components:
       properties:
         importType:
           type: string
-          enum: [API, APIFY, SELENIUM]
+          enum: [API, SELENIUM]
           default: SELENIUM
+          description: Apify runs are reported as API.
         importRunId:
           type: string
         status:
