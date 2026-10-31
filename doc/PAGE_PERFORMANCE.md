@@ -133,15 +133,26 @@ as the first visitor would.
   100–200 KB with `loading="lazy"`. Reload: images and `/VAADIN/build/` files
   should come from the browser cache.
 
-### Suggested follow-up
+### Pending follow-up (due around 7 November 2026)
 
-About a week after 31 October 2026, run:
+Status: **open**. When it's done, record the results in a new section here and
+mark this one done.
 
-```sh
-SINCE=2026-10-31T08:40:00Z make performance-report
-```
+1. On the deployment server, run:
 
-Then compare the `get /generated-images/{id}.jpg` median and 90th percentile
-with the baseline table above. If the front page still feels slow, look next at
-`get /rss/image/{id}`, the source-thumbnail proxy. Its 90th percentile was
-4.4–9.6 s.
+   ```sh
+   SINCE=2026-10-31T08:40:00Z make performance-report
+   ```
+
+2. Compare the `get /generated-images/{id}.jpg` median and 90th percentile
+   with the PNG baseline: median 33.2 s over 7 days, 56.6 s in the 2 hours
+   before the deploy. Wait until there are about 100 sampled `.jpg` requests;
+   production samples 10%.
+3. Compare section 4 (first-page image size and download time) with the first
+   report after the changes, `logs/performance-reports/2026-10-31_090937Z.md`
+   (JPEG 2.1 MB, 1.2 s at 10 Mbit/s).
+4. If the front page still feels slow, look next at `get /rss/image/{id}`, the
+   source-thumbnail proxy. Its 90th percentile was 4.4–9.6 s.
+5. Decide whether the [front-page cache](FRONT_PAGE_CACHE_PLAN.md) is worth
+   building. It was deferred because database queries take under 3 ms. Build
+   it only if the new data shows the server side matters.

@@ -47,3 +47,13 @@ Run the suite on a development machine instead when one is available.
 - URL enrichment is synchronous and atomic: if the fetch fails, no DB write occurs (BR-01–03).
 - All persisted timestamps are UTC (BR-15).
 - RSS MUST never expose creator/user data (BR-07).
+
+## Performance work
+- Before changing front-page speed or adding caching, read `doc/PAGE_PERFORMANCE.md` and
+  measure with `make performance-report` (deployment server only; it does not run tests).
+  Compare against the recorded baseline instead of assuming where the cost is.
+- The front-page data cache in `doc/FRONT_PAGE_CACHE_PLAN.md` is deliberately deferred:
+  queries take under 3 ms, and generated image size was the real cost. Don't implement it
+  unless new measurements show the server side matters.
+- A follow-up measurement is pending, due around 2026-11-07. The steps are under "Pending
+  follow-up" in `doc/PAGE_PERFORMANCE.md`. Mention it when performance or caching comes up.
