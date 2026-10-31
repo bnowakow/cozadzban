@@ -55,6 +55,19 @@ the branded placeholder remains available for Facebook publishing. The
 scheduler removes such jobs before claiming its next ten-minute generation
 slot. An admin can retry after correcting the article metadata.
 
+Each generated image is stored twice in the asset directory. `article-<id>.png`
+is the full-quality 1200x630 original, used unchanged for Facebook photo posts,
+`og:image`, and `/generated-images/<id>.png`. `article-<id>.jpg` is a JPEG copy
+at quality 0.82 for the website, about ten times smaller (for example 2.0 MB →
+197 KB). The feed and story pages show the JPEG through
+`/generated-images/<id>.jpg?v=<version>`. The version is the PNG's
+last-modified time, so browsers may keep the image for a year, and a
+regenerated image gets a new URL. The copy is written right after generation.
+For images that existed before this change, it is created on the first request,
+and it is rebuilt whenever the PNG is newer than it. Unversioned image URLs are
+cached for ten minutes and revalidate with `Last-Modified`. Feed images use
+`loading="lazy"`.
+
 The ADMIN-only `/admin/facebook-thumbnails` page lists articles in pages of 50,
 shows the source or generated image where available, filters by thumbnail state,
 and shows attempts, next attempt, and last error. `Generate now` is available

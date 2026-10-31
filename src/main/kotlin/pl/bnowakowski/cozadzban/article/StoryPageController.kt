@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.context.request.RequestContextHolder
 import org.springframework.web.context.request.ServletRequestAttributes
 import pl.bnowakowski.cozadzban.facebookpublish.FacebookPublicationQueue
+import pl.bnowakowski.cozadzban.facebookpublish.CodexArticleImageGenerator
 import pl.bnowakowski.cozadzban.facebookpublish.FacebookArticleImageGenerationRepository
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportJobService
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportProperties
@@ -40,6 +41,7 @@ class StoryPageController(
     private val uiPrincipalMapper: UiPrincipalMapper? = null,
     private val facebookImportJobService: FacebookImportJobService? = null,
     private val facebookImportProperties: FacebookImportProperties = FacebookImportProperties(),
+    private val generatedImages: CodexArticleImageGenerator? = null,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -93,8 +95,14 @@ class StoryPageController(
         val thumbnail = article.thumbnail?.trim()
             ?.takeIf { FacebookArticleImageGenerationRepository.hasUsableSourceThumbnail(it) }
         val generatedImage = article.id?.let { articleImages?.status(it) == "GENERATED" } == true
+        // Link previews and structured data keep the full PNG; the visible image uses the smaller JPEG copy.
         val storyImage = if (generatedImage) "/generated-images/${article.id}.png"
             else thumbnail?.let { "/rss/image/${article.id}" }
+        val visibleStoryImage = if (generatedImage) {
+            generatedImages?.webImageUrl(article.id!!) ?: "/generated-images/${article.id}.jpg"
+        } else {
+            storyImage
+        }
         val doc = Document.createShell("")
         doc.outputSettings().prettyPrint(false)
         doc.selectFirst("html")!!.attr("lang", language)
@@ -189,7 +197,7 @@ class StoryPageController(
             actions.appendElement("a").attr("class", "story-admin-action")
                 .attr("href", "/?deleteArticle=${article.id}").text("Delete article")
         }
-        storyImage?.let {
+        visibleStoryImage?.let {
             main.appendElement("img").attr("src", it).attr("alt", title)
                 .attr("onerror", "this.onerror=null;this.src='/cozadzban-logo.png'")
             if (generatedImage) {

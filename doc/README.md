@@ -26,6 +26,8 @@ Project documentation, specs, and developer aids.
 - **[ARTICLE_IMAGE_GENERATION_PLAN.md](ARTICLE_IMAGE_GENERATION_PLAN.md)** —
   experimental generated-image fallback, remaining production provider choices,
   Docker/Codex feasibility, and delivery phases.
+- **[FRONT_PAGE_CACHE_PLAN.md](FRONT_PAGE_CACHE_PLAN.md)** — measured first-load costs and the
+  agreed, not yet implemented, front-page and story-page cache design.
 - **[CODEX_DOCKER.md](CODEX_DOCKER.md)** — Codex CLI installation and device
   login in the Spring Boot container.
 

@@ -1639,9 +1639,23 @@ x-runtime-configuration:
 # Phases 1-4 are implemented. The full test suite for phases 3-4 remains
 # pending on a development machine; do not run it on the deployment server.
 x-planned-features:
+  frontPageCache:
+    status: planned_not_implemented
+    plan: doc/FRONT_PAGE_CACHE_PLAN.md
+    summary: >
+      Per-container cache of the signed-out front page (no filter, ?lang=pl and
+      ?lang=en) and the matching story pages, invalidated and rebuilt on every
+      article change and daily, with an ADMIN menu action that shows rebuild
+      progress. Deferred because measurement showed front-page queries take
+      under 2 ms; generated image size was the first-load cost and was fixed first.
   articleImageGeneration:
     status: experimental_implemented
     plan: doc/ARTICLE_IMAGE_GENERATION_PLAN.md
+    websiteCopy: >
+      The PNG original is kept for Facebook and og:image. The feed and story pages
+      show a JPEG copy (quality 0.82, about ten times smaller) through
+      /generated-images/{id}.jpg?v=<version>. The URL is cacheable for a year, and
+      the copy is rebuilt whenever the PNG changes.
     codexCliRuntime: >
       Installed in the Spring Boot Docker image for operator device-code login
       and feasibility work. A named Docker volume persists CODEX_HOME across
@@ -2691,7 +2705,13 @@ paths:
   /generated-images/{id}.png:
     get:
       tags: [Articles]
-      summary: Read a completed generated article illustration
+      summary: Read a completed generated article illustration (full-quality PNG)
+      description: >
+        A `v` value equal to the current image version (the stored PNG's last-modified
+        time in epoch milliseconds) returns `Cache-Control: public, max-age=31536000,
+        immutable`. Without `v`, or with an older value, the response uses
+        `max-age=600` and carries `Last-Modified`, so `If-Modified-Since`
+        revalidation returns 304 without a body.
       operationId: getGeneratedArticleImage
       security: []
       parameters:
@@ -2701,14 +2721,62 @@ paths:
           schema:
             type: integer
             format: int64
+        - name: v
+          in: query
+          required: false
+          description: Image version used by the UI to make the URL cacheable for a year.
+          schema:
+            type: integer
+            format: int64
       responses:
         '200':
-          description: Generated PNG illustration
+          description: Original PNG, the same file used for Facebook photo posts and og:image
           content:
             image/png:
               schema:
                 type: string
                 format: binary
+        '304':
+          description: The cached copy is still current
+        '404':
+          description: No completed generated image is available for this article
+
+  /generated-images/{id}.jpg:
+    get:
+      tags: [Articles]
+      summary: Read the smaller website copy of a generated article illustration
+      description: >
+        A `v` value equal to the current image version (the stored PNG's last-modified
+        time in epoch milliseconds) returns `Cache-Control: public, max-age=31536000,
+        immutable`. Without `v`, or with an older value, the response uses
+        `max-age=600` and carries `Last-Modified`, so `If-Modified-Since`
+        revalidation returns 304 without a body.
+      operationId: getGeneratedArticleWebImage
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: v
+          in: query
+          required: false
+          description: Image version used by the UI to make the URL cacheable for a year.
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: JPEG copy shown in the feed and on story pages, created on first request and rebuilt when the PNG changes
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+        '304':
+          description: The cached copy is still current
         '404':
           description: No completed generated image is available for this article
 

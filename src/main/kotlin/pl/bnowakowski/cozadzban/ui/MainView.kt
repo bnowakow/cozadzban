@@ -59,6 +59,7 @@ import pl.bnowakowski.cozadzban.facebookimport.FacebookImportProperties
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportRunStatus
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportTrigger
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportType
+import pl.bnowakowski.cozadzban.facebookpublish.CodexArticleImageGenerator
 import pl.bnowakowski.cozadzban.facebookpublish.FacebookArticleImageGenerationRepository
 import pl.bnowakowski.cozadzban.security.AllowlistAuthorizationManager
 import pl.bnowakowski.cozadzban.user.AppUser
@@ -95,6 +96,7 @@ class ArticleListView(
     private val languageFlagCache: LanguageFlagCache,
     private val facebookImportProperties: FacebookImportProperties = FacebookImportProperties(),
     private val articleImages: FacebookArticleImageGenerationRepository? = null,
+    private val generatedImages: CodexArticleImageGenerator? = null,
 ) : VerticalLayout(), AfterNavigationObserver {
 
     private val feed = VirtualList<Article>()
@@ -977,7 +979,8 @@ class ArticleListView(
             ?.takeIf { FacebookArticleImageGenerationRepository.hasUsableSourceThumbnail(it) }
         val sourceHost = sourceThumbnail?.let { runCatching { URI(it).host?.lowercase() }.getOrNull() }
         val thumbnail = when {
-            generatedImage -> "/generated-images/${article.id}.png"
+            // The smaller, versioned JPEG copy; the full PNG stays for Facebook and link previews.
+            generatedImage -> generatedImages?.webImageUrl(article.id!!) ?: "/generated-images/${article.id}.jpg"
             sourceThumbnail == null -> null
             sourceHost == "lookaside.fbsbx.com" || sourceHost == "fbcdn.net" ||
                 sourceHost?.endsWith(".fbcdn.net") == true || sourceHost == "cdninstagram.com" ||
@@ -991,6 +994,9 @@ class ArticleListView(
             imageLink.element.setAttribute("rel", "noopener noreferrer")
             val image = Image(imageUrl, article.title ?: "")
             image.width = "100%"
+            // Only download images as cards approach the viewport.
+            image.element.setAttribute("loading", "lazy")
+            image.element.setAttribute("decoding", "async")
             image.element.style.set("display", "block")
             image.element.style.set("aspect-ratio", "1 / 1")
             image.element.style.set("object-fit", "cover")

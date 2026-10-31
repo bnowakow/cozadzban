@@ -15,7 +15,9 @@ import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.time.Instant
 import java.util.concurrent.TimeUnit
+import javax.imageio.IIOImage
 import javax.imageio.ImageIO
+import javax.imageio.ImageWriteParam
 
 sealed interface ArticleImageGenerationResult {
     data class Generated(val png: ByteArray) : ArticleImageGenerationResult
@@ -35,8 +37,60 @@ class CodexArticleImageGenerator(
 
     /** Read a previously generated image without making a new Codex request. */
     fun cached(articleId: Long): ByteArray? = runCatching {
-        readValidated(Path.of(assetDir).resolve("article-$articleId.png"))
+        readValidated(pngPath(articleId))
     }.getOrNull()
+
+    /** The stored Facebook PNG as written after validation, without decoding or re-encoding it. */
+    fun storedPng(articleId: Long): ByteArray? = runCatching {
+        val path = pngPath(articleId)
+        if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS) || Files.size(path) !in 1L..MAX_IMAGE_BYTES) {
+            null
+        } else {
+            Files.readAllBytes(path)
+        }
+    }.getOrNull()
+
+    /** Last change of the stored PNG in epoch milliseconds, used for URL versions and Last-Modified. */
+    fun imageVersion(articleId: Long): Long? = runCatching {
+        val path = pngPath(articleId)
+        if (Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) Files.getLastModifiedTime(path).toMillis() else null
+    }.getOrNull()
+
+    /** Versioned website URL for the smaller JPEG copy, or null when no generated image is stored. */
+    fun webImageUrl(articleId: Long): String? =
+        imageVersion(articleId)?.let { "/generated-images/$articleId.jpg?v=$it" }
+
+    /**
+     * Smaller JPEG copy of the stored PNG for the website. The PNG stays untouched for Facebook.
+     * The copy is created on first use and rebuilt whenever the PNG is newer than it.
+     */
+    fun webImage(articleId: Long): ByteArray? = runCatching {
+        val png = pngPath(articleId)
+        if (!Files.isRegularFile(png, LinkOption.NOFOLLOW_LINKS) || Files.size(png) !in 1L..MAX_IMAGE_BYTES) {
+            return@runCatching null
+        }
+        val pngTime = Files.getLastModifiedTime(png)
+        val jpg = webPath(articleId)
+        if (Files.isRegularFile(jpg, LinkOption.NOFOLLOW_LINKS) && Files.getLastModifiedTime(jpg) >= pngTime) {
+            return@runCatching Files.readAllBytes(jpg)
+        }
+        val bytes = encodeWebJpeg(ImageIO.read(png.toFile()) ?: return@runCatching null)
+        val temporary = Files.createTempFile(jpg.parent, "article-$articleId-", ".jpg")
+        try {
+            Files.write(temporary, bytes)
+            // Match the PNG time so a later regenerated PNG is always detected as newer.
+            Files.setLastModifiedTime(temporary, pngTime)
+            Files.move(temporary, jpg, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+        } finally {
+            Files.deleteIfExists(temporary)
+        }
+        bytes
+    }.onFailure { log.warn("Could not prepare web image for article {} ({})", articleId, it.javaClass.simpleName) }
+        .getOrNull()
+
+    private fun pngPath(articleId: Long): Path = Path.of(assetDir).resolve("article-$articleId.png")
+
+    private fun webPath(articleId: Long): Path = Path.of(assetDir).resolve("article-$articleId.jpg")
 
     /** Returns a Facebook-sized PNG or a classified failure for the job queue. */
     fun generate(article: Article, content: ArticleContent? = null): ArticleImageGenerationResult {
@@ -109,6 +163,8 @@ class CodexArticleImageGenerator(
                 Files.deleteIfExists(temporary)
             }
             runCatching { Files.deleteIfExists(generatedFile) }
+            // Prepare the website copy now so the first visitor does not pay for the conversion.
+            webImage(articleId)
             return ArticleImageGenerationResult.Generated(png)
         } catch (ex: Exception) {
             log.warn("Codex image generation unavailable for article {} ({})", article.id, ex.javaClass.simpleName)
@@ -176,7 +232,7 @@ class CodexArticleImageGenerator(
     }.getOrNull()
 
     private fun readValidated(path: Path): ByteArray? {
-        if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS) || Files.size(path) !in 1L..10_000_000L) return null
+        if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS) || Files.size(path) !in 1L..MAX_IMAGE_BYTES) return null
         val image = ImageIO.createImageInputStream(path.toFile()).use { stream ->
             if (stream == null) return null
             val readers = ImageIO.getImageReaders(stream)
@@ -202,5 +258,39 @@ class CodexArticleImageGenerator(
             graphics.dispose()
         }
         return ByteArrayOutputStream().also { ImageIO.write(canvas, "png", it) }.toByteArray()
+    }
+
+    private fun encodeWebJpeg(source: BufferedImage): ByteArray {
+        // JPEG has no alpha channel; draw onto an opaque RGB canvas first.
+        val rgb = if (source.type == BufferedImage.TYPE_INT_RGB) source else
+            BufferedImage(source.width, source.height, BufferedImage.TYPE_INT_RGB).also { canvas ->
+                val graphics = canvas.createGraphics()
+                try {
+                    graphics.drawImage(source, 0, 0, java.awt.Color.WHITE, null)
+                } finally {
+                    graphics.dispose()
+                }
+            }
+        val writer = ImageIO.getImageWritersByFormatName("jpeg").next()
+        val output = ByteArrayOutputStream()
+        try {
+            ImageIO.createImageOutputStream(output).use { stream ->
+                writer.output = stream
+                val params = writer.defaultWriteParam.apply {
+                    compressionMode = ImageWriteParam.MODE_EXPLICIT
+                    compressionQuality = WEB_JPEG_QUALITY
+                    progressiveMode = ImageWriteParam.MODE_DEFAULT
+                }
+                writer.write(null, IIOImage(rgb, null, null), params)
+            }
+        } finally {
+            writer.dispose()
+        }
+        return output.toByteArray()
+    }
+
+    private companion object {
+        const val MAX_IMAGE_BYTES = 10_000_000L
+        const val WEB_JPEG_QUALITY = 0.82f
     }
 }
