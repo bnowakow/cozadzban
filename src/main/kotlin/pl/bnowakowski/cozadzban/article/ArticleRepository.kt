@@ -126,7 +126,7 @@ class ArticleRepositoryCustomImpl(
         val tieBreaker = if (sortField == "publishedAt") " NULLS LAST, created_at DESC" else ""
         // column and direction are from a closed allowlist — safe to interpolate
         val sql = """
-            SELECT id, url, language, title, thumbnail, favicon, lead, quote, ai_summary,
+            SELECT id, url, language, title, thumbnail, favicon, lead, quote, ai_summary, publisher_url,
                    created_by_user_id, source_import_type, source_import_run_id, source_facebook_proposal_id, created_at, published_at
               FROM article
              $whereClause
@@ -152,7 +152,7 @@ class ArticleRepositoryCustomImpl(
         val hasLanguageFilter = !language.isNullOrBlank()
         val sql = if (hasLanguageFilter) {
             """
-                SELECT id, url, language, title, thumbnail, favicon, lead, quote, ai_summary,
+                SELECT id, url, language, title, thumbnail, favicon, lead, quote, ai_summary, publisher_url,
                        created_by_user_id, source_import_type, source_import_run_id, source_facebook_proposal_id, created_at, published_at
                   FROM article
                  WHERE language = :language
@@ -160,7 +160,7 @@ class ArticleRepositoryCustomImpl(
             """.trimIndent()
         } else {
             """
-                SELECT id, url, language, title, thumbnail, favicon, lead, quote, ai_summary,
+                SELECT id, url, language, title, thumbnail, favicon, lead, quote, ai_summary, publisher_url,
                        created_by_user_id, source_import_type, source_import_run_id, source_facebook_proposal_id, created_at, published_at
                   FROM article
                  ORDER BY created_at DESC
@@ -198,7 +198,7 @@ class ArticleRepositoryCustomImpl(
     override fun findFaviconBackfillCandidates(limit: Int): List<Article> =
         jdbc.query(
             """
-                SELECT id, url, language, title, thumbnail, favicon, lead, quote, ai_summary,
+                SELECT id, url, language, title, thumbnail, favicon, lead, quote, ai_summary, publisher_url,
                        created_by_user_id, source_import_type, source_import_run_id, source_facebook_proposal_id, created_at, published_at
                   FROM article
                  WHERE favicon IS NULL
@@ -324,6 +324,7 @@ class ArticleRepositoryCustomImpl(
                 sourceFacebookProposalId = rs.getLongOrNull("source_facebook_proposal_id"),
                 publishedAt     = rs.getTimestamp("published_at")?.toInstant(),
                 createdAt       = rs.getTimestamp("created_at")?.toInstant() ?: Instant.EPOCH,
+                publisherUrl    = rs.getString("publisher_url"),
             )
         }
 

@@ -24,8 +24,8 @@ Project documentation, specs, and developer aids.
 - **[FACEBOOK_PHASE4_TESTING.md](FACEBOOK_PHASE4_TESTING.md)** — story views and
   article-level Facebook statistics checks.
 - **[ARTICLE_IMAGE_GENERATION_PLAN.md](ARTICLE_IMAGE_GENERATION_PLAN.md)** —
-  planned generated-image fallback, provider choice, Docker/Codex feasibility,
-  and delivery phases.
+  experimental generated-image fallback, remaining production provider choices,
+  Docker/Codex feasibility, and delivery phases.
 - **[CODEX_DOCKER.md](CODEX_DOCKER.md)** — Codex CLI installation and device
   login in the Spring Boot container.
 

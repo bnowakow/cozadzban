@@ -74,7 +74,7 @@ x-architecture:
       technology: Custom controller returning application/rss+xml
       rssFieldMapping:
         rssTitle: article.title
-        rssLink: article.url
+        rssLink: article.publisherUrl when present, otherwise article.url
         rssDescription: article.lead
         rssPubDate: article.publishedAt when present, otherwise article.createdAt
         rssGuid: article.id
@@ -199,6 +199,11 @@ x-database:
           type: TEXT
           constraints: "NOT NULL UNIQUE"
           description: Full URL of the source page as submitted by the user. Must be globally unique.
+        - name: publisher_url
+          type: TEXT
+          migration: V41__article_publisher_url.sql
+          constraints: nullable
+          description: Verified publisher article URL, distinct from the imported Facebook source when available.
         - name: language
           type: VARCHAR(20)
           constraints: NOT NULL
@@ -549,6 +554,45 @@ x-database:
         - name: view_count
           type: BIGINT
           constraints: "NOT NULL DEFAULT 0 CHECK (view_count >= 0)"
+    - name: facebook_article_image_generation
+      migration: V39__facebook_article_image_generation.sql
+      description: Durable generation state for a missing or rejected source thumbnail.
+      columns:
+        - name: article_id
+          type: BIGINT
+          constraints: "PRIMARY KEY REFERENCES article(id) ON DELETE CASCADE"
+        - name: status
+          type: VARCHAR(24)
+          constraints: "NOT NULL CHECK (status IN ('MISSING_THUMBNAIL', 'GENERATING', 'GENERATED', 'FAILED'))"
+        - name: attempt_count
+          type: INTEGER
+          constraints: "NOT NULL DEFAULT 0 CHECK (attempt_count >= 0)"
+        - name: next_attempt_at
+          type: TIMESTAMPTZ
+          constraints: "NOT NULL DEFAULT now()"
+        - name: last_error
+          type: TEXT
+          constraints: nullable
+        - name: updated_at
+          type: TIMESTAMPTZ
+          constraints: "NOT NULL DEFAULT now()"
+        - name: regenerate_requested
+          type: BOOLEAN
+          migration: V42__image_regeneration_after_article_edits.sql
+          constraints: "NOT NULL DEFAULT false"
+      indexes:
+        - name: facebook_article_image_generation_due_idx
+          columns: [status, next_attempt_at, article_id]
+    - name: facebook_article_image_generation_pace
+      migration: V39__facebook_article_image_generation.sql
+      description: One shared next-claim time for the image generator across blue and green instances.
+      columns:
+        - name: id
+          type: INTEGER
+          constraints: "PRIMARY KEY CHECK (id = 1)"
+        - name: next_claim_at
+          type: TIMESTAMPTZ
+          constraints: "NOT NULL DEFAULT now()"
     - name: sessions
       migration: none (server-managed web session)
       description: No additional DB table required; session is server-managed and identified by HttpOnly cookie.
@@ -1316,6 +1360,17 @@ x-vaadin-ui:
         Compares all-time and last-seven-UTC-day story page loads with the
         latest successful Facebook reaction count, Page post status, and link
         comment status. No visitor or article creator data is exposed.
+    - name: FacebookThumbnailStatusView
+      route: /admin/facebook-thumbnails
+      description: >
+        ADMIN-only paged image-generation status view with source or generated
+        previews, attempt details, filters and a Generate now action for missing
+        or failed jobs when the experimental provider is enabled.
+    - name: DebugToolsView
+      route: /admin/debug-tools
+      description: >
+        ADMIN-only Facebook post URL lookup that links the matching Co Za Dzban
+        story and shows the verified publisher article URL when stored.
     - name: ArticleContentCacheAdminView
       route: /admin/article-content-cache
       description: >
@@ -1423,7 +1478,7 @@ info:
     - Error responses use `application/problem+json` (RFC 9457 /
       Spring `ProblemDetail`).
 
-  version: 0.61.1-SNAPSHOT
+  version: 0.62.30-SNAPSHOT
   license:
     name: GNU General Public License v3.0
     url: https://www.gnu.org/licenses/gpl-3.0.html
@@ -1460,6 +1515,11 @@ x-security-policy:
       - POST /api/articles
       - PATCH /api/articles/{id}
       - /api/facebook-import/**
+  browserAdminImportAlias:
+    basePath: /admin/facebook-import
+    mirrors: /api/admin/facebook-import
+    authentication: ACTIVE ADMIN server-side session
+    csrf: enabled for POST requests
   uiSessionRoleRefresh:
     currentBehavior: >
       Roles are mapped at Google login. Before dispatching subsequent requests,
@@ -1575,12 +1635,14 @@ x-runtime-configuration:
 # pending on a development machine; do not run it on the deployment server.
 x-planned-features:
   articleImageGeneration:
-    status: planned
+    status: experimental_implemented
     plan: doc/ARTICLE_IMAGE_GENERATION_PLAN.md
     codexCliRuntime: >
       Installed in the Spring Boot Docker image for operator device-code login
       and feasibility work. A named Docker volume persists CODEX_HOME across
-      container replacement. No article workflow invokes the CLI yet.
+      container replacement. The opt-in Codex image generator already invokes
+      the CLI for missing or rejected source thumbnails; production provider
+      authorization and usage controls remain undecided.
     codexAuthMonitoring: >
       A daily host cron checks the cached ChatGPT login and makes one bounded
       live Codex request from an isolated one-off container. The check uses
@@ -1597,9 +1659,9 @@ x-planned-features:
       Codex CLI/device-code proof of concept is operator-only until an approved
       hosted OAuth route supports image generation.
     delivery: >
-      Durable bounded generation job, local validated asset, ADMIN preview and
-      usage caps, then integration with the existing publication queue without
-      changing its one-post-per-article or uncertain-result handling.
+      The durable job, validated local asset, ADMIN status and manual trigger,
+      and Facebook publication fallback are implemented experimentally.
+      Provider connection and usage caps remain planned.
   facebookPagePublishing:
     status: implemented_pending_full_tests
     scope: Facebook Pages managed by this application, never personal profiles
@@ -2571,6 +2633,8 @@ paths:
       description: >
         Returns an RSS 2.0 feed of articles ordered by creation date (newest first).
         Provide the `lang` query parameter to filter to a single BCP-47 language.
+        Each item links to its verified publisher article URL when available,
+        otherwise to the imported source URL.
         RSS pubDate uses publishedAt when present and falls back to createdAt.
         RSS never exposes article creator/user data.
       parameters:
@@ -2618,6 +2682,30 @@ paths:
           $ref: '#/components/responses/NotFound'
         '502':
           description: Thumbnail could not be fetched or was not an image
+
+  /generated-images/{id}.png:
+    get:
+      tags: [Articles]
+      summary: Read a completed generated article illustration
+      operationId: getGeneratedArticleImage
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Generated PNG illustration
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: No completed generated image is available for this article
 
   /api/users:
 
@@ -3148,6 +3236,22 @@ components:
           pattern: '^[a-z]{2,3}(-[a-z0-9]{2,8})*$'
           description: BCP-47 language tag
           example: en
+        title:
+          type: string
+          nullable: true
+          maxLength: 500
+          description: Verified title override; null or blank clears it
+        lead:
+          type: string
+          nullable: true
+          maxLength: 2000
+          description: Verified lead override; null or blank clears it
+        publisherUrl:
+          type: string
+          format: uri
+          nullable: true
+          maxLength: 2048
+          description: Verified publisher article URL; null or blank clears it
         quote:
           type: string
           nullable: true
@@ -3181,6 +3285,11 @@ components:
           type: string
           format: uri
           example: https://example.com/some-article
+        publisherUrl:
+          type: string
+          format: uri
+          nullable: true
+          description: Verified publisher article URL when distinct from the imported source URL
         language:
           type: string
           description: BCP-47 language tag
