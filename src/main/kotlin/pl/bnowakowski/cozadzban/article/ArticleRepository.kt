@@ -250,7 +250,7 @@ class ArticleRepositoryCustomImpl(
     override fun findFacebookDuplicateCandidatesByPublishedAt(publishedAt: Instant): List<ArticleDuplicateCandidate> =
         jdbc.query(
             """
-                SELECT a.id, a.url, a.language, a.title, a.thumbnail, a.favicon, a.lead, a.quote, a.ai_summary,
+                SELECT a.id, a.url, a.language, a.title, a.thumbnail, a.favicon, a.lead, a.quote, a.ai_summary, a.publisher_url,
                        a.created_by_user_id, a.source_import_type, a.source_import_run_id, a.source_facebook_proposal_id, a.created_at, a.published_at, c.content
                   FROM article a
                   LEFT JOIN article_content c ON c.article_id = a.id
