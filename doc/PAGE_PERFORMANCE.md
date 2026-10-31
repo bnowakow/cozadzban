@@ -17,7 +17,7 @@ about 11× smaller, plus better caching, cut the images on the first page from
 | 2026-10-31 07:30–08:30 | 0.62.32 | Baseline measurements below |
 | 2026-10-31 08:39:44 | 0.62.33, `560636d` | Generated images: JPEG website copy, versioned year-long URLs, `Last-Modified`/304 revalidation, no per-request PNG re-encoding, `loading="lazy"` in the feed |
 | 2026-10-31 08:47:56 | nginx config, `49d506d` | `/VAADIN/build/*` served with `Cache-Control: public, max-age=31536000, immutable` instead of 1 hour |
-| 2026-10-31 ~09:20 | nginx config | Compose nginx gzips text responses itself, instead of relying only on the host HTTPS proxy. Visitor sizes are unchanged (JavaScript 340 → 111 KB, HTML 63 → 20 KB, `aura.css` 69 → 12 KB, `/rss` 456 → 138 KB); compression no longer depends on the host proxy's configuration |
+| 2026-10-31 09:04 | nginx config, `a3ea1c6` | Compose nginx gzips text responses itself, instead of relying only on the host HTTPS proxy. Visitor sizes are unchanged (JavaScript 340 → 111 KB, HTML 63 → 20 KB, `aura.css` 69 → 12 KB, `/rss` 456 → 138 KB); compression no longer depends on the host proxy's configuration |
 
 Use these times as `SINCE` and `UNTIL` boundaries when comparing Zipkin data.
 
