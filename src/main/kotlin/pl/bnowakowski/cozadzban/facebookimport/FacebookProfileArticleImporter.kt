@@ -44,7 +44,6 @@ import java.net.http.HttpResponse
 import java.nio.charset.StandardCharsets
 import java.time.Duration
 import java.time.Instant
-import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.nio.file.Files
 import java.nio.file.Path
@@ -3159,10 +3158,11 @@ class FacebookProfileArticleImporter(
         private const val MAX_NESTED_FACEBOOK_POSTS_TO_OPEN = 2
         private const val MAX_SEE_ORIGINAL_CONTROLS_TO_CLICK = 40
         private val PROGRESS_REPORT_INTERVAL: Duration = Duration.ofSeconds(5)
+        // Warsaw time with its UTC offset, so IDs and file names stay unique across clock changes.
         private val IMPORT_ARTIFACT_TIMESTAMP_FORMATTER: DateTimeFormatter =
-            DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'").withZone(ZoneOffset.UTC)
+            DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmssxx").withZone(pl.bnowakowski.cozadzban.ui.WarsawTime.ZONE)
         private val REJECTION_ARTIFACT_TIMESTAMP_FORMATTER: DateTimeFormatter =
-            DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmssSSS'Z'").withZone(ZoneOffset.UTC)
+            DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmssSSSxx").withZone(pl.bnowakowski.cozadzban.ui.WarsawTime.ZONE)
         private val FACEBOOK_NESTED_POST_DEDUPE_QUERY_PARAMS = setOf(
             "__tn__",
             "comment_id",

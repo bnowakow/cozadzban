@@ -46,10 +46,12 @@ Run the suite on a development machine instead when one is available.
 - Persistence uses Spring Data JDBC (not JPA/Hibernate) — no `ddl-auto` settings.
 - URL enrichment is synchronous and atomic: if the fetch fails, no DB write occurs (BR-01–03).
 - All persisted timestamps are UTC (BR-15).
-- Times shown in the UI always use Europe/Warsaw: format and convert through `ui/WarsawTime`
-  (also for DateTimePicker values), never `ZoneOffset.UTC`, `Instant.toString()` or the
-  server/browser default zone. Machine-readable output (APIs, RSS, sitemap, datetime attributes)
-  stays UTC.
+- Every time shown to people uses Europe/Warsaw (BR-15): UI, Pushover, stored status/error
+  texts, statistics days, import run IDs and file names, app logs and operator scripts. In Kotlin,
+  format and convert through `ui/WarsawTime` (also for DateTimePicker values), never
+  `ZoneOffset.UTC`, `Instant.toString()` or the default zone; in shell use
+  `TZ=Europe/Warsaw date ...%z`. IDs, file names and logs carry the UTC offset. Persisted
+  timestamps and machine-readable output (APIs, RSS, sitemap, datetime attributes) stay UTC.
 - RSS MUST never expose creator/user data (BR-07).
 
 ## Performance work

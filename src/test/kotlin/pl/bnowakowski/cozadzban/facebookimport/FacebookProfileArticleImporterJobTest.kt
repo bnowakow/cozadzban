@@ -935,7 +935,8 @@ class FacebookProfileArticleImporterJobTest {
             "facebook-import-candidate-42",
         ) as String
 
-        assertTrue(filename.startsWith("20260515T194231123Z_"))
+        // 19:42:31.123 UTC is 21:42:31.123 in Warsaw (CEST, +0200).
+        assertTrue(filename.startsWith("20260515T214231123+0200_"))
         assertTrue(filename.contains("facebook-import-20260515T194231Z-7"))
         assertTrue(filename.contains("facebook-import-candidate-42"))
         assertTrue(filename.endsWith("_rejected-url.json"))

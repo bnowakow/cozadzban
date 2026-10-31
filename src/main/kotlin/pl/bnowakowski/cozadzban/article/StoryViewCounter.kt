@@ -10,9 +10,10 @@ import org.springframework.stereotype.Repository
 class StoryViewCounter(private val jdbc: NamedParameterJdbcTemplate) {
     fun record(articleId: Long) {
         jdbc.update(
-            """INSERT INTO article_story_view_daily(article_id, view_date_utc, view_count)
-               VALUES (:articleId, (now() AT TIME ZONE 'UTC')::date, 1)
-               ON CONFLICT (article_id, view_date_utc) DO UPDATE
+            // Count per Warsaw calendar day, the same days the statistics page shows.
+            """INSERT INTO article_story_view_daily(article_id, view_date, view_count)
+               VALUES (:articleId, (now() AT TIME ZONE 'Europe/Warsaw')::date, 1)
+               ON CONFLICT (article_id, view_date) DO UPDATE
                SET view_count = article_story_view_daily.view_count + 1""",
             mapOf("articleId" to articleId),
         )

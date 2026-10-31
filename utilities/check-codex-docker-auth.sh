@@ -70,4 +70,4 @@ if ! jq -e -s 'any(.[]; .type == "turn.completed") and all(.[]; .type != "turn.f
 fi
 
 printf '%s Codex authorization OK: cached ChatGPT login and live request succeeded.\n' \
-  "$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+  "$(TZ=Europe/Warsaw date +'%Y-%m-%dT%H:%M:%S%z')"

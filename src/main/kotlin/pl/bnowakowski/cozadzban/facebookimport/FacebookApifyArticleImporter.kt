@@ -23,7 +23,6 @@ import java.math.BigDecimal
 import java.nio.charset.StandardCharsets
 import java.math.RoundingMode
 import java.time.Instant
-import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.concurrent.atomic.AtomicLong
 
@@ -60,7 +59,7 @@ class FacebookApifyArticleImporter(
     }
 
     override fun newImportRunId(generatedAt: Instant): String =
-        "facebook-apify-import-${RUN_ID_FORMATTER.format(generatedAt.atOffset(ZoneOffset.UTC))}"
+        "facebook-apify-import-${RUN_ID_FORMATTER.format(generatedAt)}"
 
     override fun runImport(importRunId: String, trigger: FacebookImportTrigger) {
         unavailableReason()?.let { throw IllegalArgumentException(it) }
@@ -544,7 +543,9 @@ class FacebookApifyArticleImporter(
             "x402-payment-required",
         )
         const val PRICE_PER_RESULT_USD = 0.002
-        val RUN_ID_FORMATTER: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'")
+        /** Warsaw time with its UTC offset, so IDs stay unique and readable across clock changes. */
+        val RUN_ID_FORMATTER: DateTimeFormatter =
+            DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmssxx").withZone(pl.bnowakowski.cozadzban.ui.WarsawTime.ZONE)
         val ANCHOR_HREF_REGEX: Regex = Regex("""<a\b[^>]*\bhref\s*=\s*[\"']([^\"']+)[\"']""", RegexOption.IGNORE_CASE)
         val HTML_TAG_REGEX: Regex = Regex("""<[^>]+>""")
         val URL_REGEX: Regex = Regex("""https?://[^\s<>'\")]+""")

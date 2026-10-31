@@ -544,15 +544,17 @@ x-database:
           type: TIMESTAMPTZ
           constraints: "NOT NULL DEFAULT now()"
     - name: article_story_view_daily
-      migration: V37__article_story_view_daily.sql
-      description: Daily UTC aggregate of qualifying story-page loads, without visitor identifiers or request metadata.
+      migration: V37__article_story_view_daily.sql, V46__story_views_per_warsaw_day.sql
+      description: >
+        Daily aggregate of qualifying story-page loads per Europe/Warsaw calendar day, without
+        visitor identifiers or request metadata. Rows written before V46 used UTC days.
       columns:
         - name: article_id
           type: BIGINT
-          constraints: "NOT NULL REFERENCES article(id) ON DELETE CASCADE; primary key with view_date_utc"
-        - name: view_date_utc
+          constraints: "NOT NULL REFERENCES article(id) ON DELETE CASCADE; primary key with view_date"
+        - name: view_date
           type: DATE
-          constraints: "NOT NULL; UTC calendar date; primary key with article_id"
+          constraints: "NOT NULL; Europe/Warsaw calendar date (UTC before V46); primary key with article_id"
         - name: view_count
           type: BIGINT
           constraints: "NOT NULL DEFAULT 0 CHECK (view_count >= 0)"
@@ -1016,10 +1018,14 @@ x-business-rules:
       All persisted timestamps are UTC.
       JSON date-time fields use ISO-8601 UTC.
       RSS pubDate uses RFC-822 UTC.
-      Every time shown to people in the UI (Vaadin views and the server-rendered story page)
-      uses Europe/Warsaw local time (CET/CEST), whatever the browser's time zone. Date-time
-      pickers read and show Warsaw wall-clock time and convert to UTC instants. Machine-readable
-      values (time datetime attributes, structured data, sitemap, RSS) stay UTC.
+      Every time shown to people uses Europe/Warsaw local time (CET/CEST), whatever the browser's
+      or server's time zone: Vaadin views, the server-rendered story page, Pushover messages,
+      stored status and error texts, statistics day boundaries (story views per Warsaw day),
+      import run IDs and artifact file names, application logs, and operator scripts. IDs, file
+      names and logs include the UTC offset (e.g. +0100) so they stay unambiguous across clock
+      changes. Date-time pickers read and show Warsaw wall-clock time and convert to UTC
+      instants. Persisted timestamps and machine-readable values (APIs, time datetime
+      attributes, structured data, sitemap, RSS) stay UTC.
   - id: BR-16
     name: CORS and CSRF defaults
     description: >
@@ -1427,7 +1433,7 @@ x-vaadin-ui:
       route: /admin/facebook-statistics
       description: >
         ADMIN-only report of current Page totals and paged article statistics.
-        Compares all-time and last-seven-UTC-day story page loads with the
+        Compares all-time and last-seven-Warsaw-day story page loads with the
         latest successful Facebook reaction count, Page post status, and link
         comment status. No visitor or article creator data is exposed.
     - name: FacebookThumbnailStatusView

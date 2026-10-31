@@ -38,4 +38,4 @@ if ((live_code != 0)) || [[ "$live_output" != *AUTH_OK* ]]; then
   exit 1
 fi
 
-printf '%s Claude authorization OK: saved login and live request succeeded.\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+printf '%s Claude authorization OK: saved login and live request succeeded.\n' "$(TZ=Europe/Warsaw date +'%Y-%m-%dT%H:%M:%S%z')"

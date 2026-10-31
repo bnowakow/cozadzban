@@ -79,7 +79,8 @@ make performance-report
 ```
 
 The report is printed and saved as
-`logs/performance-reports/<UTC time>Z.md`. It contains:
+`logs/performance-reports/<Warsaw time with offset>.md`, e.g. `2026-11-07_101500+0100.md`
+(reports from before 31 October 2026, 14:20 are named in UTC, ending in `Z`). It contains:
 
 1. **Real requests (Zipkin):** count, median, 90th percentile and slowest
    duration for each endpoint.

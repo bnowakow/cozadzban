@@ -6,7 +6,6 @@ import org.springframework.stereotype.Repository
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
-import java.time.ZoneOffset
 
 data class FacebookPageStatistics(
     val language: String,
@@ -38,7 +37,7 @@ class FacebookPageStatisticsRepository(
     private val pages: FacebookPageConnectionRepository,
 ) {
     fun pageStatistics(now: Instant = Instant.now()): List<FacebookPageStatistics> {
-        val sevenDays = LocalDate.ofInstant(now, ZoneOffset.UTC).minusDays(6)
+        val sevenDays = LocalDate.ofInstant(now, pl.bnowakowski.cozadzban.ui.WarsawTime.ZONE).minusDays(6)
         return pages.all().map { page ->
             val zone = ZoneId.of(page.timeZone)
             val month = now.atZone(zone).toLocalDate().withDayOfMonth(1)
@@ -47,7 +46,7 @@ class FacebookPageStatisticsRepository(
             jdbc.query(
                 """WITH views AS (
                      SELECT article_id, SUM(view_count) AS total_views,
-                            SUM(view_count) FILTER (WHERE view_date_utc >= :sevenDays) AS views_7d
+                            SUM(view_count) FILTER (WHERE view_date >= :sevenDays) AS views_7d
                      FROM article_story_view_daily GROUP BY article_id
                    )
                    SELECT COUNT(publication.id) FILTER (WHERE publication.status = 'PUBLISHED') AS posts,
@@ -82,11 +81,11 @@ class FacebookPageStatisticsRepository(
                           now: Instant = Instant.now()): List<FacebookArticleStatistics> {
         require(sort in setOf("VIEWS", "REACTIONS", "NEWEST")) { "Unsupported statistics sort" }
         require(limit in 1..100 && offset >= 0) { "Invalid statistics page" }
-        val sevenDays = LocalDate.ofInstant(now, ZoneOffset.UTC).minusDays(6)
+        val sevenDays = LocalDate.ofInstant(now, pl.bnowakowski.cozadzban.ui.WarsawTime.ZONE).minusDays(6)
         return jdbc.query(
             """WITH views AS (
                  SELECT article_id, SUM(view_count) AS total_views,
-                        SUM(view_count) FILTER (WHERE view_date_utc >= :sevenDays) AS views_7d
+                        SUM(view_count) FILTER (WHERE view_date >= :sevenDays) AS views_7d
                  FROM article_story_view_daily GROUP BY article_id
                )
                SELECT article.id, article.language, article.title,

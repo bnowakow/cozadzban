@@ -17,8 +17,8 @@ app_port=${APP_PORT:-$(env_value APP_PORT)}
 base_url=${BASE_URL:-http://127.0.0.1:${app_port:-8086}}
 public_url=${PUBLIC_URL:-https://cozadzban.pl}
 lookback_hours=${LOOKBACK_HOURS:-168}
-since=${SINCE:-}                 # ISO-8601 UTC; only count traces at or after this time
-until_time=${UNTIL:-}            # ISO-8601 UTC; only count traces before this time
+since=${SINCE:-}                 # ISO-8601 with offset or Z; naive times are read as Warsaw time
+until_time=${UNTIL:-}            # ISO-8601 with offset or Z; naive times are read as Warsaw time
 rate=${RATE:-1250k}              # curl --limit-rate; 1250k bytes/s is about 10 Mbit/s
 article_count=${ARTICLES:-20}
 out_dir=${OUT_DIR:-logs/performance-reports}
@@ -28,14 +28,14 @@ pg_db=${POSTGRES_DB:-$(env_value POSTGRES_DB)}
 compose=(docker compose -f compose.yaml)
 
 mkdir -p "$out_dir"
-report="$out_dir/$(date -u +%Y-%m-%d_%H%M%S)Z.md"
+report="$out_dir/$(TZ=Europe/Warsaw date +%Y-%m-%d_%H%M%S%z).md"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
 psql() { "${compose[@]}" exec -T postgres psql -U "$pg_user" -d "$pg_db" "$@"; }
 
 {
-echo "# Page performance report $(date -u +%FT%TZ)"
+echo "# Page performance report $(TZ=Europe/Warsaw date +%FT%T%z)"
 echo
 echo "- Base URL: $base_url; public URL: $public_url"
 echo "- App version: $(perl -ne 'print $1 if /^version\s*=\s*"([^"]+)"/' build.gradle.kts), commit $(git rev-parse --short HEAD)"
@@ -57,7 +57,8 @@ def micros(value):
         return None
     parsed = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=datetime.timezone.utc)
+        from zoneinfo import ZoneInfo
+        parsed = parsed.replace(tzinfo=ZoneInfo("Europe/Warsaw"))
     return parsed.timestamp() * 1e6
 low, high = micros(since), micros(until)
 traces = json.load(open(path))
@@ -68,8 +69,9 @@ if not spans:
     sys.exit()
 first = min(s["timestamp"] for s in spans) / 1e6
 last = max(s["timestamp"] for s in spans) / 1e6
-fmt = lambda ts: datetime.datetime.fromtimestamp(ts, datetime.timezone.utc).strftime("%Y-%m-%d %H:%M")
-print(f"{len(spans)} sampled requests from {fmt(first)} to {fmt(last)} UTC. "
+from zoneinfo import ZoneInfo
+fmt = lambda ts: datetime.datetime.fromtimestamp(ts, ZoneInfo("Europe/Warsaw")).strftime("%Y-%m-%d %H:%M")
+print(f"{len(spans)} sampled requests from {fmt(first)} to {fmt(last)} (Warsaw time). "
       "Durations include the download to the visitor.\n")
 groups = {}
 for s in spans:

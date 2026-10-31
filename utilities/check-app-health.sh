@@ -17,7 +17,8 @@ startup_grace_seconds=${APP_HEALTH_STARTUP_GRACE_SECONDS:-180}
 max_restarts_per_hour=${APP_HEALTH_MAX_RESTARTS_PER_HOUR:-2}
 alert_email=${APP_HEALTH_ALERT_EMAIL:-${MAILTO:-}}
 
-log() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
+# Timestamps are Warsaw time with the UTC offset.
+log() { printf '%s %s\n' "$(TZ=Europe/Warsaw date +%Y-%m-%dT%H:%M:%S%z)" "$*"; }
 save_state() {
   printf '%s %s %s %s %s\n' "$failures" "$last_restart" "$active_service" "$restart_pending" "$alert_stage" >"$state_file.tmp.$$"
   mv -f -- "$state_file.tmp.$$" "$state_file"
@@ -67,10 +68,10 @@ probe_direct() {
 }
 capture_diagnostics() {
   local snapshot_started snapshot
-  snapshot_started=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  snapshot_started=$(TZ=Europe/Warsaw date +%Y-%m-%dT%H:%M:%S%z)
   mkdir -p -- "$diagnostic_dir"
   chmod 700 -- "$diagnostic_dir"
-  snapshot="$diagnostic_dir/app-health-$(date -u +%Y%m%dT%H%M%SZ)-$active_service.txt"
+  snapshot="$diagnostic_dir/app-health-$(TZ=Europe/Warsaw date +%Y%m%dT%H%M%S%z)-$active_service.txt"
   (
     umask 077
     {
