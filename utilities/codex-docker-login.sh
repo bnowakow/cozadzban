@@ -19,9 +19,11 @@ fi
 
 # Verify in a different container. This catches a login that was displayed as
 # successful but was not persisted to the shared volume.
+# Capture the output first: piping into `grep -q` can end the pipe early, and with pipefail the
+# resulting broken-pipe exit from docker would make a good login look like a failure.
 for attempt in 1 2 3 4 5; do
-  if "${compose[@]}" --profile ops run --rm --no-deps -T codex-auth-check login status \
-      2>/dev/null | grep -Fxq 'Logged in using ChatGPT'; then
+  status_output=$("${compose[@]}" --profile ops run --rm --no-deps -T codex-auth-check login status 2>/dev/null || true)
+  if grep -Fxq 'Logged in using ChatGPT' <<<"$status_output"; then
     echo 'Codex ChatGPT login is available from the shared Docker volume.'
     exit 0
   fi

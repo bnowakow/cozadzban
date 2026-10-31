@@ -1703,6 +1703,15 @@ x-planned-features:
       is MISSING_THUMBNAIL, GENERATING or FAILED, up to APP_FACEBOOK_IMAGE_PUBLICATION_WAIT_MAX
       (default 24h) after the publication was created. After that it posts with the branded
       placeholder.
+    claudeFallback: >
+      When Codex can't deliver (except for articles without text) and
+      APP_FACEBOOK_IMAGE_CLAUDE_ENABLED=true, Claude Code (subscription login in the claude-auth
+      volume, or APP_FACEBOOK_IMAGE_CLAUDE_OAUTH_TOKEN) runs in print mode with all tools disabled
+      and returns a flat vector SVG. Only plain shapes are accepted. Scripts, text, images, styles,
+      event attributes, DOCTYPEs and references outside the document are rejected. Batik renders
+      it to a 1200x630 PNG with external resources disabled, and it is stored as a generated
+      image. A Claude usage limit pauses like a Codex one, and the earlier reset wins. See
+      doc/CLAUDE_DOCKER.md.
     codexUsageLimit: >
       A Codex "usage limit … try again at <time>" error, read from Codex's ERROR output lines
       only, returns the job to MISSING_THUMBNAIL without using an attempt. It also holds the

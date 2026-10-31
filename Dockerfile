@@ -2,8 +2,10 @@
 
 FROM node:22-bookworm-slim AS codex-cli
 
-# Pin the CLI so image rebuilds cannot silently change its behavior.
+# Pin the CLIs so image rebuilds cannot silently change their behavior.
 RUN npm install --global --prefix=/opt/codex @openai/codex@0.164.0
+# Claude Code draws SVG fallback illustrations when Codex can't produce an image.
+RUN npm install --global --prefix=/opt/claude @anthropic-ai/claude-code@2.1.316
 
 FROM eclipse-temurin:21-jdk-jammy AS build
 
@@ -37,12 +39,16 @@ RUN groupadd --system spring && useradd --system --gid spring --home-dir /home/s
 COPY --from=build /workspace/app.jar app.jar
 COPY --from=codex-cli /usr/local/bin/node /usr/local/bin/node
 COPY --from=codex-cli /opt/codex /opt/codex
+COPY --from=codex-cli /opt/claude /opt/claude
 
 ENV HOME=/home/spring \
     CODEX_HOME=/home/spring/.codex \
-    PATH="/opt/codex/bin:${PATH}"
+    CLAUDE_CONFIG_DIR=/home/spring/.claude \
+    DISABLE_AUTOUPDATER=1 \
+    PATH="/opt/codex/bin:/opt/claude/bin:${PATH}"
 
-RUN mkdir -p /home/spring/.codex && chown spring:spring /home/spring/.codex
+RUN mkdir -p /home/spring/.codex /home/spring/.claude \
+    && chown spring:spring /home/spring/.codex /home/spring/.claude
 
 USER spring:spring
 

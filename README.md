@@ -65,6 +65,9 @@ Key settings:
 | `APP_FACEBOOK_PAGE_ENCRYPTION_KEY` | Stable 16-, 24-, or 32-byte AES key (base64 or hex) for stored Page tokens | _(required to connect a Page)_ |
 | `APP_FACEBOOK_PAGE_GRAPH_VERSION` | Meta Graph API version used for Page calls | `v26.0` |
 | `APP_FACEBOOK_IMAGE_CODEX_ENABLED` | Enables the experimental generated-image fallback for missing or rejected source thumbnails | `false` |
+| `APP_FACEBOOK_IMAGE_CLAUDE_ENABLED` | Claude Code draws an SVG fallback illustration when Codex can't generate an image (see `doc/CLAUDE_DOCKER.md`) | `false` |
+| `APP_FACEBOOK_IMAGE_CLAUDE_MODEL` | Claude model alias or name for fallback illustrations | `sonnet` |
+| `APP_FACEBOOK_IMAGE_CLAUDE_OAUTH_TOKEN` | Optional long-lived subscription token from `make claude-docker-token`; empty uses the saved login | _(empty)_ |
 | `APP_FACEBOOK_IMAGE_PUBLICATION_WAIT_MAX` | How long a Facebook Page post waits for its generated illustration (pending or failed) before posting with the branded placeholder | `24h` |
 | `APP_FACEBOOK_IMPORT_APIFY_SCHEDULE_INTERVAL` | Minimum time between enabled Apify imports; the worker template schedules one automatic run per 24 hours | `24h` |
 | `APP_FACEBOOK_IMPORT_APIFY_COST_SUMMARY_DAYS` | Lookback window for the admin Apify cost total and automatic-run average | `30` |
@@ -333,11 +336,14 @@ make performance-report  # Measure front-page performance (see doc/PAGE_PERFORMA
 
 The repository includes a multi-stage `Dockerfile`:
 
-- Codex CLI stage: Node 22 image, installs the pinned `@openai/codex@0.164.0` CLI under `/opt/codex`
+- CLI stage: Node 22 image, installs the pinned `@openai/codex@0.164.0` CLI under `/opt/codex` and
+  `@anthropic-ai/claude-code@2.1.316` under `/opt/claude`
 - builder stage: Java 21 JDK image, runs `./gradlew bootJar --no-daemon`
 - builder stage cache mounts: Gradle caches, Gradle wrapper, Vaadin tooling, and npm cache
 - runtime stage: Java 21 JRE image, copies the executable Spring Boot jar as `/app/app.jar`, plus the
-  Node runtime and Codex CLI on `PATH`, with `CODEX_HOME=/home/spring/.codex` (see [Codex in Docker](doc/CODEX_DOCKER.md))
+  Node runtime and the Codex and Claude Code CLIs on `PATH`, with `CODEX_HOME=/home/spring/.codex` and
+  `CLAUDE_CONFIG_DIR=/home/spring/.claude` (see [Codex in Docker](doc/CODEX_DOCKER.md) and
+  [Claude Code in Docker](doc/CLAUDE_DOCKER.md))
 - runtime user: non-root `spring`
 - exposed port: `8080`
 

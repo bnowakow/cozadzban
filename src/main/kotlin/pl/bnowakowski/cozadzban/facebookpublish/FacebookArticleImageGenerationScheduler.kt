@@ -18,17 +18,19 @@ class FacebookArticleImageGenerationScheduler(
     private val contents: ArticleContentRepository,
     private val generator: CodexArticleImageGenerator,
     private val pageSync: FacebookPageSyncRepository,
+    private val claude: ClaudeSvgArticleImageGenerator? = null,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val manualExecutor = Executors.newSingleThreadExecutor { task ->
         Thread(task, "facebook-image-manual").apply { isDaemon = true }
     }
 
-    fun isEnabled(): Boolean = generator.isEnabled()
+    /** True when Codex or the Claude fallback can illustrate articles. */
+    fun isEnabled(): Boolean = generator.isEnabled() || claude?.isEnabled() == true
 
     /** Start one article immediately without blocking the Vaadin request. */
     fun generateNow(articleId: Long): Boolean {
-        if (!generator.isEnabled()) return false
+        if (!isEnabled()) return false
         val job = jobs.claimManual(articleId) ?: return false
         return try {
             manualExecutor.execute { process(job) }
@@ -46,7 +48,7 @@ class FacebookArticleImageGenerationScheduler(
 
     @Scheduled(initialDelay = 60_000, fixedDelay = 60_000)
     fun generateOne() {
-        if (!generator.isEnabled()) return
+        if (!isEnabled()) return
         jobs.recoverInterrupted(MAX_ATTEMPTS)
         val missingContext = jobs.failMissingContext()
         if (missingContext > 0) log.info("Skipped {} image jobs with no article text", missingContext)
@@ -62,7 +64,7 @@ class FacebookArticleImageGenerationScheduler(
                 return
             }
             val content = contents.findById(job.articleId).orElse(null)
-            when (val result = generator.generate(article, content)) {
+            when (val result = generateWithFallback(article, content)) {
                 is ArticleImageGenerationResult.Generated -> {
                     when (jobs.complete(job.articleId)) {
                         "GENERATED" -> {
@@ -87,6 +89,45 @@ class FacebookArticleImageGenerationScheduler(
             jobs.fail(job.articleId, MAX_ATTEMPTS, ex.javaClass.simpleName)
             log.warn("Facebook illustration generation failed for article {} ({})", job.articleId, ex.javaClass.simpleName)
         }
+    }
+
+    /**
+     * Codex first; when it can't deliver, Claude draws an SVG fallback. A Codex usage limit still
+     * pauses the queue if Claude also fails, so the job keeps its attempts. When both are usage
+     * limited, the earlier reset wins.
+     */
+    private fun generateWithFallback(
+        article: pl.bnowakowski.cozadzban.article.Article,
+        content: pl.bnowakowski.cozadzban.article.ArticleContent?,
+    ): ArticleImageGenerationResult {
+        val fallback = claude?.takeIf { it.isEnabled() }
+        if (!generator.isEnabled()) {
+            return fallback?.generate(article, content)
+                ?: ArticleImageGenerationResult.Failed("Image generation is disabled.", retryable = false)
+        }
+        val codex = generator.generate(article, content)
+        if (codex is ArticleImageGenerationResult.Generated || fallback == null) return codex
+        if (codex is ArticleImageGenerationResult.Failed && codex.reason == MISSING_IMAGE_CONTEXT_REASON) return codex
+        log.info("Codex could not illustrate article {} ({}); trying Claude", article.id, describe(codex))
+        val claudeResult = fallback.generate(article, content)
+        return when {
+            claudeResult is ArticleImageGenerationResult.Generated -> claudeResult
+            codex is ArticleImageGenerationResult.UsageLimited && claudeResult is ArticleImageGenerationResult.UsageLimited ->
+                ArticleImageGenerationResult.UsageLimited(
+                    "${codex.reason} ${claudeResult.reason}".take(200),
+                    minOf(codex.retryAt, claudeResult.retryAt),
+                )
+            codex is ArticleImageGenerationResult.UsageLimited -> codex
+            codex is ArticleImageGenerationResult.Failed ->
+                codex.copy(reason = "${codex.reason} Claude: ${describe(claudeResult)}".take(200))
+            else -> codex
+        }
+    }
+
+    private fun describe(result: ArticleImageGenerationResult): String = when (result) {
+        is ArticleImageGenerationResult.Generated -> "generated"
+        is ArticleImageGenerationResult.Failed -> result.reason
+        is ArticleImageGenerationResult.UsageLimited -> result.reason
     }
 
     private companion object {

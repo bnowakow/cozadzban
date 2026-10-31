@@ -30,6 +30,8 @@ Project documentation, specs, and developer aids.
   October 2026 image and caching changes, and how to compare with `make performance-report`.
 - **[FRONT_PAGE_CACHE_PLAN.md](FRONT_PAGE_CACHE_PLAN.md)** — measured first-load costs and the
   agreed, not yet implemented, front-page and story-page cache design.
+- **[CLAUDE_DOCKER.md](CLAUDE_DOCKER.md)** — Claude Code in the Spring Boot container: subscription
+  login and the SVG fallback illustrations used when Codex can't generate an image.
 - **[CODEX_DOCKER.md](CODEX_DOCKER.md)** — Codex CLI installation and device
   login in the Spring Boot container.
 

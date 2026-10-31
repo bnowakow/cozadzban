@@ -35,7 +35,15 @@ ChatGPT usage limit ("You've hit your usage limit … try again at Nov 4th, 2026
 generation for all articles then pauses until the reported time, read as UTC
 plus one minute, or for one hour if no time can be read. Without that, every
 queued article would burn its three attempts against the limit. Other exit
-failures record Codex's last `ERROR:` line in the job's error. If Meta explicitly rejects a source thumbnail, publication is
+failures record Codex's last `ERROR:` line in the job's error.
+
+When Codex can't deliver an image (any failure except "no article text") and
+`APP_FACEBOOK_IMAGE_CLAUDE_ENABLED=true`, the same job asks Claude Code for a flat
+vector SVG instead. The app checks it (plain shapes only) and renders it to the same
+1200 × 630 PNG with Batik. If Claude succeeds, the job completes as `GENERATED`. If
+Claude also fails, a Codex usage limit still pauses the queue (the earlier reset wins
+when both are limited), and other failures record both reasons. With Codex disabled,
+Claude illustrates alone. See [Claude Code in Docker](CLAUDE_DOCKER.md). If Meta explicitly rejects a source thumbnail, publication is
 deferred and the article joins the same image queue. The adapter validates image
 size and dimensions, crops to 1200 × 630, and caches the PNG in the persistent
 data volume. Completed generated images are shown on the feed and story page

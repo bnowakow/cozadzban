@@ -79,11 +79,16 @@ x-springboot-base: &springboot-base
     - 'APP_FACEBOOK_IMAGE_CODEX_TIMEOUT_SECONDS=${APP_FACEBOOK_IMAGE_CODEX_TIMEOUT_SECONDS:-180}'
     - 'APP_FACEBOOK_IMAGE_CODEX_ASSET_DIR=${APP_FACEBOOK_IMAGE_CODEX_ASSET_DIR:-/app/data/facebook-generated}'
     - 'APP_FACEBOOK_IMAGE_PUBLICATION_WAIT_MAX=${APP_FACEBOOK_IMAGE_PUBLICATION_WAIT_MAX:-24h}'
+    - 'APP_FACEBOOK_IMAGE_CLAUDE_ENABLED=${APP_FACEBOOK_IMAGE_CLAUDE_ENABLED:-false}'
+    - 'APP_FACEBOOK_IMAGE_CLAUDE_TIMEOUT_SECONDS=${APP_FACEBOOK_IMAGE_CLAUDE_TIMEOUT_SECONDS:-180}'
+    - 'APP_FACEBOOK_IMAGE_CLAUDE_MODEL=${APP_FACEBOOK_IMAGE_CLAUDE_MODEL:-sonnet}'
+    - 'APP_FACEBOOK_IMAGE_CLAUDE_OAUTH_TOKEN=${APP_FACEBOOK_IMAGE_CLAUDE_OAUTH_TOKEN:-}'
   volumes:
     - './.env:/app/.env:ro'
     - './logs:/app/logs'
     - './docker-data/data:/app/data'
     - 'codex-auth:/home/spring/.codex'
+    - 'claude-auth:/home/spring/.claude'
 
 services:
   springboot:
@@ -113,6 +118,30 @@ services:
     pids_limit: 32
     volumes:
       - 'codex-auth:/home/spring/.codex'
+    networks:
+      - codex-egress
+
+  # Same isolation for Claude Code: only its credential volume and the egress network.
+  claude-auth-check:
+    image: cozadzban:local
+    profiles:
+      - ops
+    entrypoint: [claude]
+    working_dir: /tmp
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+    pids_limit: 64
+    environment:
+      - 'DISABLE_AUTOUPDATER=1'
+      - 'CLAUDE_CODE_OAUTH_TOKEN=${APP_FACEBOOK_IMAGE_CLAUDE_OAUTH_TOKEN:-}'
+    volumes:
+      - 'claude-auth:/home/spring/.claude'
     networks:
       - codex-egress
 
@@ -170,6 +199,7 @@ services:
 
 volumes:
   codex-auth:
+  claude-auth:
 
 networks:
   codex-egress:

@@ -1,5 +1,5 @@
 
-.PHONY: help docker-up docker-down docker-data-permissions docker-upgrade-log-owner docker-pg-nuke docker-pg-backup install-pg-backup-cron ensure-pg-backup-cron install-codex-auth-cron install-app-health-cron install-all-crons codex-auth-check app-health-check performance-report build run run-local run-prod test clean docker-logs docker-spring-shell docker-pg-shell docker-upgrade docker-upgrade-no-cache sync-env-files bump-patch bump-minor codex-commit claude-commit install-git-hooks install-codex-skills install-claude-skills codex-skill-prompts claude-skill-prompts codex-docker-login codex-docker-status codex-docker-logout
+.PHONY: help docker-up docker-down docker-data-permissions docker-upgrade-log-owner docker-pg-nuke docker-pg-backup install-pg-backup-cron ensure-pg-backup-cron install-codex-auth-cron install-app-health-cron install-all-crons codex-auth-check app-health-check performance-report build run run-local run-prod test clean docker-logs docker-spring-shell docker-pg-shell docker-upgrade docker-upgrade-no-cache sync-env-files bump-patch bump-minor codex-commit claude-commit install-git-hooks install-codex-skills install-claude-skills codex-skill-prompts claude-skill-prompts codex-docker-login codex-docker-status codex-docker-logout claude-docker-login claude-docker-token claude-docker-status claude-docker-logout claude-auth-check install-claude-auth-cron
 
 -include .env
 
@@ -20,6 +20,11 @@ help:
 	@printf "    %-31s %s\n" "codex-docker-status" "Check Codex sign-in in the Spring Boot container"
 	@printf "    %-31s %s\n" "codex-docker-logout" "Sign out of Codex in the Spring Boot container"
 	@printf "    %-31s %s\n" "codex-auth-check" "Check cached login and make a small live Codex request"
+	@printf "    %-31s %s\n" "claude-docker-login" "Sign in to Claude (subscription) in Spring Boot for fallback images"
+	@printf "    %-31s %s\n" "claude-docker-token" "Create a long-lived Claude subscription token for .env"
+	@printf "    %-31s %s\n" "claude-docker-status" "Check Claude sign-in in the Spring Boot container"
+	@printf "    %-31s %s\n" "claude-docker-logout" "Sign out of Claude in the Spring Boot container"
+	@printf "    %-31s %s\n" "claude-auth-check" "Check Claude login and make a small live Claude request"
 	@printf "    %-31s %s\n" "app-health-check" "Check the active app and restart it after repeated failures"
 	@printf "    %-31s %s\n" "performance-report" "Measure front-page performance and save a report in logs/"
 	@printf "    %-31s %s\n" "sync-env-files" "Sync server and worker env files, then verify byte-for-byte"
@@ -30,6 +35,7 @@ help:
 	@printf "    %-31s %s\n" "install-pg-backup-cron" "Install daily 02:00 PostgreSQL backup cron job"
 	@printf "    %-31s %s\n" "ensure-pg-backup-cron" "Install daily PostgreSQL backup cron job only when missing"
 	@printf "    %-31s %s\n" "install-codex-auth-cron" "Install daily Codex authorization check at 03:15"
+	@printf "    %-31s %s\n" "install-claude-auth-cron" "Install daily Claude authorization check at 03:30"
 	@printf "    %-31s %s\n" "install-app-health-cron" "Install app health check every minute"
 	@printf "    %-31s %s\n" "install-all-crons" "Install all managed cron jobs"
 	@printf "    %-31s %s\n" "docker-pg-shell" "Open PostgreSQL shell inside docker container"
@@ -79,6 +85,7 @@ COZADZBAN_TEST_TIMEOUT_MINUTES ?=
 COZADZBAN_DOCKER_INFO_TIMEOUT_SECONDS ?=
 CRON_SCHEDULE ?= 0 2 * * *
 CODEX_AUTH_CRON_SCHEDULE ?= 15 3 * * *
+CLAUDE_AUTH_CRON_SCHEDULE ?= 30 3 * * *
 APP_HEALTH_CRON_SCHEDULE ?= * * * * *
 CRON_MAKE ?= $(shell command -v make 2>/dev/null || echo make)
 PG_BACKUP_CRON_MARKER ?= cozadzban-docker-pg-backup
@@ -132,6 +139,23 @@ codex-docker-logout:
 codex-auth-check:
 	@bash utilities/check-codex-docker-auth.sh
 
+# Claude Code draws SVG fallback illustrations; it uses the claude-auth volume like Codex uses codex-auth.
+claude-docker-login:
+	@bash utilities/claude-docker-login.sh
+
+# Alternative to the saved login: prints a long-lived subscription token for APP_FACEBOOK_IMAGE_CLAUDE_OAUTH_TOKEN.
+claude-docker-token:
+	docker compose -f compose.yaml run --rm --no-deps --entrypoint claude springboot setup-token
+
+claude-docker-status:
+	docker compose -f compose.yaml --profile ops run --rm --no-deps -T claude-auth-check auth status --text
+
+claude-docker-logout:
+	docker compose -f compose.yaml run --rm --no-deps --entrypoint claude springboot auth logout
+
+claude-auth-check:
+	@bash utilities/check-claude-docker-auth.sh
+
 app-health-check:
 	@APP_PORT='$(APP_PORT)' bash utilities/check-app-health.sh
 
@@ -173,11 +197,14 @@ install-pg-backup-cron: docker-data-permissions
 install-codex-auth-cron:
 	@CODEX_AUTH_CRON_SCHEDULE='$(CODEX_AUTH_CRON_SCHEDULE)' CRON_MAKE='$(CRON_MAKE)' bash utilities/install-crons.sh codex
 
+install-claude-auth-cron:
+	@CLAUDE_AUTH_CRON_SCHEDULE='$(CLAUDE_AUTH_CRON_SCHEDULE)' CRON_MAKE='$(CRON_MAKE)' bash utilities/install-crons.sh claude
+
 install-app-health-cron:
 	@APP_HEALTH_CRON_SCHEDULE='$(APP_HEALTH_CRON_SCHEDULE)' CRON_MAKE='$(CRON_MAKE)' bash utilities/install-crons.sh app-health
 
 install-all-crons: docker-data-permissions
-	@CRON_SCHEDULE='$(CRON_SCHEDULE)' CODEX_AUTH_CRON_SCHEDULE='$(CODEX_AUTH_CRON_SCHEDULE)' APP_HEALTH_CRON_SCHEDULE='$(APP_HEALTH_CRON_SCHEDULE)' CRON_MAKE='$(CRON_MAKE)' bash utilities/install-crons.sh all
+	@CRON_SCHEDULE='$(CRON_SCHEDULE)' CODEX_AUTH_CRON_SCHEDULE='$(CODEX_AUTH_CRON_SCHEDULE)' CLAUDE_AUTH_CRON_SCHEDULE='$(CLAUDE_AUTH_CRON_SCHEDULE)' APP_HEALTH_CRON_SCHEDULE='$(APP_HEALTH_CRON_SCHEDULE)' CRON_MAKE='$(CRON_MAKE)' bash utilities/install-crons.sh all
 
 # Install the daily PostgreSQL backup cron job only when no managed backup job exists.
 ensure-pg-backup-cron:

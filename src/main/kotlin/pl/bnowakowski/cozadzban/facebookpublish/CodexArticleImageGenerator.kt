@@ -97,6 +97,23 @@ class CodexArticleImageGenerator(
         String(bytes, maxOf(0, bytes.size - MAX_OUTPUT_BYTES), minOf(bytes.size, MAX_OUTPUT_BYTES), Charsets.UTF_8)
     }.getOrDefault("")
 
+    /**
+     * Stores a validated 1200x630 PNG as the article's generated illustration, whichever tool made
+     * it, and prepares the smaller website copy so the first visitor does not pay for the conversion.
+     */
+    fun storeGenerated(articleId: Long, png: ByteArray) {
+        val destination = pngPath(articleId)
+        Files.createDirectories(destination.parent)
+        val temporary = Files.createTempFile(destination.parent, "article-$articleId-", ".png")
+        try {
+            Files.write(temporary, png)
+            Files.move(temporary, destination, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+        } finally {
+            Files.deleteIfExists(temporary)
+        }
+        webImage(articleId)
+    }
+
     private fun pngPath(articleId: Long): Path = Path.of(assetDir).resolve("article-$articleId.png")
 
     private fun webPath(articleId: Long): Path = Path.of(assetDir).resolve("article-$articleId.jpg")
@@ -112,7 +129,6 @@ class CodexArticleImageGenerator(
         }
         var workdir: Path? = null
         try {
-            val destination = Path.of(assetDir).resolve("article-$articleId.png")
             val directory = Files.createTempDirectory("codex-facebook-image-")
             workdir = directory
             val finalMessage = directory.resolve("codex-result.txt")
@@ -175,17 +191,8 @@ class CodexArticleImageGenerator(
                 log.warn("Codex returned an invalid generated image for article {}", articleId)
                 return ArticleImageGenerationResult.Failed("Codex produced an invalid image.")
             }
-            Files.createDirectories(destination.parent)
-            val temporary = Files.createTempFile(destination.parent, "article-${article.id}-", ".png")
-            try {
-                Files.write(temporary, png)
-                Files.move(temporary, destination, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
-            } finally {
-                Files.deleteIfExists(temporary)
-            }
+            storeGenerated(articleId, png)
             runCatching { Files.deleteIfExists(generatedFile) }
-            // Prepare the website copy now so the first visitor does not pay for the conversion.
-            webImage(articleId)
             return ArticleImageGenerationResult.Generated(png)
         } catch (ex: Exception) {
             log.warn("Codex image generation unavailable for article {} ({})", article.id, ex.javaClass.simpleName)

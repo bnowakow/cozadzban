@@ -14,7 +14,7 @@ plugins {
 }
 
 group = "pl.bnowakowski"
-version = "0.63.6-SNAPSHOT"
+version = "0.64.0-SNAPSHOT"
 
 java {
 	toolchain {
@@ -47,6 +47,9 @@ dependencies {
 	implementation("org.springframework.boot:spring-boot-starter-validation")
 	implementation("org.springframework.boot:spring-boot-starter-security")
 	implementation("org.jsoup:jsoup:1.18.3")
+	// SVG to PNG for Claude-drawn article illustrations. The JDK already provides the xml-apis classes.
+	implementation("org.apache.xmlgraphics:batik-transcoder:1.18") { exclude(group = "xml-apis", module = "xml-apis") }
+	implementation("org.apache.xmlgraphics:batik-codec:1.18") { exclude(group = "xml-apis", module = "xml-apis") }
 	implementation("org.seleniumhq.selenium:selenium-java:4.32.0")
 	implementation("org.springframework.boot:spring-boot-starter-oauth2-client")
 	implementation("org.springframework.boot:spring-boot-starter-oauth2-resource-server")

@@ -24,6 +24,7 @@ class FacebookPublicationWorker(
     private val imageJobs: FacebookArticleImageGenerationRepository,
     private val imageGenerator: CodexArticleImageGenerator,
     private val publisher: FacebookPhotoPublisher,
+    private val claude: ClaudeSvgArticleImageGenerator? = null,
     @Value("\${app.facebook-image.publication-wait-max:24h}") private val imageWaitMax: Duration = DEFAULT_IMAGE_WAIT,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -32,10 +33,12 @@ class FacebookPublicationWorker(
     fun publishPending() {
         queue.recoverInterruptedClaims()
         repeat(10) {
-            val job = queue.claim(imageGenerator.isEnabled(), imageWaitMax) ?: return
+            val job = queue.claim(imagesEnabled(), imageWaitMax) ?: return
             publish(job)
         }
     }
+
+    private fun imagesEnabled(): Boolean = imageGenerator.isEnabled() || claude?.isEnabled() == true
 
     private fun publish(job: FacebookPublicationJob) {
         val article = articles.findById(job.articleId).orElse(null)
@@ -61,7 +64,7 @@ class FacebookPublicationWorker(
                 publisher.publish(page.pageId, token, FacebookPostCaption.forArticle(article, image.source), image)
             } catch (ex: RestClientResponseException) {
                 if (ex.statusCode.value() != 400) throw ex
-                if (image is FacebookPostImage.Thumbnail && imageGenerator.isEnabled()) {
+                if (image is FacebookPostImage.Thumbnail && imagesEnabled()) {
                     // The explicit rejection happened before Meta created a post. Retry with a generated image later.
                     imageJobs.sourceThumbnailRejected(article.id!!)
                     queue.deferForImage(job.id)
