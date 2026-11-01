@@ -80,8 +80,9 @@ kept per branch.
 Each build is renamed to the immutable image tag, `<version>-<commit8>` (for
 example `0.64.15-6ffd550d`), on every branch, including builds that push no
 image. `utilities/docker-image.sh tag` prints it, so the build name and the
-image tag can't drift apart. The build number moves to the build description
-(`#3`) and stays in the URL. Rebuilds of the same commit, such as the daily
+image tag can't drift apart. The build number stays in the URL. The build
+description is left empty, so Blue Ocean's "Message" column keeps showing the
+commit messages. Rebuilds of the same commit, such as the daily
 timer build, get the same name.
 
 ### Docker image tags

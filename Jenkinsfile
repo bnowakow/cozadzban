@@ -126,13 +126,13 @@ spec:
 
     // Name the build like the Docker image tag, <version>-<commit8>
     // (e.g. 0.64.16-6ffd550d), so a build and its image are easy to match.
-    // The build number moves to the description and stays in the URL.
+    // The build number stays in the URL. No description is set, so Blue Ocean's
+    // Message column keeps showing the commit messages.
     stage('Version') {
       steps {
         script {
           currentBuild.displayName = sh(returnStdout: true,
               script: 'utilities/docker-image.sh tag').trim()
-          currentBuild.description = "#${env.BUILD_NUMBER}"
         }
       }
     }
