@@ -83,20 +83,40 @@ dockerhub_image_exists() {
 
 # Asks on the terminal what to do while the image for this commit isn't on Docker Hub yet.
 # Prints "wait" or "local"; anything else aborts without touching the running app.
+# Uses a dialog/whiptail menu when available, otherwise a plain text prompt.
 ask_missing_image() {
-    if ! { : </dev/tty; } 2>/dev/null; then
+    # A subshell, because a failed redirection on a special builtin like : exits a POSIX shell.
+    if ! (exec </dev/tty) 2>/dev/null; then
         echo "abort"
         return
     fi
-    {
-        echo ""
-        echo "$1 is not on Docker Hub yet. Jenkins builds it after the tests pass (about 10 minutes)."
-        echo "  [w] wait for it (check every ${dockerhub_poll_seconds}s for up to $(( dockerhub_wait_seconds / 60 )) minutes)"
-        echo "  [b] build the image locally from this checkout instead"
-        echo "  anything else: abort, nothing is changed"
-        printf 'Choice [w/b]: '
-    } >/dev/tty
-    read -r answer </dev/tty || answer=""
+    wait_text="Wait for it (check every ${dockerhub_poll_seconds}s for up to $(( dockerhub_wait_seconds / 60 )) minutes)"
+    build_text="Build the image locally from this checkout instead"
+    menu_bin=""
+    if [ "${TERM:-dumb}" != "dumb" ]; then
+        menu_bin=$(command -v dialog || command -v whiptail || true)
+    fi
+    if [ -n "$menu_bin" ]; then
+        # The menu draws on the terminal and writes the chosen tag to fd 3, which is captured here.
+        answer=$("$menu_bin" --title "Docker Hub image not ready" --output-fd 3 \
+            --cancel-button "Abort" \
+            --menu "$1 is not on Docker Hub yet. Jenkins builds it after the tests pass (about 10 minutes).\n\nAbort leaves the running app unchanged." \
+            15 76 2 \
+            w "$wait_text" \
+            b "$build_text" \
+            3>&1 1>/dev/tty 2>/dev/tty </dev/tty) || answer=""
+        printf '\n' >/dev/tty
+    else
+        {
+            echo ""
+            echo "$1 is not on Docker Hub yet. Jenkins builds it after the tests pass (about 10 minutes)."
+            echo "  [w] $wait_text"
+            echo "  [b] $build_text"
+            echo "  anything else: abort, nothing is changed"
+            printf 'Choice [w/b]: '
+        } >/dev/tty
+        read -r answer </dev/tty || answer=""
+    fi
     case "$answer" in
         w|W) echo "wait" ;;
         b|B) echo "local" ;;
