@@ -36,11 +36,14 @@ class ApifyAccountUsageClientTest {
 
             client.current()
             assertEquals(1, requests.get(), "a second read within the cache window must not call Apify")
-            clock.advance(Duration.ofMinutes(6))
+            clock.advance(Duration.ofSeconds(61))
             client.current()
-            assertEquals(2, requests.get())
+            assertEquals(2, requests.get(), "the cache lasts a minute")
             client.fresh()
             assertEquals(3, requests.get(), "fresh() always calls Apify")
+            client.invalidate()
+            client.current()
+            assertEquals(4, requests.get(), "a run's cost must show right after it ends")
         }
     }
 
