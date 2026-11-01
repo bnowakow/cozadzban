@@ -32,6 +32,7 @@ they get one, e.g. by merging `main`.
 
 | Stage | Runs on | What it does |
 | --- | --- | --- |
+| `Version` | every build | `utilities/docker-image.sh tag`; renames the build to `<version>-<commit8>` |
 | `Test` | every build | `make ci-test`: waits for the Docker-in-Docker daemon, then `./gradlew --no-daemon test -PappBuildCommit=<commit>`; publishes JUnit results |
 | `Docker image` | `main` only, not timer-triggered builds | `make docker-image-build`, `docker login`, `make docker-image-push`: builds the repository `Dockerfile` and pushes three tags to `bnowakow/cozadzban` |
 
@@ -73,6 +74,15 @@ All test targets refuse to run on the deployment server.
 
 Options: no concurrent builds per branch, 90-minute timeout, last 30 builds
 kept per branch.
+
+### Build names
+
+Each build is renamed to the immutable image tag, `<version>-<commit8>` (for
+example `0.64.15-6ffd550d`), on every branch, including builds that push no
+image. `utilities/docker-image.sh tag` prints it, so the build name and the
+image tag can't drift apart. The build number moves to the build description
+(`#3`) and stays in the URL. Rebuilds of the same commit, such as the daily
+timer build, get the same name.
 
 ### Docker image tags
 

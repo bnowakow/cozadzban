@@ -8,7 +8,8 @@
 # build.gradle.kts version without -SNAPSHOT; docker-data/blue-green-upgrade.sh
 # computes the same <version>-<commit8> when deploying.
 #
-# Usage: utilities/docker-image.sh build|push
+# Usage: utilities/docker-image.sh build|push|tag
+# tag prints <version>-<commit8>; the Jenkinsfile names each build after it.
 # The commit is GIT_COMMIT (set by Jenkins) or the checkout's HEAD. Pushing needs
 # a prior `docker login`; this script never logs in. POSIX sh, because the
 # Jenkins docker:cli container is Alpine without bash.
@@ -36,6 +37,9 @@ case "${1:-}" in
       --tag "$IMAGE:latest" \
       .
     ;;
+  tag)
+    echo "$version-$commit"
+    ;;
   push)
     # The fixed per-commit tag first, so moving tags never point at an unpushed build.
     docker push "$IMAGE:$version-$commit"
@@ -43,7 +47,7 @@ case "${1:-}" in
     docker push "$IMAGE:latest"
     ;;
   *)
-    echo "Usage: $0 build|push" >&2
+    echo "Usage: $0 build|push|tag" >&2
     exit 2
     ;;
 esac
