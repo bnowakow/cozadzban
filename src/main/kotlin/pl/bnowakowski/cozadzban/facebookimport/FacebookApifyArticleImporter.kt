@@ -212,6 +212,7 @@ class FacebookApifyArticleImporter(
             }
         } catch (ex: Exception) {
             abortActorRun(client, actorRunId)
+            accountUsage?.invalidate()
             throw ex
         }
         // Apify says the first terminal response can contain preliminary costs.
@@ -222,6 +223,8 @@ class FacebookApifyArticleImporter(
             if (ex is InterruptedException) throw ex
             logger.warn("Apify actor run {} cost refresh failed", actorRunId, ex)
         }.getOrDefault(run)
+        // The usage read before the run doesn't include its cost yet.
+        accountUsage?.invalidate()
         summary.apifyCostUsd = settledRun.path("usageTotalUsd")
             .takeIf { it.isNumber }
             ?.decimalValue()

@@ -51,6 +51,11 @@ class ApifyAccountUsageClient(
         return fresh()
     }
 
+    /** Drops the cached usage, e.g. after a run was charged, so the next [current] reads Apify again. */
+    fun invalidate() {
+        cached = null
+    }
+
     fun fresh(): ApifyAccountUsage? {
         val token = properties.apify.apiToken.trim()
         if (token.isEmpty()) return null
@@ -92,7 +97,7 @@ class ApifyAccountUsageClient(
     }
 
     private companion object {
-        val CACHE_TTL: Duration = Duration.ofMinutes(5)
+        val CACHE_TTL: Duration = Duration.ofMinutes(1)
         val REQUEST_TIMEOUT: Duration = Duration.ofSeconds(5)
     }
 }
