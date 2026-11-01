@@ -168,7 +168,11 @@ x-architecture:
       description: >
         Google Analytics and StatCounter scripts are rendered only when their
         IDs are configured and the user has explicitly accepted analytics
-        cookies. Consent is analytics-only and can be changed later. RSS feed
+        cookies. Consent is analytics-only and can be changed later. With
+        Google Analytics loaded, scrolling the front-page feed past 5, 10, 20,
+        50 and 100 stories sends a `story_scroll_depth` event (params
+        `stories_seen`, `feed_language`) once per threshold; changing the feed
+        filters starts the count over. RSS feed
         requests emit best-effort server-side analytics events when the matching
         server-side analytics credentials are configured.
     - name: Article content preservation cache

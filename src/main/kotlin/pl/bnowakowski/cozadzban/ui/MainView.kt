@@ -216,6 +216,7 @@ class ArticleListView(
         feed.setDataProvider(dataProvider)
         feed.setItemAccessibleNameGenerator { article -> visibleArticleTitle(article) ?: article.url }
         feed.width = "100%"
+        feed.addClassName("czj-story-feed")
         feed.element.style.set("background", "transparent")
         feed.element.style.set("height", "100%")
 
@@ -1828,7 +1829,11 @@ class ArticleListView(
         feed.setDataProvider(dataProvider)
         feed.dataCommunicator.reset()
         dataProvider.refreshAll()
-        feed.element.executeJs("this.scrollToIndex && this.scrollToIndex(0)")
+        feed.element.setAttribute("data-feed-language", languageFilter ?: "all")
+        feed.element.executeJs(
+            "this.scrollToIndex && this.scrollToIndex(0);" +
+                "this.dispatchEvent(new CustomEvent('czj-story-feed-reset', { bubbles: true }))",
+        )
     }
 
     private fun logFacebookPhotoFeedFetch(

@@ -497,6 +497,8 @@ class AnalyticsIndexHtmlRequestListener(
                     }
                 }
 
+                ${if (analytics.isGoogleEnabled) storyScrollDepthScript() else ""}
+
                 window.czjConsentAccept = function () {
                     setStoredConsent('accepted');
                     hideBanner();
@@ -543,6 +545,34 @@ class AnalyticsIndexHtmlRequestListener(
         }
         """.trimIndent()
 
+    /**
+     * Sends a GA4 `story_scroll_depth` event the first time a visitor scrolls the front-page feed
+     * past each of [STORY_SCROLL_THRESHOLDS] stories. It only sends once Google Analytics is loaded,
+     * so nothing goes out without analytics consent. Changing the feed filters starts the count over.
+     */
+    private fun storyScrollDepthScript(): String =
+        """
+        (function () {
+            var thresholds = [${STORY_SCROLL_THRESHOLDS.joinToString(", ")}];
+            var sent = {};
+            document.addEventListener('czj-story-feed-reset', function () { sent = {}; }, true);
+            document.addEventListener('scroll', function (event) {
+                var feed = event.target;
+                if (!feed || !feed.classList || !feed.classList.contains('czj-story-feed')) return;
+                if (typeof window.gtag !== 'function') return;
+                var seen = (feed.lastVisibleIndex || 0) + 1;
+                thresholds.forEach(function (threshold) {
+                    if (seen < threshold || sent[threshold]) return;
+                    sent[threshold] = true;
+                    window.gtag('event', 'story_scroll_depth', {
+                        stories_seen: threshold,
+                        feed_language: feed.getAttribute('data-feed-language') || 'all'
+                    });
+                });
+            }, { capture: true, passive: true });
+        })();
+        """.trimIndent()
+
     private fun scLoaderScript(projectId: String, securityId: String): String =
         """
         if (!document.getElementById('czj-sc-script')) {
@@ -557,4 +587,9 @@ class AnalyticsIndexHtmlRequestListener(
             document.head.appendChild(scEl);
         }
         """.trimIndent()
+
+    internal companion object {
+        /** Story counts at which the front-page feed sends a scroll-depth event. */
+        val STORY_SCROLL_THRESHOLDS = listOf(5, 10, 20, 50, 100)
+    }
 }

@@ -53,6 +53,21 @@ class AnalyticsIndexHtmlRequestListenerTest {
     }
 
     @Test
+    fun `story scroll depth events are sent through gtag only when Google Analytics is configured`() {
+        val withGoogle = Jsoup.parse("<!doctype html><html><head></head><body></body></html>")
+        injectAnalyticsScript(AnalyticsIndexHtmlRequestListener(AnalyticsProperties(googleMeasurementId = "G-TEST")), withGoogle)
+        val script = withGoogle.head().selectFirst("#czj-analytics-init")?.data().orEmpty()
+        assertTrue(script.contains("'story_scroll_depth'"))
+        assertTrue(script.contains("czj-story-feed"))
+        assertTrue(script.contains("typeof window.gtag !== 'function'"))
+        assertTrue(script.contains("var thresholds = [5, 10, 20, 50, 100]"))
+
+        val withoutGoogle = Jsoup.parse("<!doctype html><html><head></head><body></body></html>")
+        injectAnalyticsScript(AnalyticsIndexHtmlRequestListener(AnalyticsProperties(statcounterProjectId = "123", statcounterSecurityId = "abc")), withoutGoogle)
+        assertTrue(!withoutGoogle.head().selectFirst("#czj-analytics-init")?.data().orEmpty().contains("story_scroll_depth"))
+    }
+
+    @Test
     fun `provides distinct Polish and English homepage descriptions`() {
         val listener = AnalyticsIndexHtmlRequestListener(AnalyticsProperties())
         val polish = Jsoup.parse("<html><head></head><body></body></html>")
