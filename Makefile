@@ -1,5 +1,5 @@
 
-.PHONY: help docker-up docker-down docker-data-permissions docker-upgrade-log-owner docker-pg-nuke docker-pg-backup install-pg-backup-cron ensure-pg-backup-cron install-codex-auth-cron install-app-health-cron install-all-crons codex-auth-check app-health-check performance-report build run run-local run-prod test clean docker-logs docker-spring-shell docker-pg-shell docker-upgrade docker-upgrade-local docker-upgrade-dockerhub-image docker-upgrade-no-cache sync-env-files bump-patch bump-minor codex-commit claude-commit install-git-hooks install-codex-skills install-claude-skills codex-skill-prompts claude-skill-prompts codex-docker-login codex-docker-status codex-docker-logout claude-docker-login claude-docker-token claude-docker-status claude-docker-logout claude-auth-check install-claude-auth-cron
+.PHONY: help docker-up docker-down docker-data-permissions docker-upgrade-log-owner docker-pg-nuke docker-pg-backup install-pg-backup-cron ensure-pg-backup-cron install-codex-auth-cron install-app-health-cron install-all-crons codex-auth-check app-health-check performance-report build run run-local run-prod test test-live-external-sites clean docker-logs docker-spring-shell docker-pg-shell docker-upgrade docker-upgrade-local docker-upgrade-dockerhub-image docker-upgrade-no-cache sync-env-files bump-patch bump-minor codex-commit claude-commit install-git-hooks install-codex-skills install-claude-skills codex-skill-prompts claude-skill-prompts codex-docker-login codex-docker-status codex-docker-logout claude-docker-login claude-docker-token claude-docker-status claude-docker-logout claude-auth-check install-claude-auth-cron
 
 -include .env
 
@@ -48,6 +48,7 @@ help:
 	@printf "    %-31s %s\n" "run-local" "Run Spring Boot with local profile"
 	@printf "    %-31s %s\n" "run-prod" "Run Spring Boot with prod profile"
 	@printf "    %-31s %s\n" "test" "Run all tests"
+	@printf "    %-31s %s\n" "test-live-external-sites" "Run live enrichment tests against Facebook, NYT, WSJ and YouTube"
 	@printf "    %-31s %s\n" "clean" "Clean Gradle build artifacts"
 	@printf "\n"
 	@printf "  \033[1;94m%s\033[0m\n" "Versioning"
@@ -238,6 +239,20 @@ run-prod:
 # Run all tests
 test:
 	./gradlew $(if $(TEST_GRADLE_WORKERS),--max-workers=$(TEST_GRADLE_WORKERS),) $(if $(TEST_GRADLE_JVMARGS),-Dorg.gradle.jvmargs="$(TEST_GRADLE_JVMARGS)",) test $(TEST_GRADLE_ARGS)
+
+# Run the live enrichment tests that `make test` skips. They fetch real Facebook, NYT, WSJ and
+# YouTube pages, so failures can come from the sites changing, blocking or showing a CAPTCHA.
+test-live-external-sites:
+	@if [ "$$(hostname)" = "ovh.bnowakowski.pl" ]; then \
+		echo "Refusing to run tests on the deployment server ovh.bnowakowski.pl; run this on a development machine." >&2; \
+		exit 1; \
+	fi
+	RUN_LIVE_FACEBOOK_PHOTO_EXAMPLES=true \
+	RUN_LIVE_FACEBOOK_PHOTO_SCRATCH=true \
+	RUN_LIVE_NYT_VERIFICATION=true \
+	RUN_LIVE_WSJ_VERIFICATION=true \
+	RUN_LIVE_YOUTUBE_VERIFICATION=true \
+	./gradlew test --rerun --tests "pl.bnowakowski.cozadzban.enrichment.Live*" $(TEST_GRADLE_ARGS)
 
 # Configure repository-local git hooks.
 install-git-hooks:

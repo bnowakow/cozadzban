@@ -4,15 +4,16 @@
 package pl.bnowakowski.cozadzban.enrichment
 
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable
 import org.springframework.web.client.RestClient
 import pl.bnowakowski.cozadzban.ui.WarsawTime
 
+// Live NYTimes/r.jina.ai response is not deterministic and can return a 403/CAPTCHA placeholder.
+@EnabledIfEnvironmentVariable(named = "RUN_LIVE_NYT_VERIFICATION", matches = "true")
 class LiveNytShortFallbackVerificationTest {
 
     @Test
-    @Disabled("Live NYTimes/r.jina.ai response is not deterministic and can return a 403/CAPTCHA placeholder.")
     fun `extracts metadata from live NYTimes short link through fallback`() {
         val result = EnrichmentService(RestClient.builder()).enrich("https://nyti.ms/4tisLZM")
 
