@@ -6,15 +6,15 @@ import java.time.Duration
 import java.util.concurrent.TimeUnit
 
 plugins {
-	kotlin("jvm") version "2.2.21"
-	kotlin("plugin.spring") version "2.2.21"
-	id("org.springframework.boot") version "4.0.9"
+	kotlin("jvm") version "2.3.21"
+	kotlin("plugin.spring") version "2.3.21"
+	id("org.springframework.boot") version "4.1.2"
 	id("io.spring.dependency-management") version "1.1.7"
-	id("com.vaadin") version "25.1.4"
+	id("com.vaadin") version "25.3.4"
 }
 
 group = "pl.bnowakowski"
-version = "0.64.17-SNAPSHOT"
+version = "0.64.18-SNAPSHOT"
 
 java {
 	toolchain {
@@ -26,7 +26,7 @@ repositories {
 	mavenCentral()
 }
 
-extra["vaadinVersion"] = "25.1.4"
+extra["vaadinVersion"] = "25.3.4"
 // Spring Boot pins older Selenium and OpenTelemetry than selenium-java needs; the older
 // ones, and the Guava they bring, have known CVEs.
 extra["selenium.version"] = "4.52.0"
@@ -63,7 +63,7 @@ dependencies {
 	implementation("io.micrometer:micrometer-tracing-bridge-brave")
 	implementation("org.flywaydb:flyway-database-postgresql")
 	implementation("org.jetbrains.kotlin:kotlin-reflect")
-	implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.2")
+	implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:3.2.0")
 	implementation("tools.jackson.module:jackson-module-kotlin")
 	compileOnly("org.projectlombok:lombok")
 	developmentOnly("org.springframework.boot:spring-boot-devtools")

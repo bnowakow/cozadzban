@@ -179,7 +179,7 @@ class ArticleRepositoryCustomImpl(
             "SELECT DISTINCT language FROM article WHERE language IS NOT NULL ORDER BY language",
             emptyMap<String, Any>(),
             String::class.java,
-        )
+        ).filterNotNull()
 
     override fun findTopLanguages(limit: Int): List<String> =
         jdbc.queryForList(
@@ -193,7 +193,7 @@ class ArticleRepositoryCustomImpl(
             """.trimIndent(),
             mapOf("limit" to limit.coerceAtLeast(0)),
             String::class.java,
-        )
+        ).filterNotNull()
 
     override fun findFaviconBackfillCandidates(limit: Int): List<Article> =
         jdbc.query(
