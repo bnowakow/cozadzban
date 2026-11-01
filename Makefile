@@ -1,5 +1,5 @@
 
-.PHONY: help docker-up docker-down docker-data-permissions docker-upgrade-log-owner docker-pg-nuke docker-pg-backup install-pg-backup-cron ensure-pg-backup-cron install-codex-auth-cron install-app-health-cron install-all-crons codex-auth-check app-health-check performance-report build run run-local run-prod test clean docker-logs docker-spring-shell docker-pg-shell docker-upgrade docker-upgrade-no-cache sync-env-files bump-patch bump-minor codex-commit claude-commit install-git-hooks install-codex-skills install-claude-skills codex-skill-prompts claude-skill-prompts codex-docker-login codex-docker-status codex-docker-logout claude-docker-login claude-docker-token claude-docker-status claude-docker-logout claude-auth-check install-claude-auth-cron
+.PHONY: help docker-up docker-down docker-data-permissions docker-upgrade-log-owner docker-pg-nuke docker-pg-backup install-pg-backup-cron ensure-pg-backup-cron install-codex-auth-cron install-app-health-cron install-all-crons codex-auth-check app-health-check performance-report build run run-local run-prod test clean docker-logs docker-spring-shell docker-pg-shell docker-upgrade docker-upgrade-local docker-upgrade-dockerhub-image docker-upgrade-no-cache sync-env-files bump-patch bump-minor codex-commit claude-commit install-git-hooks install-codex-skills install-claude-skills codex-skill-prompts claude-skill-prompts codex-docker-login codex-docker-status codex-docker-logout claude-docker-login claude-docker-token claude-docker-status claude-docker-logout claude-auth-check install-claude-auth-cron
 
 -include .env
 
@@ -14,7 +14,9 @@ help:
 	@printf "    %-31s %s\n" "docker-down" "Stop and remove local infrastructure containers"
 	@printf "    %-31s %s\n" "docker-logs" "Show compose logs (follow mode)"
 	@printf "    %-31s %s\n" "docker-spring-shell" "Open bash inside the running Spring Boot container"
-	@printf "    %-31s %s\n" "docker-upgrade" "Pull latest code, rebuild image, and switch Spring traffic after health check"
+	@printf "    %-31s %s\n" "docker-upgrade-local" "Pull latest code, build the image here, and switch Spring traffic after health check"
+	@printf "    %-31s %s\n" "docker-upgrade" "Same as docker-upgrade-local"
+	@printf "    %-31s %s\n" "docker-upgrade-dockerhub-image" "Pull latest code, deploy Jenkins' Docker Hub image for it (IMAGE_TAG=... to pick one)"
 	@printf "    %-31s %s\n" "docker-upgrade-no-cache" "Pull latest code, rebuild without Docker cache, and switch after health check"
 	@printf "    %-31s %s\n" "codex-docker-login" "Sign in to Codex in Spring Boot with a browser device code"
 	@printf "    %-31s %s\n" "codex-docker-status" "Check Codex sign-in in the Spring Boot container"
@@ -388,9 +390,20 @@ docker-spring-shell:
 	docker compose -f compose.yaml exec springboot bash
 
 # Pull latest code, rebuild, restart, and follow logs
-docker-upgrade: docker-upgrade-log-owner docker-data-permissions
+docker-upgrade-local: docker-upgrade-log-owner docker-data-permissions
 	git pull --ff-only
-	docker-data/blue-green-upgrade.sh
+	IMAGE_SOURCE=local docker-data/blue-green-upgrade.sh
+	docker system prune -f
+	docker compose -f compose.yaml logs -f
+
+# Same as docker-upgrade-local; kept for the familiar name.
+docker-upgrade: docker-upgrade-local
+
+# Pull latest code, deploy the image Jenkins pushed to Docker Hub for that commit, and follow logs.
+# IMAGE_TAG=<version>-<commit8> deploys a specific build instead, e.g. to roll back.
+docker-upgrade-dockerhub-image: docker-upgrade-log-owner docker-data-permissions
+	git pull --ff-only
+	IMAGE_SOURCE=dockerhub IMAGE_TAG='$(IMAGE_TAG)' docker-data/blue-green-upgrade.sh
 	docker system prune -f
 	docker compose -f compose.yaml logs -f
 

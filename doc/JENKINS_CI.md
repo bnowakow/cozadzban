@@ -3,7 +3,8 @@
 Status as of 2026-11-01. Jenkins runs the test suite on every branch. For new
 commits on `main` that pass the tests, it also builds the Docker image and
 pushes it to Docker Hub. Deployment is **not** automated yet; that is the
-planned next step.
+planned next step. Until then, deploy a pushed image on the server with
+`make docker-upgrade-dockerhub-image` (see "Deploying the image" below).
 
 The pipeline is defined in [`Jenkinsfile`](../Jenkinsfile) at the repository
 root. Jenkins itself runs in the home k3s cluster (Rancher, Fleet), configured
@@ -69,6 +70,25 @@ The image is built for `linux/amd64` only and is about 559 MB.
 `APP_BUILD_COMMIT` is passed as a build argument. The OCI labels
 `org.opencontainers.image.version`, `.revision` (full SHA) and `.source` are
 set.
+
+## Deploying the image
+
+On the server, `make docker-upgrade-dockerhub-image` runs `git pull --ff-only`,
+computes the tag for the pulled commit the same way the pipeline does
+(`<version without -SNAPSHOT>-<commit8>`), pulls it, tags it as
+`cozadzban:local` and runs the usual blue/green switch
+(`docker-data/blue-green-upgrade.sh` with `IMAGE_SOURCE=dockerhub`). The image
+is public, so the server needs no Docker Hub login.
+
+- If the tag isn't on Docker Hub yet (Jenkins needs about 10 minutes after a
+  push), it asks: wait (poll every 30 s, up to 20 minutes) or build locally.
+  Anything else, or no terminal, aborts without changing the running app.
+- `IMAGE_TAG=<version>-<commit8>` deploys a specific build, e.g. to roll back.
+  A missing explicit tag fails instead of asking.
+- Only branch heads are built. If several commits are pushed together, only
+  the last one has an image, which is the one `git pull` lands on.
+- `make docker-upgrade-local` (or `make docker-upgrade`) still builds on the
+  server.
 
 ## The build pod
 
@@ -222,9 +242,9 @@ curl -sS "https://hub.docker.com/v2/repositories/bnowakow/cozadzban/tags/?page_s
 ## Next steps / ideas
 
 1. **Deploy step** (planned): after the push, deploy
-   `bnowakow/cozadzban:<version>-<commit>` to the server. This needs the
-   deployment method (e.g. SSH to the server and the blue-green script in
-   `docker-data/blue-green-upgrade.sh`), a Jenkins credential for it, and a
+   `bnowakow/cozadzban:<version>-<commit>` to the server. The server side
+   exists (`make docker-upgrade-dockerhub-image`, see "Deploying the image");
+   Jenkins still needs a way to run it (e.g. SSH), a credential for it, and a
    decision on whether it is automatic or manual (`input` step).
 2. **Rotate the Jenkins API token** (see Credentials).
 3. **Build cache:** a Gradle/npm cache PVC, or a registry cache

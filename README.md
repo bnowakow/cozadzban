@@ -289,16 +289,27 @@ Instagram source thumbnails are saved under `docker-data/data/meta-source-images
 requested and backfilled in small batches. Set `APP_META_SOURCE_IMAGE_CACHE_DIR` to change that
 directory. Completed generated illustrations are served at `/generated-images/{id}.png`.
 
-For server upgrades, prefer:
+For server upgrades there are two targets. Both run `git pull --ff-only`, start the idle
+blue/green Spring Boot service, wait for `/actuator/health/readiness`, reload the Compose nginx
+proxy to the healthy service, and then stop the old Spring Boot service. They differ only in
+where the image comes from:
 
 ```sh
-make docker-upgrade
+make docker-upgrade-local            # build the image on the server from this checkout
+make docker-upgrade-dockerhub-image  # pull the image Jenkins pushed for this commit
 ```
 
-That target uses Docker BuildKit and preserves build caches between runs. It starts the idle
-blue/green Spring Boot service, waits for `/actuator/health/readiness`, reloads the Compose nginx proxy to
-the healthy service, and then stops the old Spring Boot service. Use
-`make docker-upgrade-no-cache` only when you intentionally need a completely fresh image build.
+`make docker-upgrade` is the same as `docker-upgrade-local`. The local build uses Docker
+BuildKit and preserves build caches between runs. Use `make docker-upgrade-no-cache` only when
+you intentionally need a completely fresh image build.
+
+`docker-upgrade-dockerhub-image` deploys `bnowakow/cozadzban:<version>-<commit8>` for the pulled
+commit (see [Jenkins CI](doc/JENKINS_CI.md)) and tags it as `cozadzban:local`, so Compose and the
+ops containers use it unchanged. If Jenkins hasn't pushed that image yet, it asks whether to wait
+(every 30 s, up to 20 minutes) or build locally instead; any other answer, or no terminal, aborts
+without touching the running app. `IMAGE_TAG=0.64.15-6ffd550d` deploys a specific build, e.g. to
+roll back; the checkout is still pulled to the latest commit. The newest three older pulled
+images are kept for rollbacks and older ones are removed.
 
 The deployment host can check the active Spring Boot service once per minute without adding a
 monitoring container. Install the cron job with `make install-app-health-cron`, or include it with

@@ -55,7 +55,7 @@ APP_FACEBOOK_IMAGE_CLAUDE_MODEL=sonnet        # alias or full model name
 APP_FACEBOOK_IMAGE_CLAUDE_TIMEOUT_SECONDS=180
 ```
 
-Then redeploy with `make docker-upgrade`. With Codex disabled and Claude enabled,
+Then redeploy with `make docker-upgrade-local` or `make docker-upgrade-dockerhub-image`. With Codex disabled and Claude enabled,
 Claude illustrates articles on its own.
 
 ## How a run works
