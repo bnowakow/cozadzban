@@ -309,7 +309,9 @@ ops containers use it unchanged. If Jenkins hasn't pushed that image yet, it ask
 (every 30 s, up to 20 minutes) or build locally instead; any other answer, or no terminal, aborts
 without touching the running app. `IMAGE_TAG=0.64.15-6ffd550d` deploys a specific build, e.g. to
 roll back; the checkout is still pulled to the latest commit. The newest three older pulled
-images are kept for rollbacks and older ones are removed.
+images are kept for rollbacks and older ones are removed. If the active service already runs
+that image, it stops without changing anything; `FORCE_UPGRADE=true` redeploys anyway, e.g. to
+apply `.env` or `compose.yaml` changes.
 
 The deployment host can check the active Spring Boot service once per minute without adding a
 monitoring container. Install the cron job with `make install-app-health-cron`, or include it with

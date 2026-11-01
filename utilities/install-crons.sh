@@ -60,9 +60,11 @@ fi
 
 if [[ "$mode" == postgres || "$mode" == all ]]; then
   mkdir -p "$repo_root/docker-data/backup/postgres"
-  printf '%s cd %q && %q docker-pg-backup >> %q 2>&1 # %s\n' \
+  printf '%s cd %q && %q docker-pg-backup >> %q 2>&1 || echo %q # %s\n' \
     "$pg_schedule" "$repo_root" "$make_bin" \
-    "$repo_root/docker-data/backup/postgres/cron.log" "$pg_marker" >>"$cron_file"
+    "$repo_root/docker-data/backup/postgres/cron.log" \
+    "PostgreSQL backup failed; see $repo_root/docker-data/backup/postgres/cron.log" \
+    "$pg_marker" >>"$cron_file"
 fi
 
 if [[ "$mode" == codex || "$mode" == all ]]; then

@@ -85,6 +85,9 @@ is public, so the server needs no Docker Hub login.
   Anything else, or no terminal, aborts without changing the running app.
 - `IMAGE_TAG=<version>-<commit8>` deploys a specific build, e.g. to roll back.
   A missing explicit tag fails instead of asking.
+- If the active service already runs that image, it stops without changing
+  anything. `FORCE_UPGRADE=true` redeploys anyway, e.g. to apply `.env` or
+  `compose.yaml` changes.
 - Only branch heads are built. If several commits are pushed together, only
   the last one has an image, which is the one `git pull` lands on.
 - `make docker-upgrade-local` (or `make docker-upgrade`) still builds on the

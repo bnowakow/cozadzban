@@ -112,7 +112,7 @@ docker-up: docker-data-permissions
 docker-data-permissions:
 	@mkdir -p ./docker-data
 	@mkdir -p ./logs
-	@chmod -R a+rwX ./logs
+	@chmod -R a+rwX ./logs 2>/dev/null || echo "! Some files in ./logs could not be made world-writable (owned by another user); continuing"
 	@docker run --rm -v "$(CURDIR)/docker-data:/work" alpine:3.20 \
 		sh -c "mkdir -p /work/postgres /work/data/favicons /work/backup/postgres /work/nginx && if [ ! -f /work/nginx/upstream.conf ]; then printf 'server springboot:8080 max_fails=3 fail_timeout=10s;\n' > /work/nginx/upstream.conf; fi && chown -R $(LOCAL_UID):$(LOCAL_GID) /work/backup /work/nginx && chmod 755 /work /work/postgres /work/nginx && chmod -R a+rwX /work/data && chmod -R u+rwX,go-rwx /work/backup && chmod 644 /work/nginx/upstream.conf"
 
@@ -183,15 +183,21 @@ docker-pg-nuke:
 # Dump PostgreSQL from the running compose container and store a timestamped zip.
 docker-pg-backup: docker-data-permissions
 	@mkdir -p ./docker-data/backup/postgres
-	@timestamp=$$(date +"%Y-%m-%d_%H-%M-%S"); \
+	@set -e; \
+	timestamp=$$(TZ=Europe/Warsaw date +"%Y-%m-%d_%H-%M-%S"); \
 	base="cozadzban-postgres-$$timestamp"; \
 	sql_path="./docker-data/backup/postgres/$$base.sql"; \
 	zip_path="./docker-data/backup/postgres/$$base.zip"; \
 	echo "Dumping PostgreSQL database '$(POSTGRES_DB)' to $$sql_path ..."; \
-	docker compose -f compose.yaml exec -T postgres pg_dump -U "$(POSTGRES_USER)" -d "$(POSTGRES_DB)" --clean --if-exists > "$$sql_path"; \
+	if ! docker compose -f compose.yaml exec -T postgres pg_dump -U "$(POSTGRES_USER)" -d "$(POSTGRES_DB)" --clean --if-exists > "$$sql_path" \
+		|| ! tail -n 5 "$$sql_path" | grep -q 'PostgreSQL database dump complete'; then \
+		rm -f "$$sql_path"; \
+		echo "✗ pg_dump failed or wrote an incomplete dump; no backup was written" >&2; \
+		exit 1; \
+	fi; \
 	zip -j "$$zip_path" "$$sql_path" >/dev/null; \
 	rm "$$sql_path"; \
-	echo "✓ Backup written to $$zip_path"
+	echo "✓ Backup written to $$zip_path ($$(TZ=Europe/Warsaw date '+%Y-%m-%d %H:%M:%S %z'))"
 
 # Install or replace the current user's daily PostgreSQL backup cron job.
 install-pg-backup-cron: docker-data-permissions
@@ -416,9 +422,10 @@ docker-upgrade: docker-upgrade-local
 
 # Pull latest code, deploy the image Jenkins pushed to Docker Hub for that commit, and follow logs.
 # IMAGE_TAG=<version>-<commit8> deploys a specific build instead, e.g. to roll back.
+# Stops without changes when the app already runs that image; FORCE_UPGRADE=true redeploys anyway.
 docker-upgrade-dockerhub-image: docker-upgrade-log-owner docker-data-permissions
 	git pull --ff-only
-	IMAGE_SOURCE=dockerhub IMAGE_TAG='$(IMAGE_TAG)' docker-data/blue-green-upgrade.sh
+	IMAGE_SOURCE=dockerhub IMAGE_TAG='$(IMAGE_TAG)' FORCE_UPGRADE='$(FORCE_UPGRADE)' docker-data/blue-green-upgrade.sh
 	docker system prune -f
 	docker compose -f compose.yaml logs -f
 

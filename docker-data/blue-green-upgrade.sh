@@ -156,6 +156,17 @@ case "$image_source" in
         ;;
 esac
 
+# A Docker Hub deploy of the image the active service already runs changes nothing, so stop here.
+# FORCE_UPGRADE=true recreates it anyway, e.g. to apply .env or compose.yaml changes.
+if [ "$image_source" = "dockerhub" ] && [ "${FORCE_UPGRADE:-false}" != "true" ]; then
+    running_container=$(docker compose -f "$compose_file" ps -q --status running "$old_service" 2>/dev/null || true)
+    if [ -n "$running_container" ] \
+        && [ "$(docker inspect --format '{{.Image}}' "$running_container")" = "$(docker image inspect --format '{{.Id}}' "$local_image")" ]; then
+        echo "$old_service already runs ${image:-this image}; nothing to upgrade (FORCE_UPGRADE=true redeploys anyway)"
+        exit 0
+    fi
+fi
+
 docker compose -f "$compose_file" up -d --no-recreate postgres zipkin "$old_service" reverse-proxy
 docker compose -f "$compose_file" up -d --no-deps --force-recreate "$new_service"
 
