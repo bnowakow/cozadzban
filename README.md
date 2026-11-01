@@ -159,7 +159,7 @@ fails the import without starting an actor run. Apify payment error types when s
 run, and failed runs that leave the balance below that budget, are reported the same way.
 ADMIN users can enable **Apify credits exhausted notifications** in Notification settings
 to get a Pushover alert with the remaining balance and the cycle reset date. The Apify
-import panel shows **Apify credit left**, cached for five minutes. If Apify's usage endpoint
+import panel shows **Apify usage** (used / limit, as on Apify's billing page, plus what is left and the reset date), cached for five minutes. If Apify's usage endpoint
 can't be reached, the import runs without the check.
 
 An hourly check also forecasts when the credit will run out at this cycle's spend rate so far

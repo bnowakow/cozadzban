@@ -214,6 +214,22 @@ class FacebookArticleProposalService(
         return runIds
     }
 
+    /** Like [terminateTimedOutRuns], but only for runs of [importType], which may have a shorter timeout. */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    fun terminateTimedOutRuns(importType: FacebookImportType, timeout: Duration, timedOutAt: Instant = Instant.now()): List<String> {
+        require(!timeout.isZero && !timeout.isNegative) { "timeout must be positive" }
+        val runIds = runRepository.terminateTimedOutRunningRuns(
+            importType = importType,
+            startedBefore = timedOutAt.minus(timeout),
+            timedOutAt = timedOutAt,
+            statusDetail = timeoutDetail(timeout),
+        )
+        runIds.forEach { runId ->
+            LOG.warn("Facebook {} import run {} timed out after {}; marked terminated", importType, runId, timeout)
+        }
+        return runIds
+    }
+
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     fun terminateAbandonedRunsOnStartup(startedAt: Instant = Instant.now()): List<String> {
         val runIds = runRepository.terminateAbandonedRunningRuns(

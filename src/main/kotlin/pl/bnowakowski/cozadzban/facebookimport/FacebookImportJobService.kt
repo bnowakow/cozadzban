@@ -59,9 +59,9 @@ class FacebookImportJobService @Autowired constructor(
 
         val importRunId = importer.newImportRunId()
         val requestedAt = Instant.now()
-        val runTimeout = effectiveRunTimeout()
-        proposalService.terminateTimedOutRuns(runTimeout, requestedAt)
-        terminateActiveImportIfTimedOut(requestedAt, runTimeout)
+        val runTimeout = properties.runTimeoutFor(importType)
+        terminateTimedOutRuns(requestedAt)
+        terminateActiveImportIfTimedOut(requestedAt)
         synchronized(stateLock) {
             if (activeLaunchThread?.isAlive == true || runnersByType.values.any { it.isImportRunning() }) {
                 throw FacebookImportAlreadyRunningException(activeRunningImportType())
@@ -179,9 +179,8 @@ class FacebookImportJobService @Autowired constructor(
 
     fun currentProgress(): FacebookImportProgressSnapshot? {
         val now = Instant.now()
-        val runTimeout = effectiveRunTimeout()
-        val activeTimedOut = terminateActiveImportIfTimedOut(now, runTimeout)
-        proposalService.terminateTimedOutRuns(runTimeout, now)
+        val activeTimedOut = terminateActiveImportIfTimedOut(now)
+        terminateTimedOutRuns(now)
         proposalService.latestRunningProgress()?.let { return it }
         if (activeTimedOut) return null
         proposalService.latestProgress()
@@ -262,7 +261,13 @@ class FacebookImportJobService @Autowired constructor(
             isDaemon = true
         }
 
-    private fun terminateActiveImportIfTimedOut(now: Instant, timeout: Duration): Boolean {
+    private fun terminateTimedOutRuns(now: Instant) {
+        proposalService.terminateTimedOutRuns(effectiveRunTimeout(), now)
+        proposalService.terminateTimedOutRuns(FacebookImportType.APIFY, properties.effectiveApifyRunTimeout(), now)
+    }
+
+    private fun terminateActiveImportIfTimedOut(now: Instant): Boolean {
+        val timeout = properties.runTimeoutFor(activeImportType)
         val active = synchronized(stateLock) {
             val importRunId = activeImportRunId ?: return false
             val startedAt = activeImportStartedAt ?: return false
@@ -333,8 +338,7 @@ class FacebookImportJobService @Autowired constructor(
         }
     }
 
-    private fun effectiveRunTimeout(): Duration =
-        properties.runTimeout.takeIf { !it.isZero && !it.isNegative } ?: DEFAULT_RUN_TIMEOUT
+    private fun effectiveRunTimeout(): Duration = properties.effectiveRunTimeout()
 
     private fun elapsedMs(startedAt: Instant, finishedAt: Instant = Instant.now()): Long =
         Duration.between(startedAt, finishedAt).toMillis().coerceAtLeast(0)

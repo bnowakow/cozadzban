@@ -145,7 +145,13 @@ x-architecture:
         receives an explicit importType parameter. The Selenium importer is the
         browser-backed profile importer. The Apify importer uses the synchronous
         Apify actor run endpoint so each import completes sequentially inside one
-        Spring Batch execution. Worker-startup runs launch available importers in
+        Spring Batch execution. Apify runs have their own timeout
+        (APP_FACEBOOK_IMPORT_APIFY_RUN_TIMEOUT, default 10m, capped by
+        APP_FACEBOOK_IMPORT_RUN_TIMEOUT): the actor is started with an Apify
+        timeout two minutes shorter, the app aborts an actor still running a
+        minute before the limit, and RUNNING Apify rows older than the limit (for
+        example left by a redeploy) are marked TERMINATED by the stale-run
+        cleanup. Worker-startup runs launch available importers in
         APIFY then SELENIUM order. Selenium scheduled runs and Apify paid scheduled
         runs use separate intervals. ADMIN REST/UI triggers can launch enabled
         importers manually. The worker/server submits discovered
@@ -1717,6 +1723,7 @@ x-runtime-configuration:
       - APP_FACEBOOK_IMPORT_APIFY_LOW_CREDIT_ALERTS_ENABLED
       - APP_FACEBOOK_IMPORT_APIFY_CONNECT_TIMEOUT
       - APP_FACEBOOK_IMPORT_APIFY_READ_TIMEOUT
+      - APP_FACEBOOK_IMPORT_APIFY_RUN_TIMEOUT
     schedulingSemantics: enabled import types run sequentially
 
 # Phases 1-4 are implemented. The full test suite for phases 3-4 remains

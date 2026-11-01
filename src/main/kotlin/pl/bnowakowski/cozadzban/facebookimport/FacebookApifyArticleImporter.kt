@@ -22,6 +22,7 @@ import java.net.http.HttpClient
 import java.math.BigDecimal
 import java.nio.charset.StandardCharsets
 import java.math.RoundingMode
+import java.time.Duration
 import java.time.Instant
 import java.time.format.DateTimeFormatter
 import java.util.concurrent.atomic.AtomicLong
@@ -165,6 +166,7 @@ class FacebookApifyArticleImporter(
     }
 
     private fun fetchApifyItems(summary: ApifyImportSummary): List<JsonNode> {
+        val startedAt = Instant.now()
         ensureCreditsAvailable(summary)
         val client = apifyClient()
         var run = try {
@@ -196,11 +198,21 @@ class FacebookApifyArticleImporter(
         val actorRunId = run.path("id").asText().takeIf { it.isNotBlank() }
             ?: throw IllegalStateException("Apify did not return an actor run ID")
         summary.apifyActorRunId = actorRunId
-        val deadline = Instant.now().plus(properties.apify.readTimeout)
-        while (run.path("status").asText() !in TERMINAL_ACTOR_STATUSES) {
-            throwIfInterrupted()
-            if (Instant.now().isAfter(deadline)) throw IllegalStateException("Apify actor run $actorRunId timed out")
-            run = getActorRun(client, actorRunId, waitForFinish = true)
+        // Leave a minute of the run timeout for reading the results and submitting proposals.
+        val deadline = startedAt.plus(pollingTimeout(properties.effectiveApifyRunTimeout()))
+        try {
+            while (run.path("status").asText() !in TERMINAL_ACTOR_STATUSES) {
+                throwIfInterrupted()
+                if (Instant.now().isAfter(deadline)) {
+                    throw IllegalStateException(
+                        "Apify actor run $actorRunId did not finish within ${properties.effectiveApifyRunTimeout()}; aborted",
+                    )
+                }
+                run = getActorRun(client, actorRunId, waitForFinish = true)
+            }
+        } catch (ex: Exception) {
+            abortActorRun(client, actorRunId)
+            throw ex
         }
         // Apify says the first terminal response can contain preliminary costs.
         val settledRun = runCatching {
@@ -255,7 +267,7 @@ class FacebookApifyArticleImporter(
                 usage,
             )
         }
-        logger.info("Apify credit left {} of {} this cycle", usd(usage.remainingUsd), usd(usage.limitUsd))
+        logger.info("Apify usage {} / {} this cycle ({} left)", usd(usage.usedUsd), usd(usage.limitUsd), usd(usage.remainingUsd))
     }
 
     /** Credit a run may need: the configured cost cap, or the estimate if that is higher. */
@@ -290,7 +302,26 @@ class FacebookApifyArticleImporter(
     private fun startActorUri(): URI {
         val baseUrl = properties.apify.baseUrl.trimEnd('/')
         val actorId = URLEncoder.encode(properties.apify.actorId.replace("/", "~"), StandardCharsets.UTF_8)
-        return URI.create("$baseUrl/v2/acts/$actorId/runs?waitForFinish=60")
+        val actorTimeout = actorTimeout(properties.effectiveApifyRunTimeout()).seconds
+        return URI.create("$baseUrl/v2/acts/$actorId/runs?waitForFinish=60&timeout=$actorTimeout")
+    }
+
+    /** Stops a still-running actor so it doesn't keep spending credit. Best effort. */
+    private fun abortActorRun(client: RestClient, actorRunId: String) {
+        val baseUrl = properties.apify.baseUrl.trimEnd('/')
+        val runId = URLEncoder.encode(actorRunId, StandardCharsets.UTF_8)
+        runCatching {
+            client.post()
+                .uri(URI.create("$baseUrl/v2/actor-runs/$runId/abort"))
+                .accept(MediaType.APPLICATION_JSON)
+                .header(HttpHeaders.AUTHORIZATION, "Bearer ${properties.apify.apiToken}")
+                .retrieve()
+                .toBodilessEntity()
+        }.onSuccess {
+            logger.warn("Aborted Apify actor run {}", actorRunId)
+        }.onFailure { ex ->
+            logger.warn("Could not abort Apify actor run {}: {}", actorRunId, ex.message ?: ex.javaClass.simpleName)
+        }
     }
 
     private fun getActorRun(client: RestClient, actorRunId: String, waitForFinish: Boolean): JsonNode {
@@ -529,8 +560,16 @@ class FacebookApifyArticleImporter(
             (logs + message).joinToString("\n")
     }
 
-    private companion object {
+    internal companion object {
         val TERMINAL_ACTOR_STATUSES = setOf("SUCCEEDED", "FAILED", "TIMED-OUT", "ABORTED")
+
+        /** How long to wait for the actor: the run timeout minus a minute for the rest of the import, at least a minute. */
+        internal fun pollingTimeout(runTimeout: Duration): Duration =
+            maxOf(runTimeout.minusMinutes(1), Duration.ofMinutes(1))
+
+        /** The timeout Apify enforces on the actor itself, a minute before the app stops waiting for it. */
+        internal fun actorTimeout(runTimeout: Duration): Duration =
+            maxOf(pollingTimeout(runTimeout).minusMinutes(1), Duration.ofMinutes(1))
 
         /** Apify run-start error types that mean the account cannot pay for the run. */
         val CREDIT_ERROR_TYPES = setOf(

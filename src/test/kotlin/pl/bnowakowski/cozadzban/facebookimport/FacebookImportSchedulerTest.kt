@@ -178,6 +178,18 @@ class FacebookImportSchedulerTest {
     }
 
     @Test
+    fun `stale run cleanup terminates Apify runs after the shorter Apify timeout`() {
+        whenever(proposalService.terminateTimedOutRuns(any(), any<Instant>())).thenReturn(emptyList())
+        whenever(proposalService.terminateTimedOutRuns(eq(FacebookImportType.APIFY), eq(Duration.ofMinutes(10)), any<Instant>()))
+            .thenReturn(listOf("apify-stalled"))
+        val scheduler = FacebookImportScheduler(FacebookImportProperties(), jobService, proposalService)
+
+        assertEquals(listOf("apify-stalled"), scheduler.terminateTimedOutRunsOnce())
+
+        verify(proposalService).terminateTimedOutRuns(eq(FacebookImportType.APIFY), eq(Duration.ofMinutes(10)), any<Instant>())
+    }
+
+    @Test
     fun `startup cleanup informs remote server when worker is remotely configured`() {
         val now = Instant.parse("2026-06-27T12:00:00Z")
         val proposalClient: FacebookImportProposalClient = mock()

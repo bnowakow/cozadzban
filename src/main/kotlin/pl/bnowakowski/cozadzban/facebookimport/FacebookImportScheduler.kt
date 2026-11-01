@@ -58,7 +58,8 @@ class FacebookImportScheduler(
         }
 
     internal fun terminateTimedOutRunsOnce(): List<String> =
-        proposalService.terminateTimedOutRuns(effectiveRunTimeout())
+        proposalService.terminateTimedOutRuns(effectiveRunTimeout()) +
+            proposalService.terminateTimedOutRuns(FacebookImportType.APIFY, properties.effectiveApifyRunTimeout())
 
     internal fun cleanupAbandonedImportStateOnStartup(): List<String> =
         if (jobService.isImportRunning() || !shouldCleanupAbandonedImportStateOnStartup()) {
@@ -225,8 +226,7 @@ class FacebookImportScheduler(
     private fun staleRunCleanupInterval(): Duration =
         properties.staleRunCleanupInterval.takeIf { !it.isNegative && !it.isZero } ?: Duration.ofMinutes(1)
 
-    private fun effectiveRunTimeout(): Duration =
-        properties.runTimeout.takeIf { !it.isNegative && !it.isZero } ?: Duration.ofHours(1)
+    private fun effectiveRunTimeout(): Duration = properties.effectiveRunTimeout()
 
     private fun shouldCleanupAbandonedImportStateOnStartup(): Boolean =
         properties.isSeleniumEnabled() || properties.apify.enabled

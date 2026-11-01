@@ -43,6 +43,17 @@ data class FacebookImportProperties(
     fun isSeleniumEnabled(): Boolean =
         selenium.enabled || enabled
 
+    /** The general run timeout, or 1 hour when it isn't positive. */
+    fun effectiveRunTimeout(): Duration = runTimeout.positiveOr(Duration.ofHours(1))
+
+    /** The Apify run timeout, never longer than the general one; 10 minutes when it isn't positive. */
+    fun effectiveApifyRunTimeout(): Duration = minOf(apify.runTimeout.positiveOr(Duration.ofMinutes(10)), effectiveRunTimeout())
+
+    fun runTimeoutFor(importType: FacebookImportType?): Duration =
+        if (importType == FacebookImportType.APIFY) effectiveApifyRunTimeout() else effectiveRunTimeout()
+
+    private fun Duration.positiveOr(fallback: Duration): Duration = takeIf { !it.isZero && !it.isNegative } ?: fallback
+
     data class Schedule(
         val enabled: Boolean = false,
         val runOnStartup: Boolean = false,
@@ -82,6 +93,8 @@ data class FacebookImportProperties(
         val lowCreditAlertsEnabled: Boolean = true,
         val connectTimeout: Duration = Duration.ofSeconds(10),
         val readTimeout: Duration = Duration.ofMinutes(15),
+        /** Longest an Apify import may run; Apify aborts the actor at this limit and stalled runs are terminated after it. */
+        val runTimeout: Duration = Duration.ofMinutes(10),
     )
 
     enum class Browser {

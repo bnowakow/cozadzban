@@ -216,6 +216,7 @@ x-runtime-configuration:
       - APP_FACEBOOK_IMPORT_APIFY_LOW_CREDIT_ALERTS_ENABLED
       - APP_FACEBOOK_IMPORT_APIFY_CONNECT_TIMEOUT
       - APP_FACEBOOK_IMPORT_APIFY_READ_TIMEOUT
+      - APP_FACEBOOK_IMPORT_APIFY_RUN_TIMEOUT
     schedulingSemantics: enabled import types run sequentially
 
 x-problem-types:

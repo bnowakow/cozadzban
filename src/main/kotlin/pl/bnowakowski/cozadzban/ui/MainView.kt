@@ -527,7 +527,7 @@ class ArticleListView(
                     if (costs.automaticRunCount == 0) "awaiting data" else
                         "${'$'}${costs.automaticCostUsd.divide(java.math.BigDecimal(costs.automaticRunCount), 3, java.math.RoundingMode.HALF_UP)} / run",
                 ),
-                facebookImportMetric("Apify credit left", apifyCreditText()),
+                facebookImportMetric("Apify usage", apifyCreditText()),
             )
         }
 
@@ -832,11 +832,14 @@ class ArticleListView(
         val now = Instant.now()
         fun usd(value: java.math.BigDecimal) = "${'$'}" + value.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString()
         // Apify reports the cycle end as the last millisecond of the cycle; it resets right after.
-        val resets = usage.cycleEndAt?.let { ", resets " + RelativeFutureTime.format(it.plusMillis(1), now) }.orEmpty()
+        val resets = usage.cycleEndAt?.plusMillis(1)?.let {
+            ", resets ${WarsawTime.date(it)} (${RelativeFutureTime.format(it, now)})"
+        }.orEmpty()
         val runsOut = pl.bnowakowski.cozadzban.facebookimport.ApifyCreditForecast.predict(usage, now)?.let {
             ", runs out " + RelativeFutureTime.format(it.predictedExhaustionAt, now)
         }.orEmpty()
-        return "${usd(usage.remainingUsd)} of ${usd(usage.limitUsd)}$runsOut$resets"
+        // Same figures as the Usage box on the Apify billing page: used of limit.
+        return "${usd(usage.usedUsd)} / ${usd(usage.limitUsd)} (${usd(usage.remainingUsd)} left)$runsOut$resets"
     }
 
     private fun facebookImportMetric(labelText: String, valueText: String): Div {

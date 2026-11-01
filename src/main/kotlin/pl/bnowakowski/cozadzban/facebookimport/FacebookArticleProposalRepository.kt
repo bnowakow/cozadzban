@@ -380,6 +380,33 @@ class FacebookImportRunRepository(
                 .addValue("startedBefore", Timestamp.from(startedBefore))
         ) { rs, _ -> rs.getString("import_run_id") }
 
+    fun terminateTimedOutRunningRuns(
+        importType: FacebookImportType,
+        startedBefore: Instant,
+        timedOutAt: Instant,
+        statusDetail: String,
+    ): List<String> =
+        jdbc.query(
+            """
+                UPDATE facebook_import_run
+                   SET status = 'TERMINATED',
+                       finished_at = :timedOutAt,
+                       phase = :phase,
+                       status_detail = :statusDetail,
+                       phase_index = :phaseIndex,
+                       phase_count = :phaseCount,
+                       last_status_at = :timedOutAt
+                 WHERE status = 'RUNNING'
+                   AND finished_at IS NULL
+                   AND import_type = :importType
+                   AND started_at <= :startedBefore
+                RETURNING import_run_id
+            """.trimIndent(),
+            timeoutParameters(timedOutAt, statusDetail)
+                .addValue("startedBefore", Timestamp.from(startedBefore))
+                .addValue("importType", importType.name)
+        ) { rs, _ -> rs.getString("import_run_id") }
+
     fun terminateAbandonedRunningRuns(
         abandonedAt: Instant,
         statusDetail: String,
