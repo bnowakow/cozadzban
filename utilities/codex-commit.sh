@@ -455,7 +455,7 @@ extract_commit_message() {
 			in_block {
 				print
 			}
-		' "$output_file" | sed '/^[[:space:]]*$/d; s/[[:space:]]*$//'
+		' "$output_file" | sed 's/[[:space:]]*$//' | sed '/./,$!d'
 	)
 
 	if [ -z "$message" ]; then
