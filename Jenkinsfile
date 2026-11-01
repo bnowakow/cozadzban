@@ -59,7 +59,10 @@ spec:
     env:
     - name: DOCKER_TLS_CERTDIR
       value: ""
-    args: ["--host=tcp://127.0.0.1:2375", "--host=unix:///var/run/docker.sock"]
+    # Pass the full dockerd command: if the args start with "--", the image's
+    # entrypoint prepends its default --host=tcp://0.0.0.0:2375.
+    # --tls=false states the intent to run without TLS on loopback.
+    args: ["dockerd", "--host=tcp://127.0.0.1:2375", "--host=unix:///var/run/docker.sock", "--tls=false"]
     resources:
       requests:
         cpu: 250m
