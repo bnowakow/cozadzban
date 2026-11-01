@@ -15,6 +15,7 @@ import pl.bnowakowski.cozadzban.facebookimport.FacebookApifyCreditsExhaustedEven
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportLoginRequiredEvent
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportLoginTimedOutEvent
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportRunCompletedEvent
+import pl.bnowakowski.cozadzban.facebookimport.FacebookImportType
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportRunStatus
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportTrigger
 import pl.bnowakowski.cozadzban.user.Role
@@ -148,6 +149,7 @@ class NotificationDeliveryServiceTest {
         service.onFacebookImportRunCompleted(
             FacebookImportRunCompletedEvent(
                 importRunId = "run-1",
+                importType = FacebookImportType.SELENIUM,
                 status = FacebookImportRunStatus.FINISHED,
                 discoveredCount = 2,
                 submittedCount = 2,
@@ -173,9 +175,10 @@ class NotificationDeliveryServiceTest {
         service.onFacebookImportRunCompleted(
             FacebookImportRunCompletedEvent(
                 importRunId = "run-1",
+                importType = FacebookImportType.APIFY,
                 status = FacebookImportRunStatus.FINISHED,
-                discoveredCount = 2,
-                submittedCount = 2,
+                discoveredCount = 3,
+                submittedCount = 3,
                 autoApprovedCount = 2,
                 skippedExistingCount = 0,
                 failedCount = 0,
@@ -186,6 +189,7 @@ class NotificationDeliveryServiceTest {
         verify(pushoverClient).send(captor.capture())
         assertEquals("Facebook articles auto-approved", captor.firstValue.title)
         assertEquals("2 Facebook articles were auto-approved.", captor.firstValue.message)
+        verify(repository, never()).findPushoverRecipientsForProposalSummary()
     }
 
     @Test
@@ -193,6 +197,7 @@ class NotificationDeliveryServiceTest {
         service.onFacebookImportRunCompleted(
             FacebookImportRunCompletedEvent(
                 importRunId = "run-1",
+                importType = FacebookImportType.SELENIUM,
                 status = FacebookImportRunStatus.FINISHED,
                 discoveredCount = 2,
                 submittedCount = 0,

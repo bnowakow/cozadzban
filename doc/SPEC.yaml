@@ -157,7 +157,9 @@ x-architecture:
         ACTIVE logged-in users can configure their own Pushover user key in the
         Vaadin notification settings view. Pushover keys are encrypted at rest
         with AES-GCM and are never exposed back to the browser after saving.
-        ACTIVE users can opt into article proposal summary notifications. ACTIVE
+        ACTIVE users can opt into article proposal summary notifications, which
+        are sent only after Selenium imports (Apify imports auto-approve their
+        proposals and send the auto-approved summary instead). ACTIVE
         ADMIN users can additionally opt into scheduled Facebook login/2FA alerts.
         Manual Facebook imports and the automatic worker-startup import do not
         send login-required alerts.

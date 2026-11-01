@@ -102,6 +102,7 @@ data class ApifyCreditsLowEvent(
 
 data class FacebookImportRunCompletedEvent(
     val importRunId: String,
+    val importType: FacebookImportType,
     val status: FacebookImportRunStatus,
     val discoveredCount: Int,
     val submittedCount: Int,

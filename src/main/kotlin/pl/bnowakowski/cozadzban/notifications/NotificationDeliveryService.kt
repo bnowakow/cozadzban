@@ -13,6 +13,7 @@ import pl.bnowakowski.cozadzban.facebookimport.FacebookApifyCreditsExhaustedEven
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportLoginRequiredEvent
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportLoginTimedOutEvent
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportRunCompletedEvent
+import pl.bnowakowski.cozadzban.facebookimport.FacebookImportType
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportTrigger
 
 @Service
@@ -56,7 +57,12 @@ class NotificationDeliveryService(
     fun onFacebookImportRunCompleted(event: FacebookImportRunCompletedEvent) {
         if (!properties.pushoverConfigured) return
 
-        val reviewCount = (event.submittedCount - event.autoApprovedCount).coerceAtLeast(0)
+        // Apify imports approve their proposals automatically, so only Selenium runs leave proposals to review.
+        val reviewCount = if (event.importType == FacebookImportType.SELENIUM) {
+            (event.submittedCount - event.autoApprovedCount).coerceAtLeast(0)
+        } else {
+            0
+        }
         if (reviewCount > 0) {
             val recipients = repository.findPushoverRecipientsForProposalSummary()
             val proposalWord = if (reviewCount == 1) "proposal is" else "proposals are"

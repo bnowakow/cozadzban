@@ -246,6 +246,7 @@ class FacebookArticleProposalService(
         eventPublisher?.publishEvent(
             FacebookImportRunCompletedEvent(
                 importRunId = importRunId,
+                importType = request.importType,
                 status = request.status,
                 discoveredCount = request.discoveredCount,
                 submittedCount = request.submittedCount,
