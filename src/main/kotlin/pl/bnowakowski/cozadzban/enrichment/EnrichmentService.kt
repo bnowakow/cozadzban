@@ -3128,7 +3128,7 @@ class EnrichmentService(
 
     private fun knownPublishedAtForUrl(url: String): Instant? =
         if (url.contains("2380672702377664")) {
-            Instant.parse("2005-11-28T00:00:00Z")
+            LocalDate.of(2005, 11, 28).atStartOfDay(pl.bnowakowski.cozadzban.ui.WarsawTime.ZONE).toInstant()
         } else {
             null
         }

@@ -2308,7 +2308,7 @@ class FacebookProfileArticleImporter(
     }
 
     private fun String.toFilenameToken(): String =
-        replace(Regex("[^A-Za-z0-9._-]"), "_")
+        replace(Regex("[^A-Za-z0-9._+-]"), "_")
             .trim('_')
             .ifBlank { "unknown" }
 

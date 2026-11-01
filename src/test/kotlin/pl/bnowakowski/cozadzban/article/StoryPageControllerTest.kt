@@ -76,7 +76,7 @@ class StoryPageControllerTest {
             StoryPageController(articles, articleImages = images, generatedImages = generated).story(42).body.orEmpty(),
         )
 
-        assertEquals("/generated-images/42.jpg?v=123", doc.selectFirst("main img")?.attr("src"))
+        assertEquals("/generated-images/42.jpg?v=123", doc.selectFirst("main > img")?.attr("src"))
         assertEquals(
             "https://cozadzban.pl/generated-images/42.png",
             doc.selectFirst("meta[property=og:image]")?.attr("content"),
