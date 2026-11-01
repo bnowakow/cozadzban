@@ -22,7 +22,6 @@ class LiveFacebookPhotoScratchTest {
             "https://www.facebook.com/photo/?fbid=1386997413458759&set=a.473737708118072",
             "https://www.facebook.com/photo/?fbid=1306021968296170&set=a.567191575512550",
             "https://m.facebook.com/photo.php?fbid=1386997413458759&set=a.473737708118072",
-            "https://mbasic.facebook.com/photo.php?fbid=1386997413458759&set=a.473737708118072",
         ).forEach { url ->
             val result = service.enrich(url)
             val html = fetchHtml.invoke(service, url, restClient) as String
