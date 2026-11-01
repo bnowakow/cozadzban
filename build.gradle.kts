@@ -14,7 +14,7 @@ plugins {
 }
 
 group = "pl.bnowakowski"
-version = "0.64.13-SNAPSHOT"
+version = "0.64.14-SNAPSHOT"
 
 java {
 	toolchain {
@@ -112,6 +112,11 @@ tasks.withType<Test> {
 	systemProperty("app.facebook-import.schedule.enabled", "false")
 	systemProperty("app.facebook-import.selenium.headless", "true")
 	systemProperty("vaadin.launch-browser", "false")
+	// The Google OAuth2 client registration fails Spring context startup when its
+	// client-id is empty, as in CI. Tests never contact Google, so use fixed dummy
+	// values instead of whatever credentials the developer's environment has.
+	systemProperty("spring.security.oauth2.client.registration.google.client-id", "test-client-id")
+	systemProperty("spring.security.oauth2.client.registration.google.client-secret", "test-client-secret")
 	if (!isDockerAvailable()) {
 		logger.lifecycle("Docker is not available; excluding Docker-backed integration tests.")
 		exclude("**/*IT.class", "**/CozadzbanApplicationTests.class")
