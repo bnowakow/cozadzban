@@ -8,7 +8,7 @@ import java.util.concurrent.TimeUnit
 plugins {
 	kotlin("jvm") version "2.2.21"
 	kotlin("plugin.spring") version "2.2.21"
-	id("org.springframework.boot") version "4.0.6"
+	id("org.springframework.boot") version "4.0.9"
 	id("io.spring.dependency-management") version "1.1.7"
 	id("com.vaadin") version "25.1.4"
 }
@@ -27,6 +27,10 @@ repositories {
 }
 
 extra["vaadinVersion"] = "25.1.4"
+// Spring Boot pins older Selenium and OpenTelemetry than selenium-java needs; the older
+// ones, and the Guava they bring, have known CVEs.
+extra["selenium.version"] = "4.52.0"
+extra["opentelemetry.version"] = "1.67.0"
 
 vaadin {
 	forceProductionBuild = providers.gradleProperty("forceVaadinProductionBuild")
@@ -46,11 +50,11 @@ dependencies {
 	implementation("org.springframework.boot:spring-boot-starter-webmvc")
 	implementation("org.springframework.boot:spring-boot-starter-validation")
 	implementation("org.springframework.boot:spring-boot-starter-security")
-	implementation("org.jsoup:jsoup:1.18.3")
+	implementation("org.jsoup:jsoup:1.23.2")
 	// SVG to PNG for Claude-drawn article illustrations. The JDK already provides the xml-apis classes.
-	implementation("org.apache.xmlgraphics:batik-transcoder:1.18") { exclude(group = "xml-apis", module = "xml-apis") }
-	implementation("org.apache.xmlgraphics:batik-codec:1.18") { exclude(group = "xml-apis", module = "xml-apis") }
-	implementation("org.seleniumhq.selenium:selenium-java:4.32.0")
+	implementation("org.apache.xmlgraphics:batik-transcoder:1.20") { exclude(group = "xml-apis", module = "xml-apis") }
+	implementation("org.apache.xmlgraphics:batik-codec:1.20") { exclude(group = "xml-apis", module = "xml-apis") }
+	implementation("org.seleniumhq.selenium:selenium-java:4.52.0")
 	implementation("org.springframework.boot:spring-boot-starter-oauth2-client")
 	implementation("org.springframework.boot:spring-boot-starter-oauth2-resource-server")
 	implementation("org.springframework.boot:spring-boot-starter-zipkin")
