@@ -81,6 +81,14 @@ resolve_claude_command() {
 		fi
 	done
 
+	# The Claude desktop app bundles the CLI under a versioned path; use the newest.
+	candidate="$(printf '%s\n' "$HOME/Library/Application Support/Claude/claude-code"/*/*/claude.app/Contents/MacOS/claude |
+		sort -V | tail -n 1)"
+	if [ -x "$candidate" ]; then
+		agent_command=("$candidate")
+		return 0
+	fi
+
 	return 1
 }
 
@@ -493,7 +501,10 @@ sync_upstream_before_commit() {
 	fi
 
 	echo "Fetching $upstream before commit check..."
-	git fetch --quiet
+	if ! git fetch --quiet; then
+		echo "git fetch failed; check SSH access to the remote (e.g. unlock 1Password's SSH agent) and retry." >&2
+		exit 1
+	fi
 	read -r ahead behind < <(git rev-list --left-right --count HEAD..."$upstream")
 
 	if [ "$behind" -eq 0 ]; then
@@ -617,8 +628,12 @@ fi
 agent_output=$(mktemp "${TMPDIR:-/tmp}/cozadzban-${commit_agent}-commit.XXXXXX")
 tmp_files+=("$agent_output")
 
-run_agent read-only "$agent_output" \
-	'Use the repository-provided suggest-commit-message skill at doc/codex-skills/SKIL_suggest-commit-message/SKILL.md to propose a concise commit message for the currently staged changes. Return the final answer in the documented response shape, with the recommended commit message as the first fenced code block.' >/dev/null
+if ! run_agent read-only "$agent_output" \
+	'Use the repository-provided suggest-commit-message skill at doc/codex-skills/SKIL_suggest-commit-message/SKILL.md to propose a concise commit message for the currently staged changes. Return the final answer in the documented response shape, with the recommended commit message as the first fenced code block.' >/dev/null; then
+	echo "$agent_label failed while writing the commit message:" >&2
+	cat "$agent_output" >&2
+	exit 1
+fi
 
 commit_message=$(extract_commit_message "$agent_output")
 if [ -z "$commit_message" ]; then
