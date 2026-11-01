@@ -527,7 +527,7 @@ class ArticleListView(
                     if (costs.automaticRunCount == 0) "awaiting data" else
                         "${'$'}${costs.automaticCostUsd.divide(java.math.BigDecimal(costs.automaticRunCount), 3, java.math.RoundingMode.HALF_UP)} / run",
                 ),
-                facebookImportMetric("Apify usage", apifyCreditText()),
+                apifyUsageMetric(),
             )
         }
 
@@ -827,19 +827,64 @@ class ArticleListView(
     }
 
     /** Remaining Apify usage this billing cycle, e.g. "$2.79 of $5.00, resets after 2026-11-26". */
-    private fun apifyCreditText(): String {
-        val usage = apifyUsage?.current() ?: return "unavailable"
+    /**
+     * Apify usage as on the Apify billing page (used / limit), with a meter and one line each for
+     * what is left, the forecast and the reset date. Spans the whole metrics row.
+     */
+    private fun apifyUsageMetric(): Div {
+        val metric = facebookImportMetric("Apify usage", "unavailable")
+        metric.addClassName("czj-apify-usage")
+        val usage = apifyUsage?.current() ?: return metric
+        metric.removeAll()
         val now = Instant.now()
         fun usd(value: java.math.BigDecimal) = "${'$'}" + value.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString()
+
+        val label = Span("Apify usage").apply { addClassName("czj-facebook-import-progress-label") }
+        val amount = Span("${usd(usage.usedUsd)} / ${usd(usage.limitUsd)}").apply {
+            addClassName("czj-facebook-import-progress-value")
+            addClassName("czj-apify-usage-amount")
+        }
+        val percent = if (usage.limitUsd.signum() > 0) {
+            usage.usedUsd.multiply(java.math.BigDecimal(100))
+                .divide(usage.limitUsd, 1, java.math.RoundingMode.HALF_UP)
+                .min(java.math.BigDecimal(100)).max(java.math.BigDecimal.ZERO)
+        } else {
+            java.math.BigDecimal(100)
+        }
+        val fill = Div().apply {
+            addClassName("czj-apify-usage-meter-fill")
+            element.style.set("width", "${percent.toPlainString()}%")
+        }
+        val meter = Div(fill).apply {
+            addClassName("czj-apify-usage-meter")
+            element.setAttribute("role", "meter")
+            element.setAttribute("aria-label", "Apify usage this cycle")
+            element.setAttribute("aria-valuemin", "0")
+            element.setAttribute("aria-valuemax", usage.limitUsd.toPlainString())
+            element.setAttribute("aria-valuenow", usage.usedUsd.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString())
+        }
+
+        fun line(name: String, value: String, warning: Boolean = false) = Div(
+            Span(name).apply { addClassName("czj-apify-usage-line-name") },
+            Span(value).apply { addClassName("czj-apify-usage-line-value") },
+        ).apply {
+            addClassName("czj-apify-usage-line")
+            if (warning) addClassName("czj-apify-usage-line--warning")
+        }
+
+        val lines = Div().apply { addClassName("czj-apify-usage-lines") }
+        lines.add(line("Left", usd(usage.remainingUsd)))
+        // A forecast exists only when the credit runs out before the cycle resets.
+        pl.bnowakowski.cozadzban.facebookimport.ApifyCreditForecast.predict(usage, now)?.let {
+            lines.add(line("Runs out", RelativeFutureTime.format(it.predictedExhaustionAt, now), warning = true))
+        }
         // Apify reports the cycle end as the last millisecond of the cycle; it resets right after.
-        val resets = usage.cycleEndAt?.plusMillis(1)?.let {
-            ", resets ${WarsawTime.date(it)} (${RelativeFutureTime.format(it, now)})"
-        }.orEmpty()
-        val runsOut = pl.bnowakowski.cozadzban.facebookimport.ApifyCreditForecast.predict(usage, now)?.let {
-            ", runs out " + RelativeFutureTime.format(it.predictedExhaustionAt, now)
-        }.orEmpty()
-        // Same figures as the Usage box on the Apify billing page: used of limit.
-        return "${usd(usage.usedUsd)} / ${usd(usage.limitUsd)} (${usd(usage.remainingUsd)} left)$runsOut$resets"
+        usage.cycleEndAt?.plusMillis(1)?.let {
+            lines.add(line("Resets", "${WarsawTime.date(it)} · ${RelativeFutureTime.format(it, now)}"))
+        }
+
+        metric.add(label, amount, meter, lines)
+        return metric
     }
 
     private fun facebookImportMetric(labelText: String, valueText: String): Div {
