@@ -880,6 +880,27 @@ class EnrichmentServiceTest {
     }
 
     @Test
+    fun `recognizes a TVN24 403 page as blocked metadata`() {
+        val result = EnrichmentResult(title = "403 - TVN24", thumbnail = null, lead = "Strona wymaga autoryzacji.")
+
+        assertEquals(true, isTvn24BlockedPlaceholderResult("https://tvn24.pl/plus/programy/example-vc9315802", result))
+        assertEquals(
+            false,
+            isTvn24BlockedPlaceholderResult("https://tvn24.pl/example", result.copy(title = "500 dni rządu: podsumowanie")),
+        )
+    }
+
+    @Test
+    fun `reader results that only relay the target's error page are rejected`() {
+        assertEquals(true, isReaderErrorPage("Title: 403 - TVN24\n\nURL Source: http://tvn24.pl/x\n\nMarkdown Content:\nStrona wymaga autoryzacji"))
+        assertEquals(true, isReaderErrorPage("Title: 404 Not Found\n\nMarkdown Content:\nNothing here"))
+        assertEquals(true, isReaderErrorPage("Title: TVN24\n\nWarning: Target URL returned error 403: Forbidden\n\nMarkdown Content:\n"))
+        assertEquals(false, isReaderErrorPage("Title: 500 dni rządu: podsumowanie\n\nMarkdown Content:\nTekst"))
+        assertEquals(false, isReaderErrorPage("Title: Batalia o Trybunał\n\nMarkdown Content:\nTekst"))
+        assertEquals(false, isReaderErrorPage("Title: 500 Plus wraca od stycznia\n\nMarkdown Content:\nTekst"))
+    }
+
+    @Test
     fun `recognizes WSJ links for fallback`() {
         assertEquals(true, isWsjUrl("https://on.wsj.com/4cniLaK"))
         assertEquals(true, isWsjUrl("https://www.wsj.com/business/media/example-7d925a4b"))

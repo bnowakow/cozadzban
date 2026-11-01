@@ -2452,11 +2452,16 @@ class EnrichmentService(
 
     private fun fetchReaderFallback(url: String): String? {
         val readerUrl = readerUrl(url) ?: return null
-        return try {
+        val text = try {
             fetchHtml(readerUrl, readerRestClient)
         } catch (_: RestClientException) {
-            null
+            return null
         }
+        if (isReaderErrorPage(text)) {
+            LOG.info("Reader fallback returned the target's error page; ignoring it; url='{}'", url)
+            return null
+        }
+        return text
     }
 
     private fun parseNytReaderMarkdownResult(url: String, text: String): EnrichmentResult {
@@ -3983,7 +3988,20 @@ internal fun isTvn24Url(url: String): Boolean {
 }
 
 internal fun isTvn24BlockedPlaceholderResult(url: String, result: EnrichmentResult): Boolean =
-    isTvn24Url(url) && result.title?.trim().equals("Zaraz wracamy", ignoreCase = true)
+    isTvn24Url(url) && (
+        result.title?.trim().equals("Zaraz wracamy", ignoreCase = true) ||
+            HTTP_ERROR_TITLE_REGEX.containsMatchIn(result.title.orEmpty())
+        )
+
+/**
+ * True when the reader service only relayed the target's error page (e.g. "Title: 403 - TVN24"),
+ * which must not be saved as the article's title and lead.
+ */
+internal fun isReaderErrorPage(text: String): Boolean {
+    if (READER_TARGET_ERROR_REGEX.containsMatchIn(text)) return true
+    val title = text.lineSequence().firstOrNull { it.startsWith(READER_TITLE_PREFIX) }?.removePrefix(READER_TITLE_PREFIX)
+    return title != null && HTTP_ERROR_TITLE_REGEX.containsMatchIn(title)
+}
 
 internal fun isWsjUrl(url: String): Boolean {
     val uri = runCatching { URI(url) }.getOrNull() ?: return false
@@ -4065,6 +4083,13 @@ private val FACEBOOK_UNAVAILABLE_MARKERS = listOf(
 )
 
 private const val READER_TITLE_PREFIX = "Title: "
+private val READER_TARGET_ERROR_REGEX = Regex("""Target URL returned error [45]\d\d""")
+/** Titles like "403 - TVN24", "404 Not Found" or "503: Service Unavailable". */
+private val HTTP_ERROR_TITLE_REGEX = Regex(
+    """^\s*(?:40[1349]|410|429|50[0234])\s*(?:[-–—:|]|(?:Forbidden|Not Found|Unauthorized|Gone|Too Many Requests|""" +
+        """Internal Server Error|Bad Gateway|Service Unavailable|Gateway Timeout)\b)""",
+    RegexOption.IGNORE_CASE,
+)
 private const val READER_PUBLISHED_PREFIX = "Published Time: "
 private const val READER_MARKDOWN_MARKER = "Markdown Content:"
 private const val MIN_READER_LEAD_LENGTH = 30

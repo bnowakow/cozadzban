@@ -281,4 +281,95 @@ class FacebookApifyArticleImporterTest {
             urls,
         )
     }
+
+    @Test
+    fun `auto-linked domain names in shared post text are not proposals, the shared post is`() {
+        val importer = FacebookApifyArticleImporter(
+            properties = FacebookImportProperties(
+                apify = FacebookImportProperties.Apify(enabled = true, apiToken = "token"),
+            ),
+            proposalClient = mock(),
+        )
+        val item = ObjectMapper().readTree(
+            """
+            {
+              "url": "https://www.facebook.com/bartek.dobrowolski.nowakowski/posts/pfbid03zxk",
+              "text": "Co za dzban",
+              "link": "http://Gov.pl/",
+              "sharedPost": {
+                "url": "https://www.facebook.com/karbowski.radek/posts/pfbid02wUSKMJ",
+                "text": "Komunikat opublikowano na Gov.pl",
+                "textReferences": [
+                  {
+                    "url": "https://l.facebook.com/l.php?u=http%3A%2F%2FGov.pl%2F&h=AUA",
+                    "external_url": "http://Gov.pl/",
+                    "web_link": { "url": "http://Gov.pl/" }
+                  }
+                ],
+                "link": "http://Gov.pl/"
+              }
+            }
+            """.trimIndent(),
+        )
+
+        assertEquals(listOf("https://www.facebook.com/karbowski.radek/posts/pfbid02wUSKMJ"), importer.proposalUrlsFromItem(item))
+    }
+
+    @Test
+    fun `a shared reel is the proposal when its text only links a homepage`() {
+        val importer = FacebookApifyArticleImporter(
+            properties = FacebookImportProperties(
+                apify = FacebookImportProperties.Apify(enabled = true, apiToken = "token"),
+            ),
+            proposalClient = mock(),
+        )
+        val item = ObjectMapper().readTree(
+            """
+            {
+              "url": "https://www.facebook.com/bartek.dobrowolski.nowakowski/posts/pfbid0EcFX",
+              "text": "co za dzban",
+              "link": "http://Onet.pl/",
+              "sharedPost": {
+                "url": "https://www.facebook.com/reel/860636477128233/",
+                "text": "Cały odcinek obejrzysz na Onet.pl",
+                "link": "http://Onet.pl/",
+                "media": [{ "url": "https://www.facebook.com/reel/860636477128233/" }]
+              }
+            }
+            """.trimIndent(),
+        )
+
+        assertEquals(listOf("https://www.facebook.com/reel/860636477128233/"), importer.proposalUrlsFromItem(item))
+    }
+
+    @Test
+    fun `the shared article is kept while a homepage mentioned beside it is dropped`() {
+        val importer = FacebookApifyArticleImporter(
+            properties = FacebookImportProperties(
+                apify = FacebookImportProperties.Apify(enabled = true, apiToken = "token"),
+            ),
+            proposalClient = mock(),
+        )
+        val item = ObjectMapper().readTree(
+            """
+            {
+              "text": "co za dzban",
+              "link": "https://tvn24.pl/plus/programy/dwie-strony/batalia-vc9315802",
+              "sharedPost": {
+                "url": "https://www.facebook.com/reel/1141986041600883/",
+                "textReferences": [
+                  { "external_url": "https://tvn24.pl/plus/programy/dwie-strony/batalia-vc9315802" },
+                  { "external_url": "http://tvn24.pl/" }
+                ]
+              },
+              "extra": "see https://example.com/?id=5"
+            }
+            """.trimIndent(),
+        )
+
+        assertEquals(
+            listOf("https://tvn24.pl/plus/programy/dwie-strony/batalia-vc9315802", "https://example.com/?id=5"),
+            importer.proposalUrlsFromItem(item),
+        )
+    }
 }

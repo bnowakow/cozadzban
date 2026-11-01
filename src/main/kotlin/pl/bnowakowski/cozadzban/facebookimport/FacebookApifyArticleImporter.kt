@@ -491,8 +491,15 @@ class FacebookApifyArticleImporter(
     private fun isImportableUrl(url: String): Boolean =
         runCatching {
             val uri = URI(url)
-            uri.scheme in setOf("http", "https") && !isFacebookUrl(url) && !isMediaOrThumbnailUrl(url)
+            uri.scheme in setOf("http", "https") && !isFacebookUrl(url) && !isMediaOrThumbnailUrl(url) && !isHomepageUrl(uri)
         }.getOrDefault(false)
+
+    /**
+     * Facebook auto-links domain names mentioned in post text ("obejrzysz na Onet.pl" becomes
+     * http://Onet.pl/). A bare homepage is never the shared article, so it is not a proposal.
+     */
+    private fun isHomepageUrl(uri: URI): Boolean =
+        (uri.path.isNullOrEmpty() || uri.path == "/") && uri.query.isNullOrEmpty()
 
     private fun sharedFacebookPostUrls(item: JsonNode): Sequence<String> =
         item.path("sharedPost").takeIf { it.isObject }
@@ -512,7 +519,13 @@ class FacebookApifyArticleImporter(
             val path = uri.path.orEmpty()
             uri.scheme in setOf("http", "https") &&
                 (host == "facebook.com" || host.endsWith(".facebook.com")) &&
-                (FACEBOOK_POST_PATH_REGEX.matches(path) || path == "/photo/" || path == "/photo.php")
+                (
+                    FACEBOOK_POST_PATH_REGEX.matches(path) ||
+                        path == "/photo/" ||
+                        path == "/photo.php" ||
+                        FACEBOOK_VIDEO_PATH_REGEX.matches(path) ||
+                        (path.trimEnd('/') == "/watch" && uri.query.orEmpty().contains("v="))
+                    )
         }.getOrDefault(false)
 
     private fun isFacebookUrl(url: String): Boolean =
@@ -592,6 +605,8 @@ class FacebookApifyArticleImporter(
         val HTML_TAG_REGEX: Regex = Regex("""<[^>]+>""")
         val URL_REGEX: Regex = Regex("""https?://[^\s<>'\")]+""")
         val FACEBOOK_POST_PATH_REGEX: Regex = Regex("""/[^/]+/posts/[^/]+/?""")
+        /** Shared reels and videos, e.g. /reel/860636477128233/ or /Onet/videos/860636477128233/. */
+        val FACEBOOK_VIDEO_PATH_REGEX: Regex = Regex("""(/reel|/[^/]+/videos)/\d+/?""")
     }
 }
 
