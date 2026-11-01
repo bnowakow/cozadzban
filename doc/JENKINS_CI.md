@@ -32,11 +32,31 @@ they get one, e.g. by merging `main`.
 
 | Stage | Runs on | What it does |
 | --- | --- | --- |
-| `Docker` | every build | Waits for the Docker-in-Docker daemon in the build pod |
-| `Test` | every build | `./gradlew --no-daemon test -PappBuildCommit=<commit>` and publishes JUnit results |
-| `Docker image` | `main` only, not timer-triggered builds | Builds the repository `Dockerfile` and pushes three tags to `bnowakow/cozadzban` |
+| `Test` | every build | `make ci-test`: waits for the Docker-in-Docker daemon, then `./gradlew --no-daemon test -PappBuildCommit=<commit>`; publishes JUnit results |
+| `Docker image` | `main` only, not timer-triggered builds | `make docker-image-build`, `docker login`, `make docker-image-push`: builds the repository `Dockerfile` and pushes three tags to `bnowakow/cozadzban` |
 
 If `Test` fails, the image stage does not run.
+
+### Running the pipeline steps locally
+
+The main steps are make targets, so a failing stage can be rerun and debugged
+outside Jenkins. Neither the `jdk` nor the `docker` image ships `make`, so each
+stage installs it first (`apt-get` / `apk`, a few seconds).
+
+| Target | Script | What it does |
+| --- | --- | --- |
+| `make ci-test` | `utilities/ci-test.sh` | The `Test` stage. Waits up to 120 s for `docker info`, so the Docker-backed tests are not silently skipped, then runs Gradle `test`. |
+| `make docker-test` | `utilities/docker-test.sh` | Recreates the build pod with `docker run`: `docker:27.5.1-dind` (privileged, `127.0.0.1:2375`), `eclipse-temurin:21-jdk-jammy` in its network namespace, and the CLI copied from `docker:27.5.1-cli`, with the same env and limits as the pod. It copies the working tree in (tracked and untracked, non-ignored files, so uncommitted changes count), runs `make ci-test` inside, and copies results to `build/docker-test/`. |
+| `make docker-image-build` | `utilities/docker-image.sh build` | Builds the image with the three tags and OCI labels. `GIT_COMMIT` defaults to `HEAD`; `IMAGE=…` overrides `bnowakow/cozadzban`. |
+| `make docker-image-push` | `utilities/docker-image.sh push` | Pushes the three tags. Needs a prior `docker login`; the stage logs in with the Jenkins credential. |
+
+`make docker-test` differs from Jenkins on purpose: the Gradle cache and the
+dind image store are kept in the volumes `cozadzban-docker-test-gradle` and
+`cozadzban-docker-test-docker` between runs. `DOCKER_TEST_CLEAN=true make
+docker-test` removes them first for a cold start like Jenkins. Extra Gradle
+arguments go in `TEST_GRADLE_ARGS`, e.g. `TEST_GRADLE_ARGS='--tests "*FeedIT"'`.
+`DOCKER_TEST_CPUS` and `DOCKER_TEST_MEMORY` override the 4 CPU / 6g limits.
+All test targets refuse to run on the deployment server.
 
 ### Triggers
 
@@ -114,8 +134,8 @@ Notes:
   `DOCKER_HOST=tcp://127.0.0.1:2375`, and other pods cannot.
 - `build.gradle.kts` runs `docker info` and **excludes `*IT` tests and
   `CozadzbanApplicationTests` when it fails**. That is why the `jdk`
-  container gets the copied `docker` CLI (on `PATH` via
-  `export PATH="/opt/docker-cli:$PATH"`). Check that the console shows
+  container gets the copied `docker` CLI (`utilities/ci-test.sh` puts
+  `/opt/docker-cli` on `PATH`). Check that the console shows
   `Docker 27.5.1 ready` and that the test counts include IT tests.
 - Testcontainers settings: `TESTCONTAINERS_HOST_OVERRIDE=127.0.0.1` and
   `TESTCONTAINERS_RYUK_DISABLED=true`. Ryuk isn't needed because the whole

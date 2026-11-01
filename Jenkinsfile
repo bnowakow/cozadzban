@@ -120,24 +120,15 @@ spec:
   }
 
   stages {
-    stage('Docker') {
-      steps {
-        sh '''
-          export PATH="/opt/docker-cli:$PATH"
-          for i in $(seq 1 60); do
-            docker info >/dev/null 2>&1 && break
-            sleep 2
-          done
-          docker info --format 'Docker {{.ServerVersion}} ready'
-        '''
-      }
-    }
-
+    // The main steps are make targets, so they can be run and debugged locally:
+    // `make ci-test` here, or `make docker-test` for the whole pod setup.
+    // Neither image ships make, so each stage installs it first.
     stage('Test') {
       steps {
         sh '''
-          export PATH="/opt/docker-cli:$PATH"
-          ./gradlew --no-daemon test -PappBuildCommit="${GIT_COMMIT:-unknown}"
+          apt-get update -qq
+          DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends make >/dev/null
+          APP_BUILD_COMMIT="${GIT_COMMIT:-unknown}" make ci-test
         '''
       }
     }
@@ -156,27 +147,14 @@ spec:
         container('docker') {
           withCredentials([usernamePassword(credentialsId: 'dockerhub-bnowakow',
               usernameVariable: 'DOCKERHUB_USER', passwordVariable: 'DOCKERHUB_TOKEN')]) {
+            // Tags and labels: utilities/docker-image.sh. Login stays here,
+            // because it needs the Jenkins credential.
             sh '''
               set -eu
-              version="$(sed -n 's/^version = "\\(.*\\)"$/\\1/p' build.gradle.kts)"
-              version="${version%-SNAPSHOT}"
-              commit="$(printf '%.8s' "$GIT_COMMIT")"
-              [ -n "$version" ] || { echo "No version found in build.gradle.kts" >&2; exit 1; }
-              echo "Building $IMAGE: $version, $version-$commit, latest"
-
+              apk add --no-cache --quiet make
+              make docker-image-build
               printf '%s' "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin
-              docker build \
-                --build-arg APP_BUILD_COMMIT="$commit" \
-                --label org.opencontainers.image.version="$version" \
-                --label org.opencontainers.image.revision="$GIT_COMMIT" \
-                --label org.opencontainers.image.source=https://github.com/bnowakow/cozadzban \
-                --tag "$IMAGE:$version" \
-                --tag "$IMAGE:$version-$commit" \
-                --tag "$IMAGE:latest" \
-                .
-              docker push "$IMAGE:$version-$commit"
-              docker push "$IMAGE:$version"
-              docker push "$IMAGE:latest"
+              make docker-image-push
               docker logout
             '''
           }

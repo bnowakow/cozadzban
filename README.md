@@ -334,6 +334,7 @@ attempts per hour and sends outage, restart-limit, and recovery notifications th
 make help          # List all targets
 make build         # Build without tests
 make test          # Run all tests
+make docker-test   # Run all tests in containers like Jenkins (see doc/JENKINS_CI.md)
 make test-live-external-sites  # Run live enrichment tests against real sites (skipped by make test)
 make docker-logs   # Follow Docker logs
 make docker-down   # Stop and remove containers

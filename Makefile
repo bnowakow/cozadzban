@@ -1,5 +1,5 @@
 
-.PHONY: help docker-up docker-down docker-data-permissions docker-upgrade-log-owner docker-pg-nuke docker-pg-backup install-pg-backup-cron ensure-pg-backup-cron install-codex-auth-cron install-app-health-cron install-all-crons codex-auth-check app-health-check performance-report build run run-local run-prod test test-live-external-sites clean docker-logs docker-spring-shell docker-pg-shell docker-upgrade docker-upgrade-local docker-upgrade-dockerhub-image docker-upgrade-no-cache sync-env-files bump-patch bump-minor codex-commit claude-commit install-git-hooks install-codex-skills install-claude-skills codex-skill-prompts claude-skill-prompts codex-docker-login codex-docker-status codex-docker-logout claude-docker-login claude-docker-token claude-docker-status claude-docker-logout claude-auth-check install-claude-auth-cron
+.PHONY: help docker-up docker-down docker-data-permissions docker-upgrade-log-owner docker-pg-nuke docker-pg-backup install-pg-backup-cron ensure-pg-backup-cron install-codex-auth-cron install-app-health-cron install-all-crons codex-auth-check app-health-check performance-report build run run-local run-prod test ci-test docker-test docker-image-build docker-image-push test-live-external-sites no-tests-on-deployment-server clean docker-logs docker-spring-shell docker-pg-shell docker-upgrade docker-upgrade-local docker-upgrade-dockerhub-image docker-upgrade-no-cache sync-env-files bump-patch bump-minor codex-commit claude-commit install-git-hooks install-codex-skills install-claude-skills codex-skill-prompts claude-skill-prompts codex-docker-login codex-docker-status codex-docker-logout claude-docker-login claude-docker-token claude-docker-status claude-docker-logout claude-auth-check install-claude-auth-cron
 
 -include .env
 
@@ -17,6 +17,8 @@ help:
 	@printf "    %-31s %s\n" "docker-upgrade-local" "Pull latest code, build the image here, and switch Spring traffic after health check"
 	@printf "    %-31s %s\n" "docker-upgrade" "Same as docker-upgrade-local"
 	@printf "    %-31s %s\n" "docker-upgrade-dockerhub-image" "Pull latest code, deploy Jenkins' Docker Hub image for it (IMAGE_TAG=... to pick one)"
+	@printf "    %-31s %s\n" "docker-image-build" "Build the Docker Hub image with Jenkins' tags (<version>, <version>-<commit8>, latest)"
+	@printf "    %-31s %s\n" "docker-image-push" "Push those tags to Docker Hub (needs docker login; used by Jenkins)"
 	@printf "    %-31s %s\n" "docker-upgrade-no-cache" "Pull latest code, rebuild without Docker cache, and switch after health check"
 	@printf "    %-31s %s\n" "codex-docker-login" "Sign in to Codex in Spring Boot with a browser device code"
 	@printf "    %-31s %s\n" "codex-docker-status" "Check Codex sign-in in the Spring Boot container"
@@ -48,6 +50,8 @@ help:
 	@printf "    %-31s %s\n" "run-local" "Run Spring Boot with local profile"
 	@printf "    %-31s %s\n" "run-prod" "Run Spring Boot with prod profile"
 	@printf "    %-31s %s\n" "test" "Run all tests"
+	@printf "    %-31s %s\n" "ci-test" "Wait for Docker, then run all tests as Jenkins does (used by Jenkins)"
+	@printf "    %-31s %s\n" "docker-test" "Run all tests in containers like Jenkins (DOCKER_TEST_CLEAN=true for a cold start)"
 	@printf "    %-31s %s\n" "test-live-external-sites" "Run live enrichment tests against Facebook, NYT, WSJ and YouTube"
 	@printf "    %-31s %s\n" "clean" "Clean Gradle build artifacts"
 	@printf "\n"
@@ -242,17 +246,31 @@ run-local:
 run-prod:
 	SPRING_PROFILES_ACTIVE=prod ./gradlew bootRun
 
-# Run all tests
-test:
-	./gradlew $(if $(TEST_GRADLE_WORKERS),--max-workers=$(TEST_GRADLE_WORKERS),) $(if $(TEST_GRADLE_JVMARGS),-Dorg.gradle.jvmargs="$(TEST_GRADLE_JVMARGS)",) test $(TEST_GRADLE_ARGS)
-
-# Run the live enrichment tests that `make test` skips. They fetch real Facebook, NYT, WSJ and
-# YouTube pages, so failures can come from the sites changing, blocking or showing a CAPTCHA.
-test-live-external-sites:
+# The deployment server is too weak for the test suite (see AGENTS.md).
+no-tests-on-deployment-server:
 	@if [ "$$(hostname)" = "ovh.bnowakowski.pl" ]; then \
 		echo "Refusing to run tests on the deployment server ovh.bnowakowski.pl; run this on a development machine." >&2; \
 		exit 1; \
 	fi
+
+# Run all tests
+test: no-tests-on-deployment-server
+	./gradlew $(if $(TEST_GRADLE_WORKERS),--max-workers=$(TEST_GRADLE_WORKERS),) $(if $(TEST_GRADLE_JVMARGS),-Dorg.gradle.jvmargs="$(TEST_GRADLE_JVMARGS)",) test $(TEST_GRADLE_ARGS)
+
+# The Jenkins "Test" stage: wait for the Docker daemon (so the Docker-backed tests are not
+# skipped), then run the suite with --no-daemon. docker-test runs the same script.
+ci-test: no-tests-on-deployment-server
+	utilities/ci-test.sh $(TEST_GRADLE_ARGS)
+
+# Run all tests in containers that mirror the Jenkins build pod (JDK + Docker-in-Docker), using
+# the same `make ci-test` as the Jenkins "Test" stage. Results go to build/docker-test/.
+# Extra Gradle arguments: TEST_GRADLE_ARGS=... ; DOCKER_TEST_CLEAN=true drops the cached volumes.
+docker-test: no-tests-on-deployment-server
+	DOCKER_TEST_CLEAN='$(DOCKER_TEST_CLEAN)' utilities/docker-test.sh $(TEST_GRADLE_ARGS)
+
+# Run the live enrichment tests that `make test` skips. They fetch real Facebook, NYT, WSJ and
+# YouTube pages, so failures can come from the sites changing, blocking or showing a CAPTCHA.
+test-live-external-sites: no-tests-on-deployment-server
 	RUN_LIVE_FACEBOOK_PHOTO_EXAMPLES=true \
 	RUN_LIVE_FACEBOOK_PHOTO_SCRATCH=true \
 	RUN_LIVE_NYT_VERIFICATION=true \
@@ -428,6 +446,13 @@ docker-upgrade-dockerhub-image: docker-upgrade-log-owner docker-data-permissions
 	IMAGE_SOURCE=dockerhub IMAGE_TAG='$(IMAGE_TAG)' FORCE_UPGRADE='$(FORCE_UPGRADE)' docker-data/blue-green-upgrade.sh
 	docker system prune -f
 	docker compose -f compose.yaml logs -f
+
+# The Jenkins "Docker image" stage for main. IMAGE=... overrides bnowakow/cozadzban.
+docker-image-build:
+	utilities/docker-image.sh build
+
+docker-image-push:
+	utilities/docker-image.sh push
 
 # Pull latest code, rebuild from scratch, restart, and follow logs. Use only when cache corruption is suspected.
 docker-upgrade-no-cache: docker-upgrade-log-owner docker-data-permissions
