@@ -27,6 +27,22 @@ pipeline {
 apiVersion: v1
 kind: Pod
 spec:
+  # Only the cluster search domains. The node adds Tailscale ones, and
+  # tailscale.bnowakowski.pl answers "exists, no address" (NODATA) for unknown
+  # names, which makes Alpine's musl resolver give up: apk in the docker
+  # container then fails with "make (no such package)". 10.43.0.10 is the k3s
+  # cluster DNS service (kube-system/kube-dns).
+  dnsPolicy: None
+  dnsConfig:
+    nameservers:
+    - 10.43.0.10
+    searches:
+    - apps-jenkins.svc.cluster.local
+    - svc.cluster.local
+    - cluster.local
+    options:
+    - name: ndots
+      value: "5"
   initContainers:
   # build.gradle.kts runs `docker info` to decide whether to include the
   # Docker-backed tests, so the JDK container needs a docker CLI.

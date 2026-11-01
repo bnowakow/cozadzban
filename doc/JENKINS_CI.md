@@ -258,6 +258,15 @@ curl -sS "https://hub.docker.com/v2/repositories/bnowakow/cozadzban/tags/?page_s
   Always pass the full command (`["dockerd", "--host=tcp://127.0.0.1:2375",
   …, "--tls=false"]`). `--tls=false` also avoids Docker 27's deliberate
   15-second startup delay for TCP without TLS.
+- **DNS in Alpine containers:** pods inherit the node's Tailscale search
+  domains (`alpaca-orfe.ts.net`, `tailscale.bnowakowski.pl`), and
+  `tailscale.bnowakowski.pl` answers unknown names with NODATA ("exists, no
+  address") instead of NXDOMAIN. Alpine's musl resolver stops there, so
+  `apk add make` in the `docker` container failed with `make (no such
+  package)` (builds #9 and #10; tests had passed, no image was pushed).
+  glibc (Ubuntu `jdk`) and Go (`dockerd`) keep searching, so only Alpine
+  tools broke. The pod spec sets `dnsPolicy: None` with only the cluster
+  search domains and the cluster DNS `10.43.0.10`.
 - **A safe restart (`/safeRestart`) does not wait for Pipeline builds.**
   Pipelines can resume after a restart, so Jenkins restarts while they run.
   Build #2 resumed and passed, but wait for running builds to finish before
