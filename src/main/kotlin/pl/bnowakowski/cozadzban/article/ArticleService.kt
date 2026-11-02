@@ -218,7 +218,7 @@ class ArticleService(
             )
         )
         preserveContent(article.id!!, article.url, contentForCache)
-        facebookArticleImages?.requestRegeneration(article.id!!)
+        facebookArticleImages?.requestRegeneration(article.id!!, article.thumbnail)
         if (facebookCaptionChanged(existing, article)) {
             facebookPageSync?.queueUpdate(id, existing.thumbnail != article.thumbnail, existing.language != article.language)
         }
@@ -391,7 +391,7 @@ class ArticleService(
         if (urlChanged || facebookCaptionChanged(existing, saved) ||
             (contentPresent && contentBeforePatch != getContent(id))
         ) {
-            facebookArticleImages?.requestRegeneration(saved.id!!)
+            facebookArticleImages?.requestRegeneration(saved.id!!, saved.thumbnail)
         }
 
         if (facebookCaptionChanged(existing, saved)) {
@@ -662,7 +662,7 @@ class ArticleService(
             }
         }
         if (titleUpdated || previousContent != getContent(article.id!!)) {
-            facebookArticleImages?.requestRegeneration(article.id!!)
+            facebookArticleImages?.requestRegeneration(article.id!!, article.thumbnail)
         }
         logFacebookPhotoContentReplacementState(article, contentForCache, finalTitle, titleUpdated)
     }

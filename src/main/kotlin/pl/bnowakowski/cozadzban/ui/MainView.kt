@@ -1037,14 +1037,19 @@ class ArticleListView(
         card.element.style.set("box-shadow", "var(--czj-card-shadow)")
 
         val content = Div()
-        val generatedImage = article.id?.let { articleImages?.status(it) == "GENERATED" } == true
         val sourceThumbnail = article.thumbnail?.trim()
             ?.takeIf { FacebookArticleImageGenerationRepository.hasUsableSourceThumbnail(it) }
+        // The article's own thumbnail wins; the AI illustration only stands in when there is none
+        // (it may exist only because Meta refused the thumbnail for the Page post).
+        val hasGeneratedImage = article.id?.let { articleImages?.status(it) == "GENERATED" } == true
+        val generatedImage = sourceThumbnail == null && hasGeneratedImage
         val sourceHost = sourceThumbnail?.let { runCatching { URI(it).host?.lowercase() }.getOrNull() }
         val thumbnail = when {
             // The smaller, versioned JPEG copy; the full PNG stays for Facebook and link previews.
             generatedImage -> generatedImages?.webImageUrl(article.id!!) ?: "/generated-images/${article.id}.jpg"
             sourceThumbnail == null -> null
+            // The proxy falls back to the AI illustration when this thumbnail has expired or is blocked.
+            hasGeneratedImage -> "/rss/image/${article.id}"
             sourceHost == "lookaside.fbsbx.com" || sourceHost == "fbcdn.net" ||
                 sourceHost?.endsWith(".fbcdn.net") == true || sourceHost == "cdninstagram.com" ||
                 sourceHost?.endsWith(".cdninstagram.com") == true ->

@@ -102,7 +102,7 @@ class FacebookThumbnailStatusView(
             }
         }.setHeader("Article").setFlexGrow(2)
         grid.addColumn(FacebookArticleImageStatusRow::language).setHeader("Language").setAutoWidth(true)
-        grid.addColumn { labelFor(it.status) }.setHeader("Status").setAutoWidth(true)
+        grid.addComponentColumn { row -> withTooltip(rowLabel(row)) }.setHeader("Status").setAutoWidth(true)
         grid.addComponentColumn { row -> thumbnail(row) }.setHeader("Thumbnail").setAutoWidth(true)
         grid.addColumn(FacebookArticleImageStatusRow::attemptCount).setHeader("Attempts").setAutoWidth(true)
         grid.addColumn { row ->
@@ -133,6 +133,9 @@ class FacebookThumbnailStatusView(
         }.setHeader("Article").setFlexGrow(2)
         queueGrid.addColumn(FacebookArticleImageQueueRow::language)
             .setHeader("Language").setAutoWidth(true)
+        queueGrid.addComponentColumn {
+            withTooltip(waitingReason(FacebookArticleImageGenerationRepository.hasUsableSourceThumbnail(it.sourceThumbnail), it.pageRejectedSourceThumbnail))
+        }.setHeader("Why").setAutoWidth(true)
         queueGrid.addColumn(FacebookArticleImageQueueRow::attemptCount)
             .setHeader("Attempts").setAutoWidth(true)
         queueGrid.addColumn { WarsawTime.dateTime(it.nextAttemptAt) }
@@ -148,8 +151,9 @@ class FacebookThumbnailStatusView(
 
     private fun thumbnail(row: FacebookArticleImageStatusRow): Component {
         val preview: Component = when (row.status) {
-            "GENERATED" -> Image("/generated-images/${row.articleId}.png", "AI-generated illustration")
-            "SOURCE_THUMBNAIL" -> row.sourceThumbnail
+            "GENERATED", FacebookArticleImageGenerationRepository.GENERATED_FOR_FACEBOOK ->
+                Image("/generated-images/${row.articleId}.png", "AI-generated illustration")
+            "SOURCE_THUMBNAIL", "MISSING_THUMBNAIL", "GENERATING", "FAILED" -> row.sourceThumbnail
                 ?.takeIf { FacebookArticleImageGenerationRepository.hasUsableSourceThumbnail(it) }
                 ?.let { Image("/rss/image/${row.articleId}", "Source thumbnail") } ?: Span("—")
             else -> Span("—")
@@ -208,17 +212,58 @@ class FacebookThumbnailStatusView(
         refreshQueue()
     }
 
-    private fun labelFor(value: String) = STATUS_LABELS.entries.firstOrNull { it.value == value }?.key ?: value
-
-    private companion object {
+    internal companion object {
         const val PAGE_SIZE = 50
+        /** Filter labels; each row's own label says more on hover, see [rowLabel]. */
         val STATUS_LABELS = linkedMapOf(
             "All" to "",
             "Source thumbnail" to "SOURCE_THUMBNAIL",
-            "Missing thumbnail" to "MISSING_THUMBNAIL",
+            "Waiting" to "MISSING_THUMBNAIL",
             "Generating" to "GENERATING",
-            "AI generated" to "GENERATED",
+            "AI image" to "GENERATED",
+            "AI for Facebook only" to FacebookArticleImageGenerationRepository.GENERATED_FOR_FACEBOOK,
             "Failed" to "FAILED",
         )
+
+        /** A short status for the grid, with the full explanation shown on hover. */
+        data class StatusLabel(val text: String, val description: String)
+
+        fun rowLabel(row: FacebookArticleImageStatusRow): StatusLabel {
+            val hasSource = FacebookArticleImageGenerationRepository.hasUsableSourceThumbnail(row.sourceThumbnail)
+            return when (row.status) {
+                "SOURCE_THUMBNAIL" -> StatusLabel("Source thumbnail", "Uses the article's own thumbnail on the site and Facebook.")
+                "MISSING_THUMBNAIL" -> waitingReason(hasSource, row.pageRejectedSourceThumbnail).let {
+                    StatusLabel("Waiting: ${it.text}", "Waiting for AI image: ${it.description}")
+                }
+                "GENERATING" -> StatusLabel("Generating", "Generating AI image.")
+                "GENERATED" -> if (hasSource) {
+                    StatusLabel("AI image (unused)", "AI image ready; the site shows the source thumbnail.")
+                } else {
+                    StatusLabel("AI image", "AI image ready; shown on the site because the article has no thumbnail.")
+                }
+                FacebookArticleImageGenerationRepository.GENERATED_FOR_FACEBOOK -> StatusLabel(
+                    "AI for Facebook only",
+                    "AI image for Facebook only: Facebook rejected the source thumbnail; the site shows the source thumbnail.",
+                )
+                "FAILED" -> StatusLabel("Failed", "AI image failed: retry with Generate now.")
+                else -> StatusLabel(row.status, row.status)
+            }
+        }
+
+        /** Why an article waits for an AI image even though the queue has one status for it. */
+        fun waitingReason(hasSourceThumbnail: Boolean, pageRejectedSourceThumbnail: Boolean): StatusLabel = when {
+            !hasSourceThumbnail -> StatusLabel("no thumbnail", "the article has no thumbnail.")
+            pageRejectedSourceThumbnail -> StatusLabel(
+                "Facebook rejected",
+                "Facebook rejected the article thumbnail for the Page post; the site keeps showing it.",
+            )
+            else -> StatusLabel("redraw", "redrawing the AI image after the article changed.")
+        }
+
+        private fun withTooltip(label: StatusLabel): Span = Span(label.text).apply {
+            element.setAttribute("title", label.description)
+            element.style.set("cursor", "help")
+            element.style.set("white-space", "nowrap")
+        }
     }
 }

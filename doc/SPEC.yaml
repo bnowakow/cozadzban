@@ -68,6 +68,10 @@ x-architecture:
         publication date metadata.
         Enrichment is synchronous and atomic — if the fetch fails no DB write occurs.
         Defaults: connect timeout 3 s, read timeout 5 s, no retries.
+        Site-specific reader fallbacks (e.g. TVN24, Bloomberg, Washington Post) count as failed
+        when the reader only relays the target's error page ("Target URL returned error 4xx/5xx",
+        or a title such as "403 - TVN24" or "404 Not Found"), so an error page is never saved
+        as the article.
         If the fetch returns a non-2xx status, times out, or the URL is
         unreachable, the server responds with 422 and the article is not persisted.
     - name: RSS feed
@@ -154,7 +158,10 @@ x-architecture:
         cleanup. Worker-startup runs launch available importers in
         APIFY then SELENIUM order. Selenium scheduled runs and Apify paid scheduled
         runs use separate intervals. ADMIN REST/UI triggers can launch enabled
-        importers manually. The worker/server submits discovered
+        importers manually. Apify proposals take the post's external links (anchor hrefs and
+        plain-text URLs, excluding Facebook, Facebook/Instagram CDN images and bare homepages such
+        as the http://Onet.pl/ links Facebook auto-creates from domain names in post text); a post
+        without one falls back to the Facebook post, photo, reel or video it shares. The worker/server submits discovered
         article proposals to machine-only server endpoints instead of creating Articles
         directly. Logged-in users review proposals later in a Vaadin inbox.
     - name: Notifications
@@ -596,6 +603,14 @@ x-database:
           type: BOOLEAN
           migration: V42__image_regeneration_after_article_edits.sql
           constraints: "NOT NULL DEFAULT false"
+        - name: source_thumbnail_rejected
+          type: BOOLEAN
+          migration: V47__image_generation_source_thumbnail_rejected.sql
+          constraints: "NOT NULL DEFAULT false"
+          description: >
+            Meta refused the article's source thumbnail for its Page post, so the illustration is
+            for Facebook only and the website keeps the source thumbnail. ADMIN shows such generated
+            jobs as "AI for Facebook only".
       indexes:
         - name: facebook_article_image_generation_due_idx
           columns: [status, next_attempt_at, article_id]
@@ -607,6 +622,39 @@ x-database:
           type: INTEGER
           constraints: "PRIMARY KEY CHECK (id = 1)"
         - name: next_claim_at
+          type: TIMESTAMPTZ
+          constraints: "NOT NULL DEFAULT now()"
+    - name: article_title_shortening
+      migration: V45__article_title_shortening.sql
+      description: >
+        Over-long titles rewritten by Codex or Claude (BR-52). Keeps the original title for audit
+        or revert, and lets a re-import of the same long title get the stored short one back.
+      columns:
+        - name: article_id
+          type: BIGINT
+          constraints: "PRIMARY KEY REFERENCES article(id) ON DELETE CASCADE"
+        - name: original_title
+          type: TEXT
+          constraints: "NOT NULL"
+        - name: shortened_title
+          type: TEXT
+          constraints: "nullable"
+        - name: status
+          type: VARCHAR(20)
+          constraints: "NOT NULL CHECK (status IN ('PENDING', 'SHORTENED', 'FAILED'))"
+        - name: attempt_count
+          type: INT
+          constraints: "NOT NULL DEFAULT 0"
+        - name: next_attempt_at
+          type: TIMESTAMPTZ
+          constraints: "NOT NULL DEFAULT now()"
+        - name: last_error
+          type: TEXT
+          constraints: "nullable"
+        - name: tool
+          type: VARCHAR(20)
+          constraints: "nullable (codex or claude)"
+        - name: updated_at
           type: TIMESTAMPTZ
           constraints: "NOT NULL DEFAULT now()"
     - name: sessions
@@ -1779,6 +1827,10 @@ x-planned-features:
       Generate a labeled editorial illustration for an article with no usable
       source thumbnail before its Facebook Page photo post. Keep the source
       thumbnail as first choice and the branded placeholder as fallback.
+      Meta refusing the source thumbnail for the Page post also queues one
+      (source_thumbnail_rejected); the website, link previews and RSS keep the
+      source thumbnail and use an illustration only for articles without one, or
+      via the /rss/image/{id} redirect when the thumbnail can no longer be served.
     productionProvider: OpenAI Image API with server-side API key
     authentication: >
       ADMIN-only key connection with encrypted server-side storage. Do not use
@@ -2787,7 +2839,11 @@ paths:
 
     get:
       tags: [RSS]
-      summary: Proxy an article thumbnail for RSS readers and story pages
+      summary: Proxy an article thumbnail for RSS readers, story pages and the feed
+      description: >
+        Serves the article's own thumbnail (Meta images from the local cache). The website prefers
+        it over a generated illustration; when it cannot be served and an illustration exists, the
+        response redirects to the illustration instead of failing.
       operationId: getRssImage
       security: []
       parameters:
@@ -2805,10 +2861,15 @@ paths:
               schema:
                 type: string
                 format: binary
+        '302':
+          description: >
+            The thumbnail has expired, is blocked or is not an image, and the article has a
+            generated illustration; redirects to its versioned JPEG (`/generated-images/{id}.jpg?v=...`),
+            cached for one hour.
         '404':
           $ref: '#/components/responses/NotFound'
         '502':
-          description: Thumbnail could not be fetched or was not an image
+          description: Thumbnail could not be fetched or was not an image, and no generated illustration exists
 
   /generated-images/{id}.png:
     get:

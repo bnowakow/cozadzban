@@ -14,7 +14,7 @@ plugins {
 }
 
 group = "pl.bnowakowski"
-version = "0.64.27-SNAPSHOT"
+version = "0.64.28-SNAPSHOT"
 
 java {
 	toolchain {

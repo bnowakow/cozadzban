@@ -1051,7 +1051,11 @@ paths:
 
     get:
       tags: [RSS]
-      summary: Proxy an article thumbnail for RSS readers and story pages
+      summary: Proxy an article thumbnail for RSS readers, story pages and the feed
+      description: >
+        Serves the article's own thumbnail (Meta images from the local cache). The website prefers
+        it over a generated illustration; when it cannot be served and an illustration exists, the
+        response redirects to the illustration instead of failing.
       operationId: getRssImage
       security: []
       parameters:
@@ -1069,10 +1073,15 @@ paths:
               schema:
                 type: string
                 format: binary
+        '302':
+          description: >
+            The thumbnail has expired, is blocked or is not an image, and the article has a
+            generated illustration; redirects to its versioned JPEG (`/generated-images/{id}.jpg?v=...`),
+            cached for one hour.
         '404':
           $ref: '#/components/responses/NotFound'
         '502':
-          description: Thumbnail could not be fetched or was not an image
+          description: Thumbnail could not be fetched or was not an image, and no generated illustration exists
 
   /generated-images/{id}.png:
     get:

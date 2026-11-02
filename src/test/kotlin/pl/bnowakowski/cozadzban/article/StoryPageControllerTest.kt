@@ -83,6 +83,24 @@ class StoryPageControllerTest {
         )
     }
 
+    @Test
+    fun `the article's own thumbnail wins over an AI illustration made for the Page post`() {
+        val images: pl.bnowakowski.cozadzban.facebookpublish.FacebookArticleImageGenerationRepository = mock()
+        val generated: pl.bnowakowski.cozadzban.facebookpublish.CodexArticleImageGenerator = mock()
+        whenever(images.status(42)).thenReturn("GENERATED")
+        whenever(generated.webImageUrl(42)).thenReturn("/generated-images/42.jpg?v=123")
+        whenever(articles.findById(42)).thenReturn(
+            Optional.of(article().copy(thumbnail = "https://lookaside.fbsbx.com/lookaside/crawler/media/?media_id=1")),
+        )
+
+        val doc = Jsoup.parse(
+            StoryPageController(articles, articleImages = images, generatedImages = generated).story(42).body.orEmpty(),
+        )
+
+        assertEquals("/rss/image/42", doc.selectFirst("main > img")?.attr("src"))
+        assertEquals("https://cozadzban.pl/rss/image/42", doc.selectFirst("meta[property=og:image]")?.attr("content"))
+    }
+
     private fun article() = Article(
         id = 42,
         url = "https://example.com/story",

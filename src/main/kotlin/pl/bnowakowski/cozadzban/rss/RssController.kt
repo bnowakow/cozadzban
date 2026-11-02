@@ -19,6 +19,9 @@ import org.springframework.web.server.ResponseStatusException
 import pl.bnowakowski.cozadzban.analytics.RssEndpointAnalyticsTracker
 import pl.bnowakowski.cozadzban.article.Article
 import pl.bnowakowski.cozadzban.article.ArticleRepository
+import pl.bnowakowski.cozadzban.facebookpublish.CodexArticleImageGenerator
+import pl.bnowakowski.cozadzban.facebookpublish.FacebookArticleImageGenerationRepository
+import java.net.URI
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
@@ -32,6 +35,8 @@ class RssController(
     private val metaImages: MetaSourceImageCache,
     restClientBuilder: RestClient.Builder,
     @Value("\${app.build.timestamp:}") buildTimestampRaw: String,
+    private val articleImages: FacebookArticleImageGenerationRepository? = null,
+    private val generatedImages: CodexArticleImageGenerator? = null,
 ) {
 
     private val imageRestClient: RestClient = restClientBuilder
@@ -108,7 +113,7 @@ class RssController(
 
         if (metaImages.supports(thumbnail)) {
             val image = metaImages.loadOrFetch(article)
-                ?: return ResponseEntity.status(HttpStatus.BAD_GATEWAY).build()
+                ?: return generatedImageFallback(id) ?: ResponseEntity.status(HttpStatus.BAD_GATEWAY).build()
             return ResponseEntity.ok()
                 .contentType(image.contentType)
                 .cacheControl(CacheControl.maxAge(6, TimeUnit.HOURS).cachePublic())
@@ -121,11 +126,13 @@ class RssController(
                 .retrieve()
                 .toEntity(ByteArray::class.java)
         } catch (ex: Exception) {
+            generatedImageFallback(id)?.let { return it }
             throw ResponseStatusException(HttpStatus.BAD_GATEWAY, "Thumbnail could not be fetched", ex)
         }
 
         val contentType = response.headers.contentType
         if (contentType == null || contentType.type != "image" || response.body == null) {
+            generatedImageFallback(id)?.let { return it }
             throw ResponseStatusException(HttpStatus.BAD_GATEWAY, "Thumbnail response was not an image")
         }
 
@@ -133,6 +140,19 @@ class RssController(
             .contentType(contentType)
             .cacheControl(CacheControl.maxAge(6, TimeUnit.HOURS).cachePublic())
             .body(response.body!!)
+    }
+
+    /**
+     * The site prefers an article's own thumbnail, but expired or blocked thumbnails fall back to
+     * its AI illustration when one exists. Short cache, so a recovered thumbnail shows again.
+     */
+    private fun generatedImageFallback(id: Long): ResponseEntity<ByteArray>? {
+        if (articleImages?.status(id) != "GENERATED") return null
+        val target = generatedImages?.webImageUrl(id) ?: "/generated-images/$id.jpg"
+        return ResponseEntity.status(HttpStatus.FOUND)
+            .location(URI.create(target))
+            .cacheControl(CacheControl.maxAge(1, TimeUnit.HOURS).cachePublic())
+            .build()
     }
 
     private fun parseBuildTimestamp(raw: String): String {

@@ -92,7 +92,9 @@ class StoryPageController(
                 ?.let { "${it.scheme}://${it.host}/favicon.ico" }
         val thumbnail = article.thumbnail?.trim()
             ?.takeIf { FacebookArticleImageGenerationRepository.hasUsableSourceThumbnail(it) }
-        val generatedImage = article.id?.let { articleImages?.status(it) == "GENERATED" } == true
+        // The article's own thumbnail wins; the AI illustration only stands in when there is none
+        // (it may exist only because Meta refused the thumbnail for the Page post).
+        val generatedImage = thumbnail == null && article.id?.let { articleImages?.status(it) == "GENERATED" } == true
         // Link previews and structured data keep the full PNG; the visible image uses the smaller JPEG copy.
         val storyImage = if (generatedImage) "/generated-images/${article.id}.png"
             else thumbnail?.let { "/rss/image/${article.id}" }

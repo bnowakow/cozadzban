@@ -19,6 +19,8 @@ data class FacebookArticleImageStatusRow(
     val nextAttemptAt: Instant?,
     val lastError: String?,
     val updatedAt: Instant?,
+    /** The Page post is on hold because Meta refused the source thumbnail. */
+    val pageRejectedSourceThumbnail: Boolean = false,
 )
 data class FacebookArticleImageQueueRow(
     val position: Long,
@@ -28,6 +30,8 @@ data class FacebookArticleImageQueueRow(
     val attemptCount: Int,
     val nextAttemptAt: Instant,
     val lastError: String?,
+    val sourceThumbnail: String? = null,
+    val pageRejectedSourceThumbnail: Boolean = false,
 )
 
 @Repository
@@ -40,13 +44,14 @@ class FacebookArticleImageGenerationRepository(private val jdbc: NamedParameterJ
     /** Use the same ordering as claim(); rows not yet due remain visible in the queue. */
     fun queuePage(limit: Int, offset: Int): List<FacebookArticleImageQueueRow> = jdbc.query(
         """WITH ranked AS (
-               SELECT article_id, attempt_count, next_attempt_at, last_error,
+               SELECT article_id, attempt_count, next_attempt_at, last_error, source_thumbnail_rejected,
                       row_number() OVER (ORDER BY next_attempt_at, article_id) AS queue_position
                FROM facebook_article_image_generation
                WHERE status = 'MISSING_THUMBNAIL'
            )
-           SELECT ranked.queue_position, ranked.article_id, a.title, a.language,
-                  ranked.attempt_count, ranked.next_attempt_at, ranked.last_error
+           SELECT ranked.queue_position, ranked.article_id, a.title, a.language, a.thumbnail,
+                  ranked.attempt_count, ranked.next_attempt_at, ranked.last_error,
+                  ranked.source_thumbnail_rejected AS page_rejected_source
            FROM ranked JOIN article a ON a.id = ranked.article_id
            ORDER BY ranked.queue_position LIMIT :limit OFFSET :offset""",
         mapOf("limit" to limit, "offset" to offset),
@@ -59,22 +64,26 @@ class FacebookArticleImageGenerationRepository(private val jdbc: NamedParameterJ
             attemptCount = rs.getInt("attempt_count"),
             nextAttemptAt = rs.getTimestamp("next_attempt_at").toInstant(),
             lastError = rs.getString("last_error"),
+            sourceThumbnail = rs.getString("thumbnail"),
+            pageRejectedSourceThumbnail = rs.getBoolean("page_rejected_source"),
         )
     }
 
+    /** [status] is a display status: a job status, SOURCE_THUMBNAIL or [GENERATED_FOR_FACEBOOK]. */
     fun countStatuses(status: String): Long = jdbc.queryForObject(
         """SELECT count(*) FROM article a
            LEFT JOIN facebook_article_image_generation job ON job.article_id = a.id
-           WHERE :status = '' OR COALESCE(job.status, 'SOURCE_THUMBNAIL') = :status""",
+           WHERE :status = '' OR $DISPLAY_STATUS_SQL = :status""",
         mapOf("status" to status), Long::class.java,
     ) ?: 0L
 
     fun statusPage(status: String, limit: Int, offset: Int): List<FacebookArticleImageStatusRow> = jdbc.query(
-        """SELECT a.id, a.title, a.language, a.thumbnail, job.status, job.attempt_count,
-                  job.next_attempt_at, job.last_error, job.updated_at
+        """SELECT a.id, a.title, a.language, a.thumbnail, $DISPLAY_STATUS_SQL AS display_status,
+                  job.attempt_count, job.next_attempt_at, job.last_error, job.updated_at,
+                  COALESCE(job.source_thumbnail_rejected, FALSE) AS page_rejected_source
            FROM article a
            LEFT JOIN facebook_article_image_generation job ON job.article_id = a.id
-           WHERE :status = '' OR COALESCE(job.status, 'SOURCE_THUMBNAIL') = :status
+           WHERE :status = '' OR $DISPLAY_STATUS_SQL = :status
            ORDER BY a.id DESC LIMIT :limit OFFSET :offset""",
         mapOf("status" to status, "limit" to limit, "offset" to offset),
     ) { rs, _ ->
@@ -83,25 +92,34 @@ class FacebookArticleImageGenerationRepository(private val jdbc: NamedParameterJ
             title = rs.getString("title"),
             language = rs.getString("language"),
             sourceThumbnail = rs.getString("thumbnail"),
-            status = rs.getString("status") ?: "SOURCE_THUMBNAIL",
+            status = rs.getString("display_status"),
             attemptCount = rs.getInt("attempt_count"),
             nextAttemptAt = rs.getTimestamp("next_attempt_at")?.toInstant(),
             lastError = rs.getString("last_error"),
             updatedAt = rs.getTimestamp("updated_at")?.toInstant(),
+            pageRejectedSourceThumbnail = rs.getBoolean("page_rejected_source"),
         )
     }
 
     /** Called in the article creation transaction, after the enrichment result has been saved. */
     fun markMissingIfNeeded(articleId: Long, sourceThumbnail: String?) {
         if (hasUsableSourceThumbnail(sourceThumbnail)) return
-        markMissing(articleId)
+        markMissing(articleId, sourceThumbnailRejected = false)
     }
 
-    /** Meta explicitly rejected a source URL before publishing a post. */
-    fun sourceThumbnailRejected(articleId: Long) = markMissing(articleId)
+    /**
+     * Meta explicitly rejected a source URL before publishing a post. The illustration is then for
+     * the Page post only; the website keeps the source thumbnail.
+     */
+    fun sourceThumbnailRejected(articleId: Long) = markMissing(articleId, sourceThumbnailRejected = true)
 
-    /** Rebuild the illustration from the article's current text after enrichment is corrected. */
-    fun requestRegeneration(articleId: Long) {
+    /**
+     * Rebuild the illustration from the article's current text after enrichment is corrected.
+     * An article with a usable thumbnail and no illustration yet needs none: the site and the Page
+     * post use its thumbnail, and Meta rejecting it queues one through [sourceThumbnailRejected].
+     */
+    fun requestRegeneration(articleId: Long, sourceThumbnail: String?) {
+        if (hasUsableSourceThumbnail(sourceThumbnail) && status(articleId) == null) return
         jdbc.update(
             """INSERT INTO facebook_article_image_generation(article_id, status)
                VALUES (:articleId, 'MISSING_THUMBNAIL')
@@ -116,14 +134,14 @@ class FacebookArticleImageGenerationRepository(private val jdbc: NamedParameterJ
         )
     }
 
-    private fun markMissing(articleId: Long) {
+    private fun markMissing(articleId: Long, sourceThumbnailRejected: Boolean) {
         jdbc.update(
-            """INSERT INTO facebook_article_image_generation(article_id, status)
-               VALUES (:articleId, 'MISSING_THUMBNAIL')
+            """INSERT INTO facebook_article_image_generation(article_id, status, source_thumbnail_rejected)
+               VALUES (:articleId, 'MISSING_THUMBNAIL', :rejected)
                ON CONFLICT (article_id) DO UPDATE
-               SET status = 'MISSING_THUMBNAIL', attempt_count = 0,
+               SET status = 'MISSING_THUMBNAIL', attempt_count = 0, source_thumbnail_rejected = :rejected,
                    next_attempt_at = now(), last_error = NULL, updated_at = now()""",
-            mapOf("articleId" to articleId),
+            mapOf("articleId" to articleId, "rejected" to sourceThumbnailRejected),
         )
     }
 
@@ -303,6 +321,16 @@ class FacebookArticleImageGenerationRepository(private val jdbc: NamedParameterJ
     }
 
     companion object {
+        /** Display status for an AI illustration made only because Meta refused the source thumbnail. */
+        const val GENERATED_FOR_FACEBOOK = "GENERATED_FOR_FACEBOOK"
+
+        /** Job status, SOURCE_THUMBNAIL without a job, or [GENERATED_FOR_FACEBOOK]. Expects `a` and `job`. */
+        private const val DISPLAY_STATUS_SQL = """CASE
+                      WHEN job.status IS NULL THEN 'SOURCE_THUMBNAIL'
+                      WHEN job.status = 'GENERATED' AND job.source_thumbnail_rejected THEN 'GENERATED_FOR_FACEBOOK'
+                      ELSE job.status
+                  END"""
+
         fun hasUsableSourceThumbnail(thumbnail: String?): Boolean {
             val uri = runCatching { URI(thumbnail?.trim().orEmpty()) }.getOrNull() ?: return false
             val host = uri.host?.lowercase() ?: return false

@@ -47,6 +47,7 @@ Key settings:
 | `APP_PORT` | Host-local port for the Dockerized reverse proxy | `8086` |
 | `SPRING_PROFILES_ACTIVE` | Spring profile (`local` or `prod`) | `local` |
 | `SPRING_DEVTOOLS_RESTART_ENABLED` | Controls DevTools restarts for local JVM runs; the Docker production image excludes DevTools. Keep it `false` on the Selenium worker so imports are not interrupted. | server template: `true`, worker template: `false` |
+| `APP_LOG_LEVEL` | Log level for the application's own packages (`pl.bnowakowski.cozadzban`) | `INFO` |
 | `APP_LOG_FILE` | Spring Boot log file path, relative to the app working directory unless absolute. Use separate files for server and worker. | `logs/cozadzban.log` |
 | `APP_FACEBOOK_IMPORT_SELENIUM_REUSE_BROWSER_ACROSS_RESTARTS` | Reconnects to an existing non-headless Firefox Selenium session after a local worker restart. | `true` |
 | `APP_FACEBOOK_IMPORT_SELENIUM_DRIVER_SESSION_FILE` | File used to remember the reusable Firefox WebDriver server URL and session ID. | `logs/facebook-import-firefox-session.properties` |
@@ -66,9 +67,13 @@ Key settings:
 | `APP_FACEBOOK_PAGE_GRAPH_VERSION` | Meta Graph API version used for Page calls | `v26.0` |
 | `APP_FACEBOOK_IMAGE_CODEX_ENABLED` | Enables the experimental generated-image fallback for missing or rejected source thumbnails | `false` |
 | `APP_FACEBOOK_IMAGE_CLAUDE_ENABLED` | Claude Code draws an SVG fallback illustration when Codex can't generate an image (see `doc/CLAUDE_DOCKER.md`) | `false` |
+| `APP_ARTICLE_TITLE_SHORTENING_TIMEOUT_SECONDS` | Time limit for one Codex or Claude call that shortens an over-long title | `120` |
 | `APP_FACEBOOK_IMAGE_CLAUDE_MODEL` | Claude model alias or name for fallback illustrations | `sonnet` |
 | `APP_FACEBOOK_IMAGE_CLAUDE_OAUTH_TOKEN` | Optional long-lived subscription token from `make claude-docker-token`; empty uses the saved login | _(empty)_ |
 | `APP_FACEBOOK_IMAGE_PUBLICATION_WAIT_MAX` | How long a Facebook Page post waits for its generated illustration (pending or failed) before posting with the branded placeholder | `24h` |
+| `APP_FACEBOOK_IMPORT_LANGUAGE` | Language assigned to imported Facebook proposals before review | `pl` |
+| `APP_NOTIFICATIONS_PUSHOVER_CONNECT_TIMEOUT` / `APP_NOTIFICATIONS_PUSHOVER_READ_TIMEOUT` | Pushover HTTP timeouts | `3s` / `5s` |
+| `APP_FACEBOOK_IMPORT_TARGET_ARTICLE_PATH` | Server articles API path the importer uses to check whether a URL already exists | `/api/articles` |
 | `APP_FACEBOOK_IMPORT_APIFY_SCHEDULE_INTERVAL` | Minimum time between enabled Apify imports; the worker template schedules one automatic run per 24 hours | `24h` |
 | `APP_FACEBOOK_IMPORT_APIFY_COST_SUMMARY_DAYS` | Lookback window for the admin Apify cost total and automatic-run average | `30` |
 | `APP_FACEBOOK_IMPORT_APIFY_LOW_CREDIT_ALERTS_ENABLED` | Hourly forecast of when Apify credit runs out, with alerts 3 days and 1 day before (needs the Apify API token) | `true` |
@@ -105,7 +110,14 @@ time. The background worker publishes a photo with the article title and a
 short lead, without an article link. It normally uses a usable source thumbnail.
 When the experimental generated-image workflow is enabled, missing or rejected
 source thumbnails can produce a labeled illustration; the branded PNG remains
-the fallback. Published story pages link to their Facebook posts for reader comments.
+the fallback. The website (feed, story page and link previews) always shows a usable source
+thumbnail when the article has one, even when Meta rejected it and the Page post used an
+illustration; illustrations appear on the site only for articles without a thumbnail, or as the
+`/rss/image/{id}` proxy's fallback (a redirect) when the thumbnail has expired or is blocked. Editing an
+article re-draws its illustration only when it already has one or has no usable thumbnail. **Admin → Article
+thumbnails** shows such illustrations as "AI for Facebook only", with details on hover (recorded in
+`facebook_article_image_generation.source_thumbnail_rejected`).
+Published story pages link to their Facebook posts for reader comments.
 
 The Meta login configuration must grant `pages_manage_posts` in addition to
 the Phase 1 permissions. **Admin → Facebook Pages** shows failed jobs and

@@ -23,6 +23,7 @@ import pl.bnowakowski.cozadzban.analytics.RssEndpointAnalyticsTracker
 import pl.bnowakowski.cozadzban.article.Article
 import pl.bnowakowski.cozadzban.article.ArticleRepository
 import pl.bnowakowski.cozadzban.article.ArticleService
+import pl.bnowakowski.cozadzban.facebookpublish.FacebookArticleImageGenerationRepository
 import pl.bnowakowski.cozadzban.user.AppUserRepository
 import pl.bnowakowski.cozadzban.user.AppUserStatus
 import pl.bnowakowski.cozadzban.user.Role
@@ -51,6 +52,7 @@ class RssControllerTest {
     @MockitoBean private lateinit var articleContentRepository: ArticleContentRepository
     @MockitoBean private lateinit var articleService: ArticleService
     @MockitoBean private lateinit var rssEndpointAnalyticsTracker: RssEndpointAnalyticsTracker
+    @MockitoBean private lateinit var articleImages: FacebookArticleImageGenerationRepository
 
     private val sampleArticles = listOf(
         Article(
@@ -186,6 +188,22 @@ class RssControllerTest {
             mockMvc.get("/rss/image/1")
                 .andExpect {
                     status { isBadGateway() }
+                }
+        }
+    }
+
+    @Test
+    fun `GET rss image falls back to the AI illustration when the thumbnail cannot be fetched`() {
+        withImageServer("text/html", "<html>blocked</html>".toByteArray()) { thumbnailUrl ->
+            whenever(articleRepository.findById(1L)).thenReturn(
+                Optional.of(sampleArticles[0].copy(thumbnail = thumbnailUrl)),
+            )
+            whenever(articleImages.status(1L)).thenReturn("GENERATED")
+
+            mockMvc.get("/rss/image/1")
+                .andExpect {
+                    status { isFound() }
+                    header { string("Location", org.hamcrest.Matchers.startsWith("/generated-images/1.jpg")) }
                 }
         }
     }
