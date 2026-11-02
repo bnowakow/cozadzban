@@ -10,6 +10,7 @@ import com.vaadin.flow.component.orderedlayout.HorizontalLayout
 import com.vaadin.flow.component.orderedlayout.VerticalLayout
 import com.vaadin.flow.component.dependency.JsModule
 import com.vaadin.flow.component.dependency.Uses
+import com.vaadin.flow.data.renderer.ComponentRenderer
 import com.vaadin.flow.router.PageTitle
 import com.vaadin.flow.router.Route
 import jakarta.annotation.security.RolesAllowed
@@ -18,6 +19,7 @@ import pl.bnowakowski.cozadzban.facebookpublish.FacebookArticleStatistics
 import pl.bnowakowski.cozadzban.facebookpublish.FacebookPageStatisticsRepository
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportJobService
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportProperties
+import pl.bnowakowski.cozadzban.enrichment.LanguageFlagCache
 
 @Route("admin/facebook-statistics")
 @PageTitle("Story and Facebook statistics")
@@ -29,14 +31,17 @@ import pl.bnowakowski.cozadzban.facebookimport.FacebookImportProperties
 class FacebookStatisticsView(
     private val statistics: FacebookPageStatisticsRepository,
     articles: ArticleRepository,
+    private val languageFlagCache: LanguageFlagCache,
     private val facebookImportJobService: FacebookImportJobService? = null,
     private val facebookImportProperties: FacebookImportProperties = FacebookImportProperties(),
 ) : VerticalLayout() {
     private val language = ComboBox<String>("Language")
+    private val languageFlagPrefix = Span()
     private val sort = ComboBox<String>("Sort by")
     private val pageSummary = VerticalLayout()
     private val grid = Grid(FacebookArticleStatistics::class.java, false)
     private val pageInfo = Span()
+    private val pageNumber = PageNumberInput { target -> page = target; refreshArticles() }
     private val previous = Button("Previous") { changePage(-1) }
     private val next = Button("Next") { changePage(1) }
     private var page = 0
@@ -46,16 +51,29 @@ class FacebookStatisticsView(
         setSizeFull()
         sharedContentOffset()
         language.setItems(listOf("All") + articles.findDistinctLanguages())
+        language.setRenderer(ComponentRenderer { code: String ->
+            if (code == "All") HorizontalLayout(Span(code)).apply { isPadding = false } else languageWithFlag(languageFlagCache, code)
+        })
+        languageFlagPrefix.isVisible = false
+        language.setPrefixComponent(languageFlagPrefix)
         language.value = "All"
         sort.setItems("Story views", "Facebook reactions", "Newest")
         sort.value = "Story views"
-        language.addValueChangeListener { page = 0; refreshArticles() }
+        language.addValueChangeListener {
+            languageFlagPrefix.removeAll()
+            val selected = it.value?.takeUnless { code -> code == "All" }
+            languageFlagPrefix.isVisible = selected != null
+            if (selected != null) languageFlagPrefix.add(languageFlag(languageFlagCache, selected))
+            page = 0
+            refreshArticles()
+        }
         sort.addValueChangeListener { page = 0; refreshArticles() }
         configureGrid()
         val filters = HorizontalLayout(language, sort, Button("Refresh") { refreshAll() })
         filters.setWidthFull()
         pageSummary.isPadding = false
-        val navigation = HorizontalLayout(previous, pageInfo, next)
+        val navigation = HorizontalLayout(previous, pageInfo, pageNumber, next)
+        navigation.element.style.set("flex-wrap", "wrap")
         val content = sharedPageContent(
             Span("Story and Facebook statistics"),
             Span("Story views are browser page loads after bot filtering. Facebook reactions are the latest successful count; they remain the link-selection signal."),
@@ -86,7 +104,7 @@ class FacebookStatisticsView(
                 element.setAttribute("router-ignore", true)
             }
         }.setHeader("Article").setAutoWidth(true).setFlexGrow(2)
-        grid.addColumn(FacebookArticleStatistics::language).setHeader("Language").setAutoWidth(true)
+        grid.addComponentColumn { row -> languageWithFlag(languageFlagCache, row.language) }.setHeader("Language").setAutoWidth(true)
         grid.addColumn(FacebookArticleStatistics::storyViews).setHeader("Views total").setAutoWidth(true)
         grid.addColumn(FacebookArticleStatistics::storyViews7Days).setHeader("Views 7 days").setAutoWidth(true)
         grid.addColumn { it.reactionCount?.toString() ?: "—" }.setHeader("FB reactions").setAutoWidth(true)
@@ -104,7 +122,7 @@ class FacebookStatisticsView(
         if (pages.isEmpty()) pageSummary.add(Span("No Facebook Pages are connected."))
         pages.forEach { item ->
             pageSummary.add(Span(
-                "${item.pageName} (${item.language}): ${item.publishedPosts} published posts · " +
+                "${item.pageName} (${flaggedLanguageText(languageFlagCache, item.language)}): ${item.publishedPosts} published posts · " +
                     "${item.storyViews} story views (${item.storyViews7Days} in 7 days) · " +
                     "${item.latestReactionTotal} latest reactions · " +
                     "${item.confirmedLinksThisMonth}/${item.monthlyLinkLimit} confirmed links this month",
@@ -125,6 +143,7 @@ class FacebookStatisticsView(
         page = page.coerceAtMost(lastPage)
         grid.setItems(statistics.articleStatistics(selectedLanguage, selectedSort, PAGE_SIZE, page * PAGE_SIZE))
         pageInfo.text = "Page ${page + 1} of ${lastPage + 1} · $total articles"
+        pageNumber.update(page, lastPage + 1)
         previous.isEnabled = page > 0
         next.isEnabled = page < lastPage
     }

@@ -26,6 +26,7 @@ import com.vaadin.flow.router.Route
 import jakarta.annotation.security.RolesAllowed
 import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.security.oauth2.core.OAuth2AuthenticatedPrincipal
+import pl.bnowakowski.cozadzban.enrichment.LanguageFlagCache
 import pl.bnowakowski.cozadzban.facebookimport.FacebookArticleProposal
 import pl.bnowakowski.cozadzban.facebookimport.FacebookArticleProposalService
 import pl.bnowakowski.cozadzban.facebookimport.FacebookArticleProposalStatus
@@ -54,6 +55,7 @@ import java.util.concurrent.CompletableFuture
 class FacebookArticleProposalView(
     private val proposalService: FacebookArticleProposalService,
     private val appUserRepository: AppUserRepository,
+    private val languageFlagCache: LanguageFlagCache,
     private val facebookImportJobService: FacebookImportJobService? = null,
     private val facebookImportProperties: FacebookImportProperties = FacebookImportProperties(),
 ) : VerticalLayout() {
@@ -63,6 +65,11 @@ class FacebookArticleProposalView(
     private val proposalsGrid = VerticalLayout()
     private val statusFilter = Select<FacebookArticleProposalStatusFilter>()
     private val countLabel = Span()
+    private val pageInfo = Span()
+    private val pageNumber = PageNumberInput { target -> page = target; refreshGrid() }
+    private val previous = Button("Previous") { page--; refreshGrid() }
+    private val next = Button("Next") { page++; refreshGrid() }
+    private var page = 0
 
     init {
         installCozadzbanThemeBootstrap()
@@ -85,12 +92,18 @@ class FacebookArticleProposalView(
         }
         statusFilter.label = "Status"
         statusFilter.addValueChangeListener {
-            if (it.isFromClient) refreshGrid()
+            if (it.isFromClient) {
+                page = 0
+                refreshGrid()
+            }
         }
 
         configureGrid()
 
-        val content = VerticalLayout(buildProposalToolbar(), proposalsGrid)
+        val navigation = HorizontalLayout(previous, pageInfo, pageNumber, next)
+        navigation.defaultVerticalComponentAlignment = Alignment.CENTER
+        navigation.element.style.set("flex-wrap", "wrap")
+        val content = VerticalLayout(buildProposalToolbar(), proposalsGrid, navigation)
         content.addClassName("czj-admin-panel")
         content.isPadding = false
         content.isSpacing = true
@@ -134,9 +147,15 @@ class FacebookArticleProposalView(
 
     private fun refreshGrid() {
         val filter = statusFilter.value ?: FacebookArticleProposalStatusFilter.PENDING
-        val proposals = proposalService.findPage(filter, page = 0, size = 100)
         val count = proposalService.count(filter)
+        val lastPage = if (count == 0L) 0 else ((count - 1) / PAGE_SIZE).toInt()
+        page = page.coerceIn(0, lastPage)
+        val proposals = proposalService.findPage(filter, page = page, size = PAGE_SIZE)
         countLabel.text = "$count ${if (count == 1L) "proposal" else "proposals"}"
+        pageInfo.text = "Page ${page + 1} of ${lastPage + 1}"
+        pageNumber.update(page, lastPage + 1)
+        previous.isEnabled = page > 0
+        next.isEnabled = page < lastPage
 
         proposalsGrid.removeAll()
         proposalsGrid.add(proposalGridHeaderRow())
@@ -177,7 +196,7 @@ class FacebookArticleProposalView(
                 ),
                 gridCell(formatSubmittedAt(proposal.submittedAt)),
                 gridCell(statusLabel(proposal.status)),
-                gridCell(proposal.effectiveLanguage),
+                gridCell(languageWithFlag(languageFlagCache, proposal.effectiveLanguage)),
                 gridCell(externalLink(proposal.articleUrl)),
                 gridCell(proposal.facebookPostUrl?.let(::externalLink) ?: Span("-")),
                 gridCell(importSourceBadge(facebookImportTypeLabel(proposal.importType))),
@@ -191,9 +210,9 @@ class FacebookArticleProposalView(
             element.style.set("display", "grid")
             element.style.set(
                 "grid-template-columns",
-                "minmax(6rem, 7rem) minmax(9rem, 10rem) minmax(5rem, 7rem) minmax(4rem, 5rem) minmax(16rem, 1.2fr) minmax(16rem, 1.2fr) minmax(7rem, 8rem) minmax(7rem, 8rem) minmax(7rem, 8rem)",
+                "minmax(6rem, 7rem) minmax(9rem, 10rem) minmax(5rem, 7rem) minmax(6.5rem, 7.5rem) minmax(16rem, 1.2fr) minmax(16rem, 1.2fr) minmax(7rem, 8rem) minmax(7rem, 8rem) minmax(7rem, 8rem)",
             )
-            element.style.set("min-width", "83rem")
+            element.style.set("min-width", "86rem")
             element.style.set("width", "100%")
         }
 
@@ -396,5 +415,9 @@ class FacebookArticleProposalView(
         if (variant != null) notification.addThemeVariants(variant)
         notification.add(Span(message))
         notification.open()
+    }
+
+    private companion object {
+        const val PAGE_SIZE = 100
     }
 }

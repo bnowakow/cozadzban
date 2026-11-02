@@ -41,14 +41,28 @@ class LanguageFlagCache(
 
     fun flagPath(language: String?): String? {
         val normalized = language?.trim()?.lowercase() ?: return null
-        if (!LANGUAGE_PATTERN.matches(normalized)) return null
-        val country = LANGUAGE_TO_COUNTRY[normalized] ?: return null
+        val country = countryFor(normalized) ?: return null
         val filename = "$country.svg"
         val target = cachePath.resolve(filename).normalize()
         if (!target.startsWith(cachePath)) return null
         if (Files.isRegularFile(target)) return "/flags/$filename"
         if (normalized in misses) return null
         return download(country, target, normalized)
+    }
+
+    fun flagEmoji(language: String?): String {
+        val normalized = language?.trim()?.lowercase() ?: return "🏳️"
+        val country = countryFor(normalized) ?: return "🏳️"
+        return country.uppercase().map { code ->
+            String(Character.toChars(0x1F1E6 + code.code - 'A'.code))
+        }.joinToString("")
+    }
+
+    private fun countryFor(language: String): String? {
+        if (!LANGUAGE_PATTERN.matches(language)) return null
+        val parts = language.split('-')
+        return parts.drop(1).firstOrNull { part -> part.length == 2 && part.all { it in 'a'..'z' } }
+            ?: LANGUAGE_TO_COUNTRY[parts.first()]
     }
 
     private fun download(country: String, target: Path, language: String): String? {
@@ -119,7 +133,7 @@ class LanguageFlagCache(
         private const val BROWSER_USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
                 "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-        private val LANGUAGE_PATTERN = Regex("[a-z]{2,3}")
+        private val LANGUAGE_PATTERN = Regex("[a-z]{2,3}(?:-[a-z0-9]{2,8})*")
         private val LOG = LoggerFactory.getLogger(LanguageFlagCache::class.java)
 
         // ISO 639-1/-3 language code → ISO 3166-1 alpha-2 country code used by flagcdn.com.

@@ -10,9 +10,9 @@ import com.vaadin.flow.component.grid.Grid
 import com.vaadin.flow.component.html.Anchor
 import com.vaadin.flow.component.html.H2
 import com.vaadin.flow.component.html.H3
-import com.vaadin.flow.component.html.Image
 import com.vaadin.flow.component.html.Span
 import com.vaadin.flow.component.notification.Notification
+import com.vaadin.flow.component.notification.NotificationVariant
 import com.vaadin.flow.component.orderedlayout.FlexComponent.Alignment
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout
 import com.vaadin.flow.component.orderedlayout.VerticalLayout
@@ -33,6 +33,7 @@ import pl.bnowakowski.cozadzban.facebookpublish.FacebookPageConnectionService
 import pl.bnowakowski.cozadzban.facebookpublish.FacebookPageOAuthController
 import pl.bnowakowski.cozadzban.facebookpublish.FacebookPageProperties
 import pl.bnowakowski.cozadzban.facebookpublish.FacebookPageSettings
+import pl.bnowakowski.cozadzban.facebookpublish.FacebookPageStatisticsRepository
 import pl.bnowakowski.cozadzban.facebookpublish.FacebookEngagementRepository
 import pl.bnowakowski.cozadzban.facebookpublish.FacebookEngagementActivity
 import pl.bnowakowski.cozadzban.facebookpublish.FacebookPageSyncRepository
@@ -42,6 +43,7 @@ import pl.bnowakowski.cozadzban.facebookimport.FacebookImportJobService
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportProperties
 import java.net.URLEncoder
 import java.time.Instant
+import java.time.DateTimeException
 
 @Route("admin/facebook-pages")
 @PageTitle("Facebook Pages")
@@ -56,6 +58,7 @@ class FacebookPageSettingsView(
     private val properties: FacebookPageProperties,
     private val articleRepository: ArticleRepository,
     private val languageFlagCache: LanguageFlagCache,
+    private val statistics: FacebookPageStatisticsRepository,
     private val facebookImportJobService: FacebookImportJobService? = null,
     private val facebookImportProperties: FacebookImportProperties = FacebookImportProperties(),
     private val publications: FacebookPublicationQueue? = null,
@@ -65,6 +68,7 @@ class FacebookPageSettingsView(
     private val articleLanguages = articleRepository.findDistinctLanguages()
     private val language = ComboBox<String>("Article language")
     private val configured = ComboBox<String>("Connected language")
+    private val languageFlagPrefix = Span()
     private val configuredFlag = Span()
     private val enabled = Checkbox("Publish new articles automatically")
     private val timeZone = TextField("Page time zone")
@@ -72,6 +76,7 @@ class FacebookPageSettingsView(
     private val minimumPostAgeHours = IntegerField("Minimum post age (hours)")
     private val schedulerIntervalMinutes = IntegerField("Scheduler interval (minutes)")
     private val pageLabel = Span()
+    private val linkCounts = Span()
     private val connect = Button("Connect a Facebook Page")
     private val candidates = ComboBox<String>("Choose authorized Page")
     private val selectCandidate = Button("Use selected Page") { connectSelected() }
@@ -81,6 +86,7 @@ class FacebookPageSettingsView(
     private val engagementGrid = Grid(FacebookEngagementActivity::class.java, false)
     private val engagementEmpty = Span("No published Facebook posts yet.")
     private val engagementPageInfo = Span()
+    private val engagementPageNumber = PageNumberInput { target -> engagementPage = target; refreshEngagementActivity() }
     private val engagementPrevious = Button("Previous") { changeEngagementPage(-1) }
     private val engagementNext = Button("Next") { changeEngagementPage(1) }
     private var engagementPage = 0
@@ -112,12 +118,17 @@ class FacebookPageSettingsView(
         }
         language.setItems(articleLanguages)
         language.placeholder = "Select a language"
-        language.setRenderer(ComponentRenderer { code: String -> languageOption(code) })
+        language.setRenderer(ComponentRenderer { code: String -> languageWithFlag(languageFlagCache, code) })
+        languageFlagPrefix.isVisible = false
+        language.setPrefixComponent(languageFlagPrefix)
         if (articleLanguages.isEmpty()) {
             language.helperText = "Add an article before connecting a Facebook Page."
         }
         connect.isEnabled = properties.oauthConfigured && articleLanguages.isNotEmpty()
-        language.addValueChangeListener { connect.isEnabled = properties.oauthConfigured && it.value != null }
+        language.addValueChangeListener {
+            updateFlagPrefix(languageFlagPrefix, it.value)
+            connect.isEnabled = properties.oauthConfigured && it.value != null
+        }
         connect.addClickListener {
             try {
                 val normalized = ArticleService.normalizeLanguage(language.value ?: return@addClickListener notify("Select an article language"))
@@ -127,11 +138,11 @@ class FacebookPageSettingsView(
                 notify(ex.message ?: "Invalid language")
             }
         }
-        configured.setRenderer(ComponentRenderer { code: String -> languageOption(code) })
+        configured.setRenderer(ComponentRenderer { code: String -> languageWithFlag(languageFlagCache, code) })
         configuredFlag.isVisible = false
         configured.setPrefixComponent(configuredFlag)
         configured.addValueChangeListener { selection ->
-            updateConnectedFlag(selection.value)
+            updateFlagPrefix(configuredFlag, selection.value)
             service.all().firstOrNull { it.language == selection.value }?.let(::populate)
         }
         candidates.setItemLabelGenerator { id -> candidatePages[id]?.name ?: id }
@@ -142,17 +153,20 @@ class FacebookPageSettingsView(
         connectionCard.add(connectActions, candidates, selectCandidate)
         val connectedSettingsCard = settingsCard("Connected Page settings", "Publishing starts only after you enable a connected Page and save these settings.")
         pageLabel.addClassName("czj-settings-status")
+        monthlyLinkLimit.setMin(0)
+        monthlyLinkLimit.helperText = "Minimum: 0"
         val fields = HorizontalLayout(timeZone, monthlyLinkLimit, minimumPostAgeHours, schedulerIntervalMinutes)
         fields.addClassName("czj-settings-fields")
         fields.setWidthFull()
         val settingsActions = HorizontalLayout(save, disconnect).apply { addClassName("czj-settings-actions") }
-        connectedSettingsCard.add(configured, pageLabel, enabled, fields, settingsActions)
+        connectedSettingsCard.add(configured, pageLabel, linkCounts, enabled, fields, settingsActions)
         form.add(connectionCard, connectedSettingsCard)
         form.add(settingsCard("Publication problems", "Check uncertain results on the Facebook Page before retrying.").apply { add(publicationProblems) })
         form.add(settingsCard("Link comment problems", "Check uncertain comments on the Facebook post before retrying.").apply { add(commentProblems) })
         configureEngagementGrid()
-        val engagementNavigation = HorizontalLayout(engagementPrevious, engagementPageInfo, engagementNext)
+        val engagementNavigation = HorizontalLayout(engagementPrevious, engagementPageInfo, engagementPageNumber, engagementNext)
         engagementNavigation.addClassName("czj-settings-actions")
+        engagementNavigation.element.style.set("flex-wrap", "wrap")
         form.add(settingsCard("Recent Facebook engagement", "Published posts and their latest reaction checks, newest first.").apply {
             add(Button("Refresh engagement") { refreshEngagementActivity() }, engagementGrid, engagementEmpty, engagementNavigation)
         })
@@ -229,17 +243,30 @@ class FacebookPageSettingsView(
     }
 
     private fun saveSettings() {
-        val selected = configured.value ?: return notify("Select a connected language")
+        val selected = configured.value ?: return validationError("Select a connected language")
         try {
+            if (monthlyLinkLimit.isInvalid) throw IllegalArgumentException("Links per month must be a whole number 0 or greater")
+            if (minimumPostAgeHours.isInvalid) throw IllegalArgumentException("Minimum post age must be a whole number from 0 to 8760")
+            if (schedulerIntervalMinutes.isInvalid) throw IllegalArgumentException("Scheduler interval must be a whole number from 1 to 10080")
+            val linkLimit = monthlyLinkLimit.value
+                ?: throw IllegalArgumentException("Links per month must be a whole number 0 or greater")
+            val minimumAge = minimumPostAgeHours.value
+                ?: throw IllegalArgumentException("Minimum post age must be a whole number from 0 to 8760")
+            val interval = schedulerIntervalMinutes.value
+                ?: throw IllegalArgumentException("Scheduler interval must be a whole number from 1 to 10080")
             val saved = service.saveSettings(
                 selected,
                 FacebookPageSettings(
-                    enabled.value, timeZone.value.trim(), monthlyLinkLimit.value ?: 5,
-                    minimumPostAgeHours.value ?: 24, schedulerIntervalMinutes.value ?: 60,
+                    enabled.value, timeZone.value.trim(), linkLimit,
+                    minimumAge, interval,
                 ),
             )
             populate(saved)
             notify("Saved settings for ${saved.pageName}")
+        } catch (ex: DateTimeException) {
+            validationError("Invalid Page time zone: ${ex.message}")
+        } catch (ex: IllegalArgumentException) {
+            validationError(ex.message ?: "Invalid Page settings")
         } catch (_: Exception) {
             notify("Could not save Page settings. Check the values and try again.")
         }
@@ -256,40 +283,32 @@ class FacebookPageSettingsView(
         val pages = service.all()
         configured.setItems(pages.map { it.language })
         configured.value = pages.firstOrNull { it.language == selectLanguage }?.language ?: pages.firstOrNull()?.language
-        if (pages.isEmpty()) pageLabel.text = "No Pages connected"
+        if (pages.isEmpty()) {
+            pageLabel.text = "No Pages connected"
+            linkCounts.text = ""
+        }
     }
 
-    private fun languageOption(code: String): HorizontalLayout = HorizontalLayout().apply {
-        isPadding = false
-        defaultVerticalComponentAlignment = Alignment.CENTER
-        languageFlagCache.flagPath(code)?.let { path ->
-            add(Image(path, "Flag for $code").apply {
-                setWidth("1.5rem")
-                setHeight("1rem")
-            })
-        }
-        add(Span(code))
-    }
-
-    private fun updateConnectedFlag(code: String?) {
-        configuredFlag.removeAll()
-        val path = languageFlagCache.flagPath(code)
-        configuredFlag.isVisible = path != null
-        if (path != null) {
-            configuredFlag.add(Image(path, "").apply {
-                setWidth("1.5rem")
-                setHeight("1rem")
-            })
-        }
+    private fun updateFlagPrefix(prefix: Span, code: String?) {
+        prefix.removeAll()
+        prefix.isVisible = code != null
+        if (code != null) prefix.add(languageFlag(languageFlagCache, code))
     }
 
     private fun populate(page: FacebookPageConnection) {
         pageLabel.text = "${page.pageName} (${page.pageId}) — ${if (page.enabled) "enabled" else "disabled"}"
+        refreshLinkCounts(page)
         enabled.value = page.enabled
         timeZone.value = page.timeZone
         monthlyLinkLimit.value = page.monthlyLinkLimit
         minimumPostAgeHours.value = page.minimumPostAgeHours
         schedulerIntervalMinutes.value = page.schedulerIntervalMinutes
+    }
+
+    private fun refreshLinkCounts(page: FacebookPageConnection) {
+        val now = Instant.now()
+        val counts = statistics.linkCounts(page.pageId, now)
+        linkCounts.text = "Confirmed links posted to Facebook: ${counts.total} total · ${counts.thisMonth} this month · ${counts.last30Days} in the last 30 days (as of ${WarsawTime.dateTime(now)})"
     }
 
     private fun refreshPublicationProblems() {
@@ -304,7 +323,7 @@ class FacebookPageSettingsView(
             val row = VerticalLayout()
             row.addClassName("czj-settings-problem")
             row.isPadding = false
-            row.add(Span("Article ${job.articleId} · ${job.language} · ${job.status} · ${job.lastError ?: "No Page was enabled when this article was added."}"))
+            row.add(Span("Article ${job.articleId} · ${flaggedLanguageText(languageFlagCache, job.language)} · ${job.status} · ${job.lastError ?: "No Page was enabled when this article was added."}"))
             when (job.status) {
                 "UNCONFIGURED" -> row.add(Button("Retry with enabled Page") {
                     if (queue.retryUnconfigured(job.id)) refreshPublicationProblems()
@@ -349,7 +368,7 @@ class FacebookPageSettingsView(
             val row = VerticalLayout()
             row.addClassName("czj-settings-problem")
             row.isPadding = false
-            row.add(Span("Article ${problem.articleId} · ${problem.language} · ${problem.status} · ${problem.lastError ?: "Unknown error"}"))
+            row.add(Span("Article ${problem.articleId} · ${flaggedLanguageText(languageFlagCache, problem.language)} · ${problem.status} · ${problem.lastError ?: "Unknown error"}"))
             if (problem.status == "FAILED") {
                 row.add(Button("Retry rejected comment") {
                     val page = service.all().firstOrNull { it.language == problem.language && it.enabled }
@@ -360,8 +379,10 @@ class FacebookPageSettingsView(
                 val commentId = TextField("Confirmed Meta comment ID")
                 row.add(commentId, Button("Record existing comment") {
                     try {
-                        if (repository.confirmReviewedComment(problem.id, commentId.value.trim())) refreshCommentProblems()
-                        else notify("This comment is no longer awaiting review")
+                        if (repository.confirmReviewedComment(problem.id, commentId.value.trim())) {
+                            refreshCommentProblems()
+                            service.all().firstOrNull { it.language == configured.value }?.let(::refreshLinkCounts)
+                        } else notify("This comment is no longer awaiting review")
                     } catch (ex: IllegalArgumentException) { notify(ex.message ?: "Invalid comment ID") }
                 })
                 val verifiedAbsent = Checkbox("I checked the Facebook post and confirmed the link comment is absent")
@@ -387,7 +408,7 @@ class FacebookPageSettingsView(
                 element.setAttribute("router-ignore", true)
             }
         }.setHeader("Article").setAutoWidth(true)
-        engagementGrid.addColumn(FacebookEngagementActivity::language).setHeader("Language").setAutoWidth(true)
+        engagementGrid.addComponentColumn { item -> languageWithFlag(languageFlagCache, item.language) }.setHeader("Language").setAutoWidth(true)
         engagementGrid.addColumn { item ->
             when (item.reactionStatus) {
                 "SUCCESS" -> "${item.reactionCount ?: 0}"
@@ -410,6 +431,7 @@ class FacebookPageSettingsView(
         engagementGrid.setItems(rows)
         engagementEmpty.isVisible = rows.isEmpty()
         engagementPageInfo.text = "Page ${engagementPage + 1} of ${lastPage + 1} · $total posts"
+        engagementPageNumber.update(engagementPage, lastPage + 1)
         engagementPrevious.isEnabled = engagementPage > 0
         engagementNext.isEnabled = engagementPage < lastPage
     }
@@ -431,7 +453,7 @@ class FacebookPageSettingsView(
             val row = VerticalLayout()
             row.addClassName("czj-settings-problem")
             row.isPadding = false
-            row.add(Span("Article ${problem.articleId} · ${problem.language} · ${problem.action} · ${problem.status} · ${problem.lastError ?: "Unknown error"}"))
+            row.add(Span("Article ${problem.articleId} · ${flaggedLanguageText(languageFlagCache, problem.language)} · ${problem.action} · ${problem.status} · ${problem.lastError ?: "Unknown error"}"))
             when (problem.status) {
                 "FAILED" -> {
                     row.add(Button("Retry rejected ${problem.action.lowercase()}") {
@@ -469,6 +491,11 @@ class FacebookPageSettingsView(
     }
 
     private fun notify(message: String) { Notification.show(message, 5000, Notification.Position.MIDDLE) }
+
+    private fun validationError(message: String) {
+        Notification.show(message, 5000, Notification.Position.MIDDLE)
+            .addThemeVariants(NotificationVariant.LUMO_ERROR)
+    }
 
     private fun settingsCard(title: String, description: String): VerticalLayout = VerticalLayout(
         H3(title), Span(description).apply { addClassName("czj-settings-description") },

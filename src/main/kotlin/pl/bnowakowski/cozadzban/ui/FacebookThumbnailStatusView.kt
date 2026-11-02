@@ -18,6 +18,7 @@ import com.vaadin.flow.component.orderedlayout.VerticalLayout
 import com.vaadin.flow.router.PageTitle
 import com.vaadin.flow.router.Route
 import jakarta.annotation.security.RolesAllowed
+import pl.bnowakowski.cozadzban.enrichment.LanguageFlagCache
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportJobService
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportProperties
 import pl.bnowakowski.cozadzban.facebookpublish.FacebookArticleImageGenerationRepository
@@ -35,6 +36,7 @@ import pl.bnowakowski.cozadzban.facebookpublish.FacebookArticleImageStatusRow
 class FacebookThumbnailStatusView(
     private val jobs: FacebookArticleImageGenerationRepository,
     private val generation: FacebookArticleImageGenerationScheduler,
+    private val languageFlagCache: LanguageFlagCache,
     private val facebookImportJobService: FacebookImportJobService? = null,
     private val facebookImportProperties: FacebookImportProperties = FacebookImportProperties(),
 ) : VerticalLayout() {
@@ -42,10 +44,12 @@ class FacebookThumbnailStatusView(
     private val grid = Grid(FacebookArticleImageStatusRow::class.java, false)
     private val queueGrid = Grid(FacebookArticleImageQueueRow::class.java, false)
     private val pageInfo = Span()
+    private val pageNumber = PageNumberInput { target -> page = target; refresh() }
     private val previous = Button("Previous") { changePage(-1) }
     private val next = Button("Next") { changePage(1) }
     private val queueSummary = Span()
     private val queuePageInfo = Span()
+    private val queuePageNumber = PageNumberInput { target -> queuePage = target; refreshQueue() }
     private val queuePrevious = Button("Previous") { changeQueuePage(-1) }
     private val queueNext = Button("Next") { changeQueuePage(1) }
     private var page = 0
@@ -63,8 +67,10 @@ class FacebookThumbnailStatusView(
 
         val filters = HorizontalLayout(status, Button("Refresh") { refresh() })
         filters.setWidthFull()
-        val navigation = HorizontalLayout(previous, pageInfo, next)
-        val queueNavigation = HorizontalLayout(queuePrevious, queuePageInfo, queueNext)
+        val navigation = HorizontalLayout(previous, pageInfo, pageNumber, next)
+        val queueNavigation = HorizontalLayout(queuePrevious, queuePageInfo, queuePageNumber, queueNext)
+        navigation.element.style.set("flex-wrap", "wrap")
+        queueNavigation.element.style.set("flex-wrap", "wrap")
         val message = if (generation.isEnabled()) {
             "Select a status to review article thumbnails. Generate now starts one missing or failed illustration in the background; refresh to see its result."
         } else {
@@ -101,7 +107,7 @@ class FacebookThumbnailStatusView(
                 element.setAttribute("router-ignore", true)
             }
         }.setHeader("Article").setFlexGrow(2)
-        grid.addColumn(FacebookArticleImageStatusRow::language).setHeader("Language").setAutoWidth(true)
+        grid.addComponentColumn { row -> languageWithFlag(languageFlagCache, row.language) }.setHeader("Language").setAutoWidth(true)
         grid.addComponentColumn { row -> withTooltip(rowLabel(row)) }.setHeader("Status").setAutoWidth(true)
         grid.addComponentColumn { row -> thumbnail(row) }.setHeader("Thumbnail").setAutoWidth(true)
         grid.addColumn(FacebookArticleImageStatusRow::attemptCount).setHeader("Attempts").setAutoWidth(true)
@@ -131,7 +137,7 @@ class FacebookThumbnailStatusView(
                 element.setAttribute("router-ignore", true)
             }
         }.setHeader("Article").setFlexGrow(2)
-        queueGrid.addColumn(FacebookArticleImageQueueRow::language)
+        queueGrid.addComponentColumn { row -> languageWithFlag(languageFlagCache, row.language) }
             .setHeader("Language").setAutoWidth(true)
         queueGrid.addComponentColumn {
             withTooltip(waitingReason(FacebookArticleImageGenerationRepository.hasUsableSourceThumbnail(it.sourceThumbnail), it.pageRejectedSourceThumbnail))
@@ -185,6 +191,7 @@ class FacebookThumbnailStatusView(
         page = page.coerceAtMost(lastPage)
         grid.setItems(jobs.statusPage(selected, PAGE_SIZE, page * PAGE_SIZE))
         pageInfo.text = "Page ${page + 1} of ${lastPage + 1} · $total articles"
+        pageNumber.update(page, lastPage + 1)
         previous.isEnabled = page > 0
         next.isEnabled = page < lastPage
         refreshQueue()
@@ -198,6 +205,7 @@ class FacebookThumbnailStatusView(
         queueGrid.setItems(jobs.queuePage(PAGE_SIZE, queuePage * PAGE_SIZE))
         queueSummary.text = "$waiting waiting · $generating generating"
         queuePageInfo.text = "Page ${queuePage + 1} of ${lastPage + 1} · $waiting waiting"
+        queuePageNumber.update(queuePage, lastPage + 1)
         queuePrevious.isEnabled = queuePage > 0
         queueNext.isEnabled = queuePage < lastPage
     }

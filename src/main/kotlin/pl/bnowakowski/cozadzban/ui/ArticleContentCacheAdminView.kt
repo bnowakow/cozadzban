@@ -58,6 +58,7 @@ class ArticleContentCacheAdminView(
     private val contentArticleCache = mutableMapOf<Long, Article>()
     private val contentTotalInfo = Span()
     private val contentPageInfo = Span()
+    private val contentPageNumber = PageNumberInput { target -> contentPage = target; refreshContentGrid() }
     private val contentPrevious = Button("Previous") { changeContentPage(-1) }
     private val contentNext = Button("Next") { changeContentPage(1) }
     private var contentPage = 0
@@ -79,7 +80,8 @@ class ArticleContentCacheAdminView(
         val pageTitle = Span("Article content cache").apply { addClassName("czj-admin-title") }
         pageTitle.element.style.set("padding", "1rem 1rem 0")
         val contentFilters = buildContentFilters()
-        val contentNavigation = HorizontalLayout(contentPrevious, contentPageInfo, contentNext)
+        val contentNavigation = HorizontalLayout(contentPrevious, contentPageInfo, contentPageNumber, contentNext)
+        contentNavigation.element.style.set("flex-wrap", "wrap")
         val contentPanel = VerticalLayout(contentFilters, contentGrid, contentNavigation)
         contentPanel.isPadding = false
         contentPanel.isSpacing = true
@@ -370,6 +372,7 @@ class ArticleContentCacheAdminView(
         contentGrid.setItems(entries)
         contentTotalInfo.text = "$total cache entries"
         contentPageInfo.text = "Page ${contentPage + 1} of ${lastPage + 1} · $total cache entries"
+        contentPageNumber.update(contentPage, lastPage + 1)
         contentPrevious.isEnabled = contentPage > 0
         contentNext.isEnabled = contentPage < lastPage
     }

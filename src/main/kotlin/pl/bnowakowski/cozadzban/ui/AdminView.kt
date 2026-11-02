@@ -53,6 +53,7 @@ class AdminView(
 
     private val usersGrid = Grid(AppUser::class.java, false)
     private val pageInfo = Span()
+    private val pageNumber = PageNumberInput { target -> page = target; refreshGrid() }
     private val previousPageButton = Button("Previous") { changePage(-1) }
     private val nextPageButton = Button("Next") { changePage(1) }
     private var page = 0
@@ -82,8 +83,9 @@ class AdminView(
         configureGrid()
         refreshGrid()
 
-        val navigation = HorizontalLayout(previousPageButton, pageInfo, nextPageButton)
+        val navigation = HorizontalLayout(previousPageButton, pageInfo, pageNumber, nextPageButton)
         navigation.defaultVerticalComponentAlignment = Alignment.CENTER
+        navigation.element.style.set("flex-wrap", "wrap")
         val content = sharedPageContent(pageToolbar, usersGrid, navigation)
         content.expand(usersGrid)
         add(
@@ -306,6 +308,7 @@ class AdminView(
         page = page.coerceIn(0, lastPage)
         usersGrid.setItems(users.drop(page * PAGE_SIZE).take(PAGE_SIZE))
         pageInfo.text = "Page ${page + 1} of ${lastPage + 1} · ${users.size} users"
+        pageNumber.update(page, lastPage + 1)
         previousPageButton.isEnabled = page > 0
         nextPageButton.isEnabled = page < lastPage
     }

@@ -27,7 +27,7 @@ class FacebookPageConnectionService(
     fun saveSettings(languageInput: String, settings: FacebookPageSettings): FacebookPageConnection {
         val language = ArticleService.normalizeLanguage(languageInput)
         ZoneId.of(settings.timeZone)
-        require(settings.monthlyLinkLimit in 0..100) { "Monthly link limit must be between 0 and 100" }
+        require(settings.monthlyLinkLimit >= 0) { "Monthly link limit must be 0 or greater" }
         require(settings.minimumPostAgeHours in 0..8760) { "Minimum post age must be between 0 and 8760 hours" }
         require(settings.schedulerIntervalMinutes in 1..10080) { "Scheduler interval must be between 1 and 10080 minutes" }
         require(repository.updateSettings(language, settings)) { "No Page connected for $language" }

@@ -4,6 +4,7 @@
 package pl.bnowakowski.cozadzban.ui
 
 import com.vaadin.flow.component.button.Button
+import com.vaadin.flow.component.Component
 import com.vaadin.flow.component.button.ButtonVariant
 import com.vaadin.flow.component.Key
 import com.vaadin.flow.component.UI
@@ -963,8 +964,12 @@ class ArticleListView(
         }
     }
 
-    private fun languageFlagIcon(language: String?): Span? {
-        val path = languageFlagCache.flagPath(language) ?: return null
+    private fun languageFlagIcon(language: String?): Component? {
+        if (language == null) return null
+        val path = languageFlagCache.flagPath(language)
+        if (path == null) return Span(languageFlagCache.flagEmoji(language)).apply {
+            element.setAttribute("aria-hidden", "true")
+        }
         val flag = Span()
         flag.addClassName("czj-language-flag")
         flag.element.style.set("background-image", "url('$path')")
@@ -993,6 +998,7 @@ class ArticleListView(
                 dialog.close()
             }
             button.width = "100%"
+            languageFlagIcon(language)?.let { button.icon = it }
             button.addThemeVariants(ButtonVariant.LUMO_TERTIARY)
             content.add(button)
         }
@@ -1340,6 +1346,7 @@ class ArticleListView(
         languageSuggestions.defaultVerticalComponentAlignment = Alignment.CENTER
         articleRepository.findTopLanguages(LANGUAGE_SUGGESTION_LIMIT).forEach { language ->
             val suggestionButton = Button(language)
+            languageFlagIcon(language)?.let { suggestionButton.icon = it }
             suggestionButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY)
             suggestionButton.addClickListener { languageField.value = language }
             languageSuggestions.add(suggestionButton)

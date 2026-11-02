@@ -5,7 +5,9 @@ import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Repository
 import java.time.Instant
 import java.time.LocalDate
-import java.time.ZoneId
+import pl.bnowakowski.cozadzban.ui.WarsawTime
+
+data class FacebookLinkCounts(val total: Long, val thisMonth: Long, val last30Days: Long)
 
 data class FacebookPageStatistics(
     val language: String,
@@ -36,10 +38,26 @@ class FacebookPageStatisticsRepository(
     private val jdbc: NamedParameterJdbcTemplate,
     private val pages: FacebookPageConnectionRepository,
 ) {
+    fun linkCounts(pageId: String, now: Instant = Instant.now()): FacebookLinkCounts {
+        val monthStart = now.atZone(WarsawTime.ZONE).toLocalDate().withDayOfMonth(1)
+            .atStartOfDay(WarsawTime.ZONE).toInstant()
+        return jdbc.query(
+            """SELECT COUNT(*) AS total,
+                      COUNT(*) FILTER (WHERE confirmed_at >= :monthStart) AS this_month,
+                      COUNT(*) FILTER (WHERE confirmed_at >= :last30DaysStart) AS last_30_days
+               FROM facebook_link_comment
+               WHERE page_id = :pageId AND status = 'CONFIRMED' AND confirmed_at <= :now""",
+            mapOf("pageId" to pageId, "monthStart" to utcTimestamp(monthStart),
+                "last30DaysStart" to utcTimestamp(now.minusSeconds(30L * 24 * 60 * 60)),
+                "now" to utcTimestamp(now)),
+        ) { rs, _ -> FacebookLinkCounts(rs.getLong("total"), rs.getLong("this_month"),
+            rs.getLong("last_30_days")) }.first()
+    }
+
     fun pageStatistics(now: Instant = Instant.now()): List<FacebookPageStatistics> {
-        val sevenDays = LocalDate.ofInstant(now, pl.bnowakowski.cozadzban.ui.WarsawTime.ZONE).minusDays(6)
+        val sevenDays = LocalDate.ofInstant(now, WarsawTime.ZONE).minusDays(6)
         return pages.all().map { page ->
-            val zone = ZoneId.of(page.timeZone)
+            val zone = WarsawTime.ZONE
             val month = now.atZone(zone).toLocalDate().withDayOfMonth(1)
             val start = month.atStartOfDay(zone).toInstant()
             val end = month.plusMonths(1).atStartOfDay(zone).toInstant()
@@ -81,7 +99,7 @@ class FacebookPageStatisticsRepository(
                           now: Instant = Instant.now()): List<FacebookArticleStatistics> {
         require(sort in setOf("VIEWS", "REACTIONS", "NEWEST")) { "Unsupported statistics sort" }
         require(limit in 1..100 && offset >= 0) { "Invalid statistics page" }
-        val sevenDays = LocalDate.ofInstant(now, pl.bnowakowski.cozadzban.ui.WarsawTime.ZONE).minusDays(6)
+        val sevenDays = LocalDate.ofInstant(now, WarsawTime.ZONE).minusDays(6)
         return jdbc.query(
             """WITH views AS (
                  SELECT article_id, SUM(view_count) AS total_views,
