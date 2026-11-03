@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
+import pl.bnowakowski.cozadzban.article.ArticleRepository
 import pl.bnowakowski.cozadzban.enrichment.LanguageFlagCache
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken
 import org.springframework.security.core.authority.SimpleGrantedAuthority
@@ -35,6 +36,7 @@ class FacebookArticleProposalViewTest {
     private val proposalService: FacebookArticleProposalService = mock()
     private val appUserRepository: AppUserRepository = mock()
     private val languageFlagCache: LanguageFlagCache = mock()
+    private val articleRepository: ArticleRepository = mock()
 
     init {
         whenever(languageFlagCache.flagEmoji("pl")).thenReturn("🇵🇱")
@@ -57,7 +59,7 @@ class FacebookArticleProposalViewTest {
             .thenReturn(listOf(proposal()))
         whenever(proposalService.count(FacebookArticleProposalStatusFilter.PENDING)).thenReturn(1L)
 
-        val view = FacebookArticleProposalView(proposalService, appUserRepository, languageFlagCache)
+        val view = FacebookArticleProposalView(proposalService, appUserRepository, languageFlagCache, articleRepository)
 
         val selects = findComponents(view, Select::class.java)
         assertEquals(FacebookArticleProposalStatusFilter.PENDING, selects.single().value)
@@ -74,7 +76,7 @@ class FacebookArticleProposalViewTest {
         )
         whenever(proposalService.findPage(FacebookArticleProposalStatusFilter.PENDING, 0, 100)).thenReturn(emptyList())
         whenever(proposalService.count(FacebookArticleProposalStatusFilter.PENDING)).thenReturn(0L)
-        val view = FacebookArticleProposalView(proposalService, appUserRepository, languageFlagCache)
+        val view = FacebookArticleProposalView(proposalService, appUserRepository, languageFlagCache, articleRepository)
         val method = view.javaClass.getDeclaredMethod("externalLink", String::class.java)
         method.isAccessible = true
 
@@ -96,7 +98,7 @@ class FacebookArticleProposalViewTest {
             .thenReturn(listOf(proposal().copy(importType = FacebookImportType.APIFY)))
         whenever(proposalService.count(FacebookArticleProposalStatusFilter.PENDING)).thenReturn(1L)
 
-        val view = FacebookArticleProposalView(proposalService, appUserRepository, languageFlagCache)
+        val view = FacebookArticleProposalView(proposalService, appUserRepository, languageFlagCache, articleRepository)
 
         val badges = findComponents(view, Span::class.java)
             .filter { it.hasClassName("czj-import-source-badge") }
@@ -113,7 +115,7 @@ class FacebookArticleProposalViewTest {
         whenever(proposalService.findPage(FacebookArticleProposalStatusFilter.PENDING, 0, 100)).thenReturn(emptyList())
         whenever(proposalService.count(FacebookArticleProposalStatusFilter.PENDING)).thenReturn(0L)
 
-        val view = FacebookArticleProposalView(proposalService, appUserRepository, languageFlagCache)
+        val view = FacebookArticleProposalView(proposalService, appUserRepository, languageFlagCache, articleRepository)
         val buttons = findComponents(view, Button::class.java)
 
         assertTrue(buttons.any { it.text == "RSS" })

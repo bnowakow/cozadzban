@@ -1396,7 +1396,6 @@ class ArticleListView(
             if (url.isBlank()) { showError("URL is required"); return@addClickListener }
             if (!url.matches(Regex("^https?://.+"))) { showError("URL must start with http:// or https://"); return@addClickListener }
             if (language.isBlank()) { showError("Language is required"); return@addClickListener }
-
             submitButton.isEnabled = false
             try {
                 val creator = authenticatedUser
@@ -1548,7 +1547,7 @@ class ArticleListView(
         dialog.headerTitle = "Approve Facebook import candidates"
         dialog.isCloseOnEsc = false
         dialog.isCloseOnOutsideClick = false
-        dialog.setWidth("80vw")
+        dialog.setWidth("min(94vw, 100rem)")
 
         val rows = mutableListOf<FacebookCandidateApprovalRow>()
         val content = VerticalLayout()
@@ -1563,6 +1562,7 @@ class ArticleListView(
         )
         header.addClassName("czj-facebook-approval-header-row")
         content.add(header)
+        val usedLanguages = articleRepository.findDistinctLanguages()
         candidates.forEach { candidate ->
             val candidateId = Span(candidate.candidateId)
             candidateId.addClassName("czj-facebook-approval-id")
@@ -1598,10 +1598,7 @@ class ArticleListView(
             sourcePost.element.style.set("line-height", "1.3")
             sourcePost.element.style.set("min-width", "0")
 
-            val language = TextField()
-            language.value = candidate.language
-            language.placeholder = "pl"
-            language.setWidth("6rem")
+            val language = LanguagePicker(languageFlagCache, usedLanguages, candidate.language)
             language.addClassName("czj-facebook-approval-language")
             language.element.style.set("min-width", "0")
 
@@ -1616,14 +1613,23 @@ class ArticleListView(
 
         val submitButton = Button("Submit") {
             if (approvalFuture.isDone) return@Button
-            approvalFuture.complete(
+            val approvals = try {
                 rows.map { row ->
+                    val selectedLanguage = try {
+                        row.language.selectedLanguage()
+                    } catch (ex: IllegalArgumentException) {
+                        throw IllegalArgumentException("Candidate ${row.candidate.candidateId}: ${ex.message ?: "Invalid language"}")
+                    }
                     row.candidate.copy(
-                        language = row.language.value.trim().ifBlank { row.candidate.language },
+                        language = selectedLanguage,
                         decision = row.decision.value ?: FacebookCandidateApprovalDecision.ACCEPT,
                     )
-                },
-            )
+                }
+            } catch (ex: IllegalArgumentException) {
+                showError(ex.message ?: "Invalid language")
+                return@Button
+            }
+            approvalFuture.complete(approvals)
             dialog.close()
         }
         submitButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY)
@@ -1648,7 +1654,7 @@ class ArticleListView(
         row.addClassName("czj-facebook-approval-grid-row")
         row.width = "100%"
         row.element.style.set("display", "grid")
-        row.element.style.set("grid-template-columns", "6rem minmax(22rem, 1fr) minmax(8rem, 12rem) 6rem 10.5rem")
+        row.element.style.set("grid-template-columns", "6rem minmax(18rem, 1fr) minmax(8rem, 12rem) minmax(12rem, 14rem) 10.5rem")
         row.element.style.set("column-gap", "var(--lumo-space-m)")
         row.element.style.set("row-gap", "var(--lumo-space-s)")
         row.element.style.set("align-items", "center")
@@ -1697,7 +1703,7 @@ class ArticleListView(
 
     private data class FacebookCandidateApprovalRow(
         val candidate: FacebookCandidateApproval,
-        val language: TextField,
+        val language: LanguagePicker,
         val decision: RadioButtonGroup<FacebookCandidateApprovalDecision>,
     )
 
@@ -1736,9 +1742,7 @@ class ArticleListView(
         publisherUrlField.width = "100%"
         publisherUrlField.value = article.publisherUrl ?: ""
 
-        val languageField = TextField("Language (BCP-47)")
-        languageField.width = "100%"
-        languageField.value = article.language
+        val language = LanguagePicker(languageFlagCache, articleRepository.findDistinctLanguages(), article.language)
 
         val quoteField = TextArea("Quote (optional)")
         quoteField.width = "100%"
@@ -1790,7 +1794,12 @@ class ArticleListView(
         }
 
         submitButton.addClickListener {
-            val language = languageField.value?.trim().orEmpty()
+            val selectedLanguage = try {
+                language.selectedLanguage()
+            } catch (ex: IllegalArgumentException) {
+                showError(ex.message ?: "Invalid language")
+                return@addClickListener
+            }
             val title = titleField.value?.trim()?.ifBlank { null }
             val lead = leadField.value?.trim()?.ifBlank { null }
             val publisherUrl = publisherUrlField.value?.trim()?.ifBlank { null }
@@ -1799,12 +1808,10 @@ class ArticleListView(
             val publishedAt = WarsawTime.fromPicker(publishedAtPicker.value)
             val content = contentField.value?.trim()
 
-            if (language.isBlank()) { showError("Language is required"); return@addClickListener }
-
             submitButton.isEnabled = false
             try {
                 val patch: Map<String, Any?> = mapOf(
-                    "language" to language,
+                    "language" to selectedLanguage,
                     "title" to title,
                     "lead" to lead,
                     "publisherUrl" to publisherUrl,
@@ -1832,7 +1839,7 @@ class ArticleListView(
         actions.defaultVerticalComponentAlignment = Alignment.END
         actions.addClassName("czj-edit-article-actions")
 
-        val fields = VerticalLayout(titleField, leadField, publisherUrlField, languageField,
+        val fields = VerticalLayout(titleField, leadField, publisherUrlField, language,
             quoteField, publishedAtControls, contentField, actions)
         fields.addClassNames("czj-dialog-content", "czj-edit-article-content")
         contentField.addClassName("czj-cache-content-field")

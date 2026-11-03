@@ -20,12 +20,12 @@ import com.vaadin.flow.component.orderedlayout.HorizontalLayout
 import com.vaadin.flow.component.orderedlayout.VerticalLayout
 import com.vaadin.flow.component.select.Select
 import com.vaadin.flow.component.textfield.TextArea
-import com.vaadin.flow.component.textfield.TextField
 import com.vaadin.flow.router.PageTitle
 import com.vaadin.flow.router.Route
 import jakarta.annotation.security.RolesAllowed
 import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.security.oauth2.core.OAuth2AuthenticatedPrincipal
+import pl.bnowakowski.cozadzban.article.ArticleRepository
 import pl.bnowakowski.cozadzban.enrichment.LanguageFlagCache
 import pl.bnowakowski.cozadzban.facebookimport.FacebookArticleProposal
 import pl.bnowakowski.cozadzban.facebookimport.FacebookArticleProposalService
@@ -56,6 +56,7 @@ class FacebookArticleProposalView(
     private val proposalService: FacebookArticleProposalService,
     private val appUserRepository: AppUserRepository,
     private val languageFlagCache: LanguageFlagCache,
+    private val articleRepository: ArticleRepository,
     private val facebookImportJobService: FacebookImportJobService? = null,
     private val facebookImportProperties: FacebookImportProperties = FacebookImportProperties(),
 ) : VerticalLayout() {
@@ -277,8 +278,7 @@ class FacebookArticleProposalView(
 
         val articleLink = labeled("Article", externalLink(proposal.articleUrl))
         val facebookLink = labeled("Facebook post", proposal.facebookPostUrl?.let(::externalLink) ?: Span("-"))
-        val language = TextField("Language")
-        language.value = proposal.effectiveLanguage
+        val language = LanguagePicker(languageFlagCache, articleRepository.findDistinctLanguages(), proposal.effectiveLanguage)
         language.width = "12rem"
 
         val logArea = TextArea("Logs")
@@ -293,8 +293,14 @@ class FacebookArticleProposalView(
 
         val acceptButton = Button("Accept", VaadinIcon.CHECK.create())
         val rejectButton = Button("Reject", VaadinIcon.CLOSE_SMALL.create()) {
+            val languageValue = try {
+                language.selectedLanguage()
+            } catch (ex: IllegalArgumentException) {
+                showError(ex.message ?: "Invalid language")
+                return@Button
+            }
             try {
-                proposalService.reject(proposalId, language.value.trim(), currentUser.id!!)
+                proposalService.reject(proposalId, languageValue, currentUser.id!!)
                 dialog.close()
                 refreshGrid()
                 showSuccess("Proposal rejected")
@@ -305,10 +311,15 @@ class FacebookArticleProposalView(
         }
         acceptButton.addClickListener {
             val currentUi = UI.getCurrent()
-            val languageValue = language.value.trim()
+            val languageValue = try {
+                language.selectedLanguage()
+            } catch (ex: IllegalArgumentException) {
+                showError(ex.message ?: "Invalid language")
+                return@addClickListener
+            }
             acceptButton.isEnabled = false
             rejectButton.isEnabled = false
-            language.isReadOnly = true
+            language.setReadOnly(true)
             actionStatus.text = "Accepting proposal..."
 
             CompletableFuture
@@ -330,7 +341,7 @@ class FacebookArticleProposalView(
                         } else {
                             acceptButton.isEnabled = proposal.status != FacebookArticleProposalStatus.ACCEPTED
                             rejectButton.isEnabled = proposal.status != FacebookArticleProposalStatus.ACCEPTED
-                            language.isReadOnly = false
+                            language.setReadOnly(false)
                             actionStatus.text = ""
                             refreshGrid()
                             showError(failure.cause?.message ?: failure.message ?: "Failed to accept proposal")

@@ -559,7 +559,7 @@ vaadin-dialog.czj-edit-article-dialog::part(content) {
 }
 
 .czj-facebook-approval-language {
-  max-width: 6rem;
+  min-width: 0;
 }
 
 .czj-facebook-approval-decision {
@@ -594,7 +594,7 @@ html[theme~="dark"] .czj-facebook-approval-reject {
   width: 100%;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1100px) {
   .czj-facebook-approval-grid-row {
     grid-template-columns: minmax(0, 1fr) !important;
   }
