@@ -17,10 +17,11 @@ class FacebookSourceReactionScheduler(
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val json = ObjectMapper()
+    @Volatile private var accessRetryAt: Instant = Instant.EPOCH
 
     @Scheduled(initialDelay = 90_000, fixedDelay = 60_000)
     fun refreshDue() {
-        if (!properties.configured) return
+        if (!properties.configured || Instant.now().isBefore(accessRetryAt)) return
         val targets = repository.due(Instant.now(), 5)
         targets.forEach { target ->
             val now = Instant.now()
@@ -40,14 +41,17 @@ class FacebookSourceReactionScheduler(
                     error, now, now.plusSeconds(6 * 3_600))
                 log.warn("Source Facebook reaction check failed for article {} at {}: {}",
                     target.articleId, WarsawTime.forLog(now), error)
+                if (ex is RestClientResponseException && accessDenied(ex)) {
+                    accessRetryAt = now.plusSeconds(6 * 3_600)
+                    return
+                }
             }
         }
     }
 
     private fun safeError(ex: Exception): String = when (ex) {
         is RestClientResponseException -> {
-            val code = runCatching { json.readTree(ex.responseBodyAsString).path("error").path("code") }
-                .getOrNull()?.takeIf { it.isIntegralNumber }?.asInt()
+            val code = metaErrorCode(ex)
             if (code == null) "Meta HTTP ${ex.statusCode.value()}"
             else "Meta error $code (HTTP ${ex.statusCode.value()})"
         }
@@ -55,4 +59,11 @@ class FacebookSourceReactionScheduler(
         is IllegalArgumentException -> ex.message?.take(150) ?: "Invalid Meta response"
         else -> ex.javaClass.simpleName
     }
+
+    private fun accessDenied(ex: RestClientResponseException): Boolean =
+        ex.statusCode.value() in setOf(401, 403) || metaErrorCode(ex) in setOf(10, 190, 200, 283)
+
+    private fun metaErrorCode(ex: RestClientResponseException): Int? =
+        runCatching { json.readTree(ex.responseBodyAsString).path("error").path("code") }
+            .getOrNull()?.takeIf { it.isIntegralNumber }?.asInt()
 }
