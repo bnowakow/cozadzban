@@ -164,9 +164,8 @@ class FacebookPageSettingsView(
         form.add(settingsCard("Publication problems", "Check uncertain results on the Facebook Page before retrying.").apply { add(publicationProblems) })
         form.add(settingsCard("Link comment problems", "Check uncertain comments on the Facebook post before retrying.").apply { add(commentProblems) })
         configureEngagementGrid()
-        val engagementNavigation = HorizontalLayout(engagementPrevious, engagementPageInfo, engagementPageNumber, engagementNext)
+        val engagementNavigation = paginationNavigation(engagementPrevious, engagementPageInfo, engagementPageNumber, engagementNext)
         engagementNavigation.addClassName("czj-settings-actions")
-        engagementNavigation.element.style.set("flex-wrap", "wrap")
         form.add(settingsCard("Recent Facebook engagement", "Published posts and their latest reaction checks, newest first.").apply {
             add(Button("Refresh engagement") { refreshEngagementActivity() }, engagementGrid, engagementEmpty, engagementNavigation)
         })

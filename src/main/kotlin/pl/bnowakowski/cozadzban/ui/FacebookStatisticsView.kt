@@ -75,8 +75,7 @@ class FacebookStatisticsView(
         val filters = HorizontalLayout(language, sort, Button("Refresh") { refreshAll() })
         filters.setWidthFull()
         pageSummary.isPadding = false
-        val navigation = HorizontalLayout(previous, pageInfo, pageNumber, next)
-        navigation.element.style.set("flex-wrap", "wrap")
+        val navigation = paginationNavigation(previous, pageInfo, pageNumber, next)
         val content = sharedPageContent(
             Span("Story and Facebook statistics"),
             Span("Story views are browser page loads after bot filtering. Our FB reactions are the latest successful count and remain the link-selection signal. Source FB reactions are measured separately for public Page post sources."),

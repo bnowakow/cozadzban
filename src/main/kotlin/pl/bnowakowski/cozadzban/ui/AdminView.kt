@@ -83,9 +83,7 @@ class AdminView(
         configureGrid()
         refreshGrid()
 
-        val navigation = HorizontalLayout(previousPageButton, pageInfo, pageNumber, nextPageButton)
-        navigation.defaultVerticalComponentAlignment = Alignment.CENTER
-        navigation.element.style.set("flex-wrap", "wrap")
+        val navigation = paginationNavigation(previousPageButton, pageInfo, pageNumber, nextPageButton)
         val content = sharedPageContent(pageToolbar, usersGrid, navigation)
         content.expand(usersGrid)
         add(

@@ -101,9 +101,7 @@ class FacebookArticleProposalView(
 
         configureGrid()
 
-        val navigation = HorizontalLayout(previous, pageInfo, pageNumber, next)
-        navigation.defaultVerticalComponentAlignment = Alignment.CENTER
-        navigation.element.style.set("flex-wrap", "wrap")
+        val navigation = paginationNavigation(previous, pageInfo, pageNumber, next)
         val content = VerticalLayout(buildProposalToolbar(), proposalsGrid, navigation)
         content.addClassName("czj-admin-panel")
         content.isPadding = false

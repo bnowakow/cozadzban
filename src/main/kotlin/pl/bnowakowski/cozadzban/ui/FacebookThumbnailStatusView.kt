@@ -67,10 +67,8 @@ class FacebookThumbnailStatusView(
 
         val filters = HorizontalLayout(status, Button("Refresh") { refresh() })
         filters.setWidthFull()
-        val navigation = HorizontalLayout(previous, pageInfo, pageNumber, next)
-        val queueNavigation = HorizontalLayout(queuePrevious, queuePageInfo, queuePageNumber, queueNext)
-        navigation.element.style.set("flex-wrap", "wrap")
-        queueNavigation.element.style.set("flex-wrap", "wrap")
+        val navigation = paginationNavigation(previous, pageInfo, pageNumber, next)
+        val queueNavigation = paginationNavigation(queuePrevious, queuePageInfo, queuePageNumber, queueNext)
         val message = if (generation.isEnabled()) {
             "Select a status to review article thumbnails. Generate now starts one missing or failed illustration in the background; refresh to see its result."
         } else {
