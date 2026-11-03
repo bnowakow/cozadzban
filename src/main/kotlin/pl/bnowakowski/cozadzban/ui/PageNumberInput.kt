@@ -3,6 +3,7 @@ package pl.bnowakowski.cozadzban.ui
 
 import com.vaadin.flow.component.button.Button
 import com.vaadin.flow.component.Key
+import com.vaadin.flow.component.html.Div
 import com.vaadin.flow.component.html.Span
 import com.vaadin.flow.component.orderedlayout.FlexComponent.Alignment
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout
@@ -60,15 +61,15 @@ internal fun paginationNavigation(
     next: Button,
 ): HorizontalLayout {
     pageInfo.element.style.set("white-space", "nowrap")
-    val pagePosition = HorizontalLayout(pageInfo, pageNumber).apply {
-        isPadding = false
-        defaultVerticalComponentAlignment = Alignment.CENTER
+    pageInfo.element.style.set("padding-right", "24px")
+    val pagePosition = Div(pageInfo, pageNumber).apply {
+        element.style.set("display", "flex")
         element.style.set("flex-wrap", "wrap")
+        element.style.set("align-items", "center")
         element.style.set("flex-shrink", "0")
         element.style.set("width", "max-content")
         element.style.set("max-width", "100%")
-        element.style.set("column-gap", "var(--lumo-space-l)")
-        element.style.set("row-gap", "var(--lumo-space-m)")
+        element.style.set("row-gap", "16px")
     }
     return HorizontalLayout(previous, pagePosition, next).apply {
         isPadding = false

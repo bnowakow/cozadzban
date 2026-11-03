@@ -12,10 +12,63 @@ data class FacebookSourceReactionTarget(
     val graphPostId: String?,
 )
 
+data class FacebookSourceReactionQueueRow(
+    val articleId: Long,
+    val title: String?,
+    val language: String,
+    val sourceUrl: String,
+    val status: String?,
+    val error: String?,
+    val lastAttemptAt: Instant?,
+    val nextAttemptAt: Instant?,
+)
+
 enum class FacebookSourceReactionStatus { SUCCESS, FAILED, UNSUPPORTED }
 
 @Repository
 class FacebookSourceReactionRepository(private val jdbc: NamedParameterJdbcTemplate) {
+    /** First fetches, failed retries, and checks whose next attempt is due. */
+    fun queueCount(now: Instant = Instant.now()): Long = jdbc.queryForObject(
+        """SELECT COUNT(*) FROM article
+           LEFT JOIN facebook_source_post_reaction source
+             ON source.article_id = article.id AND source.source_url = article.url
+           WHERE article.url ILIKE :facebookUrl
+             AND (source.article_id IS NULL OR source.status = 'FAILED'
+                  OR source.next_attempt_at <= :now)""",
+        mapOf("facebookUrl" to "%facebook.com/%", "now" to utcTimestamp(now)),
+        Long::class.java,
+    ) ?: 0L
+
+    fun queuePage(now: Instant, limit: Int, offset: Int): List<FacebookSourceReactionQueueRow> {
+        require(limit in 1..100 && offset >= 0) { "Invalid source check queue page" }
+        return jdbc.query(
+            """SELECT article.id, article.title, article.language, article.url,
+                      source.status, source.error_detail, source.last_attempt_at,
+                      source.next_attempt_at
+               FROM article
+               LEFT JOIN facebook_source_post_reaction source
+                 ON source.article_id = article.id AND source.source_url = article.url
+               WHERE article.url ILIKE :facebookUrl
+                 AND (source.article_id IS NULL OR source.status = 'FAILED'
+                      OR source.next_attempt_at <= :now)
+               ORDER BY CASE WHEN source.article_id IS NULL OR source.next_attempt_at <= :now
+                             THEN 0 ELSE 1 END,
+                        source.last_attempt_at NULLS FIRST, article.id DESC
+               LIMIT :limit OFFSET :offset""",
+            mapOf("facebookUrl" to "%facebook.com/%", "now" to utcTimestamp(now),
+                "limit" to limit, "offset" to offset),
+        ) { rs, _ -> FacebookSourceReactionQueueRow(
+            articleId = rs.getLong("id"),
+            title = rs.getString("title"),
+            language = rs.getString("language"),
+            sourceUrl = rs.getString("url"),
+            status = rs.getString("status"),
+            error = rs.getString("error_detail"),
+            lastAttemptAt = rs.getTimestamp("last_attempt_at")?.toInstant(),
+            nextAttemptAt = rs.getTimestamp("next_attempt_at")?.toInstant(),
+        ) }
+    }
+
     fun due(now: Instant, limit: Int): List<FacebookSourceReactionTarget> = jdbc.query(
         """SELECT article.id, article.url, article.published_at, source.graph_post_id
            FROM article
