@@ -13,7 +13,7 @@ import com.vaadin.flow.component.html.Div
 import com.vaadin.flow.component.html.Image
 import com.vaadin.flow.component.html.Span
 import com.vaadin.flow.component.radiobutton.RadioButtonGroup
-import com.vaadin.flow.component.textfield.TextField
+import com.vaadin.flow.component.combobox.ComboBox
 import com.vaadin.flow.router.AfterNavigationEvent
 import com.vaadin.flow.router.Location
 import com.vaadin.flow.router.QueryParameters
@@ -551,6 +551,7 @@ class ArticleListViewTest {
         authenticateAs(adminEmail)
         UI.setCurrent(UI())
         stubArticles()
+        whenever(articleRepository.findDistinctLanguages()).thenReturn(listOf("en", "pl"))
         whenever(appUserRepository.findByEmail(adminEmail)).thenReturn(
             AppUser(1L, adminEmail, Role.ADMIN, AppUserStatus.ACTIVE),
         )
@@ -587,7 +588,8 @@ class ArticleListViewTest {
 
         val anchors = findComponents(dialog, Anchor::class.java)
         val spans = findComponents(dialog, Span::class.java)
-        val languages = findComponents(dialog, TextField::class.java)
+        val languages = findComponents(dialog, ComboBox::class.java)
+            .filterIsInstance<ComboBox<String>>()
         val decisions = findComponents(dialog, RadioButtonGroup::class.java)
             .filterIsInstance<RadioButtonGroup<FacebookCandidateApprovalDecision>>()
         val buttons = findComponents(dialog, Button::class.java)
@@ -607,7 +609,9 @@ class ArticleListViewTest {
         languages.single().value = "en"
         buttons.single { it.text == "Submit" }.click()
 
+        assertTrue(approvalFuture.isDone)
         assertEquals("en", approvalFuture.get().single().language)
+        assertEquals(FacebookCandidateApprovalDecision.ACCEPT, approvalFuture.get().single().decision)
     }
 
     @Test
