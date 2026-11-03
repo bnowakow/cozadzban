@@ -34,6 +34,27 @@ class FacebookSourceReactionRepository(private val jdbc: NamedParameterJdbcTempl
         graphPostId = rs.getString("graph_post_id"),
     ) }
 
+    /** Makes a failed check eligible for the background worker without losing its last result. */
+    fun retryFailed(articleId: Long, now: Instant = Instant.now()): Boolean = jdbc.update(
+        """UPDATE facebook_source_post_reaction source
+           SET next_attempt_at = :now
+           FROM article
+           WHERE article.id = source.article_id AND article.url = source.source_url
+             AND source.article_id = :articleId AND source.status = 'FAILED'
+             AND source.next_attempt_at > :now""",
+        mapOf("articleId" to articleId, "now" to utcTimestamp(now)),
+    ) == 1
+
+    /** Queues every waiting failure, including rows outside the current statistics page. */
+    fun retryAllFailed(now: Instant = Instant.now()): Int = jdbc.update(
+        """UPDATE facebook_source_post_reaction source
+           SET next_attempt_at = :now
+           FROM article
+           WHERE article.id = source.article_id AND article.url = source.source_url
+             AND source.status = 'FAILED' AND source.next_attempt_at > :now""",
+        mapOf("now" to utcTimestamp(now)),
+    )
+
     fun record(
         target: FacebookSourceReactionTarget,
         status: FacebookSourceReactionStatus,

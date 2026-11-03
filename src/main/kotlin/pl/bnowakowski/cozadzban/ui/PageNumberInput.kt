@@ -67,7 +67,8 @@ internal fun paginationNavigation(
         element.style.set("flex-shrink", "0")
         element.style.set("width", "max-content")
         element.style.set("max-width", "100%")
-        element.style.set("gap", "var(--lumo-space-s)")
+        element.style.set("column-gap", "var(--lumo-space-l)")
+        element.style.set("row-gap", "var(--lumo-space-m)")
     }
     return HorizontalLayout(previous, pagePosition, next).apply {
         isPadding = false

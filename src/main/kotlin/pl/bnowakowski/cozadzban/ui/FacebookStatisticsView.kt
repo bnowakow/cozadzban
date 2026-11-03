@@ -6,6 +6,8 @@ import com.vaadin.flow.component.combobox.ComboBox
 import com.vaadin.flow.component.grid.Grid
 import com.vaadin.flow.component.html.Anchor
 import com.vaadin.flow.component.html.Span
+import com.vaadin.flow.component.notification.Notification
+import com.vaadin.flow.component.orderedlayout.FlexComponent.Alignment
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout
 import com.vaadin.flow.component.orderedlayout.VerticalLayout
 import com.vaadin.flow.component.dependency.JsModule
@@ -19,9 +21,11 @@ import pl.bnowakowski.cozadzban.facebookpublish.FacebookArticleStatistics
 import pl.bnowakowski.cozadzban.facebookpublish.FacebookPageStatisticsRepository
 import pl.bnowakowski.cozadzban.facebookpublish.FacebookSourcePostReference
 import pl.bnowakowski.cozadzban.facebookpublish.FacebookSourceProperties
+import pl.bnowakowski.cozadzban.facebookpublish.FacebookSourceReactionRepository
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportJobService
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportProperties
 import pl.bnowakowski.cozadzban.enrichment.LanguageFlagCache
+import java.time.Instant
 
 @Route("admin/facebook-statistics")
 @PageTitle("Story and Facebook statistics")
@@ -35,6 +39,7 @@ class FacebookStatisticsView(
     articles: ArticleRepository,
     private val languageFlagCache: LanguageFlagCache,
     private val facebookSourceProperties: FacebookSourceProperties,
+    private val sourceReactions: FacebookSourceReactionRepository,
     private val facebookImportJobService: FacebookImportJobService? = null,
     private val facebookImportProperties: FacebookImportProperties = FacebookImportProperties(),
 ) : VerticalLayout() {
@@ -72,15 +77,19 @@ class FacebookStatisticsView(
         }
         sort.addValueChangeListener { page = 0; refreshArticles() }
         configureGrid()
-        val filters = HorizontalLayout(language, sort, Button("Refresh") { refreshAll() })
+        val retryAll = Button("Retry all failed source checks") { retryAllFailed() }
+        retryAll.isEnabled = facebookSourceProperties.configured
+        val filters = HorizontalLayout(language, sort, Button("Refresh") { refreshAll() }, retryAll)
         filters.setWidthFull()
+        filters.element.style.set("flex-wrap", "wrap")
+        filters.element.style.set("align-items", "flex-end")
         pageSummary.isPadding = false
         val navigation = paginationNavigation(previous, pageInfo, pageNumber, next)
         val content = sharedPageContent(
             Span("Story and Facebook statistics"),
             Span("Story views are browser page loads after bot filtering. Our FB reactions are the latest successful count and remain the link-selection signal. Source FB reactions are measured separately for public Page post sources."),
             Span(if (facebookSourceProperties.configured)
-                "Source reaction checks run in the background. Refresh displays saved results; public Page access depends on Meta approval."
+                "Source reaction checks run in the background; Refresh displays saved results. Failed checks become eligible for another attempt after six hours; use Retry to queue them sooner. Public Page access depends on Meta approval."
                 else "Source reaction checks are off until the separate Meta app ID and secret are configured."),
             Span("Current Pages"), pageSummary, filters, grid, navigation,
         )
@@ -124,14 +133,14 @@ class FacebookStatisticsView(
         }.setHeader("Source FB reactions").setAutoWidth(true)
         grid.addColumn { it.sourceReactionMeasuredAt?.let(WarsawTime::dateTime) ?: "—" }
             .setHeader("Source measured").setAutoWidth(true)
-        grid.addColumn { row ->
-            when {
-                FacebookSourcePostReference.fromUrl(row.sourceUrl) == null -> "—"
-                !facebookSourceProperties.configured -> "Not configured"
-                row.sourceReactionStatus == "SUCCESS" -> "Measured"
-                row.sourceReactionStatus == "FAILED" -> "Check failed: ${row.sourceReactionError ?: "unknown error"}"
-                row.sourceReactionStatus == "UNSUPPORTED" -> "Unsupported link"
-                else -> "Pending"
+        grid.addComponentColumn { row ->
+            val status = Span(sourceStatus(row))
+            if (!facebookSourceProperties.configured || row.sourceReactionStatus != "FAILED" ||
+                row.sourceReactionNextAttemptAt?.isAfter(Instant.now()) != true) status
+            else HorizontalLayout(status, Button("Retry") { retryFailed(row.articleId) }).apply {
+                isPadding = false
+                defaultVerticalComponentAlignment = Alignment.CENTER
+                element.style.set("flex-wrap", "wrap")
             }
         }.setHeader("Source status").setAutoWidth(true)
         grid.addColumn { it.publicationStatus ?: "No Page post" }.setHeader("Post status").setAutoWidth(true)
@@ -153,6 +162,38 @@ class FacebookStatisticsView(
                     "${item.confirmedLinksThisMonth}/${item.monthlyLinkLimit} confirmed links this month",
             ))
         }
+        refreshArticles()
+    }
+
+    private fun sourceStatus(row: FacebookArticleStatistics): String = when {
+        FacebookSourcePostReference.fromUrl(row.sourceUrl) == null -> "—"
+        !facebookSourceProperties.configured -> "Not configured"
+        row.sourceReactionStatus == "SUCCESS" -> "Measured"
+        row.sourceReactionStatus == "FAILED" &&
+            row.sourceReactionNextAttemptAt?.isAfter(Instant.now()) == false ->
+            "Retry queued · previous error: ${row.sourceReactionError ?: "unknown error"}"
+        row.sourceReactionStatus == "FAILED" -> "Check failed: ${row.sourceReactionError ?: "unknown error"}"
+        row.sourceReactionStatus == "UNSUPPORTED" -> "Unsupported link"
+        else -> "Pending"
+    }
+
+    private fun retryFailed(articleId: Long) {
+        val queued = sourceReactions.retryFailed(articleId)
+        Notification.show(
+            if (queued) "Source check queued for article $articleId."
+            else "This source check is already queued or is no longer failed.",
+            5000, Notification.Position.MIDDLE,
+        )
+        refreshArticles()
+    }
+
+    private fun retryAllFailed() {
+        val queued = sourceReactions.retryAllFailed()
+        Notification.show(
+            if (queued == 0) "No waiting failed source checks to queue."
+            else "Queued $queued failed source checks. The background worker checks them in batches of up to five.",
+            5000, Notification.Position.MIDDLE,
+        )
         refreshArticles()
     }
 

@@ -33,6 +33,7 @@ data class FacebookArticleStatistics(
     val sourceReactionMeasuredAt: Instant?,
     val sourceReactionStatus: String?,
     val sourceReactionError: String?,
+    val sourceReactionNextAttemptAt: Instant?,
     val publicationStatus: String?,
     val postUrl: String?,
     val linkCommentStatus: String?,
@@ -119,6 +120,7 @@ class FacebookPageStatisticsRepository(
                       source.measured_at AS source_measured_at,
                       source.status AS source_status,
                       source.error_detail AS source_error,
+                      source.next_attempt_at AS source_next_attempt_at,
                       publication.status AS publication_status, publication.post_permalink,
                       comment.status AS comment_status
                FROM article
@@ -149,6 +151,7 @@ class FacebookPageStatisticsRepository(
             rs.getLong("source_reaction_count").takeUnless { rs.wasNull() },
             rs.getTimestamp("source_measured_at")?.toInstant(),
             rs.getString("source_status"), rs.getString("source_error"),
+            rs.getTimestamp("source_next_attempt_at")?.toInstant(),
             rs.getString("publication_status"),
             rs.getString("post_permalink"), rs.getString("comment_status")) }
     }
