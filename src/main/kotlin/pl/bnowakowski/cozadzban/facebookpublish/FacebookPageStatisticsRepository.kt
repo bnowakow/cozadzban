@@ -24,10 +24,15 @@ data class FacebookArticleStatistics(
     val articleId: Long,
     val language: String,
     val title: String?,
+    val sourceUrl: String,
     val storyViews: Long,
     val storyViews7Days: Long,
     val reactionCount: Long?,
     val reactionMeasuredAt: Instant?,
+    val sourceReactionCount: Long?,
+    val sourceReactionMeasuredAt: Instant?,
+    val sourceReactionStatus: String?,
+    val sourceReactionError: String?,
     val publicationStatus: String?,
     val postUrl: String?,
     val linkCommentStatus: String?,
@@ -97,7 +102,7 @@ class FacebookPageStatisticsRepository(
 
     fun articleStatistics(language: String, sort: String, limit: Int, offset: Int,
                           now: Instant = Instant.now()): List<FacebookArticleStatistics> {
-        require(sort in setOf("VIEWS", "REACTIONS", "NEWEST")) { "Unsupported statistics sort" }
+        require(sort in setOf("VIEWS", "REACTIONS", "SOURCE_REACTIONS", "NEWEST")) { "Unsupported statistics sort" }
         require(limit in 1..100 && offset >= 0) { "Invalid statistics page" }
         val sevenDays = LocalDate.ofInstant(now, WarsawTime.ZONE).minusDays(6)
         return jdbc.query(
@@ -106,10 +111,14 @@ class FacebookPageStatisticsRepository(
                         SUM(view_count) FILTER (WHERE view_date >= :sevenDays) AS views_7d
                  FROM article_story_view_daily GROUP BY article_id
                )
-               SELECT article.id, article.language, article.title,
+               SELECT article.id, article.language, article.title, article.url AS source_url,
                       COALESCE(views.total_views, 0) AS story_views,
                       COALESCE(views.views_7d, 0) AS views_7d,
                       reaction.reaction_count, reaction.measured_at,
+                      source.reaction_count AS source_reaction_count,
+                      source.measured_at AS source_measured_at,
+                      source.status AS source_status,
+                      source.error_detail AS source_error,
                       publication.status AS publication_status, publication.post_permalink,
                       comment.status AS comment_status
                FROM article
@@ -120,19 +129,27 @@ class FacebookPageStatisticsRepository(
                  WHERE publication_id = publication.id AND status = 'SUCCESS'
                  ORDER BY measured_at DESC, id DESC LIMIT 1
                ) reaction ON true
+               LEFT JOIN facebook_source_post_reaction source
+                 ON source.article_id = article.id AND source.source_url = article.url
                LEFT JOIN facebook_link_comment comment ON comment.publication_id = publication.id
                WHERE :language = '' OR article.language = :language
                ORDER BY CASE WHEN :sort = 'VIEWS' THEN COALESCE(views.total_views, 0) END DESC,
                         CASE WHEN :sort = 'REACTIONS' THEN COALESCE(reaction.reaction_count, 0) END DESC,
+                        CASE WHEN :sort = 'SOURCE_REACTIONS' THEN COALESCE(source.reaction_count, 0) END DESC,
                         CASE WHEN :sort = 'NEWEST' THEN article.id END DESC,
                         article.id DESC
                LIMIT :limit OFFSET :offset""",
             mapOf("language" to language, "sort" to sort, "sevenDays" to sevenDays,
                 "limit" to limit, "offset" to offset),
         ) { rs, _ -> FacebookArticleStatistics(rs.getLong("id"), rs.getString("language"), rs.getString("title"),
+            rs.getString("source_url"),
             rs.getLong("story_views"), rs.getLong("views_7d"),
             rs.getLong("reaction_count").takeUnless { rs.wasNull() },
-            rs.getTimestamp("measured_at")?.toInstant(), rs.getString("publication_status"),
+            rs.getTimestamp("measured_at")?.toInstant(),
+            rs.getLong("source_reaction_count").takeUnless { rs.wasNull() },
+            rs.getTimestamp("source_measured_at")?.toInstant(),
+            rs.getString("source_status"), rs.getString("source_error"),
+            rs.getString("publication_status"),
             rs.getString("post_permalink"), rs.getString("comment_status")) }
     }
 }

@@ -17,6 +17,8 @@ import jakarta.annotation.security.RolesAllowed
 import pl.bnowakowski.cozadzban.article.ArticleRepository
 import pl.bnowakowski.cozadzban.facebookpublish.FacebookArticleStatistics
 import pl.bnowakowski.cozadzban.facebookpublish.FacebookPageStatisticsRepository
+import pl.bnowakowski.cozadzban.facebookpublish.FacebookSourcePostReference
+import pl.bnowakowski.cozadzban.facebookpublish.FacebookSourceProperties
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportJobService
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportProperties
 import pl.bnowakowski.cozadzban.enrichment.LanguageFlagCache
@@ -32,6 +34,7 @@ class FacebookStatisticsView(
     private val statistics: FacebookPageStatisticsRepository,
     articles: ArticleRepository,
     private val languageFlagCache: LanguageFlagCache,
+    private val facebookSourceProperties: FacebookSourceProperties,
     private val facebookImportJobService: FacebookImportJobService? = null,
     private val facebookImportProperties: FacebookImportProperties = FacebookImportProperties(),
 ) : VerticalLayout() {
@@ -57,7 +60,7 @@ class FacebookStatisticsView(
         languageFlagPrefix.isVisible = false
         language.setPrefixComponent(languageFlagPrefix)
         language.value = "All"
-        sort.setItems("Story views", "Facebook reactions", "Newest")
+        sort.setItems("Story views", "Our FB reactions", "Source FB reactions", "Newest")
         sort.value = "Story views"
         language.addValueChangeListener {
             languageFlagPrefix.removeAll()
@@ -76,7 +79,10 @@ class FacebookStatisticsView(
         navigation.element.style.set("flex-wrap", "wrap")
         val content = sharedPageContent(
             Span("Story and Facebook statistics"),
-            Span("Story views are browser page loads after bot filtering. Facebook reactions are the latest successful count; they remain the link-selection signal."),
+            Span("Story views are browser page loads after bot filtering. Our FB reactions are the latest successful count and remain the link-selection signal. Source FB reactions are measured separately for public Page post sources."),
+            Span(if (facebookSourceProperties.configured)
+                "Source reaction checks run in the background. Refresh displays saved results; public Page access depends on Meta approval."
+                else "Source reaction checks are off until the separate Meta app ID and secret are configured."),
             Span("Current Pages"), pageSummary, filters, grid, navigation,
         )
         content.element.style.set("min-height", "0")
@@ -107,8 +113,28 @@ class FacebookStatisticsView(
         grid.addComponentColumn { row -> languageWithFlag(languageFlagCache, row.language) }.setHeader("Language").setAutoWidth(true)
         grid.addColumn(FacebookArticleStatistics::storyViews).setHeader("Views total").setAutoWidth(true)
         grid.addColumn(FacebookArticleStatistics::storyViews7Days).setHeader("Views 7 days").setAutoWidth(true)
-        grid.addColumn { it.reactionCount?.toString() ?: "—" }.setHeader("FB reactions").setAutoWidth(true)
-        grid.addColumn { it.reactionMeasuredAt?.let(WarsawTime::dateTime) ?: "—" }.setHeader("Reactions measured").setAutoWidth(true)
+        grid.addColumn { it.reactionCount?.toString() ?: "—" }.setHeader("Our FB reactions").setAutoWidth(true)
+        grid.addColumn { it.reactionMeasuredAt?.let(WarsawTime::dateTime) ?: "—" }.setHeader("Our reactions measured").setAutoWidth(true)
+        grid.addComponentColumn { row ->
+            if (FacebookSourcePostReference.fromUrl(row.sourceUrl) == null) Span("—")
+            else Anchor(row.sourceUrl, "Open original").apply { setTarget("_blank") }
+        }.setHeader("Source post").setAutoWidth(true)
+        grid.addColumn { row ->
+            if (FacebookSourcePostReference.fromUrl(row.sourceUrl) == null) "—"
+            else row.sourceReactionCount?.toString() ?: "—"
+        }.setHeader("Source FB reactions").setAutoWidth(true)
+        grid.addColumn { it.sourceReactionMeasuredAt?.let(WarsawTime::dateTime) ?: "—" }
+            .setHeader("Source measured").setAutoWidth(true)
+        grid.addColumn { row ->
+            when {
+                FacebookSourcePostReference.fromUrl(row.sourceUrl) == null -> "—"
+                !facebookSourceProperties.configured -> "Not configured"
+                row.sourceReactionStatus == "SUCCESS" -> "Measured"
+                row.sourceReactionStatus == "FAILED" -> "Check failed: ${row.sourceReactionError ?: "unknown error"}"
+                row.sourceReactionStatus == "UNSUPPORTED" -> "Unsupported link"
+                else -> "Pending"
+            }
+        }.setHeader("Source status").setAutoWidth(true)
         grid.addColumn { it.publicationStatus ?: "No Page post" }.setHeader("Post status").setAutoWidth(true)
         grid.addColumn { it.linkCommentStatus ?: "—" }.setHeader("Link comment").setAutoWidth(true)
         grid.addComponentColumn { row ->
@@ -134,7 +160,8 @@ class FacebookStatisticsView(
     private fun refreshArticles() {
         val selectedLanguage = language.value?.takeUnless { it == "All" }.orEmpty()
         val selectedSort = when (sort.value) {
-            "Facebook reactions" -> "REACTIONS"
+            "Our FB reactions" -> "REACTIONS"
+            "Source FB reactions" -> "SOURCE_REACTIONS"
             "Newest" -> "NEWEST"
             else -> "VIEWS"
         }

@@ -65,6 +65,9 @@ Key settings:
 | `APP_FACEBOOK_PAGE_REDIRECT_URI` | Exact Meta OAuth redirect URI registered for the app | _(required; e.g. `https://cozadzban.pl/facebook-pages/oauth/callback`)_ |
 | `APP_FACEBOOK_PAGE_ENCRYPTION_KEY` | Stable 16-, 24-, or 32-byte AES key (base64 or hex) for stored Page tokens | _(required to connect a Page)_ |
 | `APP_FACEBOOK_PAGE_GRAPH_VERSION` | Meta Graph API version used for Page calls | `v26.0` |
+| `APP_FACEBOOK_SOURCE_APP_ID` | Separate Meta app ID for public source Page post reactions | _(empty; source checks off)_ |
+| `APP_FACEBOOK_SOURCE_APP_SECRET` | Secret for the source engagement Meta app, server-side only | _(empty; source checks off)_ |
+| `APP_FACEBOOK_SOURCE_GRAPH_VERSION` | Meta Graph API version for source post reads | `v26.0` |
 | `APP_FACEBOOK_IMAGE_CODEX_ENABLED` | Enables the experimental generated-image fallback for missing or rejected source thumbnails | `false` |
 | `APP_FACEBOOK_IMAGE_CLAUDE_ENABLED` | Claude Code draws an SVG fallback illustration when Codex can't generate an image (see `doc/CLAUDE_DOCKER.md`) | `false` |
 | `APP_ARTICLE_TITLE_SHORTENING_TIMEOUT_SECONDS` | Time limit for one Codex or Claude call that shortens an over-long title | `120` |
@@ -149,6 +152,18 @@ per-article views, Facebook reactions, post and link-comment status, and Page
 totals. Reactions remain the link-selection signal; story views are collected
 for a future ranking rule. See the [phase 3](doc/FACEBOOK_PHASE3_TESTING.md)
 and [phase 4](doc/FACEBOOK_PHASE4_TESTING.md) manual checks.
+
+The same statistics page also shows aggregate reactions on the original Facebook
+Page post when the article URL is a Page post permalink. This uses a **separate**
+Meta app with Page Public Content Access; configure its app ID and secret using
+`APP_FACEBOOK_SOURCE_APP_ID` and `APP_FACEBOOK_SOURCE_APP_SECRET`. The server sends
+an app token in the Graph API authorization header. No second Facebook Login or
+OAuth callback is needed. A background check resolves Page post permalinks to
+Graph post IDs, then refreshes successful counts hourly. Failed checks retry
+after six hours. A source count does not affect link selection. Meta can deny
+reads until the feature is approved, and personal-profile posts, reels, photos
+and share links are outside the Page-post permalink matcher. The admin table
+shows the check status rather than treating a missing count as zero.
 
 Public pages for the Meta app settings:
 
