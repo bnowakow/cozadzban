@@ -216,11 +216,12 @@ class EnrichmentService(
                 result = EMPTY_ENRICHMENT_RESULT,
                 logContext = "after HTTP failure",
             )?.let { return it }
+            fetchFacebookVideoCurlFallback(url, "primary-http-${ex.statusCode.value()}")?.let { return it }
             fetchFacebookWatchFallback(url, ex.statusCode.value())?.let { fallbackHtml ->
-                return enrichHtml(url, fallbackHtml)
+                enrichHtml(url, fallbackHtml).takeIf(::hasUsableFacebookVideoMetadata)?.let { return it }
             }
             fetchFacebookVideoPluginFallback(url, ex.statusCode.value())?.let { fallbackHtml ->
-                return enrichHtml(url, fallbackHtml)
+                enrichHtml(url, fallbackHtml).takeIf(::hasUsableFacebookVideoMetadata)?.let { return it }
             }
             fetchFacebookPhotoJdkHttpClientFallback(url, ex.statusCode.value(), ex.responseBodyAsString)?.let { fallbackHtml ->
                 return enrichHtml(url, fallbackHtml)
@@ -293,6 +294,7 @@ class EnrichmentService(
                 else -> EnrichmentException.Reason.UNREACHABLE
             }
             logFacebookPhotoPrimaryFetchAccessFailure(url, reason, rootCause)
+            fetchFacebookVideoCurlFallback(url, "primary-access-failure-${reason.name.lowercase()}")?.let { return it }
             fetchFacebookPhotoJdkHttpClientFallback(url, "primary-access-failure-${reason.name.lowercase()}")?.let { fallbackHtml ->
                 return enrichHtml(url, fallbackHtml)
             }
@@ -343,6 +345,7 @@ class EnrichmentService(
             )
         } catch (ex: RestClientException) {
             logFacebookPhotoPrimaryFetchClientFailure(url, ex)
+            fetchFacebookVideoCurlFallback(url, "primary-client-failure-${ex.javaClass.simpleName}")?.let { return it }
             fetchFacebookPhotoJdkHttpClientFallback(url, "primary-client-failure-${ex.javaClass.simpleName}")?.let { fallbackHtml ->
                 return enrichHtml(url, fallbackHtml)
             }
@@ -393,6 +396,13 @@ class EnrichmentService(
         }
 
         val result = enrichHtml(url, html)
+        if (isFacebookVideoOrReelUrl(url) && !hasUsableFacebookVideoMetadata(result)) {
+            fetchFacebookVideoCurlFallback(url, "primary-200-incomplete")?.let { return it }
+            throw EnrichmentException(
+                message = "URL enrichment failed: Facebook Reel did not expose a usable caption for '$url'",
+                reason = EnrichmentException.Reason.NON_2XX,
+            )
+        }
         recoverFacebookPostPluginFallbackIfIncomplete(
             url = url,
             result = result,
@@ -1106,6 +1116,38 @@ class EnrichmentService(
             null
         }
     }
+
+    private fun fetchFacebookVideoCurlFallback(url: String, trigger: String): EnrichmentResult? {
+        if (!isFacebookVideoOrReelUrl(url)) return null
+        val videoId = facebookVideoId(url) ?: return null
+        val profile = facebookPhotoCurlRequestProfiles().first()
+        val execution = runCatching {
+            executeFacebookPhotoCurl(facebookPhotoCurlExecutable(), url, profile)
+        }.getOrElse { ex ->
+            LOG.debug("Facebook video curl fallback failed; url='{}'; trigger={}; exception={}: {}",
+                url, trigger, ex.javaClass.simpleName, ex.message)
+            return null
+        }
+        val output = execution.output
+        val finalUrl = output.meta["url_effective"] ?: return null
+        if (execution.timedOut || execution.exitCode != 0 || output.outputTruncated ||
+            output.meta["http_code"]?.toIntOrNull()?.let { it in 200..299 } != true ||
+            output.meta["content_type"]?.startsWith("text/html", ignoreCase = true) != true ||
+            !isFacebookHost(finalUrl) || isFacebookLoginUrl(finalUrl) || isFacebookGenericError(output.body)
+        ) return null
+
+        val doc = Jsoup.parse(output.body, url)
+        val ogUrl = metaContent(doc, "meta[property=og:url]") ?: return null
+        if (facebookVideoId(ogUrl) != videoId || isFacebookLoginDocument(url, doc, finalUrl)) return null
+        val result = enrichHtml(url, output.body)
+        if (!hasUsableFacebookVideoMetadata(result)) return null
+        LOG.info("Facebook video curl fallback recovered metadata; url='{}'; trigger={}; imagePresent={}",
+            url, trigger, !result.thumbnail.isNullOrBlank())
+        return result
+    }
+
+    private fun hasUsableFacebookVideoMetadata(result: EnrichmentResult): Boolean =
+        !result.title.isNullOrBlank() && !result.lead.isNullOrBlank()
 
     private fun fetchFacebookPostPluginFallbackIfIncomplete(url: String, result: EnrichmentResult): String? {
         if (!isFacebookPfbidPostUrl(url)) return null
@@ -3564,8 +3606,7 @@ internal fun recoverFacebookPostFromGenericError(
     responseBody: String,
 ): EnrichmentResult? {
     if (statusCode != 400) return null
-    if (!isRecoverableFacebookUrl(url)) return null
-    if (!isFacebookVideoOrReelUrl(url) && !isFacebookGenericError(responseBody)) return null
+    if (!isFacebookShareUrl(url) || !isFacebookGenericError(responseBody)) return null
 
     return EnrichmentResult(
         title = facebookFallbackTitle(url),
@@ -3576,9 +3617,6 @@ internal fun recoverFacebookPostFromGenericError(
         plainText = null,
     )
 }
-
-private fun isRecoverableFacebookUrl(url: String): Boolean =
-    isFacebookVideoOrReelUrl(url) || isFacebookShareUrl(url)
 
 private fun isFacebookPfbidPostUrl(url: String): Boolean {
     val uri = runCatching { URI(url) }.getOrNull() ?: return false
@@ -3730,9 +3768,9 @@ private fun facebookVideoId(url: String): String? {
     return listOf("reel", "videos")
         .firstNotNullOfOrNull { marker ->
             val markerIndex = pathSegments.indexOf(marker)
-            pathSegments
-                .getOrNull(markerIndex + 1)
-                ?.takeIf { segment -> markerIndex >= 0 && segment.all(Char::isDigit) }
+            pathSegments.drop(markerIndex + 1)
+                .takeIf { markerIndex >= 0 }
+                ?.firstOrNull { segment -> segment.all(Char::isDigit) }
         }
 }
 

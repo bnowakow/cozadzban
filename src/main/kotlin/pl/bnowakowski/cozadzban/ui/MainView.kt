@@ -1770,6 +1770,12 @@ class ArticleListView(
         val submitButton = Button("Save")
         submitButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY)
 
+        val refreshReelButton = Button("Refresh Reel metadata")
+        val sourceUri = runCatching { URI(article.url) }.getOrNull()
+        val sourcePath = sourceUri?.path.orEmpty()
+        refreshReelButton.isVisible = sourceUri?.host?.lowercase()?.let { it == "facebook.com" || it.endsWith(".facebook.com") } == true &&
+            (sourcePath.contains("/reel/") || sourcePath.contains("/videos/"))
+
         val cancelButton = Button("Cancel")
         cancelButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY)
 
@@ -1833,9 +1839,23 @@ class ArticleListView(
             }
         }
 
+        refreshReelButton.addClickListener {
+            refreshReelButton.isEnabled = false
+            try {
+                articleService.refreshFacebookReelMetadata(article.id!!)
+                refreshData()
+                dialog.close()
+                showSuccess("Reel metadata refreshed")
+            } catch (ex: Exception) {
+                showError(ex.message ?: "Failed to refresh Reel metadata")
+            } finally {
+                refreshReelButton.isEnabled = true
+            }
+        }
+
         cancelButton.addClickListener { dialog.close() }
 
-        val actions = HorizontalLayout(submitButton, cancelButton)
+        val actions = HorizontalLayout(submitButton, refreshReelButton, cancelButton)
         actions.defaultVerticalComponentAlignment = Alignment.END
         actions.addClassName("czj-edit-article-actions")
 

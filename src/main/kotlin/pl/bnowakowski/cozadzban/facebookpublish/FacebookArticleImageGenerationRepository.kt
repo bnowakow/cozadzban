@@ -5,6 +5,7 @@ import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Repository
 import org.springframework.transaction.annotation.Transactional
 import java.net.URI
+import java.time.Duration
 import java.time.Instant
 
 data class FacebookArticleImageJob(val articleId: Long, val attemptCount: Int)
@@ -40,6 +41,33 @@ class FacebookArticleImageGenerationRepository(private val jdbc: NamedParameterJ
         "SELECT count(*) FROM facebook_article_image_generation WHERE status = 'MISSING_THUMBNAIL'",
         emptyMap<String, Any>(), Long::class.java,
     ) ?: 0L
+
+    /** Estimate claim slots from the current queue order and the shared ten-minute pace. */
+    fun estimatedAttemptTimes(now: Instant = Instant.now()): Map<Long, Instant> {
+        val queued = jdbc.query(
+            """SELECT job.article_id, job.next_attempt_at, pace.next_claim_at
+               FROM facebook_article_image_generation job
+               CROSS JOIN facebook_article_image_generation_pace pace
+               WHERE job.status = 'MISSING_THUMBNAIL' AND pace.id = :slot
+               ORDER BY job.next_attempt_at, job.article_id""",
+            mapOf("slot" to 1),
+        ) { rs, _ ->
+            Triple(
+                rs.getLong("article_id"),
+                rs.getTimestamp("next_attempt_at").toInstant(),
+                rs.getTimestamp("next_claim_at").toInstant(),
+            )
+        }
+        if (queued.isEmpty()) return emptyMap()
+        var nextSlot = maxOf(now, queued.first().third)
+        return buildMap {
+            queued.forEach { (articleId, eligibleAt, _) ->
+                val estimate = maxOf(nextSlot, eligibleAt)
+                put(articleId, estimate)
+                nextSlot = estimate.plus(CLAIM_INTERVAL)
+            }
+        }
+    }
 
     /** Use the same ordering as claim(); rows not yet due remain visible in the queue. */
     fun queuePage(limit: Int, offset: Int): List<FacebookArticleImageQueueRow> = jdbc.query(
@@ -105,6 +133,16 @@ class FacebookArticleImageGenerationRepository(private val jdbc: NamedParameterJ
     fun markMissingIfNeeded(articleId: Long, sourceThumbnail: String?) {
         if (hasUsableSourceThumbnail(sourceThumbnail)) return
         markMissing(articleId, sourceThumbnailRejected = false)
+    }
+
+    /** A recovered source image makes a waiting or failed illustration unnecessary. */
+    fun sourceThumbnailAvailable(articleId: Long) {
+        jdbc.update(
+            """DELETE FROM facebook_article_image_generation
+               WHERE article_id = :articleId AND NOT source_thumbnail_rejected
+                 AND status IN ('MISSING_THUMBNAIL', 'FAILED')""",
+            mapOf("articleId" to articleId),
+        )
     }
 
     /**
@@ -321,6 +359,9 @@ class FacebookArticleImageGenerationRepository(private val jdbc: NamedParameterJ
     }
 
     companion object {
+        /** Keep in sync with the 10 minute claim intervals in claim() and claimManual(). */
+        private val CLAIM_INTERVAL = Duration.ofMinutes(10)
+
         /** Display status for an AI illustration made only because Meta refused the source thumbnail. */
         const val GENERATED_FOR_FACEBOOK = "GENERATED_FOR_FACEBOOK"
 

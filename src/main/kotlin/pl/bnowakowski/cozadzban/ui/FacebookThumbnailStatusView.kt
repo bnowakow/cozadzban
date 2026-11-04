@@ -25,6 +25,8 @@ import pl.bnowakowski.cozadzban.facebookpublish.FacebookArticleImageGenerationRe
 import pl.bnowakowski.cozadzban.facebookpublish.FacebookArticleImageGenerationScheduler
 import pl.bnowakowski.cozadzban.facebookpublish.FacebookArticleImageQueueRow
 import pl.bnowakowski.cozadzban.facebookpublish.FacebookArticleImageStatusRow
+import java.time.Instant
+import java.time.temporal.ChronoUnit
 
 @Route("admin/facebook-thumbnails")
 @PageTitle("Article thumbnails")
@@ -49,11 +51,12 @@ class FacebookThumbnailStatusView(
     private val next = Button("Next") { changePage(1) }
     private val queueSummary = Span()
     private val queuePageInfo = Span()
-    private val queuePageNumber = PageNumberInput { target -> queuePage = target; refreshQueue() }
+    private val queuePageNumber = PageNumberInput { target -> queuePage = target; refresh() }
     private val queuePrevious = Button("Previous") { changeQueuePage(-1) }
     private val queueNext = Button("Next") { changeQueuePage(1) }
     private var page = 0
     private var queuePage = 0
+    private var estimatedAttempts: Map<Long, Instant> = emptyMap()
 
     init {
         installCozadzbanThemeBootstrap()
@@ -77,7 +80,7 @@ class FacebookThumbnailStatusView(
         val content = sharedPageContent(
             Span("Article thumbnails"), Span(message), filters, grid, navigation,
             H2("Generation queue"), queueSummary,
-            Span("Waiting jobs are ordered by next attempt time, then article ID, as the scheduler selects them. Jobs being generated or requiring manual retry are shown in the status table above."),
+            Span("Waiting jobs are ordered by eligibility time, then article ID. Estimated attempts use the current queue and one claim every 10 minutes; generation time and queue changes can move them. Jobs being generated or requiring manual retry are shown in the status table above."),
             queueGrid, queueNavigation,
         )
         content.element.style.set("min-height", "0")
@@ -110,9 +113,9 @@ class FacebookThumbnailStatusView(
         grid.addComponentColumn { row -> thumbnail(row) }.setHeader("Thumbnail").setAutoWidth(true)
         grid.addColumn(FacebookArticleImageStatusRow::attemptCount).setHeader("Attempts").setAutoWidth(true)
         grid.addColumn { row ->
-            if (row.status == "MISSING_THUMBNAIL") row.nextAttemptAt?.let(WarsawTime::dateTime) ?: "—" else "—"
+            if (row.status == "MISSING_THUMBNAIL") estimatedAttemptText(row.articleId) else "—"
         }
-            .setHeader("Next attempt").setAutoWidth(true)
+            .setHeader("Next attempt (est.)").setAutoWidth(true)
         grid.addColumn { it.updatedAt?.let(WarsawTime::dateTime) ?: "—" }
             .setHeader("Updated").setAutoWidth(true)
         grid.addColumn { it.lastError ?: "—" }.setHeader("Last error").setFlexGrow(1)
@@ -142,6 +145,8 @@ class FacebookThumbnailStatusView(
         }.setHeader("Why").setAutoWidth(true)
         queueGrid.addColumn(FacebookArticleImageQueueRow::attemptCount)
             .setHeader("Attempts").setAutoWidth(true)
+        queueGrid.addColumn { estimatedAttemptText(it.articleId) }
+            .setHeader("Next attempt (est.)").setAutoWidth(true)
         queueGrid.addColumn { WarsawTime.dateTime(it.nextAttemptAt) }
             .setHeader("Eligible from").setAutoWidth(true)
         queueGrid.addColumn { it.lastError ?: "—" }
@@ -182,7 +187,13 @@ class FacebookThumbnailStatusView(
         refresh()
     }
 
+    private fun estimatedAttemptText(articleId: Long): String = estimatedAttempts[articleId]?.let { estimate ->
+        val minute = estimate.truncatedTo(ChronoUnit.MINUTES)
+        WarsawTime.dateTime(if (minute == estimate) minute else minute.plus(1, ChronoUnit.MINUTES))
+    } ?: "—"
+
     private fun refresh() {
+        estimatedAttempts = if (generation.isEnabled()) jobs.estimatedAttemptTimes() else emptyMap()
         val selected = STATUS_LABELS[status.value] ?: ""
         val total = jobs.countStatuses(selected)
         val lastPage = if (total == 0L) 0 else ((total - 1) / PAGE_SIZE).toInt()
@@ -215,7 +226,7 @@ class FacebookThumbnailStatusView(
 
     private fun changeQueuePage(direction: Int) {
         queuePage = (queuePage + direction).coerceAtLeast(0)
-        refreshQueue()
+        refresh()
     }
 
     internal companion object {

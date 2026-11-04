@@ -17,6 +17,7 @@ import pl.bnowakowski.cozadzban.facebookimport.FacebookImportType
 import pl.bnowakowski.cozadzban.facebookpublish.FacebookPublicationQueue
 import pl.bnowakowski.cozadzban.facebookpublish.FacebookPageSyncRepository
 import pl.bnowakowski.cozadzban.facebookpublish.FacebookArticleImageGenerationRepository
+import pl.bnowakowski.cozadzban.rss.MetaSourceImageCache
 import pl.bnowakowski.cozadzban.user.AppUserRepository
 import java.net.URI
 import java.time.Instant
@@ -32,6 +33,7 @@ class ArticleService(
     private val facebookPublicationQueue: FacebookPublicationQueue? = null,
     private val facebookPageSync: FacebookPageSyncRepository? = null,
     private val facebookArticleImages: FacebookArticleImageGenerationRepository? = null,
+    private val metaSourceImageCache: MetaSourceImageCache? = null,
 ) {
 
     @Transactional(readOnly = true)
@@ -149,7 +151,11 @@ class ArticleService(
             throw ArticleUrlConflictException(url)
         }
         preserveContent(article.id!!, article.url, contentForCache)
-        facebookArticleImages?.markMissingIfNeeded(article.id!!, article.thumbnail)
+        if (isFacebookVideoOrReelUrl(article.url)) {
+            reconcileFacebookReelImage(article)
+        } else {
+            facebookArticleImages?.markMissingIfNeeded(article.id!!, article.thumbnail)
+        }
         facebookPublicationQueue?.enqueue(article.id, article.language)
         logFacebookPhotoPersistenceState("create", article, contentForCache)
         val persistedArticle = logFacebookPhotoReloadedPersistenceState("create", article, contentForCache)
@@ -420,6 +426,59 @@ class ArticleService(
         preserveContentAndFacebookPostTitle(existing, contentForCache)
         return articleContentRepository.findById(id)
             .orElseThrow { NoSuchElementException("Content cache was not stored for article $id") }
+    }
+
+    /** Fill missing Reel fields from its source while preserving any editorial changes. */
+    fun refreshFacebookReelMetadata(id: Long): Article {
+        val existing = findById(id)
+        require(isFacebookVideoOrReelUrl(existing.url)) { "Article $id is not a Facebook Reel or video" }
+        val enrichment = enrichArticleUrl("refresh-facebook-reel-metadata", existing.url)
+        val content = selectContentForCache(existing.url, enrichment.plainText, enrichment.lead, enrichment.title)
+        val title = existing.title?.takeUnless { isUnusableFacebookTitle(existing.url, it) || it.isBlank() }
+            ?: titleForSave(existing.url, enrichment.title, enrichment.lead, content)
+        val lead = existing.lead?.takeIf { it.isNotBlank() } ?: enrichment.lead
+        val existingThumbnail = existing.thumbnail
+            ?.takeIf { FacebookArticleImageGenerationRepository.hasUsableSourceThumbnail(it) }
+        val refreshedThumbnail = enrichment.thumbnail
+            ?.takeIf { FacebookArticleImageGenerationRepository.hasUsableSourceThumbnail(it) }
+        val thumbnail = if (existingThumbnail != null && metaSourceImageCache?.supports(existingThumbnail) != true) {
+            existingThumbnail
+        } else {
+            refreshedThumbnail ?: existingThumbnail
+        }
+        val missing = listOfNotNull(
+            "title".takeIf { title.isNullOrBlank() },
+            "description".takeIf { lead.isNullOrBlank() },
+        )
+        check(missing.isEmpty()) { "Facebook did not expose ${missing.joinToString(", ")} for this Reel. Try again later." }
+
+        val updated = articleRepository.save(existing.copy(
+            title = title,
+            lead = lead,
+            thumbnail = thumbnail,
+            favicon = existing.favicon?.takeIf { it.isNotBlank() } ?: enrichment.favicon,
+            publishedAt = existing.publishedAt ?: enrichment.publishedAt,
+        ))
+        if (getContent(id).isNullOrBlank()) preserveContent(id, existing.url, content)
+        reconcileFacebookReelImage(updated)
+        if (facebookCaptionChanged(existing, updated)) {
+            facebookPageSync?.queueUpdate(id, existing.thumbnail != updated.thumbnail, false)
+        }
+        return updated
+    }
+
+    private fun reconcileFacebookReelImage(article: Article) {
+        val hasSourceImage = article.thumbnail
+            ?.takeIf { FacebookArticleImageGenerationRepository.hasUsableSourceThumbnail(it) }
+            ?.let { sourceUrl ->
+                val cache = metaSourceImageCache
+                if (cache != null && cache.supports(sourceUrl)) cache.loadOrFetch(article) != null else true
+            } ?: false
+        if (hasSourceImage) {
+            facebookArticleImages?.sourceThumbnailAvailable(article.id!!)
+        } else if (facebookArticleImages?.status(article.id!!) != "GENERATED") {
+            facebookArticleImages?.requestRegeneration(article.id!!, null)
+        }
     }
 
     fun replaceContentCache(id: Long, content: String): ArticleContent {

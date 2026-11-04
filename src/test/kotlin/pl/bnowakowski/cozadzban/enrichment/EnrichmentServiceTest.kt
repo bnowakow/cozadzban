@@ -245,15 +245,14 @@ class EnrichmentServiceTest {
     }
 
     @Test
-    fun `recovers Facebook reel 400 as minimal reel`() {
+    fun `does not save a Facebook reel without a caption or image`() {
         val result = recoverFacebookPostFromGenericError(
             url = "https://www.facebook.com/reel/1648200636595572",
             statusCode = HttpURLConnection.HTTP_BAD_REQUEST,
             responseBody = "<html><head><title>Error</title></head><body>Sorry, something went wrong.</body></html>",
         )
 
-        assertNotNull(result)
-        assertEquals("Facebook reel", result?.title)
+        assertNull(result)
     }
 
     @Test
@@ -629,6 +628,28 @@ class EnrichmentServiceTest {
     }
 
     @Test
+    fun `extracts Reel caption and image from public video metadata`() {
+        val caption = "Bogdan Święczkowski zamknął posiedzenie, zanim się rozpoczęło — sędzia TK Dariusz Szostek."
+        val image = "https://scontent-waw1-1.xx.fbcdn.net/v/t15.5256-10/reel.jpg?oh=abc"
+        val html = """
+            <!doctype html>
+            <html><head>
+              <title>Facebook</title>
+              <meta property="og:url" content="https://www.facebook.com/tvp.info/videos/posiedzenie/1135384619456804/">
+              <meta property="og:title" content="304 tys. wyświetleń · 3,7 tys. reakcji | $caption | tvp.info">
+              <meta property="og:description" content="$caption">
+              <meta property="og:image" content="$image">
+            </head><body></body></html>
+        """.trimIndent()
+
+        val result = enrichHtml("https://www.facebook.com/reel/1135384619456804/", html)
+
+        assertEquals(caption, result.title)
+        assertEquals(caption, result.lead)
+        assertEquals(image, result.thumbnail)
+    }
+
+    @Test
     fun `uses Facebook pfbid post text as title and cached content`() {
         val postText = "Michał Zimny opisuje sytuację w długim poście, który powinien zostać tytułem i treścią cache."
         val html = """
@@ -750,6 +771,10 @@ class EnrichmentServiceTest {
         assertEquals(
             "https://www.facebook.com/watch/?v=2380672702377664",
             facebookWatchUrl("https://www.facebook.com/serwisdonaldpl/videos/2380672702377664/"),
+        )
+        assertEquals(
+            "https://www.facebook.com/watch/?v=1135384619456804",
+            facebookWatchUrl("https://www.facebook.com/tvp.info/videos/posiedzenie/1135384619456804/"),
         )
         assertEquals(null, facebookWatchUrl("https://www.facebook.com/example/posts/pfbid123"))
     }
