@@ -497,6 +497,28 @@ class ArticleService(
         return updated
     }
 
+    /** Replace a donation page's repeated headline with the appeal text from its source. */
+    fun refreshLundaDonationDescription(id: Long): Article {
+        val existing = findById(id)
+        val host = runCatching { URI(existing.url).host }.getOrNull()
+        require(host.equals("cause.lundadonate.org", ignoreCase = true)) {
+            "Article $id is not a Lunda donation page"
+        }
+        check(existing.lead.isNullOrBlank() || existing.lead?.trim().equals(existing.title?.trim(), ignoreCase = true)) {
+            "The description has already been edited; it was not replaced"
+        }
+        val enrichment = enrichArticleUrl("refresh-lunda-donation-description", existing.url)
+        val lead = enrichment.lead?.trim()
+        check(!lead.isNullOrBlank() && !lead.equals(existing.title?.trim(), ignoreCase = true)) {
+            "The source did not expose a useful description. Try again later."
+        }
+        val updated = articleRepository.save(existing.copy(lead = lead))
+        if (facebookCaptionChanged(existing, updated)) {
+            facebookPageSync?.queueUpdate(id, false, false)
+        }
+        return updated
+    }
+
     private fun reconcileSourceImage(article: Article) {
         val hasSourceImage = article.thumbnail
             ?.takeIf { FacebookArticleImageGenerationRepository.hasUsableSourceThumbnail(it) }

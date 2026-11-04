@@ -1776,8 +1776,14 @@ class ArticleListView(
             (sourcePath.contains("/reel/") || sourcePath.contains("/videos/"))
         val isPapArticle = sourceUri?.host?.lowercase() in setOf("pap.pl", "www.pap.pl") &&
             sourcePath.startsWith("/aktualnosci/")
-        val refreshMetadataButton = Button(if (isPapArticle) "Refresh PAP metadata" else "Refresh Reel metadata")
-        refreshMetadataButton.isVisible = isFacebookReel || isPapArticle
+        val needsDonationDescription = sourceUri?.host?.equals("cause.lundadonate.org", ignoreCase = true) == true &&
+            (article.lead.isNullOrBlank() || article.lead?.trim().equals(article.title?.trim(), ignoreCase = true))
+        val refreshMetadataButton = Button(when {
+            isPapArticle -> "Refresh PAP metadata"
+            needsDonationDescription -> "Refresh donation description"
+            else -> "Refresh Reel metadata"
+        })
+        refreshMetadataButton.isVisible = isFacebookReel || isPapArticle || needsDonationDescription
 
         val cancelButton = Button("Cancel")
         cancelButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY)
@@ -1845,8 +1851,11 @@ class ArticleListView(
         refreshMetadataButton.addClickListener {
             refreshMetadataButton.isEnabled = false
             try {
-                if (isPapArticle) articleService.refreshPapMetadata(article.id!!)
-                else articleService.refreshFacebookReelMetadata(article.id!!)
+                when {
+                    isPapArticle -> articleService.refreshPapMetadata(article.id!!)
+                    needsDonationDescription -> articleService.refreshLundaDonationDescription(article.id!!)
+                    else -> articleService.refreshFacebookReelMetadata(article.id!!)
+                }
                 refreshData()
                 dialog.close()
                 showSuccess("Article metadata refreshed")

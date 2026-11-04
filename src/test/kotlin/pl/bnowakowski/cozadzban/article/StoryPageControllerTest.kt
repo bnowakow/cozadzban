@@ -65,6 +65,21 @@ class StoryPageControllerTest {
     }
 
     @Test
+    fun `labels the added date without claiming the source published on that day`() {
+        whenever(articles.findById(42)).thenReturn(Optional.of(article().copy(
+            publishedAt = null,
+            createdAt = Instant.parse("2026-11-04T17:14:45Z"),
+        )))
+        val doc = Jsoup.parse(controller.story(42).body.orEmpty())
+        val data = ObjectMapper().readTree(doc.selectFirst("script[type='application/ld+json']")!!.data())
+
+        assertTrue(doc.selectFirst(".story-meta")!!.text().contains("Dodano"))
+        assertEquals("2026-11-04T17:14:45Z", doc.selectFirst("time")?.attr("datetime"))
+        assertTrue(doc.select("meta[property='article:published_time']").isEmpty())
+        assertFalse(data.has("datePublished"))
+    }
+
+    @Test
     fun `generated story image shows the versioned JPEG while link previews keep the PNG`() {
         val images: pl.bnowakowski.cozadzban.facebookpublish.FacebookArticleImageGenerationRepository = mock()
         val generated: pl.bnowakowski.cozadzban.facebookpublish.CodexArticleImageGenerator = mock()

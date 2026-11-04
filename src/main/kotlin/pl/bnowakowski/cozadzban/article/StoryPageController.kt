@@ -27,7 +27,6 @@ import pl.bnowakowski.cozadzban.ui.SearchStructuredData
 import pl.bnowakowski.cozadzban.ui.PublicNotFoundPage
 import pl.bnowakowski.cozadzban.user.Role
 import java.net.URI
-import java.time.Instant
 
 /** A server-rendered public page so a story is useful to readers and crawlers on the first request. */
 @RestController
@@ -82,8 +81,8 @@ class StoryPageController(
             .firstOrNull { it.isNotEmpty() }?.take(300)
             ?: if (polish) "Historia w serwisie Co za dzban." else "A story on Co za dzban."
         val canonical = "https://cozadzban.pl/stories/${article.id}"
-        val date = article.publishedAt ?: article.createdAt ?: Instant.EPOCH
-        val dateLabel = pl.bnowakowski.cozadzban.ui.WarsawTime.date(date)
+        val date = article.publishedAt ?: article.createdAt
+        val dateLabel = date?.let { pl.bnowakowski.cozadzban.ui.WarsawTime.date(it) }
         val sourceLink = article.publisherUrl ?: article.url
         val sourceUri = runCatching { URI(sourceLink) }.getOrNull()
         val sourceName = sourceUri?.host?.removePrefix("www.")?.ifBlank { null } ?: sourceLink
@@ -118,7 +117,9 @@ class StoryPageController(
         head.appendElement("meta").attr("property", "og:description").attr("content", description)
         head.appendElement("meta").attr("property", "og:url").attr("content", canonical)
         head.appendElement("meta").attr("property", "og:locale").attr("content", if (polish) "pl_PL" else "en_US")
-        head.appendElement("meta").attr("property", "article:published_time").attr("content", date.toString())
+        article.publishedAt?.let {
+            head.appendElement("meta").attr("property", "article:published_time").attr("content", it.toString())
+        }
         storyImage?.let {
             head.appendElement("meta").attr("property", "og:image").attr("content", "https://cozadzban.pl$it")
         }
@@ -131,7 +132,7 @@ class StoryPageController(
             put("inLanguage", language)
             put("isPartOf", mapOf("@type" to "WebSite", "url" to "https://cozadzban.pl/", "name" to "Co za dzban"))
             put("about", mapOf("@type" to "Article", "url" to sourceLink, "headline" to title))
-            (article.publishedAt ?: article.createdAt)?.let { put("datePublished", it.toString()) }
+            article.publishedAt?.let { put("datePublished", it.toString()) }
             storyImage?.let { put("primaryImageOfPage", "https://cozadzban.pl$it") }
         })
         head.appendElement("script").appendChild(DataNode(
@@ -186,9 +187,13 @@ class StoryPageController(
         icon.appendElement("span").text(sourceName.firstOrNull()?.uppercaseChar()?.toString() ?: "?")
         favicon?.let { icon.appendElement("img").attr("src", it).attr("alt", "").attr("onerror", "this.remove()") }
         meta.appendElement("span").attr("class", "source-name").text(sourceName)
-        meta.appendElement("span").attr("aria-hidden", "true").text("•")
-        meta.appendElement("time")
-            .attr("datetime", date.toString()).text(dateLabel)
+        if (date != null && dateLabel != null) {
+            meta.appendElement("span").attr("aria-hidden", "true").text("•")
+            if (article.publishedAt == null) {
+                meta.appendElement("span").text(if (polish) "Dodano" else "Added")
+            }
+            meta.appendElement("time").attr("datetime", date.toString()).text(dateLabel)
+        }
         main.appendElement("h1").text(title)
         if (isAdmin && article.id != null) {
             val actions = main.appendElement("div").attr("class", "story-admin-actions")

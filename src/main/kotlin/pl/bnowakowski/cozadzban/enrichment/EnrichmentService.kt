@@ -2708,11 +2708,10 @@ class EnrichmentService(
             ?.let { cleanFacebookMessageText(it) }
         val rawMetaDescription = metaContent(doc, "meta[property=og:description]")
             ?: metaContent(doc, "meta[name=description]")
-        val metaDescription = if (isFacebookDocument(url, doc)) {
-            rawMetaDescription?.let { cleanFacebookMessageText(it) }
+        val metaDescription = when {
+            isFacebookDocument(url, doc) -> rawMetaDescription?.let { cleanFacebookMessageText(it) }
                 ?.takeUnless { isGenericFacebookDescription(url, it) }
-        } else {
-            rawMetaDescription
+            else -> lundaDonationLead(url, doc, extractedTitle, rawMetaDescription) ?: rawMetaDescription
         }
         val extractedLead = when {
             facebookLoginDocument && isFacebookPhotoUrl(url) -> null
@@ -3236,6 +3235,20 @@ class EnrichmentService(
 
     private fun firstMetaImage(doc: org.jsoup.nodes.Document, vararg selectors: String): String? =
         selectors.firstNotNullOfOrNull { selector -> absoluteOrRawMetaContent(doc, selector) }
+
+    private fun lundaDonationLead(
+        url: String,
+        doc: org.jsoup.nodes.Document,
+        title: String?,
+        metaDescription: String?,
+    ): String? {
+        val host = runCatching { URI(url).host }.getOrNull()
+        if (!host.equals("cause.lundadonate.org", ignoreCase = true)) return null
+        if (metaDescription != null && !metaDescription.equals(title, ignoreCase = true)) return null
+        return doc.select("body p").asSequence()
+            .mapNotNull { it.text().normalized() }
+            .firstOrNull { it.length in 100..2_000 && !it.equals(title, ignoreCase = true) }
+    }
 
     private fun faviconCandidates(url: String, doc: org.jsoup.nodes.Document): List<String> {
         val selectors = listOf(

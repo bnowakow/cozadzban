@@ -133,20 +133,20 @@ class FacebookPageSyncRepository(private val jdbc: NamedParameterJdbcTemplate) {
         val updated = jdbc.update(
             """UPDATE facebook_page_sync SET
                  status = CASE WHEN action = 'UPDATE' AND dirty THEN 'PENDING'
-                               WHEN action = 'UPDATE' AND replacement_required AND :replacedPhotoId IS NULL
+                               WHEN action = 'UPDATE' AND replacement_required AND :hasReplacedPhotoId = false
                                  THEN 'REPLACEMENT_REQUIRED'
                                ELSE 'CONFIRMED' END,
                  dirty = false,
-                 replacement_required = CASE WHEN :replacedPhotoId IS NOT NULL THEN false
+                 replacement_required = CASE WHEN :hasReplacedPhotoId = true THEN false
                                               ELSE replacement_required END,
                  completed_at = now(),
                  last_error = CASE WHEN action = 'UPDATE' AND replacement_required AND NOT dirty
-                                       AND :replacedPhotoId IS NULL
+                                       AND :hasReplacedPhotoId = false
                                    THEN 'The image or Page language changed; manual post replacement is required.'
                                    ELSE NULL END,
                  updated_at = now()
                WHERE id = :id AND status = 'ATTEMPTING' AND action = :action""",
-            mapOf("id" to id, "action" to action, "replacedPhotoId" to replacedPhotoId),
+            mapOf("id" to id, "action" to action, "hasReplacedPhotoId" to (replacedPhotoId != null)),
         ) == 1
         if (updated && replacedPhotoId != null) {
             jdbc.update(

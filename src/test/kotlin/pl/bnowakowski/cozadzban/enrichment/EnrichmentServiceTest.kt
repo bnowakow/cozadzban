@@ -29,6 +29,28 @@ import java.time.Instant
 class EnrichmentServiceTest {
 
     @Test
+    fun `uses donation appeal when Lunda description only repeats the title`() {
+        val appeal = "Organizacja prosi o wsparcie działań na rzecz praw kobiet, ochrony osób przed przemocą oraz pomocy potrzebującym. Każda wpłata pomaga kontynuować te działania."
+        val html = """
+            <html><head>
+              <meta property="og:title" content="Wesprzyj organizację!">
+              <meta property="og:description" content="Wesprzyj organizację!">
+              <meta property="og:image" content="https://cdn.lundadonate.org/logo.png">
+            </head><body>
+              <p>Witaj na naszej stronie.</p>
+              <p>$appeal</p>
+            </body></html>
+        """.trimIndent()
+
+        val result = enrichHtml("https://cause.lundadonate.org/womensstrike/appeal", html)
+
+        assertEquals("Wesprzyj organizację!", result.title)
+        assertEquals(appeal, result.lead)
+        assertEquals("https://cdn.lundadonate.org/logo.png", result.thumbnail)
+        assertEquals("Wesprzyj organizację!", enrichHtml("https://example.org/appeal", html).lead)
+    }
+
+    @Test
     fun `ignores generic Instagram login shell metadata`() {
         val html = """
             <!doctype html>
