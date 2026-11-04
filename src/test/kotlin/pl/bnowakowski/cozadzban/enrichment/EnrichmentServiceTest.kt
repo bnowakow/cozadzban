@@ -650,6 +650,40 @@ class EnrichmentServiceTest {
     }
 
     @Test
+    fun `recovers PAP headline lead image and Warsaw publication time from reader output`() {
+        val url = "https://www.pap.pl/aktualnosci/bogucki-kprp-zlozy-zawiadomienie-o-mozliwosci-popelnienia-przestepstwa-wz-z-wydarzeniem"
+        val title = "Bogucki: KPRP złoży zawiadomienie o możliwości popełnienia przestępstwa wz. z wydarzeniem w TK"
+        val lead = "Kancelaria Prezydenta RP złoży zawiadomienie o możliwości popełnienia przestępstwa w związku z wydarzeniem w Trybunale Konstytucyjnym."
+        val image = "https://www.pap.pl/sites/default/files/styles/main_image_full/public/202611/pap_20261104_16F.jpg.webp?itok=test"
+        val reader = """
+            Title: $title | Polska Agencja Prasowa SA
+            URL Source: $url
+            Markdown Content:
+            ### O PAP.pl
+            # $title
+
+            $lead
+
+            04.11.2026 15:51 aktualizacja: 04.11.2026 16:27
+
+            ![Image: PAP logo](https://www.pap.pl/themes/pap2024/images/svg/logo_pap_small.svg)
+            ![Image: Zbigniew Bogucki](https://www.pap.pl/sites/default/files/styles/main_image/public/202611/pap_20261104_16F.jpg.webp?itok=small)
+            ![Image: Zbigniew Bogucki]($image)
+            ## Tematy
+            ![Image: unrelated](https://www.pap.pl/sites/default/files/styles/main_image_full/public/unrelated.jpg.webp)
+        """.trimIndent()
+
+        val result = parsePapReaderMarkdownResult(url, reader)
+
+        assertEquals(title, result?.title)
+        assertEquals(lead, result?.lead)
+        assertEquals(image, result?.thumbnail)
+        assertEquals(Instant.parse("2026-11-04T14:51:00Z"), result?.publishedAt)
+        assertNull(parsePapReaderMarkdownResult(url.replace("bogucki-kprp", "other-article"), reader))
+        assertTrue(isPapAccessChallenge(url, "<meta name='robots' content='noindex'><script src='/_Incapsula_Resource'></script>"))
+    }
+
+    @Test
     fun `uses Facebook pfbid post text as title and cached content`() {
         val postText = "Michał Zimny opisuje sytuację w długim poście, który powinien zostać tytułem i treścią cache."
         val html = """

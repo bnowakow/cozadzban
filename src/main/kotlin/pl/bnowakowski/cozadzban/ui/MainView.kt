@@ -1770,11 +1770,14 @@ class ArticleListView(
         val submitButton = Button("Save")
         submitButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY)
 
-        val refreshReelButton = Button("Refresh Reel metadata")
         val sourceUri = runCatching { URI(article.url) }.getOrNull()
         val sourcePath = sourceUri?.path.orEmpty()
-        refreshReelButton.isVisible = sourceUri?.host?.lowercase()?.let { it == "facebook.com" || it.endsWith(".facebook.com") } == true &&
+        val isFacebookReel = sourceUri?.host?.lowercase()?.let { it == "facebook.com" || it.endsWith(".facebook.com") } == true &&
             (sourcePath.contains("/reel/") || sourcePath.contains("/videos/"))
+        val isPapArticle = sourceUri?.host?.lowercase() in setOf("pap.pl", "www.pap.pl") &&
+            sourcePath.startsWith("/aktualnosci/")
+        val refreshMetadataButton = Button(if (isPapArticle) "Refresh PAP metadata" else "Refresh Reel metadata")
+        refreshMetadataButton.isVisible = isFacebookReel || isPapArticle
 
         val cancelButton = Button("Cancel")
         cancelButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY)
@@ -1839,23 +1842,24 @@ class ArticleListView(
             }
         }
 
-        refreshReelButton.addClickListener {
-            refreshReelButton.isEnabled = false
+        refreshMetadataButton.addClickListener {
+            refreshMetadataButton.isEnabled = false
             try {
-                articleService.refreshFacebookReelMetadata(article.id!!)
+                if (isPapArticle) articleService.refreshPapMetadata(article.id!!)
+                else articleService.refreshFacebookReelMetadata(article.id!!)
                 refreshData()
                 dialog.close()
-                showSuccess("Reel metadata refreshed")
+                showSuccess("Article metadata refreshed")
             } catch (ex: Exception) {
-                showError(ex.message ?: "Failed to refresh Reel metadata")
+                showError(ex.message ?: "Failed to refresh article metadata")
             } finally {
-                refreshReelButton.isEnabled = true
+                refreshMetadataButton.isEnabled = true
             }
         }
 
         cancelButton.addClickListener { dialog.close() }
 
-        val actions = HorizontalLayout(submitButton, refreshReelButton, cancelButton)
+        val actions = HorizontalLayout(submitButton, refreshMetadataButton, cancelButton)
         actions.defaultVerticalComponentAlignment = Alignment.END
         actions.addClassName("czj-edit-article-actions")
 

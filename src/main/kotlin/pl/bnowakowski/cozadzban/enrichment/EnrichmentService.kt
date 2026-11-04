@@ -29,6 +29,7 @@ import java.security.MessageDigest
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
+import java.time.LocalDateTime
 import java.time.OffsetDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -135,6 +136,17 @@ class EnrichmentService(
         .defaultHeader(HttpHeaders.ACCEPT_LANGUAGE, "pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7")
         .build()
 
+    private val papReaderRestClient: RestClient = restClientBuilder
+        .requestFactory(
+            SimpleClientHttpRequestFactory().apply {
+                setConnectTimeout(CONNECT_TIMEOUT_MS)
+                setReadTimeout(15_000)
+            }
+        )
+        .defaultHeader(HttpHeaders.USER_AGENT, BROWSER_USER_AGENT)
+        .defaultHeader(HttpHeaders.ACCEPT, "text/plain, text/markdown, */*;q=0.8")
+        .build()
+
     private val facebookPhotoHttpClient: HttpClient = HttpClient.newBuilder()
         .connectTimeout(Duration.ofMillis(CONNECT_TIMEOUT_MS.toLong()))
         .followRedirects(HttpClient.Redirect.ALWAYS)
@@ -192,6 +204,7 @@ class EnrichmentService(
                 }
         } catch (ex: RestClientResponseException) {
             logFacebookPhotoPrimaryFetchHttpFailure(url, ex)
+            fetchPapReaderFallback(url)?.let { return it }
             fetchFacebookCrawlerFallback(url, ex.statusCode.value(), ex.responseBodyAsString)?.let { fallbackHtml ->
                 val fallbackResult = enrichHtml(url, fallbackHtml)
                 if (hasUsableFacebookPostMetadata(url, fallbackResult, fallbackHtml)) {
@@ -294,6 +307,7 @@ class EnrichmentService(
                 else -> EnrichmentException.Reason.UNREACHABLE
             }
             logFacebookPhotoPrimaryFetchAccessFailure(url, reason, rootCause)
+            fetchPapReaderFallback(url)?.let { return it }
             fetchFacebookVideoCurlFallback(url, "primary-access-failure-${reason.name.lowercase()}")?.let { return it }
             fetchFacebookPhotoJdkHttpClientFallback(url, "primary-access-failure-${reason.name.lowercase()}")?.let { fallbackHtml ->
                 return enrichHtml(url, fallbackHtml)
@@ -345,6 +359,7 @@ class EnrichmentService(
             )
         } catch (ex: RestClientException) {
             logFacebookPhotoPrimaryFetchClientFailure(url, ex)
+            fetchPapReaderFallback(url)?.let { return it }
             fetchFacebookVideoCurlFallback(url, "primary-client-failure-${ex.javaClass.simpleName}")?.let { return it }
             fetchFacebookPhotoJdkHttpClientFallback(url, "primary-client-failure-${ex.javaClass.simpleName}")?.let { fallbackHtml ->
                 return enrichHtml(url, fallbackHtml)
@@ -395,7 +410,19 @@ class EnrichmentService(
             )
         }
 
+        if (isPapAccessChallenge(url, html)) {
+            return fetchPapReaderFallback(url) ?: throw EnrichmentException(
+                message = "URL enrichment failed: PAP returned an access challenge for '$url'",
+                reason = EnrichmentException.Reason.NON_2XX,
+            )
+        }
         val result = enrichHtml(url, html)
+        if (isPapArticleUrl(url) && result.title.isNullOrBlank() && result.lead.isNullOrBlank()) {
+            return fetchPapReaderFallback(url) ?: throw EnrichmentException(
+                message = "URL enrichment failed: PAP did not expose article metadata for '$url'",
+                reason = EnrichmentException.Reason.NON_2XX,
+            )
+        }
         if (isFacebookVideoOrReelUrl(url) && !hasUsableFacebookVideoMetadata(result)) {
             fetchFacebookVideoCurlFallback(url, "primary-200-incomplete")?.let { return it }
             throw EnrichmentException(
@@ -2506,6 +2533,21 @@ class EnrichmentService(
         return text
     }
 
+    private fun fetchPapReaderFallback(url: String): EnrichmentResult? {
+        if (!isPapArticleUrl(url)) return null
+        val target = readerUrl(url) ?: return null
+        val markdown = try {
+            fetchHtml(target, papReaderRestClient)
+        } catch (ex: RestClientException) {
+            LOG.warn("PAP reader fallback failed for '{}': {}", url, ex.javaClass.simpleName)
+            return null
+        }
+        val result = parsePapReaderMarkdownResult(url, markdown) ?: return null
+        LOG.info("PAP reader fallback recovered metadata for '{}'; imagePresent={}",
+            url, !result.thumbnail.isNullOrBlank())
+        return result
+    }
+
     private fun parseNytReaderMarkdownResult(url: String, text: String): EnrichmentResult {
         val result = parseReaderMarkdownResult(url, text)
         val oembedResult = fetchNytOEmbedResult(url)
@@ -3868,6 +3910,62 @@ internal fun readerUrl(url: String): String? {
     val uri = runCatching { URI(url) }.getOrNull() ?: return null
     if (uri.scheme != "http" && uri.scheme != "https") return null
     return "https://r.jina.ai/http://$url"
+}
+
+internal fun isPapArticleUrl(url: String): Boolean {
+    val uri = runCatching { URI(url) }.getOrNull() ?: return false
+    return uri.scheme?.lowercase() in setOf("http", "https") &&
+        uri.host?.lowercase() in setOf("pap.pl", "www.pap.pl") &&
+        uri.path.orEmpty().startsWith("/aktualnosci/")
+}
+
+internal fun isPapAccessChallenge(url: String, html: String): Boolean =
+    isPapArticleUrl(url) && html.contains("_Incapsula_Resource", ignoreCase = true) &&
+        (html.contains("noindex", ignoreCase = true) || html.contains("Request unsuccessful", ignoreCase = true))
+
+internal fun parsePapReaderMarkdownResult(url: String, text: String): EnrichmentResult? {
+    if (!isPapArticleUrl(url) || isReaderErrorPage(text) ||
+        text.contains("_Incapsula_Resource", ignoreCase = true) ||
+        text.contains("Request unsuccessful", ignoreCase = true)) return null
+    val sourceUrl = text.lineSequence().firstOrNull { it.startsWith("URL Source:") }
+        ?.substringAfter(':')?.trim() ?: return null
+    if (!isPapArticleUrl(sourceUrl) ||
+        URI(sourceUrl).path.orEmpty().trimEnd('/') != URI(url).path.orEmpty().trimEnd('/')) return null
+
+    val lines = text.substringAfter(READER_MARKDOWN_MARKER, "").lineSequence().toList()
+    val titleIndex = lines.indexOfFirst { it.startsWith("# ") }
+    if (titleIndex < 0) return null
+    val title = lines[titleIndex].removePrefix("# ").normalizedText()
+        ?.takeIf { it.length >= 12 && it.any { char -> char.isLetter() } } ?: return null
+    val pageTitle = text.lineSequence().firstOrNull { it.startsWith(READER_TITLE_PREFIX) }
+        ?.removePrefix(READER_TITLE_PREFIX)?.normalizedText() ?: return null
+    if (!pageTitle.startsWith(title)) return null
+    val articleLines = lines.drop(titleIndex + 1).takeWhile { !it.startsWith("## Tematy") }
+    val lead = articleLines.firstNotNullOfOrNull { line ->
+        line.trim().takeIf { it.length >= 40 && !it.startsWith("!") && !it.startsWith("[") &&
+            !it.startsWith("#") && !it.matches(Regex("""\d{2}\.\d{2}\.\d{4}.*""")) }
+            ?.normalizedText()
+    } ?: return null
+    val imageUrls = MARKDOWN_IMAGE_PATTERN.findAll(articleLines.joinToString("\n"))
+        .map { it.groupValues[2].trim() }
+        .filter(::isPapMainImageUrl)
+        .toList()
+    val thumbnail = imageUrls.firstOrNull { URI(it).path.orEmpty().contains("/main_image_full/") }
+        ?: imageUrls.firstOrNull()
+    val publishedAt = Regex("""\b\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}\b""")
+        .find(articleLines.joinToString("\n"))?.value
+        ?.let { runCatching { LocalDateTime.parse(it, DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm"))
+            .atZone(WarsawTime.ZONE).toInstant() }.getOrNull() }
+
+    return EnrichmentResult(title = title, thumbnail = thumbnail, lead = lead,
+        publishedAt = publishedAt, plainText = lead)
+}
+
+private fun isPapMainImageUrl(url: String): Boolean {
+    val uri = runCatching { URI(url) }.getOrNull() ?: return false
+    return uri.scheme?.lowercase() == "https" && uri.host?.lowercase() in setOf("pap.pl", "www.pap.pl") &&
+        (uri.path?.startsWith("/sites/default/files/styles/main_image/") == true ||
+            uri.path?.startsWith("/sites/default/files/styles/main_image_full/") == true)
 }
 
 internal fun parseReaderMarkdownResult(url: String, text: String): EnrichmentResult {

@@ -13,6 +13,7 @@ import org.springframework.web.context.request.ServletRequestAttributes
 import pl.bnowakowski.cozadzban.enrichment.EnrichmentResult
 import pl.bnowakowski.cozadzban.enrichment.EnrichmentException
 import pl.bnowakowski.cozadzban.enrichment.EnrichmentService
+import pl.bnowakowski.cozadzban.enrichment.isPapArticleUrl
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportType
 import pl.bnowakowski.cozadzban.facebookpublish.FacebookPublicationQueue
 import pl.bnowakowski.cozadzban.facebookpublish.FacebookPageSyncRepository
@@ -151,8 +152,8 @@ class ArticleService(
             throw ArticleUrlConflictException(url)
         }
         preserveContent(article.id!!, article.url, contentForCache)
-        if (isFacebookVideoOrReelUrl(article.url)) {
-            reconcileFacebookReelImage(article)
+        if (isFacebookVideoOrReelUrl(article.url) || isPapArticleUrl(article.url)) {
+            reconcileSourceImage(article)
         } else {
             facebookArticleImages?.markMissingIfNeeded(article.id!!, article.thumbnail)
         }
@@ -460,14 +461,43 @@ class ArticleService(
             publishedAt = existing.publishedAt ?: enrichment.publishedAt,
         ))
         if (getContent(id).isNullOrBlank()) preserveContent(id, existing.url, content)
-        reconcileFacebookReelImage(updated)
+        reconcileSourceImage(updated)
         if (facebookCaptionChanged(existing, updated)) {
             facebookPageSync?.queueUpdate(id, existing.thumbnail != updated.thumbnail, false)
         }
         return updated
     }
 
-    private fun reconcileFacebookReelImage(article: Article) {
+    /** Restore a blocked PAP article without overwriting editorial changes. */
+    fun refreshPapMetadata(id: Long): Article {
+        val existing = findById(id)
+        require(isPapArticleUrl(existing.url)) { "Article $id is not a PAP article" }
+        val enrichment = enrichArticleUrl("refresh-pap-metadata", existing.url)
+        val title = existing.title?.takeIf { it.isNotBlank() && it != existing.url } ?: enrichment.title
+        val lead = existing.lead?.takeIf { it.isNotBlank() } ?: enrichment.lead
+        check(!title.isNullOrBlank() && !lead.isNullOrBlank()) {
+            "PAP did not expose a title and description for this article. Try again later."
+        }
+        val thumbnail = existing.thumbnail?.takeIf {
+            FacebookArticleImageGenerationRepository.hasUsableSourceThumbnail(it)
+        } ?: enrichment.thumbnail
+        val content = selectContentForCache(existing.url, enrichment.plainText, lead, title)
+        val updated = articleRepository.save(existing.copy(
+            title = title,
+            lead = lead,
+            thumbnail = thumbnail,
+            favicon = existing.favicon?.takeIf { it.isNotBlank() } ?: enrichment.favicon,
+            publishedAt = existing.publishedAt ?: enrichment.publishedAt,
+        ))
+        if (getContent(id).isNullOrBlank()) preserveContent(id, existing.url, content)
+        reconcileSourceImage(updated)
+        if (facebookCaptionChanged(existing, updated)) {
+            facebookPageSync?.queueUpdate(id, existing.thumbnail != updated.thumbnail, false)
+        }
+        return updated
+    }
+
+    private fun reconcileSourceImage(article: Article) {
         val hasSourceImage = article.thumbnail
             ?.takeIf { FacebookArticleImageGenerationRepository.hasUsableSourceThumbnail(it) }
             ?.let { sourceUrl ->

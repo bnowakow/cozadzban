@@ -25,7 +25,7 @@ import java.util.HexFormat
 
 data class SavedMetaImage(val bytes: ByteArray, val contentType: MediaType, val extension: String)
 
-/** Keeps Meta-hosted source thumbnails on the shared data volume after their remote URLs expire. */
+/** Keeps source thumbnails on the shared data volume when their hosts limit repeated downloads. */
 @Service
 class MetaSourceImageCache(
     private val articles: ArticleRepository,
@@ -43,12 +43,13 @@ class MetaSourceImageCache(
         .defaultHeader(HttpHeaders.ACCEPT, "image/avif,image/webp,image/png,image/jpeg,image/gif,image/*;q=0.8,text/html;q=0.5")
         .build()
 
-    fun supports(url: String): Boolean = isMetaImageUrl(url)
+    fun supports(url: String): Boolean = isMetaImageUrl(url) || isPapImageUrl(url)
 
     fun loadOrFetch(article: Article): SavedMetaImage? {
         val url = article.thumbnail?.trim()?.takeIf(::supports) ?: return null
         val key = hash(url)
         read(key)?.let { return it }
+        if (isPapImageUrl(url) && recentlyFailed(key, Duration.ofMinutes(10))) return null
 
         val candidates = sequenceOf(url) + recoveryUrls(article, url)
         for (candidate in candidates.distinct()) {
@@ -57,7 +58,7 @@ class MetaSourceImageCache(
             return image
         }
         markFailed(key)
-        log.warn("Meta source image unavailable for article {}", article.id)
+        log.warn("Source image unavailable for article {}", article.id)
         return null
     }
 
@@ -66,7 +67,7 @@ class MetaSourceImageCache(
     fun backfill() {
         var attempted = 0
         for (article in articles.findForRss(null)) {
-            val url = article.thumbnail?.trim()?.takeIf(::supports) ?: continue
+            val url = article.thumbnail?.trim()?.takeIf(::isMetaImageUrl) ?: continue
             val key = hash(url)
             if (hasSaved(key) || recentlyFailed(key)) continue
             loadOrFetch(article)
@@ -195,9 +196,9 @@ class MetaSourceImageCache(
         }
     }
 
-    private fun recentlyFailed(key: String): Boolean = runCatching {
+    private fun recentlyFailed(key: String, maxAge: Duration = Duration.ofHours(24)): Boolean = runCatching {
         Files.getLastModifiedTime(directory.resolve("$key.failed")).toInstant()
-            .isAfter(Instant.now().minus(Duration.ofHours(24)))
+            .isAfter(Instant.now().minus(maxAge))
     }.getOrDefault(false)
 
     private fun hash(url: String): String =
@@ -220,6 +221,13 @@ class MetaSourceImageCache(
             return uri.scheme.equals("https", ignoreCase = true) &&
                 (host == "lookaside.fbsbx.com" || host == "fbcdn.net" || host.endsWith(".fbcdn.net") ||
                     host == "cdninstagram.com" || host.endsWith(".cdninstagram.com"))
+        }
+
+        fun isPapImageUrl(url: String): Boolean {
+            val uri = runCatching { URI(url) }.getOrNull() ?: return false
+            return uri.scheme.equals("https", ignoreCase = true) &&
+                uri.host?.lowercase() in setOf("pap.pl", "www.pap.pl") &&
+                uri.path.orEmpty().startsWith("/sites/default/files/styles/main_image")
         }
 
         fun isFacebookPageUrl(uri: URI): Boolean {
