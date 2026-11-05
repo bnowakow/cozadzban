@@ -4,6 +4,9 @@ Prepared on 21 October 2026; updated through 22 October 2026. Target:
 https://cozadzban.pl/. Instructions are templates; the dated evidence section
 separately records responses and screenshots supplied during the session.
 Use with [the permission descriptions](FACEBOOK_APP_REVIEW.md).
+For the 5 November screencast rejection, use the
+[current resubmission guide](FACEBOOK_APP_REVIEW_RESUBMISSION_2026-11-05.md)
+instead of the historical recording script below.
 
 The requests and screenshots below are a **21–22 October historical test
 record**, not a current permission recommendation. The application now has

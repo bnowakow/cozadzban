@@ -3,6 +3,9 @@
 This draft reflects the implemented Page connection, publication, engagement,
 link-comment, and post synchronization flows (phases 1–4).
 It is text for the app owner to review and paste into Meta's App Review forms.
+The [5 November resubmission guide](FACEBOOK_APP_REVIEW_RESUBMISSION_2026-11-05.md)
+addresses Meta's later rejection of four Page permissions for an incomplete
+screencast.
 Updated from the App Review session on 21–22 October 2026. See the
 [review kit](FACEBOOK_APP_REVIEW_KIT.md) for exact requests, troubleshooting,
 recording instructions, and the dated evidence log. A successful API response,

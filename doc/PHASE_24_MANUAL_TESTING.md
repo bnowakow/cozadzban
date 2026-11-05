@@ -168,9 +168,11 @@ import bot user, and the proposal becomes `accepted`.
 2. Confirm it disappears from the default pending filter and appears under **Rejected**.
 3. Temporarily break article creation for a proposal, then click **Accept**.
 4. Confirm the proposal becomes **Failed** and logs contain the error.
-5. Fix the problem, reopen the failed proposal, correct language if needed, and accept again.
+5. Fix the problem, reopen the failed proposal, correct language if needed, and click **Retry import**.
 
-**Expected:** failed accepted proposals stay reviewable and can be retried.
+**Expected:** failed accepted proposals stay reviewable and can be retried. If the
+same link appears in a later Apify run, automatic retry waits at least 24 hours
+after the previous failure.
 
 ---
 

@@ -289,7 +289,11 @@ class FacebookArticleProposalView(
             addClassName("czj-admin-muted")
         }
 
-        val acceptButton = Button("Accept", VaadinIcon.CHECK.create())
+        val retrying = proposal.status == FacebookArticleProposalStatus.FAILED
+        val acceptButton = Button(
+            if (retrying) "Retry import" else "Accept",
+            if (retrying) VaadinIcon.REFRESH.create() else VaadinIcon.CHECK.create(),
+        )
         val rejectButton = Button("Reject", VaadinIcon.CLOSE_SMALL.create()) {
             val languageValue = try {
                 language.selectedLanguage()
@@ -318,7 +322,7 @@ class FacebookArticleProposalView(
             acceptButton.isEnabled = false
             rejectButton.isEnabled = false
             language.setReadOnly(true)
-            actionStatus.text = "Accepting proposal..."
+            actionStatus.text = if (retrying) "Retrying import..." else "Accepting proposal..."
 
             CompletableFuture
                 .supplyAsync {

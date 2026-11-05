@@ -625,6 +625,63 @@ class FacebookArticleProposalServiceTest {
     }
 
     @Test
+    fun `apify retries a failed proposal after one day`() {
+        val existing = proposal(status = FacebookArticleProposalStatus.FAILED, importType = FacebookImportType.APIFY)
+            .copy(decidedAt = Instant.now().minus(Duration.ofHours(25)))
+        whenever(articleService.existsByUrl(existing.canonicalArticleUrl)).thenReturn(false, false)
+        whenever(proposalRepository.findByCanonicalArticleUrl(existing.canonicalArticleUrl)).thenReturn(existing)
+        whenever(appUserRepository.findByEmail("facebook-import-bot@cozadzban.pl")).thenReturn(
+            AppUser(7L, "facebook-import-bot@cozadzban.pl", Role.USER),
+        )
+        whenever(articleService.create(any(), eq(7L))).thenReturn(
+            Article(id = 103L, url = existing.canonicalArticleUrl, language = "pl", createdByUserId = 7L),
+        )
+
+        val response = service.submitBatch(
+            FacebookProposalBatchRequest(
+                importRunId = "run-apify-retry",
+                importType = FacebookImportType.APIFY,
+                passIndex = 1,
+                passCount = 1,
+                proposals = listOf(
+                    FacebookProposalSubmission("candidate-retry", existing.articleUrl, existing.facebookPostUrl, "pl", null),
+                ),
+            ),
+        )
+
+        assertEquals(0, response.submitted)
+        assertEquals(0, response.skippedExisting)
+        assertEquals(1, response.autoApproved)
+        verify(proposalRepository).markAccepted(
+            eq(existing.id), eq(103L), eq(7L), eq("pl"), any(), eq("APIFY_AUTO_ACCEPT"), eq("retry_failed_proposal"),
+        )
+    }
+
+    @Test
+    fun `apify waits one day before retrying a failed proposal`() {
+        val existing = proposal(status = FacebookArticleProposalStatus.FAILED, importType = FacebookImportType.APIFY)
+            .copy(decidedAt = Instant.now().minus(Duration.ofHours(1)))
+        whenever(articleService.existsByUrl(existing.canonicalArticleUrl)).thenReturn(false)
+        whenever(proposalRepository.findByCanonicalArticleUrl(existing.canonicalArticleUrl)).thenReturn(existing)
+
+        val response = service.submitBatch(
+            FacebookProposalBatchRequest(
+                importRunId = "run-apify-too-soon",
+                importType = FacebookImportType.APIFY,
+                passIndex = 1,
+                passCount = 1,
+                proposals = listOf(
+                    FacebookProposalSubmission("candidate-retry", existing.articleUrl, existing.facebookPostUrl, "pl", null),
+                ),
+            ),
+        )
+
+        assertEquals(1, response.skippedExisting)
+        assertEquals(0, response.failed)
+        verify(articleService, never()).create(any(), any())
+    }
+
+    @Test
     fun `failed accept marks proposal failed`() {
         val pending = proposal(status = null)
         whenever(proposalRepository.findById(1L)).thenReturn(pending)

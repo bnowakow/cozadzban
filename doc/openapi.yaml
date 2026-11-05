@@ -36,7 +36,8 @@ info:
        Canonical proposal URLs are unique. Apify submissions are processed
        synchronously: new Apify proposals are auto-accepted immediately, and
        matching pending Selenium proposals are refreshed with Apify metadata and
-       auto-accepted in place.
+       auto-accepted in place. Failed proposals seen again in Apify results are
+       retried after at least 24 hours; users can retry them sooner from review.
     10. **Machine-to-machine writes** — the Facebook importer submits proposals,
        login-required reports, and run completion events using a dedicated API key
        tied to an allowlisted bot user.

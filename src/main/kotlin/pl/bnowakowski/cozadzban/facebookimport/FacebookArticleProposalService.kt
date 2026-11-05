@@ -33,6 +33,7 @@ class FacebookArticleProposalService(
     private enum class AutoAcceptReason(val persistedValue: String) {
         APIFY_NEW_PROPOSAL("new_apify_proposal"),
         APIFY_MATCHED_PENDING_PROPOSAL("matched_pending_selenium_proposal"),
+        APIFY_RETRY_FAILED_PROPOSAL("retry_failed_proposal"),
     }
 
     private enum class AutoAcceptResult { ACCEPTED, SKIPPED, FAILED }
@@ -79,8 +80,11 @@ class FacebookArticleProposalService(
                     facebookPostUrl = proposal.facebookPostUrl,
                     logsCompressed = mergedLogs,
                 )
-                if (request.importType == FacebookImportType.APIFY && existing.status == null) {
-                    when (autoAcceptProposal(
+                val retryFailed = request.importType == FacebookImportType.APIFY &&
+                    existing.status == FacebookArticleProposalStatus.FAILED &&
+                    (existing.decidedAt == null || !existing.decidedAt.isAfter(Instant.now().minus(FAILED_PROPOSAL_RETRY_DELAY)))
+                if (request.importType == FacebookImportType.APIFY && (existing.status == null || retryFailed)) {
+                    val result = autoAcceptProposal(
                         existing.copy(
                             importRunId = request.importRunId,
                             importType = request.importType,
@@ -89,12 +93,15 @@ class FacebookArticleProposalService(
                             guessedLanguage = language,
                             logsCompressed = mergedLogs,
                         ),
-                        AutoAcceptReason.APIFY_MATCHED_PENDING_PROPOSAL,
-                    )) {
+                        if (retryFailed) AutoAcceptReason.APIFY_RETRY_FAILED_PROPOSAL
+                        else AutoAcceptReason.APIFY_MATCHED_PENDING_PROPOSAL,
+                    )
+                    when (result) {
                         AutoAcceptResult.ACCEPTED -> autoApproved++
                         AutoAcceptResult.FAILED -> failed++
                         AutoAcceptResult.SKIPPED -> Unit
                     }
+                    if (retryFailed && result != AutoAcceptResult.SKIPPED) return@forEach
                 }
                 skippedExisting++
                 return@forEach
@@ -542,5 +549,6 @@ class FacebookArticleProposalService(
 
     companion object {
         private val LOG = LoggerFactory.getLogger(FacebookArticleProposalService::class.java)
+        private val FAILED_PROPOSAL_RETRY_DELAY: Duration = Duration.ofHours(24)
     }
 }

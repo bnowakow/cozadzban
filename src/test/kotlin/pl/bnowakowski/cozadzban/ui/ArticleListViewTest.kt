@@ -370,7 +370,7 @@ class ArticleListViewTest {
             languageFlagCache,
         )
 
-        assertTrue(findComponents(view, Span::class.java).any { it.text == "Facebook import failed" })
+        assertTrue(findComponents(view, Span::class.java).any { it.text == "Facebook import finished with errors" })
         val shownFailureRunIds = view.javaClass.getDeclaredField("shownFacebookImportFailureRunIds")
         shownFailureRunIds.isAccessible = true
         assertEquals(setOf("old-failed-run"), shownFailureRunIds.get(view))

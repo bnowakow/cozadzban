@@ -615,6 +615,7 @@ class ArticleListView(
     private fun buildFacebookImportProgressContent(progress: FacebookImportProgressSnapshot): Div {
         val content = Div()
         content.addClassName("czj-facebook-import-progress-content")
+        val partialFailure = isPartialFacebookImportFailure(progress)
 
         val icon = if (progress.status == FacebookImportRunStatus.FAILED) {
             VaadinIcon.WARNING.create()
@@ -630,7 +631,8 @@ class ArticleListView(
 
         val title = Span(
             when (progress.status) {
-                FacebookImportRunStatus.FAILED -> "Facebook import failed"
+                FacebookImportRunStatus.FAILED ->
+                    if (partialFailure) "Facebook import finished with errors" else "Facebook import failed"
                 FacebookImportRunStatus.TERMINATED -> "Facebook import stopped"
                 FacebookImportRunStatus.FINISHED -> "Facebook import finished"
                 FacebookImportRunStatus.RUNNING ->
@@ -639,7 +641,13 @@ class ArticleListView(
         )
         title.addClassName("czj-facebook-import-progress-title")
 
-        val phase = Span(progress.phase?.takeIf { it.isNotBlank() } ?: "Running")
+        val phase = Span(
+            if (partialFailure) {
+                "${progress.failedCount} ${if (progress.failedCount == 1) "proposal" else "proposals"} failed"
+            } else {
+                progress.phase?.takeIf { it.isNotBlank() } ?: "Running"
+            },
+        )
         phase.addClassName("czj-facebook-import-progress-phase")
 
         val toggle = facebookImportCollapseToggle("Hide Facebook import status details")
@@ -803,7 +811,8 @@ class ArticleListView(
         if (progress.status != FacebookImportRunStatus.FAILED) return
         if (!shownFacebookImportFailureRunIds.add(progress.importRunId)) return
         val dialog = Dialog()
-        dialog.headerTitle = "Facebook import failed"
+        dialog.headerTitle =
+            if (isPartialFacebookImportFailure(progress)) "Facebook import finished with errors" else "Facebook import failed"
         dialog.width = "min(42rem, 92vw)"
 
         val message = Span(
@@ -826,6 +835,11 @@ class ArticleListView(
         dialog.add(content)
         dialog.open()
     }
+
+    private fun isPartialFacebookImportFailure(progress: FacebookImportProgressSnapshot): Boolean =
+        progress.status == FacebookImportRunStatus.FAILED &&
+            progress.failedCount > 0 &&
+            progress.detail.isNullOrBlank()
 
     /** Remaining Apify usage this billing cycle, e.g. "$2.79 of $5.00, resets after 2026-11-26". */
     /**
