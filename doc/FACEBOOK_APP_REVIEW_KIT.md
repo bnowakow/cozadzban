@@ -289,13 +289,20 @@ Do not submit this section until reviewer access and the chosen article have
 been verified on the deployed site. Website login uses Google; Facebook OAuth
 is a separate connection flow available to an application ADMIN.
 
-> Application URL: https://cozadzban.pl/
+Prepare a review environment with an isolated Facebook test Page and article
+data. Verify both access steps in a clean browser session: Google sign-in with
+an application ADMIN account, then Facebook Login for Business with an account
+authorized to connect and publish to the test Page. Confirm the Meta app's
+access settings allow that Facebook account to complete the flow. Give Meta a
+working access arrangement in the private review form before resubmitting.
+
+> Application URL: [REVIEW SITE URL]
 >
-> Website access: sign in with the Google account [REVIEWER ACCOUNT], which
-> has been provisioned with the ADMIN role in our application. [INSERT THE
-> TESTED REVIEWER ACCESS ARRANGEMENT IN META'S PRIVATE ACCESS FIELD.]
+> Sign in with Google using the reviewer access provided in the private
+> access field. The account has the ADMIN role on this review site. Facebook
+> Login for Business is used inside the admin area to connect a Page.
 >
-> 1. Open https://cozadzban.pl/admin/facebook-pages. Choose [LANGUAGE] under
+> 1. Open [REVIEW SITE URL]/admin/facebook-pages. Choose [LANGUAGE] under
 >    “Article language”, then click “Connect a Facebook Page”. This language
 >    must already have at least one article in the application.
 > 2. Complete Facebook Login for Business using an account authorized to
@@ -312,9 +319,8 @@ is a separate connection flow available to an application ADMIN.
 >    [FACEBOOK PAGE URL] and verify the new photo post contains the article
 >    title and short lead, with no external article URL in the caption.
 > 6. Open the new article's story page at
->    https://cozadzban.pl/stories/[ARTICLE ID]. Follow “Skomentuj na Facebooku”
->    to the same Facebook post. This is a link to Facebook's discussion; the
->    application does not create comments in the current release.
+>    [REVIEW SITE URL]/stories/[ARTICLE ID]. Follow “Skomentuj na Facebooku”
+>    to the same Facebook post.
 >
 > `pages_show_list` supplies the Page chooser. `pages_manage_posts` publishes
 > the photo. `pages_read_engagement` reads that post's `permalink_url` for the
