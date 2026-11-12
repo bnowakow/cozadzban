@@ -1,5 +1,5 @@
 
-.PHONY: help docker-up docker-down docker-data-permissions docker-upgrade-log-owner docker-pg-nuke docker-pg-backup install-pg-backup-cron ensure-pg-backup-cron install-codex-auth-cron install-app-health-cron install-all-crons codex-auth-check app-health-check performance-report build run run-local run-prod test ci-test docker-test docker-image-build docker-image-push test-live-external-sites no-tests-on-deployment-server clean docker-logs docker-spring-shell docker-pg-shell docker-upgrade docker-upgrade-local docker-upgrade-dockerhub-image docker-upgrade-no-cache sync-env-files bump-patch bump-minor codex-commit claude-commit install-git-hooks install-codex-skills install-claude-skills codex-skill-prompts claude-skill-prompts codex-docker-login codex-docker-status codex-docker-logout claude-docker-login claude-docker-token claude-docker-status claude-docker-logout claude-auth-check install-claude-auth-cron
+.PHONY: help docker-up docker-down docker-data-permissions docker-upgrade-log-owner docker-pg-nuke docker-pg-backup install-pg-backup-cron ensure-pg-backup-cron install-codex-auth-cron install-app-health-cron install-all-crons codex-auth-check app-health-check performance-report build run run-local run-prod test ci-test docker-test docker-image-build docker-image-push test-live-external-sites no-tests-on-deployment-server clean docker-logs docker-spring-shell docker-pg-shell docker-upgrade docker-upgrade-local docker-upgrade-dockerhub-image docker-upgrade-no-cache sync-env-files-from-laptop-to-server sync-env-files-from-server-to-laptop bump-patch bump-minor codex-commit claude-commit install-git-hooks install-codex-skills install-claude-skills codex-skill-prompts claude-skill-prompts codex-docker-login codex-docker-status codex-docker-logout claude-docker-login claude-docker-token claude-docker-status claude-docker-logout claude-auth-check install-claude-auth-cron
 
 -include .env
 
@@ -31,7 +31,8 @@ help:
 	@printf "    %-31s %s\n" "claude-auth-check" "Check Claude login and make a small live Claude request"
 	@printf "    %-31s %s\n" "app-health-check" "Check the active app and restart it after repeated failures"
 	@printf "    %-31s %s\n" "performance-report" "Measure front-page performance and save a report in logs/"
-	@printf "    %-31s %s\n" "sync-env-files" "Sync server and worker env files, then verify byte-for-byte"
+	@printf "    %-31s %s\n" "sync-env-files-from-laptop-to-server" "Sync server and worker env files, then verify byte-for-byte"
+	@printf "    %-31s %s\n" "sync-env-files-from-server-to-laptop" "Pull server .env into local .env.server and verify"
 	@printf "\n"
 	@printf "  \033[1;94m%s\033[0m\n" "PostgreSQL in Docker"
 	@printf "    %-31s %s\n" "docker-pg-nuke" "Recreate PostgreSQL container and reset docker-data/postgres"
@@ -461,7 +462,7 @@ docker-upgrade-no-cache: docker-upgrade-log-owner docker-data-permissions
 	docker compose -f compose.yaml logs -f
 
 # Sync server and worker environment files, then verify the resulting .env files byte-for-byte.
-sync-env-files:
+sync-env-files-from-laptop-to-server:
 	@set -e; \
 	blue=$$(printf '\033[1;94m'); \
 	green=$$(printf '\033[1;92m'); \
@@ -494,6 +495,25 @@ sync-env-files:
 		printf "%sEnvironment file verification failed%s\n" "$$red" "$$reset"; \
 		exit 1; \
 	fi
+
+# Run on a laptop to pull the active server environment without changing the local worker environment.
+sync-env-files-from-server-to-laptop:
+	@set -e; \
+	if [ "$$(hostname)" = "ovh.bnowakowski.pl" ]; then \
+		echo "Run this target from a laptop, not the deployment server." >&2; \
+		exit 1; \
+	fi; \
+	umask 077; \
+	remote_env=$$(mktemp .env.server.XXXXXX); \
+	trap 'rm -f "$$remote_env"' EXIT; \
+	rsync -a --no-perms $(ENV_SYNC_HOST):$(ENV_SYNC_DIR)/.env "$$remote_env"; \
+	if ! ssh $(ENV_SYNC_HOST) "cat $(ENV_SYNC_DIR)/.env" | cmp -s "$$remote_env" -; then \
+		echo "Server .env verification failed; local .env.server was not changed." >&2; \
+		exit 1; \
+	fi; \
+	chmod 600 "$$remote_env"; \
+	mv -f "$$remote_env" .env.server; \
+	echo "Server .env copied and verified as local .env.server"
 
 # Open PostgreSQL shell inside docker container (requires dev-up)
 docker-pg-shell:

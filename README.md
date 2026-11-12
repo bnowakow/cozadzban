@@ -33,8 +33,10 @@ cp .env.server .env   # public server
 cp .env.worker .env
 ```
 
-`make sync-env-files` deploys `.env.server` to the configured remote server and
+`make sync-env-files-from-laptop-to-server` deploys `.env.server` to the configured remote server and
 activates `.env.worker` locally. It requires SSH access to that server.
+Run `make sync-env-files-from-server-to-laptop` on the laptop to copy the server's active
+`.env` into local `.env.server`. It leaves local `.env` and `.env.worker` unchanged.
 
 Key settings:
 
