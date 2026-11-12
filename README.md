@@ -33,10 +33,12 @@ cp .env.server .env   # public server
 cp .env.worker .env
 ```
 
-`make sync-env-files-from-laptop-to-server` deploys `.env.server` to the configured remote server and
-activates `.env.worker` locally. It requires SSH access to that server.
-Run `make sync-env-files-from-server-to-laptop` on the laptop to copy the server's active
-`.env` into local `.env.server`. It leaves local `.env` and `.env.worker` unchanged.
+Run these targets from the laptop; they require SSH access to the configured server:
+
+| Target | Copies and activation |
+|---|---|
+| `make sync-env-files-from-laptop-to-server` | Laptop `.env.server` → server `.env.server` → server `.env`; laptop `.env.worker` → server `.env.worker` and laptop `.env` |
+| `make sync-env-files-from-server-to-laptop` | Server `.env.server` → laptop `.env.server` and server `.env`; server `.env.worker` → laptop `.env.worker` and laptop `.env` |
 
 Key settings:
 

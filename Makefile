@@ -31,8 +31,8 @@ help:
 	@printf "    %-31s %s\n" "claude-auth-check" "Check Claude login and make a small live Claude request"
 	@printf "    %-31s %s\n" "app-health-check" "Check the active app and restart it after repeated failures"
 	@printf "    %-31s %s\n" "performance-report" "Measure front-page performance and save a report in logs/"
-	@printf "    %-31s %s\n" "sync-env-files-from-laptop-to-server" "Sync server and worker env files, then verify byte-for-byte"
-	@printf "    %-31s %s\n" "sync-env-files-from-server-to-laptop" "Pull server .env into local .env.server and verify"
+	@printf "    %-39s %s\n" "sync-env-files-from-laptop-to-server" "Push both role configs and activate them"
+	@printf "    %-39s %s\n" "sync-env-files-from-server-to-laptop" "Pull both role configs and activate them"
 	@printf "\n"
 	@printf "  \033[1;94m%s\033[0m\n" "PostgreSQL in Docker"
 	@printf "    %-31s %s\n" "docker-pg-nuke" "Recreate PostgreSQL container and reset docker-data/postgres"
@@ -461,42 +461,7 @@ docker-upgrade-no-cache: docker-upgrade-log-owner docker-data-permissions
 	NO_CACHE=true docker-data/blue-green-upgrade.sh
 	docker compose -f compose.yaml logs -f
 
-# Sync server and worker environment files, then verify the resulting .env files byte-for-byte.
-sync-env-files-from-laptop-to-server:
-	@set -e; \
-	blue=$$(printf '\033[1;94m'); \
-	green=$$(printf '\033[1;92m'); \
-	red=$$(printf '\033[1;91m'); \
-	reset=$$(printf '\033[0m'); \
-	remote_env=$$(mktemp); \
-	trap 'rm -f "$$remote_env"' EXIT; \
-	rsync -a -v .env.server $(ENV_SYNC_HOST):$(ENV_SYNC_DIR)/; \
-	ssh $(ENV_SYNC_HOST) "cd $(ENV_SYNC_DIR); yes | cp .env.server .env"; \
-	cp .env.worker .env; \
-	echo ""; \
-	printf "%sVerifying environment files ...%s\n" "$$blue" "$$reset"; \
-	ssh $(ENV_SYNC_HOST) "cat $(ENV_SYNC_DIR)/.env" > "$$remote_env"; \
-	failed=0; \
-	if cmp -s .env.server "$$remote_env"; then \
-		printf "%s✓ Server .env matches local .env.server%s\n" "$$green" "$$reset"; \
-	else \
-		printf "%s✗ Server .env differs from local .env.server%s\n" "$$red" "$$reset"; \
-		failed=1; \
-	fi; \
-	if cmp -s .env.worker .env; then \
-		printf "%s✓ Local .env matches .env.worker%s\n" "$$green" "$$reset"; \
-	else \
-		printf "%s✗ Local .env differs from .env.worker%s\n" "$$red" "$$reset"; \
-		failed=1; \
-	fi; \
-	if [ "$$failed" -eq 0 ]; then \
-		printf "%s✓ Environment files are in sync%s\n" "$$green" "$$reset"; \
-	else \
-		printf "%sEnvironment file verification failed%s\n" "$$red" "$$reset"; \
-		exit 1; \
-	fi
-
-# Run on a laptop to pull the active server environment without changing the local worker environment.
+# Run on a laptop to pull both role-specific files from the server and activate them.
 sync-env-files-from-server-to-laptop:
 	@set -e; \
 	if [ "$$(hostname)" = "ovh.bnowakowski.pl" ]; then \
@@ -504,16 +469,56 @@ sync-env-files-from-server-to-laptop:
 		exit 1; \
 	fi; \
 	umask 077; \
-	remote_env=$$(mktemp .env.server.XXXXXX); \
-	trap 'rm -f "$$remote_env"' EXIT; \
-	rsync -a --no-perms $(ENV_SYNC_HOST):$(ENV_SYNC_DIR)/.env "$$remote_env"; \
-	if ! ssh $(ENV_SYNC_HOST) "cat $(ENV_SYNC_DIR)/.env" | cmp -s "$$remote_env" -; then \
-		echo "Server .env verification failed; local .env.server was not changed." >&2; \
+	server_env=$$(mktemp .env.server.XXXXXX); \
+	worker_env=$$(mktemp .env.worker.XXXXXX); \
+	active_env=$$(mktemp .env.XXXXXX); \
+	trap 'rm -f "$$server_env" "$$worker_env" "$$active_env"' EXIT; \
+	rsync -a --no-perms $(ENV_SYNC_HOST):$(ENV_SYNC_DIR)/.env.server "$$server_env"; \
+	rsync -a --no-perms $(ENV_SYNC_HOST):$(ENV_SYNC_DIR)/.env.worker "$$worker_env"; \
+	if ! ssh $(ENV_SYNC_HOST) "cat $(ENV_SYNC_DIR)/.env.server" | cmp -s "$$server_env" -; then \
+		echo "Server .env.server verification failed; local env files were not changed." >&2; \
 		exit 1; \
 	fi; \
-	chmod 600 "$$remote_env"; \
-	mv -f "$$remote_env" .env.server; \
-	echo "Server .env copied and verified as local .env.server"
+	if ! ssh $(ENV_SYNC_HOST) "cat $(ENV_SYNC_DIR)/.env.worker" | cmp -s "$$worker_env" -; then \
+		echo "Server .env.worker verification failed; local env files were not changed." >&2; \
+		exit 1; \
+	fi; \
+	cp "$$worker_env" "$$active_env"; \
+	ssh $(ENV_SYNC_HOST) "cd $(ENV_SYNC_DIR) && cp .env.server .env && cmp -s .env.server .env"; \
+	chmod 600 "$$server_env" "$$worker_env" "$$active_env"; \
+	mv -f "$$server_env" .env.server; \
+	mv -f "$$worker_env" .env.worker; \
+	mv -f "$$active_env" .env; \
+	echo "Pulled server .env.server and .env.worker; activated server and laptop .env files"
+
+# Run on a laptop to push both role-specific files to the server and activate them.
+sync-env-files-from-laptop-to-server:
+	@set -e; \
+	if [ "$$(hostname)" = "ovh.bnowakowski.pl" ]; then \
+		echo "Run this target from a laptop, not the deployment server." >&2; \
+		exit 1; \
+	fi; \
+	if [ ! -s .env.server ] || [ ! -s .env.worker ]; then \
+		echo "Local .env.server and .env.worker must both be nonempty." >&2; \
+		exit 1; \
+	fi; \
+	umask 077; \
+	active_env=$$(mktemp .env.XXXXXX); \
+	trap 'rm -f "$$active_env"' EXIT; \
+	cp .env.worker "$$active_env"; \
+	rsync -a --no-perms .env.server .env.worker $(ENV_SYNC_HOST):$(ENV_SYNC_DIR)/; \
+	if ! ssh $(ENV_SYNC_HOST) "cat $(ENV_SYNC_DIR)/.env.server" | cmp -s .env.server -; then \
+		echo "Server .env.server verification failed." >&2; \
+		exit 1; \
+	fi; \
+	if ! ssh $(ENV_SYNC_HOST) "cat $(ENV_SYNC_DIR)/.env.worker" | cmp -s .env.worker -; then \
+		echo "Server .env.worker verification failed." >&2; \
+		exit 1; \
+	fi; \
+	ssh $(ENV_SYNC_HOST) "cd $(ENV_SYNC_DIR) && chmod 600 .env.server .env.worker && cp .env.server .env && cmp -s .env.server .env"; \
+	chmod 600 "$$active_env"; \
+	mv -f "$$active_env" .env; \
+	echo "Pushed .env.server and .env.worker; activated server and laptop .env files"
 
 # Open PostgreSQL shell inside docker container (requires dev-up)
 docker-pg-shell:
