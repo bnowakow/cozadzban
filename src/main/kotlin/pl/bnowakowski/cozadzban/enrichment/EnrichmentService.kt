@@ -250,6 +250,7 @@ class EnrichmentService(
             fetchReutersMobileFallback(url, ex.statusCode.value())?.let { fallbackHtml ->
                 return enrichHtml(url, fallbackHtml)
             }
+            fetchForbesCurlFallback(url, ex.statusCode.value())?.let { return it }
             fetchRpFallback(url, ex.statusCode.value())?.let { fallbackHtml ->
                 return enrichHtml(url, fallbackHtml)
             }
@@ -2340,6 +2341,35 @@ class EnrichmentService(
         }
     }
 
+    private fun fetchForbesCurlFallback(url: String, statusCode: Int): EnrichmentResult? {
+        if (statusCode != 403 || !isForbesUrl(url)) return null
+        val execution = runCatching {
+            executeFacebookPhotoCurl(
+                facebookPhotoCurlExecutable(),
+                url,
+                FacebookPhotoCurlRequestProfile(
+                    name = "forbes-native-curl",
+                    arguments = listOf("--proto", "=https", "--proto-redir", "=https"),
+                    diagnostics = "native-curl-default,https-only",
+                ),
+            )
+        }.getOrElse { ex ->
+            LOG.warn("Forbes curl fallback failed for '{}': {}", url, ex.javaClass.simpleName)
+            return null
+        }
+        val output = execution.output
+        if (execution.exitCode != 0 || execution.timedOut || output.outputTruncated ||
+            output.meta["http_code"] != "200" || !isForbesUrl(output.meta["url_effective"].orEmpty())
+        ) return null
+
+        val result = enrichHtml(url, output.body)
+        if (result.title.isNullOrBlank() || result.title.equals("forbes.com", ignoreCase = true) ||
+            result.lead.isNullOrBlank()
+        ) return null
+        LOG.info("Forbes curl fallback recovered metadata for '{}'; imagePresent={}", url, !result.thumbnail.isNullOrBlank())
+        return result
+    }
+
     private fun fetchRpReaderFallback(url: String, statusCode: Int): String? {
         if (statusCode != 403) return null
         if (!isRpUrl(url)) return null
@@ -4096,6 +4126,11 @@ internal fun isBloombergUrl(url: String): Boolean {
         host.endsWith(".bloom.bg") ||
         host == "bloomberg.com" ||
         host.endsWith(".bloomberg.com")
+}
+
+internal fun isForbesUrl(url: String): Boolean {
+    val host = runCatching { URI(url).host?.lowercase() }.getOrNull() ?: return false
+    return host == "forbes.com" || host.endsWith(".forbes.com")
 }
 
 internal fun isTelegraphUrl(url: String): Boolean {

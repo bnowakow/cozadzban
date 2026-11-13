@@ -66,11 +66,14 @@ class FacebookArticleProposalView(
     private val proposalsGrid = VerticalLayout()
     private val statusFilter = Select<FacebookArticleProposalStatusFilter>()
     private val countLabel = Span()
+    private val retryAllButton = Button("Retry all failed", VaadinIcon.REFRESH.create()) { retryAllFailed() }
+    private val retryStatus = Span()
     private val pageInfo = Span()
     private val pageNumber = PageNumberInput { target -> page = target; refreshGrid() }
     private val previous = Button("Previous") { page--; refreshGrid() }
     private val next = Button("Next") { page++; refreshGrid() }
     private var page = 0
+    private var bulkRetryRunning = false
 
     init {
         installCozadzbanThemeBootstrap()
@@ -128,7 +131,8 @@ class FacebookArticleProposalView(
     private fun buildProposalToolbar(): HorizontalLayout {
         val title = Span("Article proposals")
         title.addClassName("czj-admin-title")
-        val toolbar = HorizontalLayout(title, statusFilter, countLabel)
+        retryStatus.addClassName("czj-admin-muted")
+        val toolbar = HorizontalLayout(title, statusFilter, countLabel, retryAllButton, retryStatus)
         toolbar.defaultVerticalComponentAlignment = Alignment.CENTER
         toolbar.setWidthFull()
         toolbar.expand(title)
@@ -147,6 +151,9 @@ class FacebookArticleProposalView(
     private fun refreshGrid() {
         val filter = statusFilter.value ?: FacebookArticleProposalStatusFilter.PENDING
         val count = proposalService.count(filter)
+        val failedCount = if (filter == FacebookArticleProposalStatusFilter.FAILED) count
+            else proposalService.count(FacebookArticleProposalStatusFilter.FAILED)
+        retryAllButton.isEnabled = !bulkRetryRunning && failedCount > 0
         val lastPage = if (count == 0L) 0 else ((count - 1) / PAGE_SIZE).toInt()
         page = page.coerceIn(0, lastPage)
         val proposals = proposalService.findPage(filter, page = page, size = PAGE_SIZE)
@@ -168,6 +175,50 @@ class FacebookArticleProposalView(
             return
         }
         proposals.forEach { proposalsGrid.add(proposalGridRow(it)) }
+    }
+
+    private fun retryAllFailed() {
+        if (bulkRetryRunning) return
+        val userId = currentActiveUser().id!!
+        bulkRetryRunning = true
+        retryAllButton.isEnabled = false
+        retryStatus.text = "Retrying failed proposals..."
+        val currentUi = UI.getCurrent()
+        CompletableFuture.supplyAsync {
+            val ids = proposalService.findFailedIds()
+            var accepted = 0
+            var alreadyExists = 0
+            var failed = 0
+            var skipped = 0
+            ids.forEach { id ->
+                try {
+                    when (proposalService.retryFailed(id, userId).status) {
+                        FacebookArticleProposalStatus.ACCEPTED -> accepted++
+                        FacebookArticleProposalStatus.ALREADY_EXISTS -> alreadyExists++
+                        else -> skipped++
+                    }
+                } catch (ex: IllegalArgumentException) {
+                    skipped++
+                } catch (ex: Exception) {
+                    failed++
+                }
+            }
+            "Retry complete: $accepted accepted, $alreadyExists already existed, $failed failed, $skipped skipped."
+        }.whenComplete { summary, failure ->
+            currentUi.access {
+                bulkRetryRunning = false
+                statusFilter.value = FacebookArticleProposalStatusFilter.FAILED
+                page = 0
+                refreshGrid()
+                if (failure == null) {
+                    retryStatus.text = summary
+                    showSuccess(summary)
+                } else {
+                    retryStatus.text = "Bulk retry failed"
+                    showError(failure.cause?.message ?: failure.message ?: "Bulk retry failed")
+                }
+            }
+        }
     }
 
     private fun proposalGridHeaderRow(): Div =

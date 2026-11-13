@@ -335,6 +335,9 @@ class FacebookArticleProposalService(
         proposalRepository.count(statusFilter)
 
     @Transactional(readOnly = true)
+    fun findFailedIds(): List<Long> = proposalRepository.findFailedIds()
+
+    @Transactional(readOnly = true)
     fun findById(id: Long): FacebookArticleProposal =
         proposalRepository.findById(id) ?: throw NoSuchElementException("Facebook article proposal $id not found")
 
@@ -397,6 +400,14 @@ class FacebookArticleProposalService(
             )
             throw ex
         }
+    }
+
+    fun retryFailed(id: Long, decidedByUserId: Long): FacebookArticleProposal {
+        val proposal = findById(id)
+        require(proposal.status == FacebookArticleProposalStatus.FAILED) {
+            "Facebook article proposal $id is no longer failed"
+        }
+        return accept(id, proposal.effectiveLanguage, decidedByUserId)
     }
 
     fun reject(id: Long, correctedLanguage: String, decidedByUserId: Long): FacebookArticleProposal {

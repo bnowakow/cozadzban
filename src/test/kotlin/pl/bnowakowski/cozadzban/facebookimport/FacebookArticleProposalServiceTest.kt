@@ -697,6 +697,16 @@ class FacebookArticleProposalServiceTest {
     }
 
     @Test
+    fun `bulk retry cannot accept a proposal that is no longer failed`() {
+        whenever(proposalRepository.findById(1L)).thenReturn(proposal(status = FacebookArticleProposalStatus.REJECTED))
+
+        val failure = runCatching { service.retryFailed(1L, decidedByUserId = 3L) }.exceptionOrNull()
+
+        assertTrue(failure is IllegalArgumentException)
+        verify(articleService, never()).create(any(), any())
+    }
+
+    @Test
     fun acceptMarksProposalAlreadyExistsWhenArticleUrlAlreadyExists() {
         val pending = proposal(status = null)
         val alreadyExists = pending.copy(status = FacebookArticleProposalStatus.ALREADY_EXISTS)

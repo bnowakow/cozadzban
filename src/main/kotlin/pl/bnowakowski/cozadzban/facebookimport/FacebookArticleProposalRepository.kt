@@ -665,6 +665,13 @@ class FacebookArticleProposalRepository(
         ) ?: 0L
     }
 
+    fun findFailedIds(): List<Long> =
+        jdbc.queryForList(
+            "SELECT id FROM facebook_article_proposal WHERE status = :status ORDER BY submitted_at ASC, id ASC",
+            mapOf("status" to FacebookArticleProposalStatus.FAILED.name),
+            Long::class.java,
+        ).map { requireNotNull(it) { "Facebook article proposal id cannot be null" } }
+
     fun markAccepted(
         id: Long,
         articleId: Long,

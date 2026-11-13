@@ -68,6 +68,21 @@ class FacebookArticleProposalViewTest {
     }
 
     @Test
+    fun `retry all button is available when failed proposals exist`() {
+        authenticateAs("user@example.com")
+        UI.setCurrent(UI())
+        whenever(appUserRepository.findByEmail("user@example.com")).thenReturn(
+            AppUser(1L, "user@example.com", Role.USER),
+        )
+        whenever(proposalService.findPage(FacebookArticleProposalStatusFilter.PENDING, 0, 100)).thenReturn(emptyList())
+        whenever(proposalService.count(FacebookArticleProposalStatusFilter.FAILED)).thenReturn(1L)
+
+        val view = FacebookArticleProposalView(proposalService, appUserRepository, languageFlagCache, articleRepository)
+
+        assertTrue(findComponents(view, Button::class.java).any { it.text == "Retry all failed" && it.isEnabled })
+    }
+
+    @Test
     fun `proposal links open in a new window`() {
         authenticateAs("user@example.com")
         UI.setCurrent(UI())
