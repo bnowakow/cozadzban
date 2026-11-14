@@ -22,6 +22,7 @@ import com.vaadin.flow.data.renderer.ComponentRenderer
 import com.vaadin.flow.router.PageTitle
 import com.vaadin.flow.router.Route
 import com.vaadin.flow.server.VaadinSession
+import com.vaadin.flow.shared.Registration
 import jakarta.annotation.security.RolesAllowed
 import org.springframework.security.core.context.SecurityContextHolder
 import pl.bnowakowski.cozadzban.article.ArticleRepository
@@ -38,6 +39,7 @@ import pl.bnowakowski.cozadzban.facebookpublish.FacebookEngagementRepository
 import pl.bnowakowski.cozadzban.facebookpublish.FacebookEngagementActivity
 import pl.bnowakowski.cozadzban.facebookpublish.FacebookPageSyncRepository
 import pl.bnowakowski.cozadzban.facebookpublish.FacebookPublicationQueue
+import pl.bnowakowski.cozadzban.facebookpublish.FacebookPublicationRetryProgress
 import pl.bnowakowski.cozadzban.facebookpublish.PendingFacebookPageSelection
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportJobService
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportProperties
@@ -82,6 +84,13 @@ class FacebookPageSettingsView(
     private val selectCandidate = Button("Use selected Page") { connectSelected() }
     private val candidatePages = mutableMapOf<String, DiscoveredFacebookPage>()
     private val publicationProblems = VerticalLayout()
+    private val retryAllPublications = Button("Retry all") {
+        publications?.retryAll()
+        refreshPublicationProblems()
+    }
+    private val publicationRetryProgress = Span()
+    private var lastPublicationRetryProgress: FacebookPublicationRetryProgress? = null
+    private var publicationPollRegistration: Registration? = null
     private val commentProblems = VerticalLayout()
     private val engagementGrid = Grid(FacebookEngagementActivity::class.java, false)
     private val engagementEmpty = Span("No published Facebook posts yet.")
@@ -189,6 +198,18 @@ class FacebookPageSettingsView(
         refreshCommentProblems()
         refreshEngagementActivity()
         refreshSyncProblems()
+        addAttachListener { event ->
+            event.ui.pollInterval = 5_000
+            publicationPollRegistration = event.ui.addPollListener {
+                val progress = publications?.latestRetryProgress()
+                if (progress != lastPublicationRetryProgress) refreshPublicationProblems()
+            }
+        }
+        addDetachListener { event ->
+            publicationPollRegistration?.remove()
+            publicationPollRegistration = null
+            if (event.ui.pollInterval == 5_000) event.ui.pollInterval = -1
+        }
     }
 
     private fun readPendingSelection() {
@@ -313,6 +334,15 @@ class FacebookPageSettingsView(
     private fun refreshPublicationProblems() {
         publicationProblems.removeAll()
         val queue = publications ?: return
+        val progress = queue.latestRetryProgress()
+        lastPublicationRetryProgress = progress
+        // A running batch owns the retry button until every queued post has an outcome.
+        retryAllPublications.isEnabled = queue.retryableCount() > 0 && (progress == null || progress.queued == 0)
+        publicationRetryProgress.text = when {
+            progress == null -> "Failed and unconfigured posts with an enabled Page can be retried. Posts needing review stay manual."
+            else -> "Retry progress: ${progress.completed}/${progress.total} finished · ${progress.published} published · ${progress.failed} failed · ${progress.needsReview} need review · ${progress.queued} queued or publishing. Two minutes between batch attempts."
+        }
+        publicationProblems.add(HorizontalLayout(retryAllPublications, publicationRetryProgress))
         val problems = queue.recentProblems()
         if (problems.isEmpty()) {
             publicationProblems.add(Span("No publication problems."))

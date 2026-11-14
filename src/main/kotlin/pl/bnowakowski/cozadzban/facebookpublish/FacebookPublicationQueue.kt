@@ -21,6 +21,16 @@ data class FacebookPublicationJob(
     val createdAt: Instant,
 )
 
+data class FacebookPublicationRetryProgress(
+    val total: Int,
+    val queued: Int,
+    val published: Int,
+    val failed: Int,
+    val needsReview: Int,
+) {
+    val completed: Int get() = total - queued
+}
+
 /** The row is inserted in the same transaction as the article. Existing articles are never backfilled. */
 @Repository
 class FacebookPublicationQueue(private val jdbc: NamedParameterJdbcTemplate) {
@@ -48,7 +58,7 @@ class FacebookPublicationQueue(private val jdbc: NamedParameterJdbcTemplate) {
     fun claim(waitForImages: Boolean = false, imageWaitMax: Duration = DEFAULT_IMAGE_WAIT): FacebookPublicationJob? = jdbc.query(
         """WITH candidate AS (
                SELECT publication.id FROM facebook_page_publication publication
-               WHERE publication.status = 'PENDING'
+               WHERE publication.status = 'PENDING' AND publication.retry_batch_id IS NULL
                  AND (:waitForImages = false
                       OR publication.created_at <= now() - :waitSeconds * interval '1 second'
                       OR NOT EXISTS (
@@ -64,6 +74,47 @@ class FacebookPublicationQueue(private val jdbc: NamedParameterJdbcTemplate) {
         mapOf("waitForImages" to waitForImages, "waitSeconds" to imageWaitMax.seconds.coerceAtLeast(0)), mapper,
     ).firstOrNull()
 
+    /** One batch publication may start every two minutes, even when several workers are running. */
+    @Transactional
+    fun claimBatch(waitForImages: Boolean = false, imageWaitMax: Duration = DEFAULT_IMAGE_WAIT): FacebookPublicationJob? = jdbc.query(
+        """WITH ready_batch AS (
+               SELECT id FROM facebook_publication_retry_batch batch
+               WHERE next_claim_at <= now()
+                 AND EXISTS (SELECT 1 FROM facebook_page_publication publication
+                             WHERE publication.retry_batch_id = batch.id AND publication.status = 'PENDING')
+                 AND NOT EXISTS (SELECT 1 FROM facebook_page_publication publication
+                                 WHERE publication.retry_batch_id = batch.id AND publication.status = 'PUBLISHING')
+               ORDER BY id DESC LIMIT 1 FOR UPDATE SKIP LOCKED
+           ), candidate AS (
+               SELECT publication.id FROM facebook_page_publication publication
+               JOIN ready_batch batch ON batch.id = publication.retry_batch_id
+               WHERE publication.status = 'PENDING'
+                 AND (:waitForImages = false
+                      OR publication.created_at <= now() - :waitSeconds * interval '1 second'
+                      OR NOT EXISTS (
+                          SELECT 1 FROM facebook_article_image_generation image
+                          WHERE image.article_id = publication.article_id_snapshot
+                            AND image.status IN ('MISSING_THUMBNAIL', 'GENERATING', 'FAILED')
+                      ))
+               ORDER BY publication.created_at, publication.id
+               FOR UPDATE OF publication SKIP LOCKED LIMIT 1
+           ), pace AS (
+               UPDATE facebook_publication_retry_batch batch
+               SET next_claim_at = now() + interval '2 minutes'
+               FROM ready_batch, candidate
+               WHERE batch.id = ready_batch.id
+               RETURNING batch.id
+           )
+           UPDATE facebook_page_publication publication
+           SET status = 'PUBLISHING', attempt_count = attempt_count + 1, updated_at = now()
+           FROM candidate, pace
+           WHERE publication.id = candidate.id
+           RETURNING publication.id, publication.article_id_snapshot, publication.language,
+                     publication.page_id, publication.status, publication.post_id,
+                     publication.last_error, publication.created_at""",
+        mapOf("waitForImages" to waitForImages, "waitSeconds" to imageWaitMax.seconds.coerceAtLeast(0)), mapper,
+    ).firstOrNull()
+
     /** A source URL failed before Meta created a post; wait for image generation. */
     fun deferForImage(id: Long) {
         jdbc.update(
@@ -73,6 +124,7 @@ class FacebookPublicationQueue(private val jdbc: NamedParameterJdbcTemplate) {
         )
     }
 
+    @Transactional
     fun markPublished(id: Long, postId: String, permalink: String, imageSource: String, photoId: String?) {
         jdbc.update(
             """UPDATE facebook_page_publication SET status = 'PUBLISHED', post_id = :postId,
@@ -81,9 +133,12 @@ class FacebookPublicationQueue(private val jdbc: NamedParameterJdbcTemplate) {
             mapOf("id" to id, "postId" to postId, "permalink" to permalink, "imageSource" to imageSource,
                 "photoId" to photoId),
         )
+        paceBatchAfterOutcome(id)
     }
 
+    @Transactional
     fun markFailed(id: Long, error: String, imageSource: String? = null) = markOutcome(id, "FAILED", error, imageSource)
+    @Transactional
     fun markUncertain(id: Long, error: String, imageSource: String? = null, postId: String? = null) =
         markOutcome(id, "NEEDS_RECONCILIATION", error, imageSource, postId)
 
@@ -94,6 +149,17 @@ class FacebookPublicationQueue(private val jdbc: NamedParameterJdbcTemplate) {
                WHERE id = :id AND status = 'PUBLISHING'""",
             mapOf("id" to id, "status" to status, "error" to error.take(300),
                 "imageSource" to imageSource, "postId" to postId),
+        )
+        paceBatchAfterOutcome(id)
+    }
+
+    private fun paceBatchAfterOutcome(id: Long) {
+        jdbc.update(
+            """UPDATE facebook_publication_retry_batch batch
+               SET next_claim_at = GREATEST(batch.next_claim_at, now() + interval '2 minutes')
+               FROM facebook_page_publication publication
+               WHERE publication.id = :id AND publication.retry_batch_id = batch.id""",
+            mapOf("id" to id),
         )
     }
 
@@ -109,6 +175,63 @@ class FacebookPublicationQueue(private val jdbc: NamedParameterJdbcTemplate) {
            ORDER BY created_at DESC LIMIT 100""",
         emptyMap<String, Any>(), mapper,
     )
+
+    fun retryableCount(): Int = jdbc.queryForObject(
+        """SELECT count(*) FROM facebook_page_publication publication
+           WHERE publication.article_id IS NOT NULL
+             AND publication.status IN ('FAILED', 'UNCONFIGURED')
+             AND EXISTS (SELECT 1 FROM facebook_page_connection page
+                         WHERE page.language = publication.language AND page.enabled = true
+                           AND (publication.status = 'UNCONFIGURED' OR page.page_id = publication.page_id))""",
+        emptyMap<String, Any>(), Int::class.java,
+    ) ?: 0
+
+    /** Never bulk retry uncertain results: a Facebook post may already exist. */
+    @Transactional
+    fun retryAll(): FacebookPublicationRetryProgress? {
+        jdbc.query("SELECT pg_advisory_xact_lock(521206)", emptyMap<String, Any>()) { rs, _ -> rs.getObject(1) }
+        val current = latestRetryProgress()
+        if (current != null && current.queued > 0) return current
+        val count = retryableCount()
+        if (count == 0) return current
+        val batchId = jdbc.queryForObject(
+            """INSERT INTO facebook_publication_retry_batch(total, next_claim_at)
+               SELECT :total, GREATEST(now(), COALESCE(
+                   (SELECT next_claim_at FROM facebook_publication_retry_batch ORDER BY id DESC LIMIT 1), now()))
+               RETURNING id""",
+            mapOf("total" to count), Long::class.java,
+        ) ?: return current
+        jdbc.update(
+            """UPDATE facebook_page_publication publication
+               SET status = 'PENDING', page_id = page.page_id, last_error = NULL,
+                   retry_batch_id = :batchId, updated_at = now()
+               FROM facebook_page_connection page
+               WHERE publication.article_id IS NOT NULL
+                 AND publication.status IN ('FAILED', 'UNCONFIGURED')
+                 AND page.language = publication.language AND page.enabled = true
+                 AND (publication.status = 'UNCONFIGURED' OR page.page_id = publication.page_id)""",
+            mapOf("batchId" to batchId),
+        )
+        return latestRetryProgress()
+    }
+
+    fun latestRetryProgress(): FacebookPublicationRetryProgress? = jdbc.query(
+        """SELECT batch.total,
+                  count(*) FILTER (WHERE publication.status IN ('PENDING', 'PUBLISHING')) AS queued,
+                  count(*) FILTER (WHERE publication.status = 'PUBLISHED') AS published,
+                  count(*) FILTER (WHERE publication.status = 'FAILED') AS failed,
+                  count(*) FILTER (WHERE publication.status = 'NEEDS_RECONCILIATION') AS needs_review
+           FROM facebook_publication_retry_batch batch
+           LEFT JOIN facebook_page_publication publication ON publication.retry_batch_id = batch.id
+           WHERE batch.id = (SELECT max(id) FROM facebook_publication_retry_batch)
+           GROUP BY batch.id, batch.total""",
+        emptyMap<String, Any>(),
+    ) { rs, _ ->
+        FacebookPublicationRetryProgress(
+            rs.getInt("total"), rs.getInt("queued"), rs.getInt("published"),
+            rs.getInt("failed"), rs.getInt("needs_review"),
+        )
+    }.firstOrNull()
 
     fun retryFailed(id: Long): Boolean = jdbc.update(
         """UPDATE facebook_page_publication SET status = 'PENDING', last_error = NULL, updated_at = now()

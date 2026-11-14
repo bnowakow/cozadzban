@@ -32,7 +32,9 @@ class FacebookPublicationWorker(
     @Scheduled(initialDelay = 15_000, fixedDelay = 15_000)
     fun publishPending() {
         queue.recoverInterruptedClaims()
-        repeat(10) {
+        val batchJob = queue.claimBatch(imagesEnabled(), imageWaitMax)
+        batchJob?.let(::publish)
+        repeat(if (batchJob == null) 10 else 9) {
             val job = queue.claim(imagesEnabled(), imageWaitMax) ?: return
             publish(job)
         }
