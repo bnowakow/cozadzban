@@ -14,7 +14,15 @@ data class FacebookPageProperties(
     val graphBaseUrl: String = "https://graph.facebook.com",
     val authorizationBaseUrl: String = "https://www.facebook.com",
 ) {
+    val missingOAuthSettings: List<String>
+        get() = buildList {
+            if (appId.isBlank()) add("APP_FACEBOOK_PAGE_APP_ID")
+            if (appSecret.isBlank()) add("APP_FACEBOOK_PAGE_APP_SECRET")
+            if (configurationId.isBlank()) add("APP_FACEBOOK_PAGE_CONFIGURATION_ID")
+            if (!redirectUri.startsWith("https://")) add("APP_FACEBOOK_PAGE_REDIRECT_URI (HTTPS URL)")
+            if (encryptionKey.isBlank()) add("APP_FACEBOOK_PAGE_ENCRYPTION_KEY")
+        }
+
     val oauthConfigured: Boolean
-        get() = appId.isNotBlank() && appSecret.isNotBlank() && configurationId.isNotBlank() &&
-            redirectUri.startsWith("https://") && encryptionKey.isNotBlank()
+        get() = missingOAuthSettings.isEmpty()
 }

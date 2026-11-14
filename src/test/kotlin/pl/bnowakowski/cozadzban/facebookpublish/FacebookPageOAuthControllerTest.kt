@@ -24,6 +24,20 @@ class FacebookPageOAuthControllerTest {
     private val admin = UsernamePasswordAuthenticationToken("admin@example.com", "", listOf())
 
     @Test
+    fun `Page connection readiness identifies missing server settings`() {
+        assertEquals(
+            listOf(
+                "APP_FACEBOOK_PAGE_APP_ID", "APP_FACEBOOK_PAGE_APP_SECRET",
+                "APP_FACEBOOK_PAGE_CONFIGURATION_ID", "APP_FACEBOOK_PAGE_REDIRECT_URI (HTTPS URL)",
+                "APP_FACEBOOK_PAGE_ENCRYPTION_KEY",
+            ),
+            FacebookPageProperties().missingOAuthSettings,
+        )
+        assertTrue(properties.oauthConfigured)
+        assertTrue(properties.missingOAuthSettings.isEmpty())
+    }
+
+    @Test
     fun `invalid callback state is rejected without exchanging code`() {
         val session = MockHttpSession()
         session.setAttribute(

@@ -114,7 +114,7 @@ class FacebookPageSettingsView(
         form.add(header)
         val connectionCard = settingsCard("Connect a Page", "Choose an article language and authorize a Facebook Page.")
         if (!properties.oauthConfigured) {
-            connectionCard.add(Span("Meta OAuth is not configured on this server. Set the app ID, app secret, Facebook Login for Business configuration ID, redirect URI and encryption key."))
+            connectionCard.add(Span("Page connection is unavailable. Set these server variables and restart: ${properties.missingOAuthSettings.joinToString(", ")}."))
         }
         language.setItems(articleLanguages)
         language.placeholder = "Select a language"
@@ -124,7 +124,7 @@ class FacebookPageSettingsView(
         if (articleLanguages.isEmpty()) {
             language.helperText = "Add an article before connecting a Facebook Page."
         }
-        connect.isEnabled = properties.oauthConfigured && articleLanguages.isNotEmpty()
+        connect.isEnabled = false
         language.addValueChangeListener {
             updateFlagPrefix(languageFlagPrefix, it.value)
             connect.isEnabled = properties.oauthConfigured && it.value != null
