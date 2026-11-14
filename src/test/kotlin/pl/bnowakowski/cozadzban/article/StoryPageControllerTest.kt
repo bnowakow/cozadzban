@@ -112,7 +112,7 @@ class StoryPageControllerTest {
             StoryPageController(articles, articleImages = images, generatedImages = generated).story(42).body.orEmpty(),
         )
 
-        assertEquals("/rss/image/42", doc.selectFirst("main > img")?.attr("src"))
+        assertTrue(doc.selectFirst("main > img")?.attr("src")?.matches(Regex("/source-images/42\\?v=[0-9a-f]{16}")) == true)
         assertEquals("https://cozadzban.pl/rss/image/42", doc.selectFirst("meta[property=og:image]")?.attr("content"))
     }
 

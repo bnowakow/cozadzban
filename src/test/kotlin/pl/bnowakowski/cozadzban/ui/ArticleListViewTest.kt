@@ -663,7 +663,7 @@ class ArticleListViewTest {
     }
 
     @Test
-    fun `article card serves source thumbnail through local image proxy`() {
+    fun `article card serves source thumbnail through local image cache`() {
         stubArticles()
         val article = Article(
             id = 40L,
@@ -690,9 +690,9 @@ class ArticleListViewTest {
         val card = method.invoke(view, article) as Component
 
         val image = findComponents(card, Image::class.java)
-            .single { it.src == "/rss/image/40" }
+            .single { it.src.startsWith("/source-images/40?v=") }
 
-        assertEquals("/rss/image/40", image.src)
+        assertTrue(image.src.matches(Regex("/source-images/40\\?v=[0-9a-f]{16}")))
     }
 
     @Test
