@@ -8,15 +8,27 @@ resolved article URL exactly after removing query parameters, fragments, and a t
 slash. The item must have a nonempty title and summary. An unmatched, unavailable, or
 incomplete feed leaves enrichment to the remaining methods.
 
-If all normal enrichment methods fail, the server makes one final request to Apify
-Web Fetch (`apify/web-fetch`) using `APP_FACEBOOK_IMPORT_APIFY_API_TOKEN`. This
-applies to HTTPS article URLs when the token is configured. The request uses the
-Authorization header and asks for the original HTML. The response is accepted only
-when the target returned HTTP 2xx HTML, its final URL and canonical URL remain on
-the same article and publisher, and the page has a usable title and summary. Known
-short links for FT, Euronews, and Reuters may resolve to their publisher domains.
-Errors and block pages still fail enrichment without a database write. Each request
-can incur Apify Web Fetch charges; check current pricing on Apify before bulk retrying.
+If all normal enrichment methods fail, the server tries these Apify methods in
+increasing expected cost order, using `APP_FACEBOOK_IMPORT_APIFY_API_TOKEN`:
+
+1. Web Fetch (`apify/web-fetch`) for the original HTML.
+2. Web Fetch with `wait=2000`, which forces browser rendering.
+3. Direct Apify `groups-UNBLOCKER` proxy, if the account has external proxy access.
+   The server reads the current proxy password from `GET /v2/users/me` and keeps it
+   in memory briefly. This requires a paid Apify plan for external proxy access.
+4. Website Content Crawler (`apify/website-content-crawler`) with Firefox and the
+   UNBLOCKER proxy group. It is limited to one URL, one page, and a $0.05 maximum
+   charge per run. This browser Actor is the last and usually most expensive step.
+
+Each step is skipped when the previous one returns a usable article. The server
+requires an HTTPS URL, an article on the expected publisher, a usable title and
+summary, and no error or challenge page. Known FT, Euronews, and Reuters short
+links may resolve to their publisher domains. Errors still fail enrichment without
+a database write. Web Fetch and proxy requests can incur charges independently;
+the Actor charge cap applies only to the last step. Current prices and account
+access are on [Apify's pricing](https://apify.com/pricing) and
+[Proxy](https://docs.apify.com/proxy) pages. This is an expected cost order;
+the actual bill depends on account plan, redirects, retries, and browser runtime.
 
 Feeds used:
 
@@ -37,6 +49,5 @@ not evidence that the publisher's normal article endpoint is available again.
 - **Reuters:** Two failed proposals received HTTP 401 bot-protection pages. The
   mobile-client fallback did not recover them. Reuters Connect offers a licensed API;
   evaluate access and cost before integrating it.
-- **Other Apify access methods:** Direct Unblocker proxy or residential proxy could
-  be tested if Web Fetch still cannot retrieve a publisher. Both need separate proxy
-  credentials and can incur additional charges.
+- **Residential proxy:** May provide a different route for remaining FT articles,
+  but needs separate usage controls and content validation before automatic use.

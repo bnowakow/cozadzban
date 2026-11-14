@@ -183,7 +183,8 @@ The app can run a Selenium import for posts on
 `APP_FACEBOOK_IMPORT_SCHEDULE_RUN_ON_STARTUP=true` enables a worker-startup run.
 Apify has separate enablement and scheduling settings in the env templates.
 Failed FT and Euronews article fetches can use an exact-match publisher RSS fallback.
-If all methods fail, the server can try Apify Web Fetch with the configured API token;
+If all methods fail, the server tries Apify Web Fetch, direct Unblocker, then a
+one-page Firefox crawler with the configured API token;
 see [article fetch fallbacks](doc/PUBLISHER_RSS_FALLBACKS.md).
 
 Before each Apify run, the importer reads the account's remaining usage for the current

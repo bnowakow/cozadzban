@@ -562,13 +562,27 @@ class EnrichmentService(
             ?.also { LOG.info("Publisher RSS fallback recovered metadata for '{}'", url) }
 
     private fun fetchApifyWebFetchFallback(url: String): EnrichmentResult? {
-        val page = ApifyWebFetchFallback.fetch(url, facebookImportProperties.apify.apiToken) ?: return null
+        val token = facebookImportProperties.apify.apiToken
+        if (token.isBlank()) return null
+        for (waitMillis in listOf(0, 2_000)) {
+            ApifyWebFetchFallback.fetch(url, token, waitMillis)?.let { page ->
+                usableApifyPage(url, page, if (waitMillis == 0) "Web Fetch" else "Web Fetch browser")?.let { return it }
+            }
+        }
+        ApifyUnblockerFallback.fetch(url, token, facebookImportProperties.apify.baseUrl)?.let { page ->
+            usableApifyPage(url, page, "direct Unblocker")?.let { return it }
+        }
+        return ApifyWebsiteCrawlerFallback.fetch(url, token, facebookImportProperties.apify.baseUrl)
+            ?.also { LOG.info("Apify Website Content Crawler recovered metadata for '{}'", url) }
+    }
+
+    private fun usableApifyPage(url: String, page: ApifyWebFetchFallback.Page, method: String): EnrichmentResult? {
         val result = enrichHtml(page.loadedUrl, page.html)
         if (result.title.isNullOrBlank() || result.lead.isNullOrBlank()) {
-            LOG.info("Apify Web Fetch metadata incomplete for '{}'", url)
+            LOG.info("Apify {} metadata incomplete for '{}'", method, url)
             return null
         }
-        LOG.info("Apify Web Fetch recovered metadata for '{}'", url)
+        LOG.info("Apify {} recovered metadata for '{}'", method, url)
         return result
     }
 

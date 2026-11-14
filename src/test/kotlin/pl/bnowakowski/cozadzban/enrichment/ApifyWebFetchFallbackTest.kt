@@ -43,4 +43,13 @@ class ApifyWebFetchFallbackTest {
             response("https://www.reuters.com/world/story-1", canonical = "https://www.reuters.com/world/story-2"),
         ))
     }
+
+    @Test
+    fun `direct proxy HTML validation rejects unrelated canonical URL`() {
+        val html = "<html><head><title>A real article</title><link rel='canonical' href='https://ft.com/content/other'></head>" +
+            "<body><article>A substantial article body from the publisher.</article></body></html>"
+        assertNull(ApifyWebFetchFallback.validateHtmlPage(
+            "https://ft.trib.al/abc123", "https://www.ft.com/content/story-1", html,
+        ))
+    }
 }
