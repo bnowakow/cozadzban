@@ -89,22 +89,44 @@ Key settings:
 
 ### Connect Facebook Pages (phase 1)
 
-Create a Meta app with Facebook Login for Business. In **Configurations**, create
-a Page access configuration using a User access token and the permissions
-`pages_show_list`, `pages_read_engagement`, `pages_manage_posts`, and
-`pages_manage_engagement`. Copy its configuration ID into
-`APP_FACEBOOK_PAGE_CONFIGURATION_ID` and register the exact callback URI above. Configure
-the server variables in `.env.server`, sign in as an ADMIN, then open
-**Admin → Facebook Pages**. Select an article language already used by an article,
-authorize Meta, choose a Page that grants content creation, and save its settings. Each language can
-have one connected Page. Page tokens are encrypted in PostgreSQL and never
-sent to browser JavaScript. New connections start disabled.
+Find the Page access configuration ID in the **Meta for Developers app dashboard**:
+
+1. Open [My Apps](https://developers.facebook.com/apps/) and select the app that
+   will connect Co Za Dzban to Facebook Pages. Use that same app for
+   `APP_FACEBOOK_PAGE_APP_ID` and `APP_FACEBOOK_PAGE_APP_SECRET` under
+   **App settings → Basic**.
+2. On the app dashboard, find **Facebook Login for Business**. If it shows
+   **Set Up**, click that first. Then open **Facebook Login for Business →
+   Configurations** from the app menu. Meta may group this under products or
+   use cases; if the menu is absent, check that you selected the intended app
+   and that Facebook Login for Business has been added to it.
+3. Open an existing Page access configuration, or click **Create Configuration**.
+   Choose a **User access token** and include `pages_show_list`,
+   `pages_read_engagement`, `pages_manage_posts`, and `pages_manage_engagement`.
+   Add `business_management` if the Page belongs to a Meta business portfolio.
+4. Save the configuration and copy its **Configuration ID** from the list or
+   details screen into `APP_FACEBOOK_PAGE_CONFIGURATION_ID`. This is the
+   `config_id` sent during login; it is different from the app, Page, and
+   business portfolio IDs.
+5. Under Facebook Login for Business settings, register the exact **Valid OAuth
+   Redirect URI** `https://cozadzban.pl/facebook-pages/oauth/callback`. Set
+   `APP_FACEBOOK_PAGE_REDIRECT_URI` to that same URL. Generate
+   `APP_FACEBOOK_PAGE_ENCRYPTION_KEY` locally with `openssl rand -base64 32`;
+   this key is not provided by Meta and must stay stable for stored Page tokens.
+
+Put these values in the server's active `.env` and its `.env.server` copy, then
+restart the app. Replace every `TODO` placeholder first. Sign in as an ADMIN,
+open **Admin → Facebook Pages**, select an article language already used by an
+article, authorize Meta, choose a Page that grants content creation, and save
+its settings. Each language can have one connected Page. Page tokens are
+encrypted in PostgreSQL and never sent to browser JavaScript. New connections
+start disabled.
 
 If Meta returns no Pages during connection, confirm that the Facebook account
 has Page content access and that the Page was selected in the Meta consent dialog.
-For a Page linked to a Meta business portfolio, add `business_management` to
-the login configuration and give that person a role in the portfolio, then
-authorize again. Meta's `/me/accounts` endpoint omits such Pages without both.
+For a Page linked to a Meta business portfolio, give that person a role in
+the portfolio, then authorize again. Meta's `/me/accounts` endpoint omits
+such Pages without that role and the `business_management` permission.
 
 Phase 1 connects and configures Pages. The later publishing, engagement, and
 story statistics workflows are described below and in `doc/SPEC.yaml`.
