@@ -4,8 +4,8 @@
 # Prints the report and saves a copy under logs/performance-reports/, because
 # Zipkin keeps traces only in memory and loses them on restart or eviction.
 #
-# Side effect: requesting each generated image's .jpg creates its website copy
-# if it does not exist yet, exactly as the first visitor would.
+# Side effect: requesting site image URLs creates missing website copies,
+# exactly as the first visitor would.
 set -euo pipefail
 
 repo_root=$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)
@@ -122,11 +122,13 @@ echo
 
 echo "## 4. Images for the first $article_count front-page articles"
 echo
-psql -Atc "SELECT a.id, COALESCE(j.status, '') FROM article a
+psql -Atc "SELECT a.id, COALESCE(j.status, ''), COALESCE(a.thumbnail, '') FROM article a
 	LEFT JOIN facebook_article_image_generation j ON j.article_id = a.id
 	ORDER BY a.published_at DESC NULLS LAST, a.created_at DESC LIMIT $article_count" >"$tmp/first.txt"
-generated=$(awk -F'|' '$2 == "GENERATED" {print $1}' "$tmp/first.txt")
+generated=$(awk -F'|' '$2 == "GENERATED" && $3 == "" {print $1}' "$tmp/first.txt")
+sources=$(awk -F'|' '$3 != "" {print $1}' "$tmp/first.txt")
 generated_count=$(printf '%s\n' "$generated" | grep -c . || true)
+source_count=$(printf '%s\n' "$sources" | grep -c . || true)
 png_bytes=0; jpg_bytes=0; png_seconds=0; jpg_seconds=0
 for id in $generated; do
 	if [ -f "$asset_dir/article-$id.png" ]; then png_bytes=$((png_bytes + $(stat -c %s "$asset_dir/article-$id.png"))); fi
@@ -135,13 +137,22 @@ for id in $generated; do
 	seconds=$(curl -s -o /dev/null --limit-rate "$rate" -w '%{time_total}\n' "$base_url/generated-images/$id.png")
 	png_seconds=$(awk -v a="$png_seconds" -v b="$seconds" 'BEGIN {print a + b}')
 done
-echo "$generated_count of $article_count articles show a generated image."
-echo "The others show a source thumbnail, which this report doesn't measure."
+echo "$generated_count of $article_count articles show a generated image; $source_count show a source thumbnail."
 echo
 echo "| Image format | Total size | Download at --limit-rate $rate |"
 echo "|---|---:|---:|"
 awk -v b="$png_bytes" -v s="$png_seconds" 'BEGIN {printf "| PNG original (served to the site before 0.62.33) | %.1f MB | %.1f s |\n", b / 1048576, s}'
 awk -v b="$jpg_bytes" -v s="$jpg_seconds" 'BEGIN {printf "| JPEG website copy (current) | %.1f MB | %.1f s |\n", b / 1048576, s}'
+source_bytes=0; source_seconds=0; source_measured=0
+for id in $sources; do
+	source_url=$(curl -s "$base_url/stories/$id" | grep -oE "/source-images/$id\?v=[0-9a-f]+" | head -n 1 || true)
+	[ -n "$source_url" ] || continue
+	read -r size seconds < <(curl -s -o /dev/null --limit-rate "$rate" -w '%{size_download} %{time_total}\n' "$base_url$source_url")
+	source_bytes=$((source_bytes + size)); source_seconds=$(awk -v a="$source_seconds" -v b="$seconds" 'BEGIN {print a + b}')
+	source_measured=$((source_measured + 1))
+done
+awk -v b="$source_bytes" -v s="$source_seconds" -v n="$source_measured" \
+	'BEGIN {printf "| Source thumbnail site copies (%d measured) | %.1f MB | %.1f s |\n", n, b / 1048576, s}'
 echo
 echo "JPEG copies on disk: $(find "$asset_dir" -maxdepth 1 -name 'article-*.jpg' 2>/dev/null | wc -l) of $(find "$asset_dir" -maxdepth 1 -name 'article-*.png' 2>/dev/null | wc -l)"
 echo

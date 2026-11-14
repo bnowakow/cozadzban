@@ -37,6 +37,7 @@ class RssController(
     @Value("\${app.build.timestamp:}") buildTimestampRaw: String,
     private val articleImages: FacebookArticleImageGenerationRepository? = null,
     private val generatedImages: CodexArticleImageGenerator? = null,
+    private val sourceCache: SourceThumbnailCache? = null,
 ) {
 
     private val imageRestClient: RestClient = restClientBuilder
@@ -110,6 +111,14 @@ class RssController(
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Article $id not found") }
         val thumbnail = article.thumbnail?.trim()?.takeIf { it.isNotBlank() }
             ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "Article $id has no thumbnail")
+
+        sourceCache?.load(article)?.let { image ->
+            return ResponseEntity.ok()
+                .contentType(image.contentType)
+                .cacheControl(CacheControl.maxAge(6, TimeUnit.HOURS).cachePublic())
+                .lastModified(image.modifiedAt)
+                .body(image.bytes)
+        }
 
         if (metaImages.supports(thumbnail)) {
             val image = metaImages.loadOrFetch(article)

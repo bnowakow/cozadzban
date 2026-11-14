@@ -72,6 +72,18 @@ queries under 3 ms, it would save almost nothing. See
 
 ## How to measure again
 
+Source thumbnails now have a local site copy. The first successful fetch stores an image
+up to 960 pixels wide, re-encoded as JPEG when that makes it smaller. The front page and
+visible story image use `/source-images/{id}` so later requests avoid the external host.
+If a later daily source check fails, the last good copy remains available. The original
+source URL is still stored with the article, and a changed URL gets a new cache key.
+JPEG, PNG and GIF can be reduced; WebP and AVIF are retained in their original format
+when Java cannot decode them.
+
+The 14 November 2026 `make performance-report` attempt could not complete in the restricted
+server shell: Docker socket access and the local app were unavailable. Compare a report
+after deployment with the recorded `/rss/image/{id}` baseline and the first-page image totals.
+
 Run on the deployment server:
 
 ```sh

@@ -15,6 +15,7 @@ class FacebookThumbnailStatusLabelTest {
         pageRejected: Boolean = false,
         sourceCheckStatus: String = "PENDING",
         sourceCheckError: String? = null,
+        sourceCacheAvailable: Boolean = false,
     ) = FacebookArticleImageStatusRow(
         articleId = 574,
         title = "Title",
@@ -28,6 +29,7 @@ class FacebookThumbnailStatusLabelTest {
         pageRejectedSourceThumbnail = pageRejected,
         sourceCheckStatus = sourceCheckStatus,
         sourceCheckError = sourceCheckError,
+        sourceCacheAvailable = sourceCacheAvailable,
     )
 
     private fun label(row: FacebookArticleImageStatusRow) = FacebookThumbnailStatusView.rowLabel(row)
@@ -79,5 +81,8 @@ class FacebookThumbnailStatusLabelTest {
         )
         assertEquals("Failed", failed.text)
         org.junit.jupiter.api.Assertions.assertTrue(failed.description.contains("HTTP 403"))
+        assertEquals("Failed · cached", FacebookThumbnailStatusView.sourceCheckLabel(
+            row("SOURCE_THUMBNAIL", thumbnail, sourceCheckStatus = "UNAVAILABLE", sourceCacheAvailable = true)
+        ).text)
     }
 }

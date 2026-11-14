@@ -63,6 +63,7 @@ import pl.bnowakowski.cozadzban.facebookimport.FacebookImportTrigger
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportType
 import pl.bnowakowski.cozadzban.facebookpublish.CodexArticleImageGenerator
 import pl.bnowakowski.cozadzban.facebookpublish.FacebookArticleImageGenerationRepository
+import pl.bnowakowski.cozadzban.rss.SourceThumbnailCache
 import pl.bnowakowski.cozadzban.security.AllowlistAuthorizationManager
 import pl.bnowakowski.cozadzban.user.AppUser
 import pl.bnowakowski.cozadzban.user.AppUserRepository
@@ -1063,18 +1064,12 @@ class ArticleListView(
         // (it may exist only because Meta refused the thumbnail for the Page post).
         val hasGeneratedImage = article.id?.let { articleImages?.status(it) == "GENERATED" } == true
         val generatedImage = sourceThumbnail == null && hasGeneratedImage
-        val sourceHost = sourceThumbnail?.let { runCatching { URI(it).host?.lowercase() }.getOrNull() }
         val thumbnail = when {
             // The smaller, versioned JPEG copy; the full PNG stays for Facebook and link previews.
             generatedImage -> generatedImages?.webImageUrl(article.id!!) ?: "/generated-images/${article.id}.jpg"
             sourceThumbnail == null -> null
-            // The proxy falls back to the AI illustration when this thumbnail has expired or is blocked.
-            hasGeneratedImage -> "/rss/image/${article.id}"
-            sourceHost == "lookaside.fbsbx.com" || sourceHost == "fbcdn.net" ||
-                sourceHost?.endsWith(".fbcdn.net") == true || sourceHost == "cdninstagram.com" ||
-                sourceHost?.endsWith(".cdninstagram.com") == true ->
-                article.id?.let { "/rss/image/$it" } ?: sourceThumbnail
-            else -> sourceThumbnail
+            // A compact local copy survives a later failure of the source URL.
+            else -> article.id?.let { SourceThumbnailCache.webUrl(it, sourceThumbnail) } ?: sourceThumbnail
         }
         thumbnail?.takeIf { it.isNotBlank() }?.let { imageUrl ->
             val imageLink = Anchor(article.publisherUrl ?: article.url)

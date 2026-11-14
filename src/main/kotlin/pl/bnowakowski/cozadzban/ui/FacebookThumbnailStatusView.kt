@@ -276,7 +276,11 @@ class FacebookThumbnailStatusView(
             val whenChecked = row.sourceCheckedAt?.let { " Checked ${WarsawTime.dateTime(it)}." }.orEmpty()
             return when (row.sourceCheckStatus) {
                 "AVAILABLE" -> StatusLabel("Working", "The server fetched an image from the source URL.$whenChecked")
-                "UNAVAILABLE" -> StatusLabel("Failed", "The server could not fetch an image from the source URL: ${row.sourceCheckError ?: "unknown error"}.$whenChecked")
+                "UNAVAILABLE" -> if (row.sourceCacheAvailable) {
+                    StatusLabel("Failed · cached", "The source URL failed, but the site can serve its last cached image: ${row.sourceCheckError ?: "unknown error"}.$whenChecked")
+                } else {
+                    StatusLabel("Failed", "The server could not fetch an image from the source URL: ${row.sourceCheckError ?: "unknown error"}.$whenChecked")
+                }
                 else -> StatusLabel("Pending", "The source URL has not been checked yet.")
             }
         }

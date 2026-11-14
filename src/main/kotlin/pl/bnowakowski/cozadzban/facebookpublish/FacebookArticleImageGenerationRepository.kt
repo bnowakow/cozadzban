@@ -25,6 +25,7 @@ data class FacebookArticleImageStatusRow(
     val sourceCheckStatus: String = "PENDING",
     val sourceCheckError: String? = null,
     val sourceCheckedAt: Instant? = null,
+    val sourceCacheAvailable: Boolean = false,
 )
 data class FacebookArticleImageQueueRow(
     val position: Long,
@@ -113,7 +114,8 @@ class FacebookArticleImageGenerationRepository(private val jdbc: NamedParameterJ
                   job.attempt_count, job.next_attempt_at, job.last_error, job.updated_at,
                   COALESCE(job.source_thumbnail_rejected, FALSE) AS page_rejected_source,
                   COALESCE(check_result.status, 'PENDING') AS source_check_status,
-                  check_result.last_error AS source_check_error, check_result.checked_at AS source_checked_at
+                  check_result.last_error AS source_check_error, check_result.checked_at AS source_checked_at,
+                  COALESCE(check_result.cache_available, FALSE) AS source_cache_available
            FROM article a
            LEFT JOIN facebook_article_image_generation job ON job.article_id = a.id
            LEFT JOIN source_thumbnail_delivery_check check_result
@@ -136,6 +138,7 @@ class FacebookArticleImageGenerationRepository(private val jdbc: NamedParameterJ
             sourceCheckStatus = rs.getString("source_check_status"),
             sourceCheckError = rs.getString("source_check_error"),
             sourceCheckedAt = rs.getTimestamp("source_checked_at")?.toInstant(),
+            sourceCacheAvailable = rs.getBoolean("source_cache_available"),
         )
     }
 

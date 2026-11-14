@@ -19,6 +19,7 @@ import org.springframework.web.context.request.ServletRequestAttributes
 import pl.bnowakowski.cozadzban.facebookpublish.FacebookPublicationQueue
 import pl.bnowakowski.cozadzban.facebookpublish.CodexArticleImageGenerator
 import pl.bnowakowski.cozadzban.facebookpublish.FacebookArticleImageGenerationRepository
+import pl.bnowakowski.cozadzban.rss.SourceThumbnailCache
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportJobService
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportProperties
 import pl.bnowakowski.cozadzban.security.UiPrincipalMapper
@@ -100,7 +101,7 @@ class StoryPageController(
         val visibleStoryImage = if (generatedImage) {
             generatedImages?.webImageUrl(article.id!!) ?: "/generated-images/${article.id}.jpg"
         } else {
-            storyImage
+            thumbnail?.let { SourceThumbnailCache.webUrl(article.id!!, it) }
         }
         val doc = Document.createShell("")
         doc.outputSettings().prettyPrint(false)
