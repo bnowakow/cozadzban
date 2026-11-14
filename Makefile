@@ -441,10 +441,10 @@ docker-upgrade: docker-upgrade-local
 
 # Pull latest code, deploy the image Jenkins pushed to Docker Hub for that commit, and follow logs.
 # IMAGE_TAG=<version>-<commit8> deploys a specific build instead, e.g. to roll back.
-# Stops without changes when the app already runs that image; FORCE_UPGRADE=true redeploys anyway.
+# Recreates the app even when it already runs that image, applying the current .env.
 docker-upgrade-dockerhub-image: docker-upgrade-log-owner docker-data-permissions
 	git pull --ff-only
-	IMAGE_SOURCE=dockerhub IMAGE_TAG='$(IMAGE_TAG)' FORCE_UPGRADE='$(FORCE_UPGRADE)' docker-data/blue-green-upgrade.sh
+	IMAGE_SOURCE=dockerhub IMAGE_TAG='$(IMAGE_TAG)' docker-data/blue-green-upgrade.sh
 	docker system prune -f
 	docker compose -f compose.yaml logs -f
 
