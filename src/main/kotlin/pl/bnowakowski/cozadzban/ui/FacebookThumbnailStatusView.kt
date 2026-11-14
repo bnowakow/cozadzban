@@ -73,9 +73,9 @@ class FacebookThumbnailStatusView(
         val navigation = paginationNavigation(previous, pageInfo, pageNumber, next)
         val queueNavigation = paginationNavigation(queuePrevious, queuePageInfo, queuePageNumber, queueNext)
         val message = if (generation.isEnabled()) {
-            "Select a status to review article thumbnails. Generate now starts one missing or failed illustration in the background; refresh to see its result."
+            "Select a status to review article thumbnails. Source delivery is checked from this server and rechecked daily. Generate now starts one missing or failed illustration in the background; refresh to see its result."
         } else {
-            "Image generation is disabled in server configuration. You can still review thumbnail status."
+            "Image generation is disabled in server configuration. Source delivery is checked from this server and rechecked daily."
         }
         val content = sharedPageContent(
             Span("Article thumbnails"), Span(message), filters, grid, navigation,
@@ -110,6 +110,8 @@ class FacebookThumbnailStatusView(
         }.setHeader("Article").setFlexGrow(2)
         grid.addComponentColumn { row -> languageWithFlag(languageFlagCache, row.language) }.setHeader("Language").setAutoWidth(true)
         grid.addComponentColumn { row -> withTooltip(rowLabel(row)) }.setHeader("Status").setAutoWidth(true)
+        grid.addComponentColumn { row -> withTooltip(sourceCheckLabel(row)) }
+            .setHeader("Source delivery").setAutoWidth(true)
         grid.addComponentColumn { row -> thumbnail(row) }.setHeader("Thumbnail").setAutoWidth(true)
         grid.addColumn(FacebookArticleImageStatusRow::attemptCount).setHeader("Attempts").setAutoWidth(true)
         grid.addColumn { row ->
@@ -264,6 +266,18 @@ class FacebookThumbnailStatusView(
                 )
                 "FAILED" -> StatusLabel("Failed", "AI image failed: retry with Generate now.")
                 else -> StatusLabel(row.status, row.status)
+            }
+        }
+
+        fun sourceCheckLabel(row: FacebookArticleImageStatusRow): StatusLabel {
+            if (!FacebookArticleImageGenerationRepository.hasUsableSourceThumbnail(row.sourceThumbnail)) {
+                return StatusLabel("—", "No source thumbnail URL to check.")
+            }
+            val whenChecked = row.sourceCheckedAt?.let { " Checked ${WarsawTime.dateTime(it)}." }.orEmpty()
+            return when (row.sourceCheckStatus) {
+                "AVAILABLE" -> StatusLabel("Working", "The server fetched an image from the source URL.$whenChecked")
+                "UNAVAILABLE" -> StatusLabel("Failed", "The server could not fetch an image from the source URL: ${row.sourceCheckError ?: "unknown error"}.$whenChecked")
+                else -> StatusLabel("Pending", "The source URL has not been checked yet.")
             }
         }
 

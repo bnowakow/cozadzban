@@ -9,7 +9,13 @@ import pl.bnowakowski.cozadzban.ui.FacebookThumbnailStatusView.Companion.StatusL
 class FacebookThumbnailStatusLabelTest {
     private val thumbnail = "https://lookaside.fbsbx.com/lookaside/crawler/media/?media_id=1"
 
-    private fun row(status: String, thumbnail: String? = null, pageRejected: Boolean = false) = FacebookArticleImageStatusRow(
+    private fun row(
+        status: String,
+        thumbnail: String? = null,
+        pageRejected: Boolean = false,
+        sourceCheckStatus: String = "PENDING",
+        sourceCheckError: String? = null,
+    ) = FacebookArticleImageStatusRow(
         articleId = 574,
         title = "Title",
         language = "pl",
@@ -20,6 +26,8 @@ class FacebookThumbnailStatusLabelTest {
         lastError = null,
         updatedAt = null,
         pageRejectedSourceThumbnail = pageRejected,
+        sourceCheckStatus = sourceCheckStatus,
+        sourceCheckError = sourceCheckError,
     )
 
     private fun label(row: FacebookArticleImageStatusRow) = FacebookThumbnailStatusView.rowLabel(row)
@@ -57,5 +65,19 @@ class FacebookThumbnailStatusLabelTest {
             label(row("GENERATED_FOR_FACEBOOK", thumbnail, pageRejected = true)),
         )
         assertEquals(StatusLabel("Failed", "AI image failed: retry with Generate now."), label(row("FAILED")))
+    }
+
+    @Test
+    fun `source delivery has its own pending working and failed states`() {
+        assertEquals("—", FacebookThumbnailStatusView.sourceCheckLabel(row("SOURCE_THUMBNAIL")).text)
+        assertEquals("Pending", FacebookThumbnailStatusView.sourceCheckLabel(row("SOURCE_THUMBNAIL", thumbnail)).text)
+        assertEquals("Working", FacebookThumbnailStatusView.sourceCheckLabel(
+            row("SOURCE_THUMBNAIL", thumbnail, sourceCheckStatus = "AVAILABLE")
+        ).text)
+        val failed = FacebookThumbnailStatusView.sourceCheckLabel(
+            row("SOURCE_THUMBNAIL", thumbnail, sourceCheckStatus = "UNAVAILABLE", sourceCheckError = "HTTP 403")
+        )
+        assertEquals("Failed", failed.text)
+        org.junit.jupiter.api.Assertions.assertTrue(failed.description.contains("HTTP 403"))
     }
 }

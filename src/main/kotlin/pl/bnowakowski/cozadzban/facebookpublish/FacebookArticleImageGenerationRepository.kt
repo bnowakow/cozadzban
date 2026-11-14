@@ -22,6 +22,9 @@ data class FacebookArticleImageStatusRow(
     val updatedAt: Instant?,
     /** The Page post is on hold because Meta refused the source thumbnail. */
     val pageRejectedSourceThumbnail: Boolean = false,
+    val sourceCheckStatus: String = "PENDING",
+    val sourceCheckError: String? = null,
+    val sourceCheckedAt: Instant? = null,
 )
 data class FacebookArticleImageQueueRow(
     val position: Long,
@@ -108,9 +111,13 @@ class FacebookArticleImageGenerationRepository(private val jdbc: NamedParameterJ
     fun statusPage(status: String, limit: Int, offset: Int): List<FacebookArticleImageStatusRow> = jdbc.query(
         """SELECT a.id, a.title, a.language, a.thumbnail, $DISPLAY_STATUS_SQL AS display_status,
                   job.attempt_count, job.next_attempt_at, job.last_error, job.updated_at,
-                  COALESCE(job.source_thumbnail_rejected, FALSE) AS page_rejected_source
+                  COALESCE(job.source_thumbnail_rejected, FALSE) AS page_rejected_source,
+                  COALESCE(check_result.status, 'PENDING') AS source_check_status,
+                  check_result.last_error AS source_check_error, check_result.checked_at AS source_checked_at
            FROM article a
            LEFT JOIN facebook_article_image_generation job ON job.article_id = a.id
+           LEFT JOIN source_thumbnail_delivery_check check_result
+             ON check_result.article_id = a.id AND check_result.thumbnail_url = a.thumbnail
            WHERE :status = '' OR $DISPLAY_STATUS_SQL = :status
            ORDER BY a.id DESC LIMIT :limit OFFSET :offset""",
         mapOf("status" to status, "limit" to limit, "offset" to offset),
@@ -126,6 +133,9 @@ class FacebookArticleImageGenerationRepository(private val jdbc: NamedParameterJ
             lastError = rs.getString("last_error"),
             updatedAt = rs.getTimestamp("updated_at")?.toInstant(),
             pageRejectedSourceThumbnail = rs.getBoolean("page_rejected_source"),
+            sourceCheckStatus = rs.getString("source_check_status"),
+            sourceCheckError = rs.getString("source_check_error"),
+            sourceCheckedAt = rs.getTimestamp("source_checked_at")?.toInstant(),
         )
     }
 
