@@ -35,6 +35,7 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 import pl.bnowakowski.cozadzban.ui.WarsawTime
+import pl.bnowakowski.cozadzban.facebookimport.FacebookImportProperties
 
 /**
  * Fetches and extracts article metadata from a URL.
@@ -54,6 +55,7 @@ import pl.bnowakowski.cozadzban.ui.WarsawTime
 class EnrichmentService(
     restClientBuilder: RestClient.Builder,
     private val faviconCache: FaviconCache = NoopFaviconCache,
+    private val facebookImportProperties: FacebookImportProperties = FacebookImportProperties(),
 ) {
 
     private val restClient: RestClient = restClientBuilder
@@ -205,6 +207,9 @@ class EnrichmentService(
         } catch (ex: RestClientResponseException) {
             logFacebookPhotoPrimaryFetchHttpFailure(url, ex)
             fetchPapReaderFallback(url)?.let { return it }
+            if (ex.statusCode.value() in setOf(401, 403, 429)) {
+                fetchPublisherRssFallback(url)?.let { return it }
+            }
             fetchFacebookCrawlerFallback(url, ex.statusCode.value(), ex.responseBodyAsString)?.let { fallbackHtml ->
                 val fallbackResult = enrichHtml(url, fallbackHtml)
                 if (hasUsableFacebookPostMetadata(url, fallbackResult, fallbackHtml)) {
@@ -293,6 +298,7 @@ class EnrichmentService(
                 logRecoveredFacebookGenericError(url, ex)
                 return it
             }
+            fetchApifyWebFetchFallback(url)?.let { return it }
             logEnrichmentFailureAfterFallbacks(url, ex)
             throw EnrichmentException(
                 message = "URL enrichment failed: target returned HTTP ${ex.statusCode.value()} for '$url'",
@@ -309,6 +315,7 @@ class EnrichmentService(
             }
             logFacebookPhotoPrimaryFetchAccessFailure(url, reason, rootCause)
             fetchPapReaderFallback(url)?.let { return it }
+            fetchPublisherRssFallback(url)?.let { return it }
             fetchFacebookVideoCurlFallback(url, "primary-access-failure-${reason.name.lowercase()}")?.let { return it }
             fetchFacebookPhotoJdkHttpClientFallback(url, "primary-access-failure-${reason.name.lowercase()}")?.let { fallbackHtml ->
                 return enrichHtml(url, fallbackHtml)
@@ -345,6 +352,7 @@ class EnrichmentService(
             fetchInstagramCrawlerFallback(url)?.let { fallbackHtml ->
                 return enrichHtml(url, fallbackHtml)
             }
+            fetchApifyWebFetchFallback(url)?.let { return it }
             LOG.warn(
                 "URL enrichment failed after fallbacks; target was unreachable for url='{}'; reason={}; diagnostics={}; rootCause={}: {}",
                 url,
@@ -361,6 +369,7 @@ class EnrichmentService(
         } catch (ex: RestClientException) {
             logFacebookPhotoPrimaryFetchClientFailure(url, ex)
             fetchPapReaderFallback(url)?.let { return it }
+            fetchPublisherRssFallback(url)?.let { return it }
             fetchFacebookVideoCurlFallback(url, "primary-client-failure-${ex.javaClass.simpleName}")?.let { return it }
             fetchFacebookPhotoJdkHttpClientFallback(url, "primary-client-failure-${ex.javaClass.simpleName}")?.let { fallbackHtml ->
                 return enrichHtml(url, fallbackHtml)
@@ -397,6 +406,7 @@ class EnrichmentService(
             fetchInstagramCrawlerFallback(url)?.let { fallbackHtml ->
                 return enrichHtml(url, fallbackHtml)
             }
+            fetchApifyWebFetchFallback(url)?.let { return it }
             LOG.warn(
                 "URL enrichment failed after fallbacks; target fetch failed for url='{}'; diagnostics={}; exception={}: {}",
                 url,
@@ -412,14 +422,14 @@ class EnrichmentService(
         }
 
         if (isPapAccessChallenge(url, html)) {
-            return fetchPapReaderFallback(url) ?: throw EnrichmentException(
+            return fetchPapReaderFallback(url) ?: fetchApifyWebFetchFallback(url) ?: throw EnrichmentException(
                 message = "URL enrichment failed: PAP returned an access challenge for '$url'",
                 reason = EnrichmentException.Reason.NON_2XX,
             )
         }
         val result = enrichHtml(url, html)
         if (isPapArticleUrl(url) && result.title.isNullOrBlank() && result.lead.isNullOrBlank()) {
-            return fetchPapReaderFallback(url) ?: throw EnrichmentException(
+            return fetchPapReaderFallback(url) ?: fetchApifyWebFetchFallback(url) ?: throw EnrichmentException(
                 message = "URL enrichment failed: PAP did not expose article metadata for '$url'",
                 reason = EnrichmentException.Reason.NON_2XX,
             )
@@ -450,6 +460,7 @@ class EnrichmentService(
         fetchTvn24ReaderFallbackIfIncomplete(url, result)
             ?.let { return parseReaderMarkdownResult(url, it) }
         if (isTvn24BlockedPlaceholderResult(url, result)) {
+            fetchApifyWebFetchFallback(url)?.let { return it }
             throw EnrichmentException(
                 message = "URL enrichment failed: TVN24 returned an unusable placeholder page for '$url'",
                 reason = EnrichmentException.Reason.NON_2XX,
@@ -545,6 +556,21 @@ class EnrichmentService(
             .retrieve()
             .body(String::class.java)
             ?: ""
+
+    private fun fetchPublisherRssFallback(url: String): EnrichmentResult? =
+        PublisherRssFallback.fetch(url) { feedUrl -> fetchHtml(feedUrl) }
+            ?.also { LOG.info("Publisher RSS fallback recovered metadata for '{}'", url) }
+
+    private fun fetchApifyWebFetchFallback(url: String): EnrichmentResult? {
+        val page = ApifyWebFetchFallback.fetch(url, facebookImportProperties.apify.apiToken) ?: return null
+        val result = enrichHtml(page.loadedUrl, page.html)
+        if (result.title.isNullOrBlank() || result.lead.isNullOrBlank()) {
+            LOG.info("Apify Web Fetch metadata incomplete for '{}'", url)
+            return null
+        }
+        LOG.info("Apify Web Fetch recovered metadata for '{}'", url)
+        return result
+    }
 
     private fun logFacebookPhotoPrimaryFetchAttempt(url: String) {
         if (!isFacebookHostUrl(url)) return
