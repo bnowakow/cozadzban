@@ -32,11 +32,24 @@ class FacebookArticleImageGenerationScheduler(
     fun generateNow(articleId: Long): Boolean {
         if (!isEnabled()) return false
         val job = jobs.claimManual(articleId) ?: return false
+        return startManual(job)
+    }
+
+    /** Rebuild an existing AI image, adding an optional note to the article title and text in the prompt. */
+    fun regenerateNow(articleId: Long, promptNote: String?): Boolean {
+        if (!isEnabled()) return false
+        val note = promptNote?.replace(Regex("\\s+"), " ")?.trim()?.takeIf { it.isNotEmpty() }
+        require(note == null || note.length <= 500) { "Image direction must be at most 500 characters" }
+        val job = jobs.claimManualRegeneration(articleId, note) ?: return false
+        return startManual(job)
+    }
+
+    private fun startManual(job: FacebookArticleImageJob): Boolean {
         return try {
             manualExecutor.execute { process(job) }
             true
         } catch (_: RejectedExecutionException) {
-            jobs.fail(articleId, MAX_ATTEMPTS, "Image worker is stopping.")
+            jobs.fail(job.articleId, MAX_ATTEMPTS, "Image worker is stopping.")
             false
         }
     }
@@ -64,7 +77,7 @@ class FacebookArticleImageGenerationScheduler(
                 return
             }
             val content = contents.findById(job.articleId).orElse(null)
-            when (val result = generateWithFallback(article, content)) {
+            when (val result = generateWithFallback(article, content, job.promptNote)) {
                 is ArticleImageGenerationResult.Generated -> {
                     when (jobs.complete(job.articleId)) {
                         "GENERATED" -> {
@@ -100,17 +113,20 @@ class FacebookArticleImageGenerationScheduler(
     private fun generateWithFallback(
         article: pl.bnowakowski.cozadzban.article.Article,
         content: pl.bnowakowski.cozadzban.article.ArticleContent?,
+        promptNote: String?,
     ): ArticleImageGenerationResult {
         val fallback = claude?.takeIf { it.isEnabled() }
         if (!generator.isEnabled()) {
-            return fallback?.generate(article, content)
+            return fallback?.let { if (promptNote == null) it.generate(article, content) else it.generate(article, content, promptNote) }
                 ?: ArticleImageGenerationResult.Failed("Image generation is disabled.", retryable = false)
         }
-        val codex = generator.generate(article, content)
+        val codex = if (promptNote == null) generator.generate(article, content)
+            else generator.generate(article, content, promptNote)
         if (codex is ArticleImageGenerationResult.Generated || fallback == null) return codex
         if (codex is ArticleImageGenerationResult.Failed && codex.reason == MISSING_IMAGE_CONTEXT_REASON) return codex
         log.info("Codex could not illustrate article {} ({}); trying Claude", article.id, describe(codex))
-        val claudeResult = fallback.generate(article, content)
+        val claudeResult = if (promptNote == null) fallback.generate(article, content)
+            else fallback.generate(article, content, promptNote)
         return when {
             claudeResult is ArticleImageGenerationResult.Generated -> claudeResult
             codex is ArticleImageGenerationResult.UsageLimited && claudeResult is ArticleImageGenerationResult.UsageLimited ->

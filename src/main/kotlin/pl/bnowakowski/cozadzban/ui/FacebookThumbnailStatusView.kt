@@ -6,6 +6,7 @@ import com.vaadin.flow.component.button.Button
 import com.vaadin.flow.component.combobox.ComboBox
 import com.vaadin.flow.component.dependency.JsModule
 import com.vaadin.flow.component.dependency.Uses
+import com.vaadin.flow.component.dialog.Dialog
 import com.vaadin.flow.component.grid.Grid
 import com.vaadin.flow.component.html.Anchor
 import com.vaadin.flow.component.html.H2
@@ -15,6 +16,7 @@ import com.vaadin.flow.component.notification.Notification
 import com.vaadin.flow.component.notification.NotificationVariant
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout
 import com.vaadin.flow.component.orderedlayout.VerticalLayout
+import com.vaadin.flow.component.textfield.TextArea
 import com.vaadin.flow.router.PageTitle
 import com.vaadin.flow.router.Route
 import jakarta.annotation.security.RolesAllowed
@@ -73,7 +75,7 @@ class FacebookThumbnailStatusView(
         val navigation = paginationNavigation(previous, pageInfo, pageNumber, next)
         val queueNavigation = paginationNavigation(queuePrevious, queuePageInfo, queuePageNumber, queueNext)
         val message = if (generation.isEnabled()) {
-            "Select a status to review article thumbnails. Source delivery is checked from this server and rechecked daily. Generate now starts one missing or failed illustration in the background; refresh to see its result."
+            "Select a status to review article thumbnails. Source delivery is checked from this server and rechecked daily. Generate now starts a missing or failed illustration; Regenerate AI image replaces an existing one with optional image direction. Refresh to see the result."
         } else {
             "Image generation is disabled in server configuration. Source delivery is checked from this server and rechecked daily."
         }
@@ -122,8 +124,14 @@ class FacebookThumbnailStatusView(
             .setHeader("Updated").setAutoWidth(true)
         grid.addColumn { it.lastError ?: "—" }.setHeader("Last error").setFlexGrow(1)
         grid.addComponentColumn { row ->
-            Button("Generate now") { generateNow(row.articleId) }.apply {
-                isEnabled = generation.isEnabled() && row.status in setOf("MISSING_THUMBNAIL", "FAILED")
+            if (row.status in setOf("GENERATED", FacebookArticleImageGenerationRepository.GENERATED_FOR_FACEBOOK)) {
+                Button("Regenerate AI image") { openRegenerationDialog(row.articleId) }.apply {
+                    isEnabled = generation.isEnabled()
+                }
+            } else {
+                Button("Generate now") { generateNow(row.articleId) }.apply {
+                    isEnabled = generation.isEnabled() && row.status in setOf("MISSING_THUMBNAIL", "FAILED")
+                }
             }
         }.setHeader("Action").setAutoWidth(true)
     }
@@ -161,10 +169,10 @@ class FacebookThumbnailStatusView(
     }
 
     private fun thumbnail(row: FacebookArticleImageStatusRow): Component {
-        val preview: Component = when (row.status) {
-            "GENERATED", FacebookArticleImageGenerationRepository.GENERATED_FOR_FACEBOOK ->
+        val preview: Component = when {
+            row.previousGenerated || row.status in setOf("GENERATED", FacebookArticleImageGenerationRepository.GENERATED_FOR_FACEBOOK) ->
                 Image("/generated-images/${row.articleId}.png", "AI-generated illustration")
-            "SOURCE_THUMBNAIL", "MISSING_THUMBNAIL", "GENERATING", "FAILED" -> row.sourceThumbnail
+            row.status in setOf("SOURCE_THUMBNAIL", "MISSING_THUMBNAIL", "GENERATING", "FAILED") -> row.sourceThumbnail
                 ?.takeIf { FacebookArticleImageGenerationRepository.hasUsableSourceThumbnail(it) }
                 ?.let { Image("/rss/image/${row.articleId}", "Source thumbnail") } ?: Span("—")
             else -> Span("—")
@@ -187,6 +195,31 @@ class FacebookThumbnailStatusView(
         )
         if (!started) notification.addThemeVariants(NotificationVariant.LUMO_ERROR)
         refresh()
+    }
+
+    private fun openRegenerationDialog(articleId: Long) {
+        val dialog = Dialog()
+        dialog.headerTitle = "Regenerate AI image for article $articleId"
+        dialog.setWidth("min(92vw, 36rem)")
+        val direction = TextArea("Additional image direction (optional)").apply {
+            setWidthFull()
+            setMaxLength(500)
+            setPlaceholder("For example: use a blue background and focus on the semiconductor chip")
+            setHelperText("Added to the article title and text in the image prompt. The current image stays visible if generation fails.")
+        }
+        val cancel = Button("Cancel") { dialog.close() }
+        val submit = Button("Regenerate") {
+            val started = generation.regenerateNow(articleId, direction.value)
+            val notification = Notification.show(
+                if (started) "AI image regeneration started for article $articleId."
+                else "Could not start regeneration. Another image may be in progress.",
+            )
+            if (started) dialog.close() else notification.addThemeVariants(NotificationVariant.LUMO_ERROR)
+            refresh()
+        }
+        dialog.add(direction)
+        dialog.footer.add(cancel, submit)
+        dialog.open()
     }
 
     private fun estimatedAttemptText(articleId: Long): String = estimatedAttempts[articleId]?.let { estimate ->
@@ -255,12 +288,16 @@ class FacebookThumbnailStatusView(
                     StatusLabel("Waiting: ${it.text}", "Waiting for AI image: ${it.description}")
                 }
                 "GENERATING" -> StatusLabel("Generating", "Generating AI image.")
-                "GENERATED" -> if (hasSource) {
+                "GENERATED" -> if (row.lastError != null) {
+                    StatusLabel("AI image (retry failed)", "The existing AI image remains in use. Last regeneration failed: ${row.lastError}")
+                } else if (hasSource) {
                     StatusLabel("AI image (unused)", "AI image ready; the site shows the source thumbnail.")
                 } else {
                     StatusLabel("AI image", "AI image ready; shown on the site because the article has no thumbnail.")
                 }
-                FacebookArticleImageGenerationRepository.GENERATED_FOR_FACEBOOK -> StatusLabel(
+                FacebookArticleImageGenerationRepository.GENERATED_FOR_FACEBOOK -> if (row.lastError != null) {
+                    StatusLabel("AI for Facebook (retry failed)", "The existing AI image remains in use. Last regeneration failed: ${row.lastError}")
+                } else StatusLabel(
                     "AI for Facebook only",
                     "AI image for Facebook only: Facebook rejected the source thumbnail; the site shows the source thumbnail.",
                 )

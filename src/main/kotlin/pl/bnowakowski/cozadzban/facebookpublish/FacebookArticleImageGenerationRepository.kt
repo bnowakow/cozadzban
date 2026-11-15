@@ -8,7 +8,7 @@ import java.net.URI
 import java.time.Duration
 import java.time.Instant
 
-data class FacebookArticleImageJob(val articleId: Long, val attemptCount: Int)
+data class FacebookArticleImageJob(val articleId: Long, val attemptCount: Int, val promptNote: String? = null)
 const val MISSING_IMAGE_CONTEXT_REASON = "Article has no text to illustrate."
 data class FacebookArticleImageStatusRow(
     val articleId: Long,
@@ -26,6 +26,7 @@ data class FacebookArticleImageStatusRow(
     val sourceCheckError: String? = null,
     val sourceCheckedAt: Instant? = null,
     val sourceCacheAvailable: Boolean = false,
+    val previousGenerated: Boolean = false,
 )
 data class FacebookArticleImageQueueRow(
     val position: Long,
@@ -115,7 +116,8 @@ class FacebookArticleImageGenerationRepository(private val jdbc: NamedParameterJ
                   COALESCE(job.source_thumbnail_rejected, FALSE) AS page_rejected_source,
                   COALESCE(check_result.status, 'PENDING') AS source_check_status,
                   check_result.last_error AS source_check_error, check_result.checked_at AS source_checked_at,
-                  COALESCE(check_result.cache_available, FALSE) AS source_cache_available
+                  COALESCE(check_result.cache_available, FALSE) AS source_cache_available,
+                  COALESCE(job.previous_generated, FALSE) AS previous_generated
            FROM article a
            LEFT JOIN facebook_article_image_generation job ON job.article_id = a.id
            LEFT JOIN source_thumbnail_delivery_check check_result
@@ -139,6 +141,7 @@ class FacebookArticleImageGenerationRepository(private val jdbc: NamedParameterJ
             sourceCheckError = rs.getString("source_check_error"),
             sourceCheckedAt = rs.getTimestamp("source_checked_at")?.toInstant(),
             sourceCacheAvailable = rs.getBoolean("source_cache_available"),
+            previousGenerated = rs.getBoolean("previous_generated"),
         )
     }
 
@@ -152,7 +155,7 @@ class FacebookArticleImageGenerationRepository(private val jdbc: NamedParameterJ
     fun sourceThumbnailAvailable(articleId: Long) {
         jdbc.update(
             """DELETE FROM facebook_article_image_generation
-               WHERE article_id = :articleId AND NOT source_thumbnail_rejected
+               WHERE article_id = :articleId AND NOT source_thumbnail_rejected AND NOT previous_generated
                  AND status IN ('MISSING_THUMBNAIL', 'FAILED')""",
             mapOf("articleId" to articleId),
         )
@@ -178,6 +181,7 @@ class FacebookArticleImageGenerationRepository(private val jdbc: NamedParameterJ
                SET status = CASE WHEN facebook_article_image_generation.status = 'GENERATING'
                                  THEN 'GENERATING' ELSE 'MISSING_THUMBNAIL' END,
                    regenerate_requested = facebook_article_image_generation.status = 'GENERATING',
+                   prompt_note = NULL, previous_generated = FALSE,
                    attempt_count = CASE WHEN facebook_article_image_generation.status = 'GENERATING'
                                         THEN facebook_article_image_generation.attempt_count ELSE 0 END,
                    next_attempt_at = now(), last_error = NULL, updated_at = now()""",
@@ -197,7 +201,9 @@ class FacebookArticleImageGenerationRepository(private val jdbc: NamedParameterJ
     }
 
     fun status(articleId: Long): String? = jdbc.query(
-        "SELECT status FROM facebook_article_image_generation WHERE article_id = :articleId",
+        """SELECT CASE WHEN previous_generated AND status IN ('GENERATING', 'MISSING_THUMBNAIL')
+                         THEN 'GENERATED' ELSE status END
+           FROM facebook_article_image_generation WHERE article_id = :articleId""",
         mapOf("articleId" to articleId),
     ) { rs, _ -> rs.getString(1) }.firstOrNull()
 
@@ -206,6 +212,7 @@ class FacebookArticleImageGenerationRepository(private val jdbc: NamedParameterJ
         jdbc.update(
             """UPDATE facebook_article_image_generation
                SET status = CASE WHEN regenerate_requested THEN 'MISSING_THUMBNAIL'
+                                 WHEN previous_generated THEN 'MISSING_THUMBNAIL'
                                  WHEN attempt_count >= :maxAttempts THEN 'FAILED' ELSE 'MISSING_THUMBNAIL' END,
                    attempt_count = CASE WHEN regenerate_requested THEN 0 ELSE attempt_count END,
                    regenerate_requested = false,
@@ -218,7 +225,9 @@ class FacebookArticleImageGenerationRepository(private val jdbc: NamedParameterJ
     /** Remove jobs that cannot produce a story-specific image without using a ten-minute slot. */
     fun failMissingContext(): Int = jdbc.update(
         """UPDATE facebook_article_image_generation job
-           SET status = 'FAILED', last_error = :reason, updated_at = now()
+           SET status = CASE WHEN previous_generated THEN 'GENERATED' ELSE 'FAILED' END,
+               previous_generated = false, prompt_note = NULL,
+               last_error = :reason, updated_at = now()
            WHERE job.status = 'MISSING_THUMBNAIL'
              AND EXISTS (
                  SELECT 1 FROM article a
@@ -251,9 +260,9 @@ class FacebookArticleImageGenerationRepository(private val jdbc: NamedParameterJ
                UPDATE facebook_article_image_generation job
                SET status = 'GENERATING', attempt_count = job.attempt_count + 1, updated_at = now()
                FROM candidate WHERE job.article_id = candidate.article_id
-               RETURNING job.article_id, job.attempt_count""",
+               RETURNING job.article_id, job.attempt_count, job.prompt_note""",
             emptyMap<String, Any>(),
-        ) { rs, _ -> FacebookArticleImageJob(rs.getLong("article_id"), rs.getInt("attempt_count")) }.firstOrNull()
+        ) { rs, _ -> FacebookArticleImageJob(rs.getLong("article_id"), rs.getInt("attempt_count"), rs.getString("prompt_note")) }.firstOrNull()
         if (job != null) {
             jdbc.update(
                 """UPDATE facebook_article_image_generation_pace
@@ -288,9 +297,36 @@ class FacebookArticleImageGenerationRepository(private val jdbc: NamedParameterJ
                             OR coalesce(btrim(a.ai_summary), '') <> ''
                             OR coalesce(btrim(c.content), '') <> '')
                  )
-               RETURNING article_id, attempt_count""",
+               RETURNING article_id, attempt_count, prompt_note""",
             mapOf("articleId" to articleId),
-        ) { rs, _ -> FacebookArticleImageJob(rs.getLong("article_id"), rs.getInt("attempt_count")) }.firstOrNull()
+        ) { rs, _ -> FacebookArticleImageJob(rs.getLong("article_id"), rs.getInt("attempt_count"), rs.getString("prompt_note")) }.firstOrNull()
+        if (job != null) {
+            jdbc.update(
+                """UPDATE facebook_article_image_generation_pace
+                   SET next_claim_at = GREATEST(next_claim_at, now() + interval '10 minutes')
+                   WHERE id = :slot""",
+                mapOf("slot" to slot),
+            )
+        }
+        return job
+    }
+
+    /** Replace an existing AI image immediately; the old image stays visible until replacement succeeds. */
+    @Transactional
+    fun claimManualRegeneration(articleId: Long, promptNote: String?): FacebookArticleImageJob? {
+        val slot = jdbc.query(
+            "SELECT id FROM facebook_article_image_generation_pace WHERE id = 1 FOR UPDATE SKIP LOCKED",
+            emptyMap<String, Any>(),
+        ) { rs, _ -> rs.getInt(1) }.firstOrNull() ?: return null
+        if (hasGenerating()) return null
+        val job = jdbc.query(
+            """UPDATE facebook_article_image_generation
+               SET status = 'GENERATING', attempt_count = 1, prompt_note = :promptNote,
+                   previous_generated = TRUE, last_error = NULL, updated_at = now()
+               WHERE article_id = :articleId AND status = 'GENERATED'
+               RETURNING article_id, attempt_count, prompt_note""",
+            mapOf("articleId" to articleId, "promptNote" to promptNote),
+        ) { rs, _ -> FacebookArticleImageJob(rs.getLong("article_id"), rs.getInt("attempt_count"), rs.getString("prompt_note")) }.firstOrNull()
         if (job != null) {
             jdbc.update(
                 """UPDATE facebook_article_image_generation_pace
@@ -310,7 +346,8 @@ class FacebookArticleImageGenerationRepository(private val jdbc: NamedParameterJ
     fun complete(articleId: Long): String? = jdbc.query(
         """UPDATE facebook_article_image_generation
            SET status = CASE WHEN regenerate_requested THEN 'MISSING_THUMBNAIL' ELSE 'GENERATED' END,
-               regenerate_requested = false, next_attempt_at = now(), last_error = NULL, updated_at = now()
+               regenerate_requested = false, previous_generated = false, prompt_note = NULL,
+               next_attempt_at = now(), last_error = NULL, updated_at = now()
            WHERE article_id = :articleId AND status = 'GENERATING'
            RETURNING status""",
         mapOf("articleId" to articleId),
@@ -320,10 +357,11 @@ class FacebookArticleImageGenerationRepository(private val jdbc: NamedParameterJ
         jdbc.update(
             """UPDATE facebook_article_image_generation
                SET status = CASE WHEN regenerate_requested THEN 'MISSING_THUMBNAIL'
+                                 WHEN previous_generated THEN 'GENERATED'
                                  WHEN attempt_count >= :maxAttempts THEN 'FAILED' ELSE 'MISSING_THUMBNAIL' END,
                    attempt_count = CASE WHEN regenerate_requested THEN 0 ELSE attempt_count END,
                    next_attempt_at = CASE WHEN regenerate_requested THEN now() ELSE now() + interval '10 minutes' END,
-                   regenerate_requested = false,
+                   regenerate_requested = false, previous_generated = false, prompt_note = NULL,
                    last_error = :reason, updated_at = now()
                WHERE article_id = :articleId AND status = 'GENERATING'""",
             mapOf("articleId" to articleId, "maxAttempts" to maxAttempts, "reason" to reason.take(200)),
@@ -353,9 +391,11 @@ class FacebookArticleImageGenerationRepository(private val jdbc: NamedParameterJ
     fun failPermanent(articleId: Long, reason: String) {
         jdbc.update(
             """UPDATE facebook_article_image_generation
-               SET status = CASE WHEN regenerate_requested THEN 'MISSING_THUMBNAIL' ELSE 'FAILED' END,
+               SET status = CASE WHEN regenerate_requested THEN 'MISSING_THUMBNAIL'
+                                 WHEN previous_generated THEN 'GENERATED' ELSE 'FAILED' END,
                    attempt_count = CASE WHEN regenerate_requested THEN 0 ELSE attempt_count END,
                    next_attempt_at = now(), regenerate_requested = false,
+                   previous_generated = false, prompt_note = NULL,
                    last_error = :reason, updated_at = now()
                WHERE article_id = :articleId AND status = 'GENERATING'""",
             mapOf("articleId" to articleId, "reason" to reason.take(200)),

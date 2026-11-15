@@ -21,6 +21,19 @@ import java.util.Optional
 import javax.imageio.ImageIO
 
 class ClaudeSvgFallbackTest {
+    @Test
+    fun `queued regeneration passes operator direction to image generator`() {
+        val f = fixture()
+        whenever(f.jobs.claim()).thenReturn(FacebookArticleImageJob(538, 1, "blue background"))
+        whenever(f.codex.generate(any(), anyOrNull(), org.mockito.kotlin.eq("blue background")))
+            .thenReturn(ArticleImageGenerationResult.Generated(byteArrayOf(1)))
+        whenever(f.jobs.complete(538)).thenReturn("GENERATED")
+
+        f.scheduler.generateOne()
+
+        verify(f.codex).generate(any(), anyOrNull(), org.mockito.kotlin.eq("blue background"))
+    }
+
     private val safeSvg = """
         <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
           <defs><linearGradient id="bg"><stop offset="0" stop-color="#1b2a49"/><stop offset="1" stop-color="#f36b32"/></linearGradient></defs>
