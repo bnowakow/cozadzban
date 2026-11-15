@@ -30,7 +30,7 @@ class ClaudeSvgArticleImageGenerator(
 
     fun isEnabled(): Boolean = enabled
 
-    fun generate(article: Article, content: ArticleContent? = null, promptNote: String? = null): ArticleImageGenerationResult {
+    fun generate(article: Article, content: ArticleContent?, promptNote: String?): ArticleImageGenerationResult {
         if (!enabled) return ArticleImageGenerationResult.Failed("Claude illustration is disabled.", retryable = false)
         val articleId = article.id ?: return ArticleImageGenerationResult.Failed("Article has no ID.", retryable = false)
         var workdir: Path? = null

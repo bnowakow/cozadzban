@@ -108,8 +108,8 @@ class ClaudeSvgFallbackTest {
     @Test
     fun `Claude draws the image when Codex fails`() {
         val f = fixture()
-        whenever(f.codex.generate(any(), anyOrNull())).thenReturn(ArticleImageGenerationResult.Failed("Codex exited with code 1."))
-        whenever(f.claude.generate(any(), anyOrNull())).thenReturn(ArticleImageGenerationResult.Generated(byteArrayOf(1)))
+        whenever(f.codex.generate(any(), anyOrNull(), anyOrNull())).thenReturn(ArticleImageGenerationResult.Failed("Codex exited with code 1."))
+        whenever(f.claude.generate(any(), anyOrNull(), anyOrNull())).thenReturn(ArticleImageGenerationResult.Generated(byteArrayOf(1)))
         whenever(f.jobs.complete(538)).thenReturn("GENERATED")
 
         f.scheduler.generateOne()
@@ -122,16 +122,16 @@ class ClaudeSvgFallbackTest {
     fun `a Claude failure while Codex is limited is a normal attempt, and the earlier reset wins when both are limited`() {
         val codexReset = Instant.parse("2026-11-04T06:37:00Z")
         val f = fixture()
-        whenever(f.codex.generate(any(), anyOrNull())).thenReturn(ArticleImageGenerationResult.UsageLimited("Codex limit.", codexReset))
-        whenever(f.claude.generate(any(), anyOrNull())).thenReturn(ArticleImageGenerationResult.Failed("Claude exited with code 1."))
+        whenever(f.codex.generate(any(), anyOrNull(), anyOrNull())).thenReturn(ArticleImageGenerationResult.UsageLimited("Codex limit.", codexReset))
+        whenever(f.claude.generate(any(), anyOrNull(), anyOrNull())).thenReturn(ArticleImageGenerationResult.Failed("Claude exited with code 1."))
         f.scheduler.generateOne()
         verify(f.jobs).fail(538, 3, "Codex limit. Claude: Claude exited with code 1.")
         verify(f.jobs, never()).pauseForUsageLimit(any(), any(), any())
 
         val claudeReset = Instant.parse("2026-11-01T12:00:00Z")
         val g = fixture()
-        whenever(g.codex.generate(any(), anyOrNull())).thenReturn(ArticleImageGenerationResult.UsageLimited("Codex limit.", codexReset))
-        whenever(g.claude.generate(any(), anyOrNull())).thenReturn(ArticleImageGenerationResult.UsageLimited("Claude limit.", claudeReset))
+        whenever(g.codex.generate(any(), anyOrNull(), anyOrNull())).thenReturn(ArticleImageGenerationResult.UsageLimited("Codex limit.", codexReset))
+        whenever(g.claude.generate(any(), anyOrNull(), anyOrNull())).thenReturn(ArticleImageGenerationResult.UsageLimited("Claude limit.", claudeReset))
         g.scheduler.generateOne()
         verify(g.jobs).pauseForUsageLimit(538, claudeReset, "Codex limit. Claude limit.")
     }
@@ -139,28 +139,28 @@ class ClaudeSvgFallbackTest {
     @Test
     fun `both failing records both reasons, and articles without text skip Claude`() {
         val f = fixture()
-        whenever(f.codex.generate(any(), anyOrNull())).thenReturn(ArticleImageGenerationResult.Failed("Codex exited with code 1."))
-        whenever(f.claude.generate(any(), anyOrNull())).thenReturn(ArticleImageGenerationResult.Failed("Claude SVG rejected."))
+        whenever(f.codex.generate(any(), anyOrNull(), anyOrNull())).thenReturn(ArticleImageGenerationResult.Failed("Codex exited with code 1."))
+        whenever(f.claude.generate(any(), anyOrNull(), anyOrNull())).thenReturn(ArticleImageGenerationResult.Failed("Claude SVG rejected."))
         f.scheduler.generateOne()
         verify(f.jobs).fail(538, 3, "Codex exited with code 1. Claude: Claude SVG rejected.")
 
         val g = fixture()
-        whenever(g.codex.generate(any(), anyOrNull()))
+        whenever(g.codex.generate(any(), anyOrNull(), anyOrNull()))
             .thenReturn(ArticleImageGenerationResult.Failed(MISSING_IMAGE_CONTEXT_REASON, retryable = false))
         g.scheduler.generateOne()
-        verify(g.claude, never()).generate(any(), anyOrNull())
+        verify(g.claude, never()).generate(any(), anyOrNull(), anyOrNull())
         verify(g.jobs).failPermanent(538, MISSING_IMAGE_CONTEXT_REASON)
     }
 
     @Test
     fun `Claude works alone when Codex is disabled`() {
         val f = fixture(codexEnabled = false)
-        whenever(f.claude.generate(any(), anyOrNull())).thenReturn(ArticleImageGenerationResult.Generated(byteArrayOf(1)))
+        whenever(f.claude.generate(any(), anyOrNull(), anyOrNull())).thenReturn(ArticleImageGenerationResult.Generated(byteArrayOf(1)))
         whenever(f.jobs.complete(538)).thenReturn("GENERATED")
 
         f.scheduler.generateOne()
 
-        verify(f.codex, never()).generate(any(), anyOrNull())
+        verify(f.codex, never()).generate(any(), anyOrNull(), anyOrNull())
         verify(f.jobs).complete(538)
         assertTrue(f.scheduler.isEnabled())
     }

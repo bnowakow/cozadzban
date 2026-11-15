@@ -120,7 +120,7 @@ class CodexArticleImageGenerator(
     private fun webPath(articleId: Long): Path = Path.of(assetDir).resolve("article-$articleId.jpg")
 
     /** Returns a Facebook-sized PNG or a classified failure for the job queue. */
-    fun generate(article: Article, content: ArticleContent? = null, promptNote: String? = null): ArticleImageGenerationResult {
+    fun generate(article: Article, content: ArticleContent?, promptNote: String?): ArticleImageGenerationResult {
         if (!enabled) return ArticleImageGenerationResult.Failed("Image generation is disabled.", retryable = false)
         val articleId = article.id ?: return ArticleImageGenerationResult.Failed("Article has no ID.", retryable = false)
         if (listOf(article.title, article.lead, article.quote, article.aiSummary, content?.content)

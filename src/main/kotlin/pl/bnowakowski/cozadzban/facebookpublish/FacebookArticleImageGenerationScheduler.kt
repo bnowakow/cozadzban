@@ -117,16 +117,14 @@ class FacebookArticleImageGenerationScheduler(
     ): ArticleImageGenerationResult {
         val fallback = claude?.takeIf { it.isEnabled() }
         if (!generator.isEnabled()) {
-            return fallback?.let { if (promptNote == null) it.generate(article, content) else it.generate(article, content, promptNote) }
+            return fallback?.generate(article, content, promptNote)
                 ?: ArticleImageGenerationResult.Failed("Image generation is disabled.", retryable = false)
         }
-        val codex = if (promptNote == null) generator.generate(article, content)
-            else generator.generate(article, content, promptNote)
+        val codex = generator.generate(article, content, promptNote)
         if (codex is ArticleImageGenerationResult.Generated || fallback == null) return codex
         if (codex is ArticleImageGenerationResult.Failed && codex.reason == MISSING_IMAGE_CONTEXT_REASON) return codex
         log.info("Codex could not illustrate article {} ({}); trying Claude", article.id, describe(codex))
-        val claudeResult = if (promptNote == null) fallback.generate(article, content)
-            else fallback.generate(article, content, promptNote)
+        val claudeResult = fallback.generate(article, content, promptNote)
         return when {
             claudeResult is ArticleImageGenerationResult.Generated -> claudeResult
             codex is ArticleImageGenerationResult.UsageLimited && claudeResult is ArticleImageGenerationResult.UsageLimited ->

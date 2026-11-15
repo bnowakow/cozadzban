@@ -74,7 +74,7 @@ class CodexUsageLimitTest {
         whenever(articles.findById(538)).thenReturn(Optional.of(article))
         whenever(contents.findById(538)).thenReturn(Optional.empty())
         val retryAt = Instant.parse("2026-11-04T06:37:00Z")
-        whenever(generator.generate(any(), org.mockito.kotlin.anyOrNull()))
+        whenever(generator.generate(any(), org.mockito.kotlin.anyOrNull(), org.mockito.kotlin.anyOrNull()))
             .thenReturn(ArticleImageGenerationResult.UsageLimited("Codex usage limit reached", retryAt))
 
         FacebookArticleImageGenerationScheduler(jobs, articles, contents, generator, mock()).generateOne()
