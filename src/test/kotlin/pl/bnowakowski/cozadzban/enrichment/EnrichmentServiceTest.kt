@@ -256,6 +256,43 @@ class EnrichmentServiceTest {
     }
 
     @Test
+    fun `reads YouTube creator description from watch-next response`() {
+        val service = EnrichmentService(RestClient.builder())
+        val response = """
+            {"contents":{"twoColumnWatchNextResults":{"results":{"results":{"contents":[
+              {"videoPrimaryInfoRenderer":{"title":{"runs":[{"text":"Investigating The President"}]}}},
+              {"videoSecondaryInfoRenderer":{"attributedDescription":{"content":"Support Investigative Journalism:\nREQUESTS FOR COMMENT: World Liberty Financial and DRW / Don Wilson both denied the allegations."}}}
+            ]}}}}}
+        """.trimIndent()
+
+        val description = service.youtubeDescriptionFromNext(response)
+
+        assertEquals(
+            "Support Investigative Journalism:\nREQUESTS FOR COMMENT: World Liberty Financial and DRW / Don Wilson both denied the allegations.",
+            description,
+        )
+        assertEquals(
+            "Video \"Investigating The President\" by Coffeezilla. World Liberty Financial and DRW / Don Wilson both denied the allegations.",
+            service.youtubeVideoLead("Investigating The President", "Coffeezilla", description),
+        )
+    }
+
+    @Test
+    fun `does not save YouTube site chrome as video description or content`() {
+        val result = enrichHtml(
+            "https://www.youtube.com/watch?v=W4PIkmjwGsQ",
+            """<html><head><meta property="og:title" content="Investigating The President">
+               <meta name="description" content="W YouTube możesz cieszyć się filmami i muzyką, które lubisz."></head>
+               <body>Informacje Centrum prasowe Prawa autorskie © 2026 Google LLC</body></html>""",
+        )
+
+        assertEquals("Investigating The President", result.title)
+        assertNull(result.lead)
+        assertNull(result.plainText)
+        assertTrue(isGenericYoutubeTitle("https://youtu.be/W4PIkmjwGsQ", "223\u00a0tys."))
+    }
+
+    @Test
     fun `does not recover generic Facebook pfbid 400 as minimal post`() {
         val result = recoverFacebookPostFromGenericError(
             url = "https://www.facebook.com/akurasinski/posts/pfbid033CLUhJTuKWPiYspPP2womaWEF7vH9yHSTED9EkLpHNrPmoZzjEyUQ25aJrHZP3sul",

@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import org.jsoup.Jsoup
 import org.slf4j.LoggerFactory
 import org.springframework.http.HttpHeaders
+import org.springframework.http.MediaType
 import org.springframework.http.client.SimpleClientHttpRequestFactory
 import org.springframework.stereotype.Service
 import org.springframework.web.client.ResourceAccessException
@@ -197,6 +198,7 @@ class EnrichmentService(
     )
 
     fun enrich(url: String): EnrichmentResult {
+        fetchYoutubeVideoMetadata(url)?.let { return it }
         logFacebookPhotoPrimaryFetchAttempt(url)
         val html = try {
             fetchHtml(url)
@@ -2781,6 +2783,7 @@ class EnrichmentService(
         val metaDescription = when {
             isFacebookDocument(url, doc) -> rawMetaDescription?.let { cleanFacebookMessageText(it) }
                 ?.takeUnless { isGenericFacebookDescription(url, it) }
+            isYoutubeUrl(url) -> rawMetaDescription?.takeUnless(::isGenericYoutubeDescription)
             else -> lundaDonationLead(url, doc, extractedTitle, rawMetaDescription) ?: rawMetaDescription
         }
         val extractedLead = when {
@@ -2816,6 +2819,7 @@ class EnrichmentService(
             isFacebookPfbidPostUrl(url) -> lead
             isFacebookVideoOrReelUrl(url) -> lead ?: doc.body().text().normalized()
             isFacebookPhotoUrl(url) -> facebookPostText ?: lead
+            isYoutubeUrl(url) -> lead
             else -> facebookPostText ?: doc.body().text().normalized()
         }
         val plainText = if (isFacebookDocument(url, doc)) {
@@ -3562,6 +3566,89 @@ class EnrichmentService(
             .normalized()
     }
 
+    /** YouTube's watch page can be a generic shell; oEmbed supplies the actual video identity. */
+    private fun fetchYoutubeVideoMetadata(url: String): EnrichmentResult? {
+        val videoId = youtubeVideoId(url) ?: return null
+        val oembed = runCatching {
+            JSON_MAPPER.readTree(fetchHtml("https://www.youtube.com/oembed?url=${encodeQueryParam(url)}&format=json"))
+        }.getOrNull() ?: return null
+        val title = oembed.path("title").asText("").normalized()
+            ?.takeUnless { isGenericYoutubeTitle(url, it) } ?: return null
+        val author = oembed.path("author_name").asText("").normalized()
+        val oembedThumbnail = oembed.path("thumbnail_url").asText("").normalized()
+            ?.takeIf { runCatching { URI(it).scheme == "https" }.getOrDefault(false) }
+        val maxResolutionThumbnail = "https://i.ytimg.com/vi/$videoId/maxresdefault.jpg"
+        val thumbnail = maxResolutionThumbnail.takeIf { candidate ->
+            runCatching { restClient.head().uri(candidate).retrieve().toBodilessEntity().statusCode.is2xxSuccessful }
+                .getOrDefault(false)
+        } ?: oembedThumbnail
+        val description = fetchYoutubeVideoDescription(videoId)
+        val lead = youtubeVideoLead(title, author, description)
+        return EnrichmentResult(
+            title = title,
+            thumbnail = thumbnail,
+            lead = lead,
+            favicon = faviconCache.cache(url, listOf("https://www.youtube.com/favicon.ico")),
+            plainText = description ?: lead,
+        )
+    }
+
+    private fun youtubeVideoId(url: String): String? {
+        val uri = runCatching { URI(url) }.getOrNull() ?: return null
+        if (uri.scheme !in setOf("http", "https") || !isYoutubeUrl(url)) return null
+        val host = uri.host?.lowercase() ?: return null
+        val path = uri.path.orEmpty().trim('/')
+        val id = when {
+            host == "youtu.be" -> path.substringBefore('/')
+            path == "watch" -> queryParams(uri)["v"]
+            path.startsWith("shorts/") || path.startsWith("live/") || path.startsWith("embed/") ->
+                path.substringAfter('/').substringBefore('/')
+            else -> null
+        }
+        return id?.takeIf { it.matches(Regex("[A-Za-z0-9_-]{11}")) }
+    }
+
+    private fun fetchYoutubeVideoDescription(videoId: String): String? = runCatching {
+        val watchPage = fetchHtml("https://www.youtube.com/watch?v=$videoId")
+        val apiKey = YOUTUBE_INNERTUBE_API_KEY_PATTERN.find(watchPage)?.groupValues?.get(1) ?: return@runCatching null
+        val clientVersion = YOUTUBE_INNERTUBE_CLIENT_VERSION_PATTERN.find(watchPage)?.groupValues?.get(1) ?: return@runCatching null
+        val response = restClient.post()
+            .uri("https://www.youtube.com/youtubei/v1/next?key=${encodeQueryParam(apiKey)}")
+            .contentType(MediaType.APPLICATION_JSON)
+            .accept(MediaType.APPLICATION_JSON)
+            .body(mapOf(
+                "videoId" to videoId,
+                "context" to mapOf("client" to mapOf(
+                    "clientName" to "WEB", "clientVersion" to clientVersion, "hl" to "en", "gl" to "US",
+                )),
+            ))
+            .retrieve().body(String::class.java) ?: return@runCatching null
+        youtubeDescriptionFromNext(response)
+    }.getOrNull()
+
+    internal fun youtubeDescriptionFromNext(response: String): String? = runCatching {
+        JSON_MAPPER.readTree(response)
+            .path("contents").path("twoColumnWatchNextResults")
+            .path("results").path("results").path("contents")
+            .asSequence()
+            .map { it.path("videoSecondaryInfoRenderer").path("attributedDescription").path("content").asText("") }
+            .firstOrNull { it.isNotBlank() }
+            ?.trim()
+    }.getOrNull()
+
+    internal fun youtubeVideoLead(title: String, author: String?, description: String?): String {
+        val firstSourceSentence = description.orEmpty().lineSequence()
+            .map { it.trim().replace(Regex("https?://\\S+"), "").trim() }
+            .filter { it.length >= 45 && !it.startsWith("Support ", ignoreCase = true) }
+            .map { it.removePrefix("REQUESTS FOR COMMENT:").trim() }
+            .firstOrNull()
+            ?.substringBefore(". ")
+            ?.trimEnd('.', ':', ' ')
+            ?.take(350)
+        val introduction = "Video \"$title\"${author?.let { " by $it" }.orEmpty()}."
+        return if (firstSourceSentence == null) introduction else "$introduction $firstSourceSentence."
+    }
+
     private fun fetchYoutubeOEmbedTitle(url: String): String? {
         if (!isYoutubeUrl(url)) return null
 
@@ -3633,6 +3720,8 @@ class EnrichmentService(
             """"videoDetails"\s*:\s*\{.*?"title"\s*:\s*"((?:\\.|[^"\\])*)"""",
             RegexOption.DOT_MATCHES_ALL,
         )
+        private val YOUTUBE_INNERTUBE_API_KEY_PATTERN = Regex("\\\"INNERTUBE_API_KEY\\\":\\\"([^\\\"]+)\\\"")
+        private val YOUTUBE_INNERTUBE_CLIENT_VERSION_PATTERN = Regex("\\\"INNERTUBE_CLIENT_VERSION\\\":\\\"([^\\\"]+)\\\"")
         private val FACEBOOK_PUBLISH_TIME_PATTERN = Regex("""publish_time\\?":\s*(\d{10})""")
         private val FACEBOOK_CREATION_TIME_PATTERN = Regex("""creation_time\\?":\s*(\d{10})""")
         private val FACEBOOK_PLUGIN_POST_MESSAGE_PATTERN = Regex(
@@ -3809,8 +3898,15 @@ private fun isYoutubeUrl(url: String): Boolean {
         host.endsWith(".youtube.com")
 }
 
-private fun isGenericYoutubeTitle(url: String, title: String): Boolean =
-    isYoutubeUrl(url) && title.trim().equals("YouTube", ignoreCase = true)
+internal fun isGenericYoutubeTitle(url: String, title: String): Boolean =
+    isYoutubeUrl(url) && title.trim().replace('\u00a0', ' ').let { normalized ->
+        normalized.equals("YouTube", ignoreCase = true) ||
+            normalized.matches(Regex("(?i)\\d+(?:[.,]\\d+)?\\s*(?:tys\\.?|mln\\.?|k|m)"))
+    }
+
+private fun isGenericYoutubeDescription(description: String): Boolean =
+    description.contains("W YouTube możesz cieszyć się filmami", ignoreCase = true) ||
+        description.contains("Enjoy the videos and music you love", ignoreCase = true)
 
 private fun isGenericTitle(url: String, title: String): Boolean =
     isGenericYoutubeTitle(url, title) ||
