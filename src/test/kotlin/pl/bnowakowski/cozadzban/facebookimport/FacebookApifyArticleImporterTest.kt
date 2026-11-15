@@ -220,7 +220,7 @@ class FacebookApifyArticleImporterTest {
     }
 
     @Test
-    fun `proposal urls include plain text links and anchor hrefs while ignoring facebook image cdn urls`() {
+    fun `proposal stops at the first link in the Facebook post`() {
         val proposalClient: FacebookImportProposalClient = mock()
         val importer = FacebookApifyArticleImporter(
             properties = FacebookImportProperties(
@@ -239,7 +239,29 @@ class FacebookApifyArticleImporterTest {
 
         val urls = importer.proposalUrlsFromItem(item)
 
-        assertEquals(listOf("https://example.com/article", "https://example.org/news"), urls)
+        assertEquals(listOf("https://example.com/article"), urls)
+    }
+
+    @Test
+    fun `youtube link in Facebook post wins over links in video preview description`() {
+        val importer = FacebookApifyArticleImporter(
+            properties = FacebookImportProperties(
+                apify = FacebookImportProperties.Apify(enabled = true, apiToken = "token"),
+            ),
+            proposalClient = mock(),
+        )
+        val item = ObjectMapper().readTree(
+            """
+            {
+              "text": "Donald J. Trump you will go to jail https://youtu.be/W4PIkmjwGsQ co za dzban",
+              "link": "https://youtu.be/W4PIkmjwGsQ",
+              "previewDescription": "Support Investigative Journalism: https://patreon.com/coffeezilla",
+              "previewTarget": {"external_url": "https://youtu.be/W4PIkmjwGsQ"}
+            }
+            """.trimIndent(),
+        )
+
+        assertEquals(listOf("https://youtu.be/W4PIkmjwGsQ"), importer.proposalUrlsFromItem(item))
     }
 
     @Test
@@ -368,7 +390,7 @@ class FacebookApifyArticleImporterTest {
         )
 
         assertEquals(
-            listOf("https://tvn24.pl/plus/programy/dwie-strony/batalia-vc9315802", "https://example.com/?id=5"),
+            listOf("https://tvn24.pl/plus/programy/dwie-strony/batalia-vc9315802"),
             importer.proposalUrlsFromItem(item),
         )
     }

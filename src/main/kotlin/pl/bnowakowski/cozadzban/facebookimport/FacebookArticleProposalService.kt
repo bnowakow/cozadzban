@@ -407,6 +407,21 @@ class FacebookArticleProposalService(
         require(proposal.status == FacebookArticleProposalStatus.FAILED) {
             "Facebook article proposal $id is no longer failed"
         }
+        if (proposal.importType == FacebookImportType.APIFY) {
+            val sourcePost = proposal.facebookPostUrl?.takeIf { it.isNotBlank() }
+            val acceptedFromPost = sourcePost?.let {
+                proposalRepository.findAcceptedFromSamePost(id, proposal.importRunId, it)
+            }
+            if (acceptedFromPost != null &&
+                acceptedFromPost.canonicalArticleUrl != proposal.canonicalArticleUrl &&
+                articleService.existsByUrl(acceptedFromPost.canonicalArticleUrl)
+            ) {
+                return markAlreadyExists(
+                    id, proposal, decidedByUserId, proposal.effectiveLanguage,
+                    acceptedFromPost.canonicalArticleUrl,
+                )
+            }
+        }
         return accept(id, proposal.effectiveLanguage, decidedByUserId)
     }
 

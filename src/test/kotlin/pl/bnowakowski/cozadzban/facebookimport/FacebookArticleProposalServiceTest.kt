@@ -707,6 +707,32 @@ class FacebookArticleProposalServiceTest {
     }
 
     @Test
+    fun `retry of stale Apify preview link uses the accepted link from the same Facebook post`() {
+        val failedPreview = proposal(
+            status = FacebookArticleProposalStatus.FAILED,
+            importType = FacebookImportType.APIFY,
+        ).copy(articleUrl = "https://patreon.com/coffeezilla", canonicalArticleUrl = "https://patreon.com/coffeezilla")
+        val acceptedVideo = failedPreview.copy(
+            id = 2L,
+            articleUrl = "https://youtu.be/W4PIkmjwGsQ",
+            canonicalArticleUrl = "https://youtu.be/W4PIkmjwGsQ",
+            status = FacebookArticleProposalStatus.ACCEPTED,
+            articleId = 755L,
+        )
+        val resolved = failedPreview.copy(status = FacebookArticleProposalStatus.ALREADY_EXISTS)
+        whenever(proposalRepository.findById(1L)).thenReturn(failedPreview, resolved)
+        whenever(proposalRepository.findAcceptedFromSamePost(1L, "run-1", failedPreview.facebookPostUrl!!))
+            .thenReturn(acceptedVideo)
+        whenever(articleService.existsByUrl(acceptedVideo.canonicalArticleUrl)).thenReturn(true)
+
+        val result = service.retryFailed(1L, decidedByUserId = 3L)
+
+        assertEquals(FacebookArticleProposalStatus.ALREADY_EXISTS, result.status)
+        verify(proposalRepository).markAlreadyExists(eq(1L), eq(3L), eq("pl"), any())
+        verify(articleService, never()).create(any(), any())
+    }
+
+    @Test
     fun acceptMarksProposalAlreadyExistsWhenArticleUrlAlreadyExists() {
         val pending = proposal(status = null)
         val alreadyExists = pending.copy(status = FacebookArticleProposalStatus.ALREADY_EXISTS)

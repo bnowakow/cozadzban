@@ -571,6 +571,21 @@ class FacebookArticleProposalRepository(
             PROPOSAL_ROW_MAPPER,
         ).firstOrNull()
 
+    fun findAcceptedFromSamePost(id: Long, importRunId: String, facebookPostUrl: String): FacebookArticleProposal? =
+        jdbc.query(
+            """SELECT id, candidate_id, import_run_id, import_type, article_url, canonical_article_url,
+                      facebook_post_url, guessed_language, corrected_language, status, article_id,
+                      decided_by_user_id, decided_at, accepted_by, accepted_at, accepted_reason,
+                      submitted_at, last_seen_at, logs_compressed
+                 FROM facebook_article_proposal
+                 WHERE id <> :id AND import_run_id = :importRunId
+                   AND facebook_post_url = :facebookPostUrl AND status = :status
+                 ORDER BY id LIMIT 1""",
+            mapOf("id" to id, "importRunId" to importRunId, "facebookPostUrl" to facebookPostUrl,
+                "status" to FacebookArticleProposalStatus.ACCEPTED.name),
+            PROPOSAL_ROW_MAPPER,
+        ).firstOrNull()
+
     fun insert(
         candidateId: String,
         importRunId: String,

@@ -363,14 +363,20 @@ class FacebookApifyArticleImporter(
     }
 
     internal fun proposalUrlsFromItem(item: JsonNode): List<String> {
+        // Apify includes link-preview metadata (including YouTube video descriptions) in the item.
+        // A URL written in the Facebook post, or its direct link, is the post's destination.
+        val directPostUrl = sequenceOf(
+            urlsFromText(item.path("text").asText("")).firstOrNull(),
+            firstString(item, "link")?.takeIf(::isImportableUrl),
+            item.path("textReferences").asSequence()
+                .mapNotNull { firstString(it, "external_url") }
+                .firstOrNull(::isImportableUrl),
+            firstString(item.path("previewTarget"), "external_url", "url")?.takeIf(::isImportableUrl),
+        ).filterNotNull().firstOrNull()
+        if (directPostUrl != null) return listOf(directPostUrl)
+
         val allText = textualValues(item).joinToString("\n")
-        val anchorHrefUrls = ANCHOR_HREF_REGEX.findAll(allText)
-            .map { it.groupValues[1].trimEnd('.', ',', ')', ']', '"', '\'') }
-        val visibleText = HTML_TAG_REGEX.replace(allText, " ")
-        val textUrls = URL_REGEX.findAll(visibleText)
-            .map { it.value.trimEnd('.', ',', ')', ']', '"', '\'') }
-        val externalUrls = (anchorHrefUrls + textUrls)
-            .filter { isImportableUrl(it) }
+        val externalUrls = urlsFromText(allText)
             .distinctBy { ArticleService.canonicalizeUrl(it) }
             .toList()
         if (externalUrls.isNotEmpty()) return externalUrls
@@ -378,6 +384,15 @@ class FacebookApifyArticleImporter(
         return sharedFacebookPostUrls(item)
             .distinctBy { ArticleService.canonicalizeUrl(it) }
             .toList()
+    }
+
+    private fun urlsFromText(text: String): Sequence<String> {
+        val anchorHrefUrls = ANCHOR_HREF_REGEX.findAll(text)
+            .map { it.groupValues[1].trimEnd('.', ',', ')', ']', '"', '\'') }
+        val visibleText = HTML_TAG_REGEX.replace(text, " ")
+        val textUrls = URL_REGEX.findAll(visibleText)
+            .map { it.value.trimEnd('.', ',', ')', ']', '"', '\'') }
+        return (anchorHrefUrls + textUrls).filter(::isImportableUrl)
     }
 
     private fun reportProgress(
