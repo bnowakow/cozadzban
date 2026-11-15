@@ -25,6 +25,7 @@ internal object PublisherRssFallback {
     private enum class Publisher(val feedUrl: String) {
         FT("https://www.ft.com/news-feed?format=rss"),
         EURONEWS("https://www.euronews.com/rss?format=mrss"),
+        ECONOMIST("https://www.economist.com/united-states/rss.xml"),
     }
 
     fun fetch(url: String, fetchFeed: (String) -> String): EnrichmentResult? {
@@ -115,6 +116,7 @@ internal object PublisherRssFallback {
         return when (uri.host?.lowercase()) {
             "ft.trib.al", "on.ft.com", "ft.com", "www.ft.com" -> Publisher.FT
             "l.euronews.com", "euronews.com", "www.euronews.com" -> Publisher.EURONEWS
+            "economist.com", "www.economist.com" -> Publisher.ECONOMIST
             else -> null
         }
     }
@@ -122,6 +124,7 @@ internal object PublisherRssFallback {
     private fun allowedRedirectHost(host: String?, publisher: Publisher): Boolean = when (publisher) {
         Publisher.FT -> host?.lowercase() in setOf("ft.trib.al", "on.ft.com", "ft.com", "www.ft.com")
         Publisher.EURONEWS -> host?.lowercase() in setOf("l.euronews.com", "euronews.com", "www.euronews.com")
+        Publisher.ECONOMIST -> host?.lowercase() in setOf("economist.com", "www.economist.com")
     }
 
     private fun articleKey(url: String, publisher: Publisher): String? {

@@ -37,6 +37,7 @@ import java.util.Locale
 import java.util.concurrent.TimeUnit
 import pl.bnowakowski.cozadzban.ui.WarsawTime
 import pl.bnowakowski.cozadzban.facebookimport.FacebookImportProperties
+import pl.bnowakowski.cozadzban.facebookimport.ArticleShortLinkResolver
 
 /**
  * Fetches and extracts article metadata from a URL.
@@ -198,11 +199,20 @@ class EnrichmentService(
     )
 
     fun enrich(url: String): EnrichmentResult {
+        if (ArticleShortLinkResolver.isShortLink(url)) {
+            throw EnrichmentException(
+                message = "URL enrichment failed: short link must resolve to its destination before import: '$url'",
+                reason = EnrichmentException.Reason.UNREACHABLE,
+            )
+        }
         if (youtubeVideoId(url) != null) {
             return fetchYoutubeVideoMetadata(url) ?: throw EnrichmentException(
                 message = "URL enrichment failed: YouTube video metadata is unavailable for '$url'",
                 reason = EnrichmentException.Reason.UNREACHABLE,
             )
+        }
+        if (isEconomistUnitedStatesUrl(url)) {
+            fetchPublisherRssFallback(url)?.let { return it }
         }
         logFacebookPhotoPrimaryFetchAttempt(url)
         val html = try {
@@ -3909,6 +3919,12 @@ private fun isYoutubeUrl(url: String): Boolean {
         host == "youtube.com" ||
         host.endsWith(".youtube.com")
 }
+
+private fun isEconomistUnitedStatesUrl(url: String): Boolean = runCatching {
+    val uri = URI(url)
+    uri.host?.lowercase() in setOf("economist.com", "www.economist.com") &&
+        uri.path?.startsWith("/united-states/") == true
+}.getOrDefault(false)
 
 internal fun isGenericYoutubeTitle(url: String, title: String): Boolean =
     isYoutubeUrl(url) && title.trim().replace('\u00a0', ' ').let { normalized ->

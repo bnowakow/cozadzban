@@ -67,4 +67,24 @@ class PublisherRssFallbackTest {
         assertEquals("Publisher summary", result?.lead)
         assertEquals("https://static.euronews.com/story.jpg", result?.thumbnail)
     }
+
+    @Test
+    fun `Economist feed supplies title and description for the exact article`() {
+        val url = "https://www.economist.com/united-states/2026/11/13/the-jensen-huang-scandal-reaches-donald-trumps-cabinet"
+        val xml = """
+            <rss version="2.0"><channel><item>
+              <title><![CDATA[The Jensen Huang scandal reaches Donald Trump’s cabinet]]></title>
+              <description><![CDATA[Howard Lutnick, the commerce secretary, is in the firing line]]></description>
+              <link>$url</link>
+              <pubDate>Fri, 13 Nov 2026 21:12:16 +0000</pubDate>
+            </item></channel></rss>
+        """.trimIndent()
+
+        val result = PublisherRssFallback.parseMatchingItem(xml, url)
+
+        assertEquals("The Jensen Huang scandal reaches Donald Trump’s cabinet", result?.title)
+        assertEquals("Howard Lutnick, the commerce secretary, is in the firing line", result?.lead)
+        assertEquals(Instant.parse("2026-11-13T21:12:16Z"), result?.publishedAt)
+        assertNull(PublisherRssFallback.parseMatchingItem(xml, url.replace("/11/13/", "/11/14/")))
+    }
 }

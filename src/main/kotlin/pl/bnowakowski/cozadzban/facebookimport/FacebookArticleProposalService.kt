@@ -40,7 +40,7 @@ class FacebookArticleProposalService(
 
     @Transactional(readOnly = true)
     fun existsByArticleUrl(rawUrl: String): Boolean {
-        val canonicalUrl = ArticleService.canonicalizeUrl(rawUrl)
+        val canonicalUrl = ArticleService.canonicalizeUrl(ArticleShortLinkResolver.resolve(rawUrl) ?: rawUrl)
         return articleService.existsByUrl(canonicalUrl) ||
             proposalRepository.existsByCanonicalArticleUrl(canonicalUrl)
     }
@@ -59,7 +59,7 @@ class FacebookArticleProposalService(
             require(candidateId.isNotBlank()) { "candidateId is required" }
             require(articleUrl.isNotBlank()) { "articleUrl is required" }
 
-            val canonicalUrl = ArticleService.canonicalizeUrl(articleUrl)
+            val canonicalUrl = ArticleService.canonicalizeUrl(ArticleShortLinkResolver.resolve(articleUrl) ?: articleUrl)
             val language = ArticleService.normalizeLanguage(proposal.language)
             val proposalLogs = proposalLogText(request, proposal)
 
