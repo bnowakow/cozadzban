@@ -293,6 +293,29 @@ class EnrichmentServiceTest {
     }
 
     @Test
+    fun `YouTube oEmbed URL preserves a single encoding of the video link`() {
+        val videoUrl = "https://youtu.be/YYU_geUwQoA?si=hlbU93CAj2nIPJt1"
+
+        assertEquals(
+            "url=https%3A%2F%2Fyoutu.be%2FYYU_geUwQoA%3Fsi%3DhlbU93CAj2nIPJt1&format=json",
+            youtubeOEmbedUri(videoUrl).rawQuery,
+        )
+    }
+
+    @Test
+    fun `ignores YouTube site chrome with nonbreaking spaces`() {
+        val result = enrichHtml(
+            "https://youtu.be/YYU_geUwQoA?si=hlbU93CAj2nIPJt1",
+            """<html><head><title>YouTube</title>
+               <meta name="description" content="W${'\u00a0'}YouTube możesz cieszyć się filmami i muzyką, które lubisz."></head>
+               <body>Informacje Centrum prasowe Prawa autorskie © 2026 Google LLC</body></html>""",
+        )
+
+        assertNull(result.lead)
+        assertNull(result.plainText)
+    }
+
+    @Test
     fun `does not recover generic Facebook pfbid 400 as minimal post`() {
         val result = recoverFacebookPostFromGenericError(
             url = "https://www.facebook.com/akurasinski/posts/pfbid033CLUhJTuKWPiYspPP2womaWEF7vH9yHSTED9EkLpHNrPmoZzjEyUQ25aJrHZP3sul",

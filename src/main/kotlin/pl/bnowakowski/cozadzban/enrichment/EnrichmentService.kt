@@ -198,7 +198,12 @@ class EnrichmentService(
     )
 
     fun enrich(url: String): EnrichmentResult {
-        fetchYoutubeVideoMetadata(url)?.let { return it }
+        if (youtubeVideoId(url) != null) {
+            return fetchYoutubeVideoMetadata(url) ?: throw EnrichmentException(
+                message = "URL enrichment failed: YouTube video metadata is unavailable for '$url'",
+                reason = EnrichmentException.Reason.UNREACHABLE,
+            )
+        }
         logFacebookPhotoPrimaryFetchAttempt(url)
         val html = try {
             fetchHtml(url)
@@ -555,6 +560,13 @@ class EnrichmentService(
     private fun fetchHtml(url: String, client: RestClient = restClient): String =
         client.get()
             .uri(url)
+            .retrieve()
+            .body(String::class.java)
+            ?: ""
+
+    private fun fetchHtml(uri: URI, client: RestClient = restClient): String =
+        client.get()
+            .uri(uri)
             .retrieve()
             .body(String::class.java)
             ?: ""
@@ -3570,8 +3582,9 @@ class EnrichmentService(
     private fun fetchYoutubeVideoMetadata(url: String): EnrichmentResult? {
         val videoId = youtubeVideoId(url) ?: return null
         val oembed = runCatching {
-            JSON_MAPPER.readTree(fetchHtml("https://www.youtube.com/oembed?url=${encodeQueryParam(url)}&format=json"))
-        }.getOrNull() ?: return null
+            JSON_MAPPER.readTree(fetchHtml(youtubeOEmbedUri(url)))
+        }.onFailure { LOG.warn("YouTube oEmbed fetch failed for url='{}': {}", url, it.message) }
+            .getOrNull() ?: return null
         val title = oembed.path("title").asText("").normalized()
             ?.takeUnless { isGenericYoutubeTitle(url, it) } ?: return null
         val author = oembed.path("author_name").asText("").normalized()
@@ -3652,9 +3665,8 @@ class EnrichmentService(
     private fun fetchYoutubeOEmbedTitle(url: String): String? {
         if (!isYoutubeUrl(url)) return null
 
-        val oembedUrl = "https://www.youtube.com/oembed?url=${encodeQueryParam(url)}&format=json"
         return try {
-            val response = fetchHtml(oembedUrl)
+            val response = fetchHtml(youtubeOEmbedUri(url))
             JSON_MAPPER.readTree(response)
                 ?.get("title")
                 ?.asText()
@@ -3905,8 +3917,10 @@ internal fun isGenericYoutubeTitle(url: String, title: String): Boolean =
     }
 
 private fun isGenericYoutubeDescription(description: String): Boolean =
-    description.contains("W YouTube możesz cieszyć się filmami", ignoreCase = true) ||
-        description.contains("Enjoy the videos and music you love", ignoreCase = true)
+    description.replace('\u00a0', ' ').replace(Regex("\\s+"), " ").let { normalized ->
+        normalized.contains("W YouTube możesz cieszyć się filmami", ignoreCase = true) ||
+            normalized.contains("Enjoy the videos and music you love", ignoreCase = true)
+    }
 
 private fun isGenericTitle(url: String, title: String): Boolean =
     isGenericYoutubeTitle(url, title) ||
@@ -3997,6 +4011,9 @@ private fun facebookVideoId(url: String): String? {
 
 private fun encodeQueryParam(value: String): String =
     java.net.URLEncoder.encode(value, Charsets.UTF_8)
+
+internal fun youtubeOEmbedUri(url: String): URI =
+    URI.create("https://www.youtube.com/oembed?url=${encodeQueryParam(url)}&format=json")
 
 private fun facebookFallbackTitle(url: String): String =
     when {
