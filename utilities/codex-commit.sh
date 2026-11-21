@@ -5,14 +5,18 @@ repo_root=$(git rev-parse --show-toplevel)
 cd "$repo_root"
 
 tmp_files=()
-jenkins_build_message=
 cleanup() {
 	local status=$?
+	local build_name
 	if [ "${#tmp_files[@]}" -gt 0 ]; then
 		rm -f "${tmp_files[@]}"
 	fi
 	if [ "$status" -eq 0 ]; then
-		printf '\n%s\n' "${jenkins_build_message:-$(next_jenkins_build_message)}"
+		if build_name=$(utilities/docker-image.sh tag HEAD 2>/dev/null); then
+			printf '\nPredicted Jenkins build name: %s\n' "$build_name"
+		else
+			printf '\nPredicted Jenkins build name is unavailable.\n'
+		fi
 	fi
 }
 trap cleanup EXIT
@@ -523,41 +527,6 @@ sync_upstream_before_commit() {
 	fi
 }
 
-next_jenkins_build_message() {
-	local branch job_segment number token=
-	local job_url=https://jenkins.rancher.tailscale.bnowakowski.pl/job/cozadzban.pl
-	local token_file=${JENKINS_API_TOKEN_FILE:-$HOME/code/bash_configs/rancher/tmp-jenkins-token-sup}
-
-	if ! branch=$(git symbolic-ref --quiet --short HEAD); then
-		echo "Expected next Jenkins build is unavailable for a detached HEAD."
-		return
-	fi
-
-	# Encode Jenkins' branch job name, then encode it again as a URL segment.
-	if job_segment=$(jq -rn --arg branch "$branch" \
-		'$branch | gsub("%"; "%25") | gsub("/"; "%2F") | gsub("#"; "%23") | gsub("\\]"; "%5D") | @uri' 2>/dev/null); then
-		if [ -r "$token_file" ]; then
-			token=$(tr -d '[:space:]' < "$token_file") || token=
-		fi
-		if number=$(
-			{
-				if [ -n "$token" ]; then
-					printf 'Authorization: Basic '
-					printf '%s:%s' "${JENKINS_API_USER:-sup}" "$token" | base64 | tr -d '\n'
-					printf '\n'
-				fi
-			} | curl -q -fs --connect-timeout 2 --max-time 4 --header @- \
-				"$job_url/job/$job_segment/api/json?tree=nextBuildNumber" |
-				jq -er '.nextBuildNumber | select(type == "number" and . > 0 and floor == .)' 2>/dev/null
-		); then
-			printf 'Expected next Jenkins build for %s is #%s.\n' "$branch" "$number"
-			return
-		fi
-	fi
-
-	printf 'Expected next Jenkins build for %s is unavailable.\n' "$branch"
-}
-
 prompt_for_push() {
 	local diff_base="HEAD~1"
 	local diff_label="HEAD~1..HEAD"
@@ -602,8 +571,6 @@ prompt_for_push() {
 
 		case "$push_choice" in
 			push)
-				# A webhook can start the build before git push returns.
-				jenkins_build_message=$(next_jenkins_build_message)
 				git push
 				break
 				;;

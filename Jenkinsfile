@@ -148,7 +148,7 @@ spec:
       steps {
         script {
           currentBuild.displayName = sh(returnStdout: true,
-              script: 'utilities/docker-image.sh tag').trim()
+              script: 'utilities/docker-image.sh tag HEAD').trim()
         }
       }
     }

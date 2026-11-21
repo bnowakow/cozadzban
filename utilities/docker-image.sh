@@ -8,8 +8,9 @@
 # build.gradle.kts version without -SNAPSHOT; docker-data/blue-green-upgrade.sh
 # computes the same <version>-<commit8> when deploying.
 #
-# Usage: utilities/docker-image.sh build|push|tag
+# Usage: utilities/docker-image.sh build|push|tag [commit]
 # tag prints <version>-<commit8>; the Jenkinsfile names each build after it.
+# With a commit argument, tag reads the version from that committed revision.
 # The commit is GIT_COMMIT (set by Jenkins) or the checkout's HEAD. Pushing needs
 # a prior `docker login`; this script never logs in. POSIX sh, because the
 # Jenkins docker:cli container is Alpine without bash.
@@ -18,9 +19,15 @@ set -eu
 cd "$(dirname "$0")/.."
 
 IMAGE=${IMAGE:-bnowakow/cozadzban}
-full_commit=${GIT_COMMIT:-$(git rev-parse HEAD)}
+if [ "${1:-}" = tag ] && [ -n "${2:-}" ]; then
+  full_commit=$(git rev-parse --verify --end-of-options "$2^{commit}")
+  gradle_config=$(git show "$full_commit:build.gradle.kts")
+else
+  full_commit=${GIT_COMMIT:-$(git rev-parse HEAD)}
+  gradle_config=$(cat build.gradle.kts)
+fi
 commit=$(printf '%.8s' "$full_commit")
-version=$(sed -n 's/^version = "\(.*\)"$/\1/p' build.gradle.kts)
+version=$(printf '%s\n' "$gradle_config" | sed -n 's/^version = "\(.*\)"$/\1/p')
 version=${version%-SNAPSHOT}
 [ -n "$version" ] || { echo "No version found in build.gradle.kts" >&2; exit 1; }
 
@@ -47,7 +54,7 @@ case "${1:-}" in
     docker push "$IMAGE:latest"
     ;;
   *)
-    echo "Usage: $0 build|push|tag" >&2
+    echo "Usage: $0 build|push|tag [commit]" >&2
     exit 2
     ;;
 esac

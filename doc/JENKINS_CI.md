@@ -32,7 +32,7 @@ they get one, e.g. by merging `main`.
 
 | Stage | Runs on | What it does |
 | --- | --- | --- |
-| `Version` | every build | `utilities/docker-image.sh tag`; renames the build to `<version>-<commit8>` |
+| `Version` | every build | `utilities/docker-image.sh tag HEAD`; renames the build to `<version>-<commit8>` |
 | `Test` | every build | `make ci-test`: waits for the Docker-in-Docker daemon, then `./gradlew --no-daemon test -PappBuildCommit=<commit>`; publishes JUnit results |
 | `Docker image` | `main` only, not timer-triggered builds | `make docker-image-build`, `docker login`, `make docker-image-push`: builds the repository `Dockerfile` and pushes three tags to `bnowakow/cozadzban` |
 
@@ -79,7 +79,7 @@ kept per branch.
 
 Each build is renamed to the immutable image tag, `<version>-<commit8>` (for
 example `0.64.15-6ffd550d`), on every branch, including builds that push no
-image. `utilities/docker-image.sh tag` prints it, so the build name and the
+image. `utilities/docker-image.sh tag HEAD` prints it, so the build name and the
 image tag can't drift apart. The build number stays in the URL. The build
 description is left empty, so Blue Ocean's "Message" column keeps showing the
 commit messages. Rebuilds of the same commit, such as the daily
@@ -218,12 +218,10 @@ Jenkins parts were done through the Jenkins API.
 
 ## Working with it from the command line
 
-`make codex-commit` and `make claude-commit` print the expected next Jenkins build
-number for the current branch. When pushing, they read Jenkins' `nextBuildNumber`
-before the push so an immediate webhook cannot advance the number first. The
-lookup uses the documented token file when present. Set `JENKINS_API_TOKEN_FILE`
-or `JENKINS_API_USER` to use another credential. A failed lookup leaves the
-commit or push result intact.
+`make codex-commit` and `make claude-commit` print the predicted Jenkins display
+name for the final local commit in the form `<version>-<commit8>`. The prediction
+uses the same tag command as Jenkins and reads the version from the commit.
+It works offline.
 
 ```sh
 T="$(tr -d '\n\r ' < ~/code/bash_configs/rancher/tmp-jenkins-token-sup)"
