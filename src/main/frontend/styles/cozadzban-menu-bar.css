@@ -1,5 +1,5 @@
 :host([theme~='czj-top-menu']) {
-  --czj-menu-trigger-size: 34px;
+  --czj-menu-trigger-size: 44px;
 }
 
 :host([theme~='czj-top-menu']) ::slotted(vaadin-menu-bar-button:not([slot='overflow'])) {

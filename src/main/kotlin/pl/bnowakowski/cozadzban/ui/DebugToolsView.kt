@@ -48,7 +48,7 @@ class DebugToolsView(
         result.isPadding = false
         val content = sharedPageContent(
             H2("Debug tools"),
-            Span("Find the Co Za Dzban story published from a Facebook post. The publisher article is shown when its URL is stored in the article record."),
+            Span("Find the Co za dzban story published from a Facebook post. The publisher article is shown when its URL is stored in the article record."),
             form,
             result,
         )
@@ -73,7 +73,7 @@ class DebugToolsView(
                 return
             }
             result.add(Span(match.title ?: "Article ${match.articleId}"))
-            result.add(Anchor(match.storyUrl, "Co Za Dzban story ${match.articleId}"))
+            result.add(Anchor(match.storyUrl, "Co za dzban story ${match.articleId}"))
             val original = match.originalArticleUrl
             if (original != null) {
                 result.add(Anchor(original, "Publisher article").apply {

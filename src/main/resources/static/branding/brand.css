@@ -1,0 +1,143 @@
+@font-face {
+  font-family: "Instrument Sans";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("./fonts/instrument-sans-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: "Instrument Sans";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("./fonts/instrument-sans-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "Barlow Condensed";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("./fonts/barlow-condensed-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: "Barlow Condensed";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("./fonts/barlow-condensed-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+:root {
+  color-scheme: light;
+  --czj-page-bg: light-dark(#f8f2e8, #191512);
+  --czj-card-bg: light-dark(#fffcf7, #271f1a);
+  --czj-text: light-dark(#211916, #f8f2e8);
+  --czj-muted: light-dark(#66564d, #cdbbae);
+  --czj-border: light-dark(#ddd0c3, #4f4036);
+  --czj-control: light-dark(#806b5e, #aa9383);
+  --czj-link: light-dark(#a33213, #ffa16b);
+  --czj-focus: light-dark(#205caa, #92bfff);
+  --czj-accent: #f47738;
+  --czj-action-hover: #ff8b50;
+  --czj-action-pressed: #de5f28;
+  --czj-action-ink: #211916;
+  --czj-politics-bg: light-dark(#f5e7c7, #3b2b17);
+  --czj-politics-text: light-dark(#60450c, #f2c674);
+  --czj-road-bg: light-dark(#e3eefc, #1b2c46);
+  --czj-road-text: light-dark(#18437b, #9cc5ff);
+  --czj-radius: 8px;
+  --czj-body-font: "Instrument Sans", system-ui, sans-serif;
+  --czj-heading-font: "Barlow Condensed", "Arial Narrow", var(--czj-body-font);
+  --czj-card-shadow: 0 1px 2px light-dark(#2119161f, #00000059),
+    0 8px 24px light-dark(#21191614, #0000004d);
+}
+
+:root[theme~="dark"] { color-scheme: dark; }
+
+/* Standalone pages without a theme switch follow the browser preference. */
+:root.czj-system-theme:not([theme]) { color-scheme: light dark; }
+
+body {
+  background: var(--czj-page-bg);
+  color: var(--czj-text);
+  font: 1rem/1.6 var(--czj-body-font);
+}
+
+:is(h1, h2, h3) {
+  color: var(--czj-text);
+  font-family: var(--czj-heading-font);
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+h1 { font-size: clamp(2.5rem, 6vw, 4rem); }
+h2 { font-size: clamp(1.75rem, 4vw, 2.25rem); }
+h3 { font-size: 1.75rem; }
+
+a {
+  color: var(--czj-link);
+  text-underline-offset: .2em;
+}
+
+:is(a, button, summary):focus-visible {
+  outline: 3px solid var(--czj-focus);
+  outline-offset: 4px;
+}
+
+.czj-brand-mark {
+  aspect-ratio: 1;
+  display: block;
+  flex: none;
+  object-fit: contain;
+}
+
+.czj-politics-label {
+  align-self: flex-start;
+  background: var(--czj-politics-bg);
+  border-radius: 4px;
+  color: var(--czj-politics-text);
+  font: 700 .75rem/1.2 var(--czj-body-font);
+  padding: .2em .55em;
+}
+
+.czj-button {
+  align-items: center;
+  background: transparent;
+  border: 1px solid var(--czj-control);
+  border-radius: var(--czj-radius);
+  box-sizing: border-box;
+  color: var(--czj-text);
+  cursor: pointer;
+  display: inline-flex;
+  font: 700 1rem/1.25 var(--czj-body-font);
+  justify-content: center;
+  min-height: 44px;
+  padding: .5rem 1rem;
+  text-decoration: none;
+}
+
+.czj-button:hover { background: var(--czj-page-bg); }
+.czj-button:active { background: var(--czj-border); }
+
+.czj-button-primary {
+  background: var(--czj-accent);
+  border-color: var(--czj-text);
+  color: var(--czj-action-ink);
+}
+
+.czj-button-primary:hover { background: var(--czj-action-hover); }
+.czj-button-primary:active { background: var(--czj-action-pressed); }
+
+.czj-button:disabled {
+  background: var(--czj-page-bg);
+  border-color: var(--czj-border);
+  color: var(--czj-muted);
+  cursor: default;
+}

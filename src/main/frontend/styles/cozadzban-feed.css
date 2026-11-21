@@ -1,68 +1,37 @@
+/* Map the shared brand palette to Aura and the variables used by existing Vaadin views. */
 :root {
-  color-scheme: light;
-  --aura-accent-color-light: #ff6b2a;
-  --aura-accent-color-dark: #ff6b2a;
-  --czj-page-bg: #eef0f3;
-  --czj-card-bg: #ffffff;
-  --czj-border: #d4d9df;
-  --czj-text: #15171a;
-  --czj-muted: #626970;
-  --czj-faint: #8a9097;
-  --czj-accent: #ff6b2a;
-  --czj-chip-active-bg: #24272b;
-  --czj-chip-active-text: #ffffff;
-  --czj-card-border: #c9ced6;
-  --czj-card-shadow: 0 1px 2px rgba(15, 23, 42, 0.12), 0 8px 24px rgba(15, 23, 42, 0.08);
-  --czj-quote-bg: #fff0e6;
-  --czj-quote-border: #ffc6a6;
-  --czj-source-icon-bg: #ff6b2a;
-  --czj-source-icon-text: #190b04;
-  --czj-field-bg: #f8f9fb;
-  --czj-field-border: #c7cdd5;
-  --czj-grid-row-bg: #ffffff;
-  --czj-grid-row-alt-bg: #f6f8fa;
-  --lumo-base-color: #ffffff;
-  --lumo-contrast-5pct: #f4f6f8;
-  --lumo-contrast-10pct: #e4e8ed;
-  --lumo-contrast-20pct: #c7cdd5;
-  --lumo-body-text-color: #15171a;
-  --lumo-secondary-text-color: #626970;
-  --lumo-tertiary-text-color: #8a9097;
-  --lumo-primary-color: #ff6b2a;
-  --lumo-primary-contrast-color: #190b04;
-  --lumo-primary-color-10pct: #fff0e6;
-}
-
-html[theme~="dark"] {
-  color-scheme: dark;
-  --lumo-base-color: #181c21;
-  --lumo-contrast-5pct: #0f1114;
-  --lumo-contrast-10pct: #2a3037;
-  --lumo-contrast-20pct: #3a424c;
-  --lumo-body-text-color: #f2f4f7;
-  --lumo-secondary-text-color: #aeb6c0;
-  --lumo-tertiary-text-color: #818b96;
-  --lumo-primary-color: #ff6b2a;
-  --lumo-primary-contrast-color: #190b04;
-  --lumo-primary-color-10pct: #2b1b14;
-  --czj-page-bg: #0f1114;
-  --czj-card-bg: #181c21;
-  --czj-border: #313942;
-  --czj-text: #f2f4f7;
-  --czj-muted: #aeb6c0;
-  --czj-faint: #818b96;
-  --czj-chip-active-bg: #ff6b2a;
-  --czj-chip-active-text: #190b04;
-  --czj-card-border: #313942;
-  --czj-card-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 10px 28px rgba(0, 0, 0, 0.3);
-  --czj-quote-bg: #2b1b14;
-  --czj-quote-border: #5a3828;
-  --czj-source-icon-bg: #ff6b2a;
-  --czj-source-icon-text: #190b04;
-  --czj-field-bg: #101419;
-  --czj-field-border: #3a424c;
-  --czj-grid-row-bg: #181c21;
-  --czj-grid-row-alt-bg: #15191e;
+  --aura-accent-color-light: var(--czj-accent);
+  --aura-accent-color-dark: var(--czj-accent);
+  --aura-accent-contrast-color-light: var(--czj-action-ink);
+  --aura-accent-contrast-color-dark: var(--czj-action-ink);
+  --aura-background-color-light: #f8f2e8;
+  --aura-background-color-dark: #191512;
+  --aura-font-family: var(--czj-body-font);
+  --vaadin-focus-ring-color: var(--czj-focus);
+  --vaadin-focus-ring-width: 3px;
+  --vaadin-radius-m: var(--czj-radius);
+  --czj-card-border: var(--czj-border);
+  --czj-quote-bg: color-mix(in srgb, var(--czj-accent) 10%, var(--czj-card-bg));
+  --czj-quote-border: var(--czj-border);
+  --czj-source-icon-bg: var(--czj-politics-bg);
+  --czj-source-icon-text: var(--czj-politics-text);
+  --czj-field-bg: var(--czj-card-bg);
+  --czj-field-border: var(--czj-control);
+  --czj-grid-row-bg: var(--czj-card-bg);
+  --czj-grid-row-alt-bg: var(--czj-page-bg);
+  --lumo-font-family: var(--czj-body-font);
+  --lumo-base-color: var(--czj-card-bg);
+  --lumo-contrast-5pct: var(--czj-page-bg);
+  --lumo-contrast-10pct: var(--czj-border);
+  --lumo-contrast-20pct: var(--czj-control);
+  --lumo-body-text-color: var(--czj-text);
+  --lumo-header-text-color: var(--czj-text);
+  --lumo-secondary-text-color: var(--czj-muted);
+  --lumo-tertiary-text-color: var(--czj-muted);
+  --lumo-primary-color: var(--czj-accent);
+  --lumo-primary-text-color: var(--czj-link);
+  --lumo-primary-contrast-color: var(--czj-action-ink);
+  --lumo-primary-color-10pct: var(--czj-quote-bg);
 }
 
 html,
@@ -171,13 +140,66 @@ vaadin-date-time-picker-time-picker::part(input-field):hover {
 }
 
 vaadin-button {
-  color: var(--czj-text);
+  --vaadin-button-height: 44px;
+  --vaadin-button-border-radius: var(--czj-radius);
+  --vaadin-button-font-weight: 700;
+  min-height: 44px;
 }
 
-vaadin-button[theme~="primary"] {
-  --vaadin-button-primary-background: #ff6b2a;
-  --vaadin-button-primary-text-color: #190b04;
-  color: #190b04;
+vaadin-button:not([theme~="icon"]) {
+  padding-inline: 1rem;
+}
+
+vaadin-button:not([theme~="tertiary"]) {
+  --vaadin-button-background: transparent;
+  --vaadin-button-border-color: var(--czj-control);
+  --vaadin-button-shadow: none;
+  --vaadin-button-text-color: var(--czj-text);
+}
+
+vaadin-button[theme~="primary"]:not([theme~="error"]) {
+  --vaadin-button-background: var(--czj-accent);
+  --vaadin-button-border-color: var(--czj-text);
+  --vaadin-button-text-color: var(--czj-action-ink);
+}
+
+vaadin-button:not([theme~="error"], [disabled]):hover {
+  --vaadin-button-background: var(--czj-page-bg);
+  background: var(--vaadin-button-background);
+}
+
+vaadin-button:not([theme~="error"], [disabled]):is(:active, [active]) {
+  --vaadin-button-background: var(--czj-border);
+  background: var(--vaadin-button-background);
+}
+
+vaadin-button[theme~="primary"]:not([theme~="error"], [disabled]):hover {
+  --vaadin-button-background: var(--czj-action-hover);
+}
+
+vaadin-button[theme~="primary"]:not([theme~="error"], [disabled]):is(:active, [active]) {
+  --vaadin-button-background: var(--czj-action-pressed);
+}
+
+vaadin-button:not([theme~="error"], [disabled])::before {
+  display: none;
+}
+
+vaadin-button[disabled] {
+  background: var(--czj-page-bg);
+  border-color: var(--czj-border);
+  color: var(--czj-muted);
+  opacity: 1;
+}
+
+vaadin-button[disabled]::part(label) {
+  color: var(--czj-muted);
+}
+
+vaadin-button[focus-ring],
+vaadin-menu-bar-button[focus-ring] {
+  outline: 3px solid var(--czj-focus);
+  outline-offset: 4px;
 }
 
 vaadin-radio-button::part(radio) {
@@ -234,25 +256,19 @@ vaadin-radio-button::part(label) {
 }
 
 .czj-admin-logo {
-  border-radius: 50%;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.26);
-  flex: 0 0 auto;
   height: 46px;
-  object-fit: cover;
   width: 46px;
 }
 
 .czj-admin-brand {
   color: var(--czj-text);
-  font-size: var(--lumo-font-size-xl);
-  font-weight: 800;
+  font: 700 1.5rem/1.1 var(--czj-heading-font);
   white-space: nowrap;
 }
 
 .czj-admin-title {
   color: var(--czj-text);
-  font-size: var(--lumo-font-size-l);
-  font-weight: 700;
+  font: 700 1.75rem/1.1 var(--czj-heading-font);
   margin: 0;
   padding-left: 0.75rem;
   position: relative;
@@ -288,8 +304,7 @@ vaadin-radio-button::part(label) {
 
 .czj-settings-header h2 {
   color: var(--czj-text);
-  font-size: clamp(1.5rem, 2.5vw, 2rem);
-  line-height: 1.2;
+  font-size: clamp(1.75rem, 4vw, 2.25rem);
   margin: 0;
 }
 
@@ -318,8 +333,6 @@ vaadin-radio-button::part(label) {
 
 .czj-settings-card h3 {
   color: var(--czj-text);
-  font-size: 1.13rem;
-  line-height: 1.3;
   margin: 0;
 }
 
@@ -436,13 +449,13 @@ vaadin-radio-button::part(label) {
 .czj-proposal-grid-header {
   background: var(--czj-field-bg);
   color: var(--czj-muted);
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .czj-admin-grid::part(header-cell) {
   background: var(--czj-field-bg);
   color: var(--czj-muted);
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .czj-admin-grid::part(body-cell) {
@@ -550,12 +563,7 @@ vaadin-dialog.czj-edit-article-dialog::part(content) {
 }
 
 .czj-facebook-approval-link {
-  color: var(--lumo-primary-color);
-  text-decoration: none;
-}
-
-.czj-facebook-approval-link:hover {
-  text-decoration: underline;
+  color: var(--czj-link);
 }
 
 .czj-facebook-approval-language {
@@ -572,12 +580,12 @@ vaadin-dialog.czj-edit-article-dialog::part(content) {
 
 .czj-facebook-approval-accept {
   color: #16843a;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .czj-facebook-approval-reject {
   color: #c72c41;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 html[theme~="dark"] .czj-facebook-approval-accept {
@@ -618,7 +626,11 @@ html[theme~="dark"] .czj-facebook-approval-reject {
 }
 
 .czj-top-bar {
-  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.08);
+  padding-inline: 1.5rem;
+}
+
+.czj-top-bar-title {
+  gap: .5rem;
 }
 
 .czj-brand-link {
@@ -626,8 +638,12 @@ html[theme~="dark"] .czj-facebook-approval-reject {
   text-decoration: none;
 }
 
-html[theme~="dark"] .czj-top-bar {
-  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.32);
+@media (max-width: 26rem) {
+  .czj-top-bar { padding-inline: .75rem; gap: .5rem; }
+  .czj-top-bar-actions { gap: .25rem; }
+  .czj-top-bar-title .czj-admin-logo { width: 36px; height: 36px; }
+  .czj-top-bar-title .czj-admin-brand { font-size: 1.25rem; }
+  .czj-top-bar-actions vaadin-button:not([theme~="icon"]) { padding-inline: .55rem; }
 }
 
 .czj-menu-trigger {
@@ -645,7 +661,6 @@ html[theme~="dark"] .czj-top-bar {
 
 .czj-version-badge {
   color: var(--czj-muted);
-  font-family: sans-serif;
 }
 
 html[theme~="dark"] .czj-version-badge {
@@ -700,20 +715,19 @@ html[theme~="dark"] .czj-version-badge {
 }
 
 .czj-facebook-import-progress-header vaadin-button.czj-facebook-import-collapse-toggle {
-  --vaadin-button-height: 1.8rem;
-  --vaadin-button-min-width: 1.8rem;
+  --vaadin-button-min-width: 44px;
   color: var(--czj-muted);
   flex: 0 0 auto;
   margin-left: 0.15rem;
 }
 
 .czj-facebook-import-progress-header vaadin-button.czj-facebook-import-collapse-toggle:hover {
-  color: var(--lumo-primary-color);
+  color: var(--czj-link);
 }
 
 .czj-facebook-import-progress-header vaadin-button.czj-facebook-import-clear-button {
   flex: 0 0 auto;
-  font-weight: 800;
+  font-weight: 700;
   margin-left: 0.15rem;
 }
 
@@ -732,16 +746,16 @@ html[theme~="dark"] .czj-version-badge {
 .czj-facebook-import-progress-title {
   color: var(--czj-text);
   font-size: var(--lumo-font-size-m);
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .czj-facebook-import-progress-phase {
   background: var(--lumo-primary-color-10pct);
   border: 1px solid var(--czj-quote-border);
   border-radius: 999px;
-  color: var(--lumo-primary-color);
+  color: var(--czj-link);
   font-size: var(--lumo-font-size-xs);
-  font-weight: 800;
+  font-weight: 700;
   margin-left: auto;
   max-width: 100%;
   padding: 0.18rem 0.55rem;
@@ -751,7 +765,7 @@ html[theme~="dark"] .czj-version-badge {
 .czj-facebook-import-progress-detail {
   color: var(--czj-text);
   font-size: var(--lumo-font-size-s);
-  font-weight: 800;
+  font-weight: 700;
   line-height: 1.3;
   overflow-wrap: anywhere;
 }
@@ -785,14 +799,14 @@ html[theme~="dark"] .czj-version-badge {
 .czj-facebook-import-progress-label {
   color: var(--czj-muted);
   font-size: var(--lumo-font-size-xs);
-  font-weight: 800;
+  font-weight: 700;
   line-height: 1.2;
 }
 
 .czj-facebook-import-progress-value {
   color: var(--czj-text);
   font-size: var(--lumo-font-size-s);
-  font-weight: 800;
+  font-weight: 700;
   line-height: 1.25;
   overflow-wrap: anywhere;
 }
@@ -844,7 +858,7 @@ html[theme~="dark"] .czj-version-badge {
 .czj-apify-usage-line-value {
   color: var(--czj-text);
   font-variant-numeric: tabular-nums;
-  font-weight: 800;
+  font-weight: 700;
   overflow-wrap: anywhere;
   text-align: right;
 }
@@ -863,17 +877,15 @@ html[theme~="dark"] .czj-version-badge {
 vaadin-button.czj-filter-chip {
   --vaadin-button-background: var(--czj-card-bg);
   --vaadin-button-text-color: var(--czj-text);
-  --vaadin-button-height: 2rem;
-  border-radius: 8px;
-  box-shadow: inset 0 0 0 1px var(--czj-border);
   font-weight: 700;
   min-width: 2.8rem;
 }
 
-vaadin-button.czj-filter-chip-active {
-  --vaadin-button-background: var(--czj-chip-active-bg);
-  --vaadin-button-text-color: var(--czj-chip-active-text);
-  box-shadow: none;
+vaadin-button.czj-filter-chip-active,
+vaadin-button.czj-filter-chip-active:not([disabled]):hover,
+vaadin-button.czj-filter-chip-active:not([disabled]):is(:active, [active]) {
+  --vaadin-button-background: var(--czj-text);
+  --vaadin-button-text-color: var(--czj-card-bg);
 }
 
 .czj-language-filter-chip {
@@ -897,8 +909,6 @@ vaadin-button.czj-filter-chip-active {
 .czj-home-heading {
   box-sizing: border-box;
   color: var(--lumo-header-text-color);
-  font-size: clamp(1.75rem, 5vw, 2.25rem);
-  line-height: 1.2;
   margin: 0 0 1rem;
   padding: 0 0.25rem;
   width: 100%;
@@ -943,17 +953,28 @@ html[theme~="dark"] .czj-article-card {
 }
 
 .czj-article-title {
+  font-size: clamp(1.75rem, 4vw, 2.25rem);
   letter-spacing: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.czj-article-card a:hover .czj-article-title,
+.czj-article-card a:focus-visible .czj-article-title {
+  color: var(--czj-link);
+  text-decoration: underline;
 }
 
 .czj-article-quote {
   display: flex;
   align-items: flex-start;
-  max-width: 38rem;
 }
 
+.czj-article-quote,
 .czj-article-lead {
-  max-width: 39rem;
+  font-size: 1rem;
+  line-height: 1.6;
+  max-width: 72ch;
 }
 
 .czj-article-lead-truncated {
@@ -969,7 +990,7 @@ html[theme~="dark"] .czj-article-card {
   display: inline-flex;
   flex: 0 0 auto;
   font-size: 0.75rem;
-  font-weight: 800;
+  font-weight: 700;
   height: 1.35rem;
   justify-content: center;
   overflow: hidden;

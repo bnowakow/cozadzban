@@ -2,19 +2,19 @@
   box-sizing: border-box;
   justify-content: center;
   margin-inline: calc(var(--lumo-space-xs) / 2) !important;
-  min-width: 34px;
+  min-width: 44px;
   padding-inline: 0 !important;
-  width: 34px;
+  width: 44px;
 }
 
 :host(:not([slot='overflow'])[aria-haspopup]) {
   box-sizing: border-box;
-  height: 34px;
+  height: 44px;
   justify-content: center;
   margin-inline: calc(var(--lumo-space-xs) / 2) !important;
-  min-width: 34px;
+  min-width: 44px;
   padding-inline: 0 !important;
-  width: 34px;
+  width: 44px;
 }
 
 .vaadin-button-container,

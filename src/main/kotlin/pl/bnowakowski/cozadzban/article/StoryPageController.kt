@@ -113,6 +113,7 @@ class StoryPageController(
         head.appendElement("meta").attr("name", "description").attr("content", description)
         head.appendElement("link").attr("rel", "canonical").attr("href", canonical)
         head.appendElement("link").attr("rel", "icon").attr("href", "/favicon.png")
+        head.appendElement("link").attr("rel", "apple-touch-icon").attr("href", "/apple-touch-icon.png")
         head.appendElement("meta").attr("property", "og:type").attr("content", "article")
         head.appendElement("meta").attr("property", "og:title").attr("content", title)
         head.appendElement("meta").attr("property", "og:description").attr("content", description)
@@ -147,25 +148,28 @@ class StoryPageController(
             })();
             """.trimIndent(),
         ))
+        head.appendElement("link").attr("rel", "stylesheet").attr("href", SiteHeader.BRAND_STYLESHEET_URL)
         head.appendElement("link").attr("rel", "stylesheet").attr("href", "/cozadzban-header.css")
         head.appendElement("script").attr("src", SiteHeader.SCRIPT_URL).attr("defer", "")
         head.appendElement("style").appendText(
             """
-            :root{color-scheme:light;--page:#eef0f3;--surface:#fff;--text:#15171a;--muted:#626970;--link:#a83d13;--icon-bg:#ff6b2a;--icon-text:#190b04;--site-font:'Instrument Sans',system-ui,ui-sans-serif,sans-serif}
-            html[theme=dark]{color-scheme:dark;--page:#0f1114;--surface:#181c21;--text:#f2f4f7;--muted:#aeb6c0;--link:#ff9a64}
-            body{margin:0;background:var(--page);color:var(--text);font:16px/1.625 var(--site-font);-webkit-font-smoothing:antialiased}
-            main{box-sizing:border-box;max-width:44rem;margin:calc(66px + 2rem) auto 2rem;padding:2rem;background:var(--surface);border-radius:8px}
-            h1{font-size:clamp(1.7rem,5vw,2.5rem);line-height:1.2;margin:.75rem 0 1.5rem}
-            img{display:block;max-width:100%;height:auto;border-radius:6px}
-            .image-credit{color:var(--muted);font-size:.85rem;margin:.35rem 0 1rem}
-            .back{display:inline-block;margin-bottom:1rem;text-decoration:none;font-weight:700}
-            .story-meta{display:flex;align-items:center;gap:.55rem;color:var(--muted);font-size:.9rem}
-            .source-icon{position:relative;display:inline-flex;align-items:center;justify-content:center;flex:none;width:1.35rem;height:1.35rem;overflow:hidden;border-radius:50%;background:var(--icon-bg);color:var(--icon-text);font-size:.75rem;font-weight:800}
+            body{margin:0}
+            main{box-sizing:border-box;max-width:44rem;margin:calc(66px + 2rem) auto 2rem;padding:2rem;background:var(--czj-card-bg);border:1px solid var(--czj-border);border-radius:var(--czj-radius);overflow-wrap:anywhere}
+            h1{margin:.75rem 0 1.5rem}
+            main > img{display:block;max-width:100%;height:auto;border-radius:var(--czj-radius)}
+            main > p, blockquote{max-width:72ch;font-size:clamp(1rem,2.25vw,1.125rem)}
+            .image-credit{color:var(--czj-muted);font-size:.85rem;margin:.35rem 0 1rem}
+            .back{display:inline-block;margin-bottom:1rem;font-weight:700}
+            .story-meta{display:flex;align-items:center;flex-wrap:wrap;gap:.55rem;color:var(--czj-muted);font-size:.9rem}
+            .source-icon{position:relative;display:inline-flex;align-items:center;justify-content:center;flex:none;width:1.35rem;height:1.35rem;overflow:hidden;border-radius:50%;background:var(--czj-politics-bg);color:var(--czj-politics-text);font-size:.75rem;font-weight:700}
             .source-icon img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:50%}
-            .source-name{color:var(--text);font-weight:700}
-            blockquote{border-left:4px solid #f36b32;margin:1.5rem 0;padding-left:1rem}
-            main a{color:var(--link)}.story-action{display:inline-flex;align-items:center;gap:.45rem;font-weight:700}.story-action svg{width:1.1rem;height:1.1rem;flex:none;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}.facebook-icon{display:inline-flex;align-items:center;justify-content:center;width:1.1rem;height:1.1rem;flex:none;border-radius:50%;background:#1877f2;color:#fff;font:bold 1rem/1 Arial,sans-serif}.original{margin-top:1rem}
-            .story-admin-actions{display:flex;gap:.75rem;margin:1rem 0;flex-wrap:wrap}.story-admin-action{padding:.45rem .8rem;border:1px solid var(--muted);border-radius:6px;text-decoration:none;font-weight:700}.story-admin-action:hover{background:var(--page)}
+            .source-name{color:var(--czj-text);font-weight:700}
+            blockquote{border-left:4px solid var(--czj-accent);margin:1.5rem 0;padding-left:1rem}
+            .story-action{gap:.45rem}
+            .story-action svg{width:1.1rem;height:1.1rem;flex:none;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+            .facebook-icon{display:inline-flex;align-items:center;justify-content:center;width:1.1rem;height:1.1rem;flex:none;border-radius:50%;background:#1877f2;color:#fff;font:bold 1rem/1 Arial,sans-serif}
+            .original{margin-top:1rem}
+            .story-admin-actions{display:flex;gap:.75rem;margin:1rem 0;flex-wrap:wrap}
             @media(max-width:46rem){main{margin:calc(66px + 1rem) 1rem 1rem;padding:1.25rem}}
             """.trimIndent(),
         )
@@ -198,9 +202,9 @@ class StoryPageController(
         main.appendElement("h1").text(title)
         if (isAdmin && article.id != null) {
             val actions = main.appendElement("div").attr("class", "story-admin-actions")
-            actions.appendElement("a").attr("class", "story-admin-action")
+            actions.appendElement("a").attr("class", "czj-button story-admin-action")
                 .attr("href", "/?editArticle=${article.id}").text("Edit article")
-            actions.appendElement("a").attr("class", "story-admin-action")
+            actions.appendElement("a").attr("class", "czj-button story-admin-action")
                 .attr("href", "/?deleteArticle=${article.id}").text("Delete article")
         }
         visibleStoryImage?.let {
@@ -214,13 +218,13 @@ class StoryPageController(
         article.lead?.trim()?.takeIf { it.isNotEmpty() }?.let { main.appendElement("p").text(it) }
         article.quote?.trim()?.takeIf { it.isNotEmpty() }?.let { main.appendElement("blockquote").text(it) }
         article.aiSummary?.trim()?.takeIf { it.isNotEmpty() }?.let { main.appendElement("p").text(it) }
-        val original = main.appendElement("a").attr("class", "story-action original").attr("href", sourceLink)
+        val original = main.appendElement("a").attr("class", "czj-button czj-button-primary story-action original").attr("href", sourceLink)
             .attr("rel", "noopener noreferrer")
         val externalIcon = original.appendElement("svg").attr("viewBox", "0 0 24 24").attr("aria-hidden", "true")
         externalIcon.appendElement("path").attr("d", "M15 3h6v6M10 14 21 3M21 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6")
         original.appendElement("span").text(if (polish) "Czytaj oryginalną publikację" else "Read the original story")
         facebookPostUrl?.takeIf { it.startsWith("https://www.facebook.com/") }?.let { url ->
-            val facebook = main.appendElement("p").appendElement("a").attr("class", "story-action").attr("href", url)
+            val facebook = main.appendElement("p").appendElement("a").attr("class", "czj-button story-action").attr("href", url)
                 .attr("rel", "noopener noreferrer")
             facebook.appendElement("span").attr("class", "facebook-icon").attr("aria-hidden", "true").text("f")
             facebook.appendElement("span").text(if (polish) "Skomentuj na Facebooku" else "Comment on Facebook")

@@ -136,9 +136,10 @@ class ArticleListViewTest {
         val brandLink = header(view).selectFirst("a[aria-label='Go to main page']")!!
 
         assertEquals("/", brandLink.attr("href"))
-        assertEquals("/cozadzban-logo.png", brandLink.selectFirst("img")!!.attr("src"))
+        assertEquals("/branding/politics-logo-96px.png", brandLink.selectFirst("img")!!.attr("src"))
         assertEquals("", brandLink.selectFirst("img")!!.attr("alt"))
-        assertEquals("Co za dzban", brandLink.selectFirst("span")!!.text())
+        assertEquals("Co za dzban", brandLink.selectFirst(".czj-brand-name")!!.text())
+        assertEquals("Polityka", brandLink.selectFirst(".czj-politics-label")!!.text())
     }
 
     @Test

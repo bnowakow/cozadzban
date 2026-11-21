@@ -98,6 +98,7 @@ class AnalyticsIndexHtmlRequestListener(
         doc.head().appendElement("meta").attr("property", "og:description").attr("content", description)
         doc.head().appendElement("meta").attr("property", "og:url").attr("content", url)
         doc.head().appendElement("meta").attr("property", "og:locale").attr("content", if (polish) "pl_PL" else "en_US")
+        doc.head().appendElement("meta").attr("property", "og:image").attr("content", "https://cozadzban.pl/cozadzban-logo-1024px.png")
     }
 
     /** Visible until Vaadin renders; also gives non-JavaScript readers a useful homepage. */
@@ -155,13 +156,12 @@ class AnalyticsIndexHtmlRequestListener(
         ))
         doc.head().appendElement("style").attr("id", "czj-initial-home-style").appendText(
             """
-            #czj-initial-home{box-sizing:border-box;max-width:42rem;margin:calc(66px + 1.35rem) auto 2rem;padding:1.5rem;background:var(--lumo-base-color,#fff);color:var(--lumo-body-text-color,#15171a);font:16px/1.6 system-ui,sans-serif;border-radius:8px}
-            #czj-initial-home h1{margin:0 0 .5rem;font-size:clamp(1.75rem,5vw,2.25rem);line-height:1.2}
-            #czj-initial-home h2{margin:1.5rem 0 .5rem;font-size:1.3rem}
+            #czj-initial-home{box-sizing:border-box;max-width:42rem;margin:calc(66px + 1.35rem) auto 2rem;padding:1.5rem;background:var(--czj-card-bg);color:var(--czj-text);border:1px solid var(--czj-border);border-radius:var(--czj-radius)}
+            #czj-initial-home h1{margin:0 0 .5rem}
+            #czj-initial-home h2{margin:1.5rem 0 .5rem}
             #czj-initial-home ul{padding-left:1.35rem}#czj-initial-home li{margin:.45rem 0}
-            #czj-initial-home h3{margin:1rem 0 .25rem;font-size:1.1rem;line-height:1.4}
-            #czj-initial-home li p{margin:.25rem 0 1rem;overflow-wrap:anywhere}
-            #czj-initial-home a{color:var(--lumo-primary-text-color,#a83d13)}
+            #czj-initial-home h3{margin:1rem 0 .25rem}
+            #czj-initial-home li p{margin:.25rem 0 1rem;max-width:72ch;overflow-wrap:anywhere}
             #czj-initial-home nav{display:flex;flex-wrap:wrap;gap:.5rem 1rem;margin-top:1.5rem}
             @media(max-width:46rem){#czj-initial-home{margin:calc(66px + 1rem) 1rem 1rem}}
             """.trimIndent(),
@@ -256,10 +256,9 @@ class AnalyticsIndexHtmlRequestListener(
                 left: 0;
                 right: 0;
                 z-index: 99999;
-                background: var(--czj-card-bg, var(--lumo-base-color, #ffffff));
-                border-top: 1px solid var(--czj-border, var(--lumo-contrast-10pct, #d4d9df));
-                color: var(--czj-text, var(--lumo-body-text-color, #15171a));
-                font-family: sans-serif;
+                background: var(--czj-card-bg);
+                border-top: 1px solid var(--czj-border);
+                color: var(--czj-text);
                 font-size: 14px;
                 padding: 14px 20px;
                 display: flex;
@@ -273,30 +272,14 @@ class AnalyticsIndexHtmlRequestListener(
             }
             #czj-consent-banner p { margin: 0; flex: 1 1 260px; }
             #czj-consent-banner .czj-consent-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-            #czj-consent-banner button {
-                cursor: pointer;
-                border: 1px solid var(--czj-border, var(--lumo-contrast-10pct, #d4d9df));
-                border-radius: 4px;
-                padding: 7px 16px;
-                font-size: 14px;
-            }
-            #czj-consent-accept {
-                background: var(--lumo-primary-color, #ff6b2a);
-                color: var(--lumo-primary-contrast-color, #190b04);
-            }
-            #czj-consent-decline {
-                background: var(--lumo-contrast-10pct, #eef0f3);
-                color: var(--czj-text, var(--lumo-body-text-color, #15171a));
-            }
             #czj-manage-cookies {
-                font-size: 12px;
-                color: var(--czj-muted, var(--lumo-secondary-text-color, #626970));
+                font: 600 .75rem/1.25 var(--czj-body-font);
+                color: var(--czj-link);
                 cursor: pointer;
                 text-decoration: underline;
                 background: none;
                 border: none;
                 padding: 0;
-                font-family: sans-serif;
             }
             """.trimIndent(),
         )
@@ -319,10 +302,12 @@ class AnalyticsIndexHtmlRequestListener(
         val actions = banner.appendElement("div").attr("class", "czj-consent-actions")
         actions.appendElement("button")
             .attr("id", "czj-consent-accept")
+            .attr("class", "czj-button czj-button-primary")
             .attr("onclick", "czjConsentAccept()")
             .text("Accept")
         actions.appendElement("button")
             .attr("id", "czj-consent-decline")
+            .attr("class", "czj-button")
             .attr("onclick", "czjConsentDecline()")
             .text("Decline")
 

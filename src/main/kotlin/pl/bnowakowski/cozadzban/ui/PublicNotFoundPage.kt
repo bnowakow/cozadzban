@@ -4,7 +4,7 @@ package pl.bnowakowski.cozadzban.ui
 /** A standalone error page works even when the interactive application cannot load. */
 object PublicNotFoundPage {
     fun content(): String = """
-        <main style="box-sizing:border-box;max-width:42rem;margin:10vh auto;padding:2rem;font:1rem/1.6 system-ui,sans-serif">
+        <main style="box-sizing:border-box;max-width:42rem;margin:10vh auto;padding:2rem">
           <a href="/">Co za dzban</a>
           <h1>Page not found</h1>
           <p>The page may have moved or the link may be incorrect.</p>
@@ -22,12 +22,13 @@ object PublicNotFoundPage {
 
     fun html(): String = """
         <!doctype html>
-        <html lang="en"><head>
+        <html lang="en" class="czj-system-theme"><head>
           <meta charset="UTF-8">
           <meta name="viewport" content="width=device-width, initial-scale=1">
           <meta name="robots" content="noindex">
           <title>Page not found | Co za dzban</title>
-          <style>:root{color-scheme:light dark}body{margin:0}a{color:light-dark(#a83d13,#ff9a64)}</style>
+          <link rel="icon" href="/favicon.png">
+          <link rel="stylesheet" href="${SiteHeader.BRAND_STYLESHEET_URL}">
         </head><body>${content()}</body></html>
     """.trimIndent()
 }

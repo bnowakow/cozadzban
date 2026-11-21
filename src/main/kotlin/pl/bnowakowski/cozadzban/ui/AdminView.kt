@@ -106,8 +106,8 @@ class AdminView(
     }
 
     private fun buildAdminTitleGroup(pageTitle: String): HorizontalLayout {
-        val logo = Image("/cozadzban-logo.png", "Co za dzban")
-        logo.addClassName("czj-admin-logo")
+        val logo = Image(SiteHeader.BRAND_LOGO_URL, "")
+        logo.addClassNames("czj-admin-logo", "czj-brand-mark")
 
         val brand = Span("Co za dzban")
         brand.addClassName("czj-admin-brand")

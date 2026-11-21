@@ -154,8 +154,8 @@ class NotificationSettingsView(
     }
 
     private fun topBar(): HorizontalLayout {
-        val logo = Image("/cozadzban-logo.png", "Co za dzban")
-        logo.addClassName("czj-admin-logo")
+        val logo = Image(SiteHeader.BRAND_LOGO_URL, "")
+        logo.addClassNames("czj-admin-logo", "czj-brand-mark")
         val brand = Span("Co za dzban")
         brand.addClassName("czj-admin-brand")
         val title = H2("Notification settings")

@@ -12,6 +12,8 @@ import pl.bnowakowski.cozadzban.facebookimport.FacebookImportType
 
 /** The feed and server-rendered story use this same header markup and stylesheet. */
 object SiteHeader {
+    const val BRAND_STYLESHEET_URL = "/branding/brand.css"
+    const val BRAND_LOGO_URL = "/branding/politics-logo-96px.png"
     // Static assets are cached for an hour. Change this URL when header.js changes.
     const val SCRIPT_URL = "/cozadzban-header.js?v=20261025-admin-import"
 
@@ -43,13 +45,15 @@ object SiteHeader {
         val brand = header.appendElement("a").attr("class", "czj-site-brand")
             .attr("href", "/").attr("router-ignore", "")
             .attr("title", "Go to main page").attr("aria-label", "Go to main page")
-        brand.appendElement("img").attr("src", "/cozadzban-logo.png")
+        brand.appendElement("img").attr("src", BRAND_LOGO_URL).addClass("czj-brand-mark")
             .attr("alt", "").attr("width", "46").attr("height", "46")
-        brand.appendElement("span").text("Co za dzban")
+        val wordmark = brand.appendElement("span").addClass("czj-brand-label")
+        wordmark.appendElement("span").addClass("czj-brand-name").text("Co za dzban")
+        wordmark.appendElement("span").addClass("czj-politics-label").text("Polityka")
 
         val actions = header.appendElement("nav").attr("class", "czj-site-actions")
             .attr("aria-label", "Main navigation")
-        val rss = actions.appendElement("a").attr("class", "czj-site-rss")
+        val rss = actions.appendElement("a").attr("class", "czj-button czj-site-rss")
             .attr("href", "/rss").attr("router-ignore", "")
             .attr("target", "_blank").attr("rel", "noopener noreferrer")
         icon(rss, "rss")
@@ -62,15 +66,15 @@ object SiteHeader {
                 form.appendElement("input").attr("type", "hidden")
                     .attr("name", it.parameterName).attr("value", it.token)
             }
-            form.appendElement("button").attr("type", "submit").attr("class", "czj-site-auth")
+            form.appendElement("button").attr("type", "submit").attr("class", "czj-button czj-button-primary czj-site-auth")
                 .text("Logout")
         } else {
-            actions.appendElement("a").attr("class", "czj-site-auth")
+            actions.appendElement("a").attr("class", "czj-button czj-button-primary czj-site-auth")
                 .attr("href", "/auth/login").attr("router-ignore", "").text("Login")
         }
 
         val menu = actions.appendElement("details").attr("class", "czj-site-menu")
-        val trigger = menu.appendElement("summary").attr("aria-label", "Menu").attr("title", "Menu")
+        val trigger = menu.appendElement("summary").addClass("czj-button").attr("aria-label", "Menu").attr("title", "Menu")
         icon(trigger, "menu")
         val items = menu.appendElement("div").attr("class", "czj-site-menu-items")
         if (options.canAccessUserPages) {
@@ -111,13 +115,13 @@ object SiteHeader {
     }
 
     private fun link(parent: Element, href: String, label: String, symbol: String) {
-        val item = parent.appendElement("a").attr("href", href).attr("router-ignore", "")
+        val item = parent.appendElement("a").addClass("czj-button").attr("href", href).attr("router-ignore", "")
         icon(item, symbol)
         item.appendElement("span").text(label)
     }
 
     private fun button(parent: Element, label: String, symbol: String, action: String?): Element {
-        val item = parent.appendElement("button").attr("type", "button")
+        val item = parent.appendElement("button").addClass("czj-button").attr("type", "button")
         if (action != null) item.attr("data-action", action)
         icon(item, symbol)
         item.appendElement("span").text(label)

@@ -4,24 +4,19 @@
     xmlns:s="http://www.sitemaps.org/schemas/sitemap/0.9">
   <xsl:output method="html" encoding="UTF-8" indent="yes"/>
   <xsl:template match="/">
-    <html lang="en">
+    <html lang="en" class="czj-system-theme">
       <head>
         <meta charset="UTF-8"/>
         <meta name="viewport" content="width=device-width, initial-scale=1"/>
         <title>Sitemap | Co za dzban</title>
+        <link rel="icon" href="/favicon.png"/>
+        <link rel="stylesheet" href="/branding/brand.css"/>
         <style>
-          :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
-          body { max-width: 64rem; margin: 0 auto; padding: 2rem 1rem; line-height: 1.5; }
+          body { max-width: 64rem; margin: 0 auto; padding: 2rem 1rem; }
           h1 { margin-bottom: .25rem; }
-          p { color: #596574; }
-          ul { list-style: none; padding: 0; border-top: 1px solid #a8b0ba; }
-          li { padding: .7rem 0; border-bottom: 1px solid #a8b0ba; overflow-wrap: anywhere; }
-          a { color: #0969c3; }
-          @media (prefers-color-scheme: dark) {
-            p { color: #b8c3d0; }
-            ul, li { border-color: #53616e; }
-            a { color: #8ec5ff; }
-          }
+          p { color: var(--czj-muted); }
+          ul { list-style: none; padding: 0; border-top: 1px solid var(--czj-border); }
+          li { padding: .7rem 0; border-bottom: 1px solid var(--czj-border); overflow-wrap: anywhere; }
         </style>
       </head>
       <body>

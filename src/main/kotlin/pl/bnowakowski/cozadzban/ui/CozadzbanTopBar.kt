@@ -35,7 +35,7 @@ enum class CozadzbanTopBarPage {
     DEBUG_TOOLS,
 }
 
-private const val TOP_BAR_MENU_BUTTON_SIZE = "34px"
+private const val TOP_BAR_MENU_BUTTON_SIZE = "44px"
 
 fun Component.buildCozadzbanTopBar(
     currentPage: CozadzbanTopBarPage,
@@ -60,6 +60,7 @@ fun Component.buildCozadzbanTopBar(
         onStartFacebookImport = onStartFacebookImport,
         onStopFacebookImport = onStopFacebookImport,
     ))
+    actions.addClassName("czj-top-bar-actions")
     actions.isPadding = false
     actions.isSpacing = true
     actions.defaultVerticalComponentAlignment = Alignment.CENTER
@@ -73,7 +74,6 @@ fun Component.buildCozadzbanTopBar(
     topBar.expand(topBar.getComponentAt(0))
     topBar.element.style.set("box-sizing", "border-box")
     topBar.element.style.set("height", "66px")
-    topBar.element.style.set("padding", "0 1.5rem")
     topBar.element.style.set("background", "var(--czj-card-bg)")
     topBar.element.style.set("border-bottom", "1px solid var(--lumo-contrast-10pct)")
     topBar.element.style.set("position", "fixed")
@@ -81,7 +81,6 @@ fun Component.buildCozadzbanTopBar(
     topBar.element.style.set("left", "0")
     topBar.element.style.set("right", "0")
     topBar.element.style.set("z-index", "1000")
-    topBar.element.style.set("box-shadow", "0 2px 10px rgba(15, 23, 42, 0.08)")
     return topBar
 }
 
@@ -103,19 +102,14 @@ fun sharedPageContent(vararg components: Component): com.vaadin.flow.component.o
 }
 
 private fun Component.buildSharedTitleGroup(): Anchor {
-    val logo = Image("/cozadzban-logo.png", "Co za dzban")
-    logo.setWidth("46px")
-    logo.setHeight("46px")
-    logo.element.style.set("border-radius", "50%")
-    logo.element.style.set("object-fit", "cover")
-    logo.element.style.set("box-shadow", "0 1px 4px rgba(0,0,0,.26)")
+    val logo = Image(SiteHeader.BRAND_LOGO_URL, "")
+    logo.addClassNames("czj-admin-logo", "czj-brand-mark")
 
     val brand = Span("Co za dzban")
-    brand.element.style.set("font-size", "var(--lumo-font-size-xl)")
-    brand.element.style.set("font-weight", "800")
-    brand.element.style.set("white-space", "nowrap")
+    brand.addClassName("czj-admin-brand")
 
     val titleGroup = HorizontalLayout(logo, brand)
+    titleGroup.addClassName("czj-top-bar-title")
     titleGroup.isPadding = false
     titleGroup.isSpacing = true
     titleGroup.defaultVerticalComponentAlignment = Alignment.CENTER

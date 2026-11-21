@@ -1220,11 +1220,6 @@ class ArticleListView(
         val title = H2()
         title.addClassName("czj-article-title")
         title.text = text
-        title.element.style.set("margin", "0")
-        title.element.style.set("font-size", "1.45rem")
-        title.element.style.set("font-weight", "800")
-        title.element.style.set("line-height", "1.28")
-        title.element.style.set("overflow-wrap", "anywhere")
         return title
     }
 
@@ -1250,8 +1245,6 @@ class ArticleListView(
         mark.element.style.set("margin-right", "var(--lumo-space-xs)")
 
         val quoteText = Span(text)
-        quoteText.element.style.set("font-size", "var(--lumo-font-size-s)")
-        quoteText.element.style.set("line-height", "1.5")
         quote.add(mark, quoteText)
         return quote
     }
@@ -1264,8 +1257,6 @@ class ArticleListView(
             lead.addClassName("czj-article-lead-truncated")
         }
         lead.text = displayText
-        lead.element.style.set("font-size", "var(--lumo-font-size-m)")
-        lead.element.style.set("line-height", "1.65")
         lead.element.style.set("color", "var(--lumo-secondary-text-color)")
         lead.element.style.set("overflow-wrap", "anywhere")
         return lead
