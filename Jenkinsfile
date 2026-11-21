@@ -147,6 +147,10 @@ spec:
     // Message column keeps showing the commit messages.
     stage('Version') {
       steps {
+        sh '''
+          apt-get update -qq
+          DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends git >/dev/null
+        '''
         script {
           currentBuild.displayName = sh(returnStdout: true,
               script: 'utilities/docker-image.sh tag HEAD').trim()
@@ -182,7 +186,7 @@ spec:
             // because it needs the Jenkins credential.
             sh '''
               set -eu
-              apk add --no-cache --quiet make
+              apk add --no-cache --quiet make git
               make docker-image-build
               printf '%s' "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin
               make docker-image-push
