@@ -150,6 +150,7 @@ spec:
         sh '''
           apt-get update -qq
           DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends git >/dev/null
+          git config --global --add safe.directory "$WORKSPACE"
         '''
         script {
           currentBuild.displayName = sh(returnStdout: true,
@@ -187,6 +188,7 @@ spec:
             sh '''
               set -eu
               apk add --no-cache --quiet make git
+              git config --global --add safe.directory "$WORKSPACE"
               make docker-image-build
               printf '%s' "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin
               make docker-image-push

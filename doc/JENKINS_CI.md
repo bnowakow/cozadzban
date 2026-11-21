@@ -32,7 +32,7 @@ they get one, e.g. by merging `main`.
 
 | Stage | Runs on | What it does |
 | --- | --- | --- |
-| `Version` | every build | Installs `git`, then runs `utilities/docker-image.sh tag HEAD` to rename the build to `<version>-<commit8>` |
+| `Version` | every build | Installs `git`, marks the Jenkins workspace safe for Git's ownership check, then runs `utilities/docker-image.sh tag HEAD` to rename the build to `<version>-<commit8>` |
 | `Test` | every build | `make ci-test`: waits for the Docker-in-Docker daemon, then `./gradlew --no-daemon test -PappBuildCommit=<commit>`; publishes JUnit results |
 | `Docker image` | `main` only, not timer-triggered builds | `make docker-image-build`, `docker login`, `make docker-image-push`: builds the repository `Dockerfile` and pushes three tags to `bnowakow/cozadzban` |
 
