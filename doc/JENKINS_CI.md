@@ -117,7 +117,9 @@ is public, so the server needs no Docker Hub login.
   The upgrade caches those durations in `logs/jenkins-build-durations.json`.
   Set `JENKINS_MAIN_API_URL` if the default Jenkins address is not reachable,
   and `JENKINS_API_TOKEN_FILE` (plus `JENKINS_API_USER` if needed) when the API
-  requires authentication. If the API is unavailable, the prompt says so.
+  requires authentication. The default address is private to Tailscale, so the
+  deployment host must be able to resolve and reach it. If it cannot, the
+  prompt identifies DNS, timeout, connection, or authentication failure.
   Anything else, or no terminal, aborts without changing the running app.
 - `IMAGE_TAG=<version>-<commit8>` deploys a specific build, e.g. to roll back.
   A missing explicit tag fails instead of asking.

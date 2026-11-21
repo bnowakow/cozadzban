@@ -82,8 +82,8 @@ dockerhub_image_exists() {
 }
 
 jenkins_progress() {
-    snapshot=$(python3 "$(dirname "$0")/../utilities/jenkins-build-progress.py" "$1" 2>/dev/null) || snapshot="unavailable|0|0|0|0|0"
-    IFS='|' read -r jenkins_state percent sample_count median_seconds elapsed_seconds build_number <<EOF
+    snapshot=$(python3 "$(dirname "$0")/../utilities/jenkins-build-progress.py" "$1" 2>/dev/null) || snapshot="unavailable|0|0|0|0|0|script"
+    IFS='|' read -r jenkins_state percent sample_count median_seconds elapsed_seconds build_number jenkins_error <<EOF
 $snapshot
 EOF
     percent=${percent:-0}
@@ -111,6 +111,13 @@ EOF
         succeeded) printf 'Jenkins #%s [%s] 99%% complete; waiting for Docker Hub' "$build_number" "$bar" ;;
         failed) printf 'Jenkins #%s failed; this image will not be pushed' "$build_number" ;;
         pending) printf 'Jenkins build not started yet [%s] 0%% (%s successful builds sampled)' "$bar" "$sample_count" ;;
+        unavailable)
+            case "$jenkins_error" in
+                dns|timeout|connection) printf 'Jenkins is unreachable from this host (%s); check Tailscale or set JENKINS_MAIN_API_URL' "$jenkins_error" ;;
+                http_401|http_403) printf 'Jenkins API denied access (%s); set JENKINS_API_TOKEN_FILE and JENKINS_API_USER' "$jenkins_error" ;;
+                *) printf 'Jenkins status unavailable (%s); check JENKINS_MAIN_API_URL and API access' "${jenkins_error:-unknown}" ;;
+            esac
+            ;;
         *) printf 'Jenkins status unavailable; check JENKINS_MAIN_API_URL and API access' ;;
     esac
     printf '\n'

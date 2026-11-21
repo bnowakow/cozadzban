@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Print a compact Jenkins image-build estimate for blue-green-upgrade.sh.
 
-Output: state|percent|sample_count|median_seconds|elapsed_seconds|build_number
+Output: state|percent|sample_count|median_seconds|elapsed_seconds|build_number|error
 Only successful, non-timer main builds contribute to the last-100 sample.
 """
 
@@ -9,10 +9,12 @@ import base64
 import json
 import os
 from pathlib import Path
+import socket
 import statistics
 import sys
 import time
 import urllib.parse
+import urllib.error
 import urllib.request
 
 
@@ -84,12 +86,24 @@ def save_history(history):
 
 def main(tag):
     history = cached_history()
+    error = ""
     try:
         builds = fetch_builds()
         reachable = True
-    except (OSError, ValueError, TypeError):
+    except urllib.error.HTTPError as exc:
         builds = []
         reachable = False
+        error = f"http_{exc.code}"
+    except (OSError, ValueError, TypeError) as exc:
+        builds = []
+        reachable = False
+        reason = exc.reason if isinstance(exc, urllib.error.URLError) else exc
+        if isinstance(reason, socket.gaierror):
+            error = "dns"
+        elif isinstance(reason, (TimeoutError, socket.timeout)):
+            error = "timeout"
+        else:
+            error = "connection"
     if reachable:
         updated = merge_history(history, builds)
         if updated != history:
@@ -118,7 +132,7 @@ def main(tag):
         else:
             state = "building"
             percent = min(99, round(100 * elapsed / median)) if median else 0
-    print(f"{state}|{percent}|{len(history)}|{median}|{elapsed}|{number}")
+    print(f"{state}|{percent}|{len(history)}|{median}|{elapsed}|{number}|{error}")
 
 
 if __name__ == "__main__":
