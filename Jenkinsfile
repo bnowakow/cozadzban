@@ -3,7 +3,7 @@
 //
 // CI for every branch (Jenkins Multibranch Pipeline "cozadzban.pl").
 // Builds run in a throwaway Kubernetes pod in the apps-jenkins namespace:
-//   jdk    - eclipse-temurin:21-jdk-jammy, same JDK as the Dockerfile build stage
+//   jdk    - eclipse-temurin:25-jdk-jammy, same JDK as the Dockerfile build stage
 //   dind   - Docker-in-Docker, so Testcontainers can start Postgres and Zipkin
 //            for the *IT tests and CozadzbanApplicationTests, and so the
 //            Dockerfile can be built
@@ -54,7 +54,7 @@ spec:
       mountPath: /opt/docker-cli
   containers:
   - name: jdk
-    image: eclipse-temurin:21-jdk-jammy
+    image: eclipse-temurin:25-jdk-jammy
     command: ["sleep"]
     args: ["infinity"]
     env:

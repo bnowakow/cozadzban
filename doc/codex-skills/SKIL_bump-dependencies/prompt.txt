@@ -1,1 +1,1 @@
-Use the bump-dependencies skill to bump all dependencies to their latest non-breaking versions and check the image for CVEs.
+Use the bump-dependencies skill to upgrade all dependencies to their latest backwards-compatible releases and verify the result.

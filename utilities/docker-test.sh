@@ -3,7 +3,7 @@
 # Copyright (C) 2026 https://bnowakowski.pl
 #
 # `make docker-test`: runs the test suite in containers that mirror the Jenkins
-# build pod (see the Jenkinsfile): eclipse-temurin:21-jdk-jammy for Gradle, a
+# build pod (see the Jenkinsfile): eclipse-temurin:25-jdk-jammy for Gradle, a
 # privileged docker:27.5.1-dind daemon on 127.0.0.1:2375 for Testcontainers, and
 # the docker CLI copied in from docker:27.5.1-cli. Both containers share one
 # network namespace, like containers in a pod. The tests run `make ci-test`,
@@ -21,7 +21,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-JDK_IMAGE=eclipse-temurin:21-jdk-jammy
+JDK_IMAGE=eclipse-temurin:25-jdk-jammy
 DIND_IMAGE=docker:27.5.1-dind
 CLI_IMAGE=docker:27.5.1-cli
 PREFIX=cozadzban-docker-test

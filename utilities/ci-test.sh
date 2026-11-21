@@ -4,7 +4,7 @@
 #
 # `make ci-test`: runs the test suite the way CI does. Used by the Jenkinsfile
 # "Test" stage and `make docker-test` (utilities/docker-test.sh), which both run
-# it in eclipse-temurin:21-jdk-jammy next to a docker:dind daemon.
+# it in eclipse-temurin:25-jdk-jammy next to a docker:dind daemon.
 #
 # Waits for the Docker daemon first: build.gradle.kts runs `docker info` and
 # silently excludes the *IT tests and CozadzbanApplicationTests when it fails.

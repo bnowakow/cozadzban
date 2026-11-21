@@ -1,0 +1,1 @@
+Use the upgrade-java-lts skill to move this project to the latest generally available Java LTS and verify the build, tests, and runtime.

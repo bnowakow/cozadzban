@@ -47,7 +47,7 @@ stage installs it first (`apt-get` / `apk`, a few seconds).
 | Target | Script | What it does |
 | --- | --- | --- |
 | `make ci-test` | `utilities/ci-test.sh` | The `Test` stage. Waits up to 120 s for `docker info`, so the Docker-backed tests are not silently skipped, then runs Gradle `test`. |
-| `make docker-test` | `utilities/docker-test.sh` | Recreates the build pod with `docker run`: `docker:27.5.1-dind` (privileged, `127.0.0.1:2375`), `eclipse-temurin:21-jdk-jammy` in its network namespace, and the CLI copied from `docker:27.5.1-cli`, with the same env and limits as the pod. It copies the working tree in (tracked and untracked, non-ignored files, so uncommitted changes count), runs `make ci-test` inside, and copies results to `build/docker-test/`. |
+| `make docker-test` | `utilities/docker-test.sh` | Recreates the build pod with `docker run`: `docker:27.5.1-dind` (privileged, `127.0.0.1:2375`), `eclipse-temurin:25-jdk-jammy` in its network namespace, and the CLI copied from `docker:27.5.1-cli`, with the same env and limits as the pod. It copies the working tree in (tracked and untracked, non-ignored files, so uncommitted changes count), runs `make ci-test` inside, and copies results to `build/docker-test/`. |
 | `make docker-image-build` | `utilities/docker-image.sh build` | Builds the image with the three tags and OCI labels. `GIT_COMMIT` defaults to `HEAD`; `IMAGE=…` overrides `bnowakow/cozadzban`. |
 | `make docker-image-push` | `utilities/docker-image.sh push` | Pushes the three tags. Needs a prior `docker login`; the stage logs in with the Jenkins credential. |
 
@@ -132,7 +132,7 @@ installed on the Jenkins controller itself.
 | Container | Image | Purpose | Limits |
 | --- | --- | --- | --- |
 | `jnlp` | added by the plugin | Jenkins agent connection | plugin default |
-| `jdk` | `eclipse-temurin:21-jdk-jammy` | Runs Gradle (same JDK as the Dockerfile build stage). Default container. | 4 CPU / 6Gi |
+| `jdk` | `eclipse-temurin:25-jdk-jammy` | Runs Gradle (same JDK as the Dockerfile build stage). Default container. | 4 CPU / 6Gi |
 | `dind` | `docker:27.5.1-dind`, **privileged** | Docker daemon for Testcontainers (Postgres, Zipkin) and for the image build | 4 CPU / 6Gi |
 | `docker` | `docker:27.5.1-cli` | Docker CLI with buildx (BuildKit) for `docker build` and `push` | 1 CPU / 512Mi |
 | init `docker-cli` | `docker:27.5.1-cli` | Copies the `docker` binary to `/opt/docker-cli` for the `jdk` container | — |

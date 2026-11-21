@@ -7,7 +7,7 @@ RUN npm install --global --prefix=/opt/codex @openai/codex@0.164.0
 # Claude Code draws SVG fallback illustrations when Codex can't produce an image.
 RUN npm install --global --prefix=/opt/claude @anthropic-ai/claude-code@2.1.316
 
-FROM eclipse-temurin:21-jdk-jammy AS build
+FROM eclipse-temurin:25-jdk-jammy AS build
 
 WORKDIR /workspace
 ARG APP_BUILD_COMMIT=unknown
@@ -26,7 +26,7 @@ RUN set -eux; \
     jar="$(find build/libs -maxdepth 1 -name '*.jar' ! -name '*-plain.jar' -print -quit)"; \
     cp "$jar" app.jar
 
-FROM eclipse-temurin:21-jre-jammy
+FROM eclipse-temurin:25-jre-jammy
 
 WORKDIR /app
 

@@ -14,11 +14,11 @@ plugins {
 }
 
 group = "pl.bnowakowski"
-version = "0.65.1-SNAPSHOT"
+version = "0.66.0-SNAPSHOT"
 
 java {
 	toolchain {
-		languageVersion = JavaLanguageVersion.of(21)
+		languageVersion = JavaLanguageVersion.of(25)
 	}
 }
 

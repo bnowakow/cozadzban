@@ -1,78 +1,23 @@
 ---
 name: bump-dependencies
-description: Bump Gradle plugins, libraries and the Gradle wrapper to their latest non-breaking (same-major) versions, or fix CVEs Docker Scout reports for a published bnowakow/cozadzban image, then prove it with the full test suite and a Scout rescan of a locally built image.
+description: Upgrade a project’s dependencies to the newest stable versions that preserve backwards compatibility. Use for routine dependency refreshes or compatible updates that address reported CVEs.
 ---
 
 # Bump Dependencies
 
-Use this skill when the user wants dependencies updated ("bump everything without breaking changes"), or wants vulnerabilities fixed for an image such as `bnowakow/cozadzban:<version>` on Docker Hub.
+1. Read repository instructions and check the working tree. Inventory declared dependencies, managed BOMs, explicit overrides, build plugins and wrappers, frontend packages, lockfiles, and versioned CI or container dependencies. Review transitive versions through their owning dependency or BOM first.
+2. Use official registries to discover releases and upstream release notes, migration guides, and compatibility matrices to choose versions. Start from the newest stable release within the installed major and work down until you find a compatible candidate. For `0.x`, stay within the current minor unless upstream documents compatibility. For projects with calendar versions, image tags, or other version schemes, keep the documented compatibility line and review changes between the installed and candidate versions.
+3. Check breaking behavior within the allowed range. Look for removed APIs, changed defaults, new runtime or peer requirements, and changes to configuration, data formats, and published interfaces. Hold a dependency at its current version if no compatible candidate is available or compatibility cannot be established. A passing build alone does not clear a documented backward incompatibility.
+4. Update related components together where their supported versions overlap. Use the package manager or wrapper to regenerate lockfiles and generated metadata. Inspect the resolved graph and lockfile diff for unexpected transitive changes, including major upgrades that affect existing consumers. Keep the current Java baseline and deployment contracts. Skip unrelated refactors, dependency substitutions, and major upgrades.
+5. Run the full project test suite and verify affected deliverables or runtime paths. If an upgrade regresses supported behavior, try the next compatible release or leave the dependency pinned while continuing with independent updates. Report what changed, what was held and why, and what validation ran.
 
-## Workflow
+## Co za dzban
 
-1. Run `hostname`. On `ovh.bnowakowski.pl` do not run Gradle tests or image builds; make the version changes only and report verification as pending.
-2. Check `git status --short`. Note changes that are not yours and never stage or commit them.
-3. If the request is about CVEs, scan the published image first. Docker Hub hides the CVE list without sign-in, so use Scout:
-   ```
-   docker scout cves --format only-packages --only-fixed bnowakow/cozadzban:<version> --platform linux/amd64
-   docker scout cves --only-fixed --format markdown bnowakow/cozadzban:<version> --platform linux/amd64
-   ```
-   The first lists vulnerable packages, the second their fixed versions. Filter rows with `grep -vE '0C +0H +0M +0L'`.
-4. Find the latest versions from Maven Central metadata, skipping pre-releases:
-   ```
-   curl -s https://repo1.maven.org/maven2/<group/path>/<artifact>/maven-metadata.xml
-   ```
-   Gradle itself: `curl -s https://services.gradle.org/versions/current`.
-5. Pick versions (see Version Rules), edit `build.gradle.kts`, and update the wrapper with `./gradlew wrapper --gradle-version <v>` followed by `./gradlew wrapper`.
-6. Confirm what actually resolves, since Spring Boot's BOM can override direct versions:
-   ```
-   ./gradlew -q dependencies --configuration runtimeClasspath
-   ./gradlew -q dependencyInsight --configuration runtimeClasspath --dependency <name>
-   ```
-7. Fix compile errors the bump causes in the narrowest way (see Known Fallout).
-8. Run the full suite with Docker running, so the `*IT` and `CozadzbanApplicationTests` integration tests are included (see Verifying).
-9. Build the image locally and rescan:
-   ```
-   docker build --platform linux/amd64 -t cozadzban:depbump .
-   docker scout cves --format only-packages --only-fixed local://cozadzban:depbump
-   ```
-   Success is `No vulnerable package detected`.
-10. Report the bumps, what was held back and why, code changes, test counts and the scan result. Commit only when the user asks, and only your files.
+- Run `hostname`. On `ovh.bnowakowski.pl`, leave Gradle tests and local image builds for a development machine. On a development machine run `make test` with Docker available. Check the test XML under `build/test-results/test/` and report if Gradle excluded Docker-backed integration tests. If a separate Gradle run is using the checkout, verify in an isolated copy with the intended changes applied.
+- Discover wrapper releases through Gradle’s release metadata. When bumping it, run `./gradlew wrapper --gradle-version <version>` and rerun `./gradlew wrapper` with the new distribution. For Spring Boot managed versions, inspect `./gradlew -q dependencies --configuration runtimeClasspath` and use `dependencyInsight` to confirm what actually resolves.
+- Keep both Kotlin plugins aligned with the selected Spring Boot BOM’s Kotlin version and both Vaadin version declarations aligned with each other. Check springdoc’s supported Spring Boot minor. Review Vaadin’s regenerated frontend bundle and npm files as part of the same change.
+- Check the Selenium and OpenTelemetry version overrides against the candidate Selenium POM and the selected Spring Boot BOM. Remove an override when the BOM resolves a compatible version that meets the same requirement.
 
-## Version Rules
+## CVE requests
 
-- Stay within the current major version. Spring Boot and Vaadin minor bumps are fine; mockito-kotlin 5 → 6 is not.
-- Keep the Kotlin plugin at the `kotlin.version` that Spring Boot's BOM manages (`spring-boot-dependencies-<v>.pom`), not newer.
-- Spring Boot's BOM manages Selenium and OpenTelemetry at versions older than `selenium-java` needs, and the older ones (plus the Guava they bring) carry CVEs. Override them with `extra["selenium.version"]` and `extra["opentelemetry.version"]`, matching what `selenium-remote-driver-<v>.pom` declares. Drop the overrides once Boot's managed versions catch up.
-- Keep `extra["vaadinVersion"]` and the `com.vaadin` plugin version equal. A Vaadin bump regenerates `src/main/bundles/prod.bundle`, `package.json`, `package-lock.json`, `tsconfig.json` and `vite.*.ts`; commit those with the bump.
-- Check that springdoc's parent POM targets the same Spring Boot minor.
-- For CVE work, prefer bumping the parent (Spring Boot, Selenium, Batik) over pinning a transitive library. Pin a transitive one only when no parent release fixes it.
-
-## Known Fallout
-
-- Kotlin 2.3+ reads Spring's JSpecify annotations strictly. `NamedParameterJdbcTemplate.queryForList(..., String::class.java)` now returns `List<String?>`. Where the SQL already filters `IS NOT NULL`, add `.filterNotNull()`.
-- `e: Daemon compilation failed` with a stack trace is the Kotlin daemon falling back to in-process compilation, not a failure by itself. Look for `e: file://...` lines for real compile errors.
-
-## Verifying
-
-- Read results from files, never from a task's summary line. Count them from the XML:
-  ```
-  cat build/test-results/test/*.xml | grep -oE '<testsuite [^>]*' | awk -F'"' '{for(i=1;i<NF;i++){if($i~/ tests=$/)t+=$(i+1);if($i~/ failures=$/)f+=$(i+1);if($i~/ errors=$/)e+=$(i+1);if($i~/ skipped=$/)s+=$(i+1)}} END{print "tests",t,"failures",f,"errors",e,"skipped",s}'
-  ```
-- `Docker is not available; excluding Docker-backed integration tests.` in the Gradle output means the integration tests did not run. Say so.
-- If another process is running Gradle in the same checkout (`ps -Ao pid,etime,command | grep gradle`), runs wipe each other's `build/` (`NoSuchFileException ... in-progress-results-generic.bin`). Test and build in an isolated copy instead, and leave the other processes alone:
-  ```
-  git diff HEAD --binary > <scratch>/wip.patch
-  git clone -q --no-hardlinks . <scratch>/iso && cd <scratch>/iso && git apply --binary <scratch>/wip.patch
-  ```
-  `rsync` of the checkout fails on the sockets inside it.
-- A `grep` that finds nothing exits 1 and makes a background task look failed. Check the printed output, not just the exit code.
-- zsh may have `noclobber` set; write logs with `>|`.
-
-## Project Rules
-
-Follow repository instructions while bumping:
-
-- run `make test` (or `./gradlew test`) on a development machine, never on `ovh.bnowakowski.pl`
-- never edit applied Flyway migrations
-- all DB access must remain parameterized
-- persistence stays Spring Data JDBC, no `ddl-auto`
+For a reported image vulnerability, confirm the affected component and fixed versions using the report and upstream advisory. If the source is Docker Scout, scan the specified image and platform with `docker scout cves --only-fixed`. Prefer a compatible update to the parent package, BOM, or base image before pinning a transitive package. Build and rescan the updated image locally for the same platform when available. Report remaining findings and any fix that requires a separate breaking upgrade.
