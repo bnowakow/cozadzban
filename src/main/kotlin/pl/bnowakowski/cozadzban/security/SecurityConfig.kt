@@ -64,6 +64,7 @@ class SecurityConfig(
                 auth.requestMatchers(
                     "/favicon.ico", "/favicon.png", "/favicons/**", "/flags/**", "/branding/**",
                     "/cozadzban-logo.png", "/cozadzban-logo-1024px.png", "/cozadzban-header.css", "/cozadzban-header.js",
+                    "/pushover-icon.png", "/facebook/fb-coverphoto-pl.png",
                     "/apple-touch-icon.png", "/apple-touch-icon-precomposed.png", "/manifest.webmanifest", "/site.webmanifest",
                     "/robots.txt", "/sitemap.xml", "/sitemap.xsl", "/privacy-policy.html", "/user-data-deletion.html", "/facebook-legal.css",
                 ).permitAll()
