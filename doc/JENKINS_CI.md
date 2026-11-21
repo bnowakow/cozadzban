@@ -218,6 +218,13 @@ Jenkins parts were done through the Jenkins API.
 
 ## Working with it from the command line
 
+`make codex-commit` and `make claude-commit` print the expected next Jenkins build
+number for the current branch. When pushing, they read Jenkins' `nextBuildNumber`
+before the push so an immediate webhook cannot advance the number first. The
+lookup uses the documented token file when present. Set `JENKINS_API_TOKEN_FILE`
+or `JENKINS_API_USER` to use another credential. A failed lookup leaves the
+commit or push result intact.
+
 ```sh
 T="$(tr -d '\n\r ' < ~/code/bash_configs/rancher/tmp-jenkins-token-sup)"
 J=https://jenkins.rancher.tailscale.bnowakowski.pl
