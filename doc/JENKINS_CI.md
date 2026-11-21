@@ -72,7 +72,7 @@ All test targets refuse to run on the deployment server.
 - **Deleted branches:** their sub-jobs are removed on the next scan, and any
   running build of them is aborted.
 
-Options: no concurrent builds per branch, 90-minute timeout, last 30 builds
+Options: no concurrent builds per branch, 90-minute timeout, last 120 builds
 kept per branch.
 
 ### Build names
@@ -111,8 +111,13 @@ computes the tag for the pulled commit the same way the pipeline does
 (`docker-data/blue-green-upgrade.sh` with `IMAGE_SOURCE=dockerhub`). The image
 is public, so the server needs no Docker Hub login.
 
-- If the tag isn't on Docker Hub yet (Jenkins needs about 10 minutes after a
-  push), it asks: wait (poll every 30 s, up to 20 minutes) or build locally.
+- If the tag isn't on Docker Hub yet, it asks: wait (poll every 30 s, up to 20
+  minutes) or build locally. The prompt and wait loop show estimated Jenkins
+  progress using the median duration of up to 100 successful image builds.
+  The upgrade caches those durations in `logs/jenkins-build-durations.json`.
+  Set `JENKINS_MAIN_API_URL` if the default Jenkins address is not reachable,
+  and `JENKINS_API_TOKEN_FILE` (plus `JENKINS_API_USER` if needed) when the API
+  requires authentication. If the API is unavailable, the prompt says so.
   Anything else, or no terminal, aborts without changing the running app.
 - `IMAGE_TAG=<version>-<commit8>` deploys a specific build, e.g. to roll back.
   A missing explicit tag fails instead of asking.

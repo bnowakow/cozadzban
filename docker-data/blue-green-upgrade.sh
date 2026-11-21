@@ -81,6 +81,41 @@ dockerhub_image_exists() {
     docker manifest inspect "$1" >/dev/null 2>&1
 }
 
+jenkins_progress() {
+    snapshot=$(python3 "$(dirname "$0")/../utilities/jenkins-build-progress.py" "$1" 2>/dev/null) || snapshot="unavailable|0|0|0|0|0"
+    IFS='|' read -r jenkins_state percent sample_count median_seconds elapsed_seconds build_number <<EOF
+$snapshot
+EOF
+    percent=${percent:-0}
+    sample_count=${sample_count:-0}
+    median_seconds=${median_seconds:-0}
+    elapsed_seconds=${elapsed_seconds:-0}
+    build_number=${build_number:-0}
+    filled=$(( percent * 20 / 100 ))
+    bar=""
+    index=0
+    while [ "$index" -lt 20 ]; do
+        if [ "$index" -lt "$filled" ]; then bar="${bar}#"; else bar="${bar}-"; fi
+        index=$(( index + 1 ))
+    done
+    case "$jenkins_state" in
+        building)
+            if [ "$sample_count" -eq 0 ]; then
+                printf 'Jenkins #%s is building (%sm elapsed); collecting successful build durations' \
+                    "$build_number" "$(( elapsed_seconds / 60 ))"
+            else
+                printf 'Jenkins #%s [%s] %s%% estimated (%sm elapsed; %sm median of %s successful builds)' \
+                    "$build_number" "$bar" "$percent" "$(( elapsed_seconds / 60 ))" "$(( median_seconds / 60 ))" "$sample_count"
+            fi
+            ;;
+        succeeded) printf 'Jenkins #%s [%s] 99%% complete; waiting for Docker Hub' "$build_number" "$bar" ;;
+        failed) printf 'Jenkins #%s failed; this image will not be pushed' "$build_number" ;;
+        pending) printf 'Jenkins build not started yet [%s] 0%% (%s successful builds sampled)' "$bar" "$sample_count" ;;
+        *) printf 'Jenkins status unavailable; check JENKINS_MAIN_API_URL and API access' ;;
+    esac
+    printf '\n'
+}
+
 # Asks on the terminal what to do while the image for this commit isn't on Docker Hub yet.
 # Prints "wait" or "local"; anything else aborts without touching the running app.
 # Uses a dialog/whiptail menu when available, otherwise a plain text prompt.
@@ -92,6 +127,7 @@ ask_missing_image() {
     fi
     wait_text="Wait for it (check every ${dockerhub_poll_seconds}s for up to $(( dockerhub_wait_seconds / 60 )) minutes)"
     build_text="Build the image locally from this checkout instead"
+    progress_text=$(jenkins_progress "$2")
     menu_bin=""
     if [ "${TERM:-dumb}" != "dumb" ]; then
         menu_bin=$(command -v dialog || command -v whiptail || true)
@@ -100,8 +136,8 @@ ask_missing_image() {
         # The menu draws on the terminal and writes the chosen tag to fd 3, which is captured here.
         answer=$("$menu_bin" --title "Docker Hub image not ready" --output-fd 3 \
             --cancel-button "Abort" \
-            --menu "$1 is not on Docker Hub yet. Jenkins builds it after the tests pass (about 10 minutes).\n\nAbort leaves the running app unchanged." \
-            15 76 2 \
+            --menu "$1 is not on Docker Hub yet.\n$progress_text\n\nAbort leaves the running app unchanged." \
+            17 84 2 \
             w "$wait_text" \
             b "$build_text" \
             3>&1 1>/dev/tty 2>/dev/tty </dev/tty) || answer=""
@@ -109,7 +145,8 @@ ask_missing_image() {
     else
         {
             echo ""
-            echo "$1 is not on Docker Hub yet. Jenkins builds it after the tests pass (about 10 minutes)."
+            echo "$1 is not on Docker Hub yet."
+            echo "$progress_text"
             echo "  [w] $wait_text"
             echo "  [b] $build_text"
             echo "  anything else: abort, nothing is changed"
@@ -133,17 +170,24 @@ use_dockerhub_image() {
             echo "$image does not exist on Docker Hub" >&2
             exit 1
         fi
-        case "$(ask_missing_image "$image")" in
+        case "$(ask_missing_image "$image" "$tag")" in
             wait)
                 deadline=$(( $(date +%s) + dockerhub_wait_seconds ))
                 until dockerhub_image_exists "$image"; do
+                    poll_started=$(date +%s)
                     if [ "$(date +%s)" -ge "$deadline" ]; then
                         echo "$image did not appear on Docker Hub within $(( dockerhub_wait_seconds / 60 )) minutes; nothing was changed" >&2
                         exit 1
                     fi
-                    echo "Waiting for $image ..."
-                    sleep "$dockerhub_poll_seconds"
+                    jenkins_progress "$tag"
+                    if [ "$jenkins_state" = "failed" ]; then
+                        echo "Jenkins failed for $tag; nothing was changed" >&2
+                        exit 1
+                    fi
+                    remaining_sleep=$(( dockerhub_poll_seconds - ($(date +%s) - poll_started) ))
+                    if [ "$remaining_sleep" -gt 0 ]; then sleep "$remaining_sleep"; fi
                 done
+                echo "Jenkins image [####################] 100% available on Docker Hub"
                 ;;
             local)
                 echo "Building the image locally instead"

@@ -130,7 +130,8 @@ spec:
   }
 
   options {
-    buildDiscarder(logRotator(numToKeepStr: '30'))
+    // Keep enough successful main builds for the deployment progress estimate's 100-build sample.
+    buildDiscarder(logRotator(numToKeepStr: '120'))
     disableConcurrentBuilds()
     timeout(time: 90, unit: 'MINUTES')
   }
