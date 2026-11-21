@@ -5,7 +5,7 @@ FROM node:22-bookworm-slim AS codex-cli
 # Pin the CLIs so image rebuilds cannot silently change their behavior.
 RUN npm install --global --prefix=/opt/codex @openai/codex@0.164.0
 # Claude Code draws SVG fallback illustrations when Codex can't produce an image.
-RUN npm install --global --prefix=/opt/claude @anthropic-ai/claude-code@2.1.316
+RUN npm install --global --prefix=/opt/claude @anthropic-ai/claude-code@2.1.330
 
 FROM eclipse-temurin:25-jdk-jammy AS build
 

@@ -409,7 +409,7 @@ make performance-report  # Measure front-page performance (see doc/PAGE_PERFORMA
 The repository includes a multi-stage `Dockerfile`:
 
 - CLI stage: Node 22 image, installs the pinned `@openai/codex@0.164.0` CLI under `/opt/codex` and
-  `@anthropic-ai/claude-code@2.1.316` under `/opt/claude`
+  `@anthropic-ai/claude-code@2.1.330` under `/opt/claude`
 - builder stage: Java 25 JDK image, runs `./gradlew bootJar --no-daemon`
 - builder stage cache mounts: Gradle caches, Gradle wrapper, Vaadin tooling, and npm cache
 - runtime stage: Java 25 JRE image, copies the executable Spring Boot jar as `/app/app.jar`, plus the

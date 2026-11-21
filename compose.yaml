@@ -159,7 +159,7 @@ services:
       - codex-egress
 
   reverse-proxy:
-    image: nginx:1.27-alpine
+    image: nginx:1.30-alpine
     restart: unless-stopped
     environment:
       - 'TZ=Europe/Warsaw'

@@ -8,13 +8,13 @@ import java.util.concurrent.TimeUnit
 plugins {
 	kotlin("jvm") version "2.3.21"
 	kotlin("plugin.spring") version "2.3.21"
-	id("org.springframework.boot") version "4.1.2"
+	id("org.springframework.boot") version "4.1.3"
 	id("io.spring.dependency-management") version "1.1.7"
-	id("com.vaadin") version "25.3.4"
+	id("com.vaadin") version "25.3.5"
 }
 
 group = "pl.bnowakowski"
-version = "0.66.0-SNAPSHOT"
+version = "0.67.0-SNAPSHOT"
 
 java {
 	toolchain {
@@ -26,11 +26,11 @@ repositories {
 	mavenCentral()
 }
 
-extra["vaadinVersion"] = "25.3.4"
+extra["vaadinVersion"] = "25.3.5"
 // Spring Boot pins older Selenium and OpenTelemetry than selenium-java needs; the older
 // ones, and the Guava they bring, have known CVEs.
-extra["selenium.version"] = "4.52.0"
-extra["opentelemetry.version"] = "1.67.0"
+extra["selenium.version"] = "4.53.0"
+extra["opentelemetry.version"] = "1.68.0"
 
 vaadin {
 	forceProductionBuild = providers.gradleProperty("forceVaadinProductionBuild")
@@ -50,11 +50,11 @@ dependencies {
 	implementation("org.springframework.boot:spring-boot-starter-webmvc")
 	implementation("org.springframework.boot:spring-boot-starter-validation")
 	implementation("org.springframework.boot:spring-boot-starter-security")
-	implementation("org.jsoup:jsoup:1.23.2")
+	implementation("org.jsoup:jsoup:1.24.1")
 	// SVG to PNG for Claude-drawn article illustrations. The JDK already provides the xml-apis classes.
 	implementation("org.apache.xmlgraphics:batik-transcoder:1.20") { exclude(group = "xml-apis", module = "xml-apis") }
 	implementation("org.apache.xmlgraphics:batik-codec:1.20") { exclude(group = "xml-apis", module = "xml-apis") }
-	implementation("org.seleniumhq.selenium:selenium-java:4.52.0")
+	implementation("org.seleniumhq.selenium:selenium-java:4.53.0")
 	implementation("org.springframework.boot:spring-boot-starter-oauth2-client")
 	implementation("org.springframework.boot:spring-boot-starter-oauth2-resource-server")
 	implementation("org.springframework.boot:spring-boot-starter-zipkin")
@@ -63,7 +63,9 @@ dependencies {
 	implementation("io.micrometer:micrometer-tracing-bridge-brave")
 	implementation("org.flywaydb:flyway-database-postgresql")
 	implementation("org.jetbrains.kotlin:kotlin-reflect")
-	implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:3.2.0")
+	implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:3.2.1")
+	// Existing integrations use Jackson 2 directly. Springdoc 3.2.1 uses Jackson 3.
+	implementation("com.fasterxml.jackson.core:jackson-databind")
 	implementation("tools.jackson.module:jackson-module-kotlin")
 	compileOnly("org.projectlombok:lombok")
 	developmentOnly("org.springframework.boot:spring-boot-devtools")
@@ -73,6 +75,7 @@ dependencies {
 	testImplementation("org.springframework.boot:spring-boot-starter-test")
 	testImplementation("org.springframework.security:spring-security-test")
 	testImplementation("org.mockito.kotlin:mockito-kotlin:5.4.0")
+	testImplementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310")
 	testImplementation("org.springframework.boot:spring-boot-micrometer-tracing-test")
 	testImplementation("org.springframework.boot:spring-boot-starter-actuator-test")
 	testImplementation("org.springframework.boot:spring-boot-starter-batch-test")
