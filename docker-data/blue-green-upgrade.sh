@@ -228,7 +228,9 @@ case "$image_source" in
 esac
 
 # Always recreate the replacement service so its environment is read from the current .env.
-docker compose -f "$compose_file" up -d --no-recreate postgres zipkin "$old_service" reverse-proxy
+docker compose -f "$compose_file" up -d --no-recreate postgres zipkin "$old_service"
+# Let Compose apply proxy image and mount changes before switching upstreams.
+docker compose -f "$compose_file" up -d --no-deps reverse-proxy
 docker compose -f "$compose_file" up -d --no-deps --force-recreate "$new_service"
 
 echo "Waiting for $new_service to report healthy..."
